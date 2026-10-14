@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+  <title>Interés Veterinario</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f6f4a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Interés Vet">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/favicon.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <!-- LOGIN -->
+  <section id="login" class="login oculto">
+    <form class="login-card" onsubmit="App.entrar(event)">
+      <div class="logo" id="lgLogo">🐾</div>
+      <h1 id="lgNombre">Interés Veterinario</h1>
+      <p class="muted">Ventas · Inventario · Clientes</p>
+      <label>Correo o apodo<input id="lgUser" autocomplete="username" required></label>
+      <label>Contraseña<input id="lgPass" type="password" autocomplete="current-password" required></label>
+      <button class="btn primario ancho" id="lgBtn">Entrar</button>
+      <p id="lgErr" class="error"></p>
+    </form>
+  </section>
+
+  <!-- APLICACIÓN -->
+  <div id="app" class="oculto">
+    <aside id="menu" class="menu"></aside>
+    <div class="velo" onclick="App.menu(false)"></div>
+    <main class="principal">
+      <header class="barra">
+        <button class="icono solo-movil" onclick="App.menu(true)" aria-label="Menú">☰</button>
+        <h2 id="titulo">Inicio</h2>
+        <div class="barra-der">
+          <span id="estadoRed" class="pastilla"></span>
+          <button id="btnSync" class="pastilla aviso oculto" onclick="App.sincronizar(true)"></button>
+        </div>
+      </header>
+      <div id="vista" class="vista"></div>
+    </main>
+  </div>
+
+  <!-- MODAL -->
+  <div id="modal" class="modal oculto" onclick="if(event.target===this)App.cerrarModal()">
+    <div class="modal-caja">
+      <div class="modal-cab"><h3 id="modalTit"></h3><button class="icono" onclick="App.cerrarModal()" aria-label="Cerrar">✕</button></div>
+      <div id="modalCuerpo" class="modal-cuerpo"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <div id="cargando" class="cargando oculto"><div class="spinner"></div></div>
+
+  <script src="config.js"></script>
+  <script src="shim.js"></script>
+  <script src="app.js"></script>
+  <script src="pwa.js"></script>
+</body>
+</html>
