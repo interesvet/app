@@ -64,6 +64,17 @@ const App = (() => {
   };
 
   /* ---------------- interfaz común ---------------- */
+  /** Foto de la sucursal que emite el documento (se llena sola; sin foto no ocupa espacio). */
+  const fotoSucDoc = id => { const x = (D().sucursales || []).find(o => o.id === id); if (!x || !x.foto) return ''; setTimeout(llenarFotosSuc, 0); return `<img class="doc-suc" data-sucdoc="${esc(id)}" alt="">`; };
+  async function llenarFotosSuc() {
+    const ims = Array.from(document.querySelectorAll('img[data-sucdoc]:not([src])')); if (!ims.length) return;
+    S.minis = S.minis || {}; const m = S.minis.sucFoto = Object.assign(LS.get('minisSuc', {}), S.minis.sucFoto || {});
+    const faltan = Array.from(new Set(ims.map(i => i.dataset.sucdoc).filter(id => m[id] === undefined)));
+    if (faltan.length && navigator.onLine !== false) {
+      try { Object.assign(m, await pedir('minisArchivo', { tipo: 'sucFoto', ids: faltan }, true)); LS.set('minisSuc', m); } catch (e) {}
+    }
+    document.querySelectorAll('img[data-sucdoc]:not([src])').forEach(im => { if (m[im.dataset.sucdoc]) im.src = m[im.dataset.sucdoc]; });
+  }
   const logoHtml = () => window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario" style="height:64px">` : '<h3 style="color:#1f6f4a">🐾 Interés Veterinario</h3>';
   let toastT;
   function toast(msg, mal) {
@@ -877,7 +888,7 @@ const App = (() => {
     return htmlNota({ folio: 'PENDIENTE', fecha: new Date().toLocaleDateString('es-MX'), cliente: c.nombre, razon: c.razon, rfc: c.rfc, cel: c.cel,
       domicilio: [c.calle, c.colonia, c.municipio, c.estado].filter(Boolean).join(', '), lista: v.lista, dias: v.dias, metodo: v.metodo,
       sub: t.sub, desc: t.desc, descPC: t.descPC, iva: t.iva, flete: t.flete, total: t.total, cobrado: params.pago ? params.pago.monto : 0,
-      saldo: t.total - (params.pago ? params.pago.monto : 0), estatus: params.Estatus, sucursal: { nombre: sucNom(v.suc) }, vendedor: U().nombre,
+      saldo: t.total - (params.pago ? params.pago.monto : 0), estatus: params.Estatus, sucursal: { id: v.suc, nombre: sucNom(v.suc) }, vendedor: U().nombre,
       envio: ((D().catalogos.paqueterias || []).find(x => x.id === params.ID_Flete) || { nombre: 'Entrega física' }).nombre, guia: params.No_Guia,
       lineas: v.lineas.map((l, i) => ({ nombre: (prod(l.id) || {}).nombre, prod: l.id, cant: l.cant, precio: l.precio, total: t.imps[i], lote: l.lote ? 'Elegido' : 'Auto', cad: '' })),
       cobros: [] }, true);
@@ -894,7 +905,7 @@ const App = (() => {
   function htmlNota(d, offline) {
     const pagada = pagadaNota(d);
     return `<div class="imprimible"><div class="nota">
-      <div class="enc"><div>${logoHtml()}<div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
+      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>NOTA DE VENTA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div><div>${etqEstatus(d.estatus)}</div>${htmlFacturaNota(d)}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
         <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${esc(d.rfc || '')} ${esc(d.domicilio || '')}</div>
@@ -957,7 +968,7 @@ const App = (() => {
   /* ---------- COMPROBANTE DE PAGO ---------- */
   function htmlComprobante(d) {
     return `<div class="imprimible"><div class="nota">
-      <div class="enc"><div>${logoHtml()}<div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
+      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>COMPROBANTE DE PAGO</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div></div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px">
         <div><small style="color:#666">Recibimos de</small><br><b style="font-size:16px">${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}${d.rfc ? '<br>RFC ' + esc(d.rfc) : ''}</div>
@@ -1092,6 +1103,7 @@ const App = (() => {
   async function leerArch(tipo, f) { return ARCH_FOTO[tipo] || ARCH_MULTIFOTO[tipo] ? reducirImagen(f, tipo === 'provLogo' ? 600 : 1000) : leerComprobante(f); }
   function marcarArch(tipo, id) {
     if (S.minis && S.minis[tipo]) delete S.minis[tipo][id];
+    if (tipo === 'sucFoto') { const m = LS.get('minisSuc', {}); delete m[id]; LS.set('minisSuc', m); }
     const arr = tipo === 'cliFoto' || tipo === 'cliCsf' ? D().clientes : tipo === 'provLogo' ? D().proveedores : tipo === 'vendFoto' ? D().vendedores : tipo === 'sucFoto' ? D().sucursales : null;
     const x = arr && arr.find(o => String(o.id) === String(id));
     if (x) { x[tipo === 'provLogo' ? 'logo' : tipo === 'cliCsf' ? 'csf' : 'foto'] = 1; LS.set('datos', S.datos); }
@@ -1105,7 +1117,7 @@ const App = (() => {
   }
   async function quitarArch(tipo, id, archivo) {
     if (!confirm('¿Quitar este archivo? No se borra: se mueve a la carpeta "Archivos quitados".')) return;
-    try { await pedir('quitarArchivo', { tipo: tipo, id: id, archivo: archivo }); toast('Archivo quitado'); if (S.minis && S.minis[tipo]) delete S.minis[tipo][id]; cargarArch(tipo, id); if (tipo === 'sucFoto') { refrescarDatos(true).then(() => { pintarMenu(); cargarSucsCfg(); }).catch(() => {}); } } catch (e) {}
+    try { await pedir('quitarArchivo', { tipo: tipo, id: id, archivo: archivo }); toast('Archivo quitado'); if (S.minis && S.minis[tipo]) delete S.minis[tipo][id]; if (tipo === 'sucFoto') { const m = LS.get('minisSuc', {}); delete m[id]; LS.set('minisSuc', m); } cargarArch(tipo, id); if (tipo === 'sucFoto') { refrescarDatos(true).then(() => { pintarMenu(); cargarSucsCfg(); }).catch(() => {}); } } catch (e) {}
   }
   /** Para formularios de alta: elige archivo y lo muestra; se sube después de guardar el registro. */
   async function prevArchNuevo(input, tipo) {
@@ -1398,7 +1410,7 @@ const App = (() => {
     S.ultimaCot = d;
     const abierta = d.estado === 'Abierta' || d.estado === 'Vencida';
     modal('Cotización ' + d.folio, `<div class="imprimible"><div class="nota">
-      <div class="enc"><div>${logoHtml()}<div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
+      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>COTIZACIÓN</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div><div>${etqCot(d.estado)}</div><div class="fact-enc">Vigente hasta ${esc(d.vigencia)}</div>${d.venta ? `<div class="fact-enc"><b>Venta ${esc(d.venta.folio)}</b></div>` : ''}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
         <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${esc(d.rfc || '')} ${esc(d.domicilio || '')}</div>
@@ -1605,7 +1617,7 @@ const App = (() => {
     S.ultimoEC = d; const R = d.resumen;
     const caja = (t, v, col, extra) => `<div class="ec-caja" style="border-top-color:${col}${extra || ''}"><small>${t}</small><b>${v}</b></div>`;
     modal('Estado de cuenta · ' + (d.cliente.razon || d.cliente.nombre), `<div class="imprimible"><div class="nota">
-      <div class="enc"><div>${logoHtml()}<div>${esc(d.sucursal.nombre || '')}</div></div>
+      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id)}</div><div>${esc(d.sucursal.nombre || '')}</div></div>
         <div style="text-align:right"><b>ESTADO DE CUENTA</b><div style="font-size:16px">${esc(d.folio)}</div><div>Corte al ${esc(d.corte)}</div>${d.periodo ? `<small class="muted">Notas del ${esc(d.periodo.desde || 'inicio')} al ${esc(d.periodo.hasta || d.corte)}</small>` : ''}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px">
         <div><small class="muted">Cliente</small><br><b style="font-size:16px">${esc(d.cliente.razon || d.cliente.nombre)}</b>${d.cliente.razon && d.cliente.nombre !== d.cliente.razon ? '<br>' + esc(d.cliente.nombre) : ''}${d.cliente.rfc ? '<br><small>RFC ' + esc(d.cliente.rfc) + '</small>' : ''}</div>
@@ -2207,7 +2219,7 @@ const App = (() => {
     S.ultimaCompra = d;
     const pend = d.lineas.filter(l => !l.registrado);
     modal('Orden ' + d.folio, `<div class="imprimible"><div class="nota">
-      <div class="enc"><div>${logoHtml()}<div>Destino: ${esc(sucNom(d.suc))}</div></div><div style="text-align:right"><b>ORDEN DE COMPRA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div>
+      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.suc)}</div><div>Destino: ${esc(sucNom(d.suc))}</div></div><div style="text-align:right"><b>ORDEN DE COMPRA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div>
         <div style="margin-top:4px">Factura: <b>${d.factura ? esc(d.factura) : '<span style="color:#b97300">sin capturar</span>'}</b></div>${d.uuid ? `<div style="font-size:10px;color:#666">Folio fiscal: ${esc(d.uuid)}</div>` : ''}</div></div>
       <p><b>${esc(d.proveedor)}</b> ${esc(d.rfc || '')}</p>
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', k: 'lote' }, { t: 'Cad.', k: 'cad' }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$(x.total) }], d.lineas)}
@@ -2439,7 +2451,7 @@ const App = (() => {
       const flete = imp && d.flete !== null && d.flete !== undefined ? d.flete : 0, total = Math.round((sub + iva + flete) * 100) / 100;
       const sd = (D().sucursales || []).find(x => x.id === d.origen) || {};
       modal('Traspaso ' + d.folio, `<div class="imprimible"><div class="tr-doc">${window.LOGO ? `<img class="tr-marca" src="${window.LOGO}" alt="">` : ''}
-        <div class="tr-enc"><div class="tr-emp">${logoHtml()}<div><b>Interés Veterinario</b><small>${esc([sd.direccion, sd.tel ? 'Tel. ' + sd.tel : '', sd.email].filter(Boolean).join(' · '))}</small></div></div>
+        <div class="tr-enc"><div class="tr-emp">${logoHtml()}${fotoSucDoc(d.origen)}<div><b>Interés Veterinario</b><small>${esc([sd.direccion, sd.tel ? 'Tel. ' + sd.tel : '', sd.email].filter(Boolean).join(' · '))}</small></div></div>
           <div class="tr-folio"><small>TRASPASO ENTRE ALMACENES</small><b>${esc(d.folio)}</b><span>${esc(d.fecha)}${d.hora ? ' · ' + esc(d.hora) : ''}</span></div></div>
         <div class="tr-ruta"><div class="tr-linea"></div>
           <div class="tr-punto"><i class="o"></i><small>ALMACÉN ORIGEN</small><b>${esc(String(d.origenNombre || '').toUpperCase())}</b><span>Sale ${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</span></div>
@@ -2540,7 +2552,7 @@ const App = (() => {
     const d = S.lista[i]; if (!d) return;
     const vc = d.importe !== null && d.importe !== undefined;
     const titulo = d.clase === 'merma' ? 'MERMA' : d.clase === 'entrada' ? 'AJUSTE DE ENTRADA' : 'AJUSTE DE SALIDA';
-    modal(titulo + ' ' + d.folio, `<div class="imprimible"><div class="nota"><div class="enc"><div>${logoHtml()}<div>${esc(sucNom(d.suc))}</div></div>
+    modal(titulo + ' ' + d.folio, `<div class="imprimible"><div class="nota"><div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.suc)}</div><div>${esc(sucNom(d.suc))}</div></div>
       <div style="text-align:right"><b>${titulo}</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</div></div></div>
       <p><b>Motivo:</b> ${esc(d.motivo || '—')}${d.usuario ? ` · <span class="muted">Registró: ${esc(d.usuario)}</span>` : ''}</p>
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Clave', k: 'prod' }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', k: 'lote' }, { t: 'Cad.', k: 'cad' }]

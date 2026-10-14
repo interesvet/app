@@ -490,6 +490,10 @@ tr.grupo small { color: var(--texto-2); font-weight: 500; }
 .aviso-cache { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 10px 16px 0; padding: 9px 12px; border-radius: 10px; background: var(--aviso-suave); color: var(--aviso); border: 1px solid var(--aviso); font-size: 13px; }
 .aviso-cache.oculto { display: none; }
 .aviso-cache span { color: var(--texto); flex: 1 1 220px; }
+.doc-logos { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.doc-suc { height: 64px; width: auto; max-width: 140px; object-fit: cover; border-radius: 8px; border: 1px solid var(--borde); background: #fff; }
+.doc-suc:not([src]) { display: none; }
+.tr-emp .doc-suc { height: 56px; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
