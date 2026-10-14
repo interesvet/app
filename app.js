@@ -367,9 +367,11 @@ const App = (() => {
     $('#menu').innerHTML = `<div class="cab">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : '<b>🐾 Interés Veterinario</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
       <nav>${MENU.filter(m => !m.oculto && puede(m.p)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
         return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(e.t)}</button>`; }).join('')}</nav>
-      <div class="pie">${u.todasSucursales ? `<label>Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}
+      <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
       <button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div>`;
+    cargarAvatares($('#menu'));
   }
+  const avatarSuc = id => { const x = (D().sucursales || []).find(o => o.id === id) || {}; return avatar('sucFoto', id, x.foto, x.nombre || id); };
   function cambiarSuc(v) { S.suc = v; LS.set('suc', v); ir(S.vista); }
   function menu(v) { document.body.classList.toggle('menu-abierto', v); }
   /* Secciones con pestañas: cada pestaña es una pantalla (v) y opcionalmente una sub-pestaña (a). */
@@ -1041,9 +1043,9 @@ const App = (() => {
   const verAdjCob = (id, f) => verAdj('cobro', id, f), subirAdjCob = (id, i) => subirAdj('cobro', id, i), quitarAdjCob = (id, f) => quitarAdj('cobro', id, f);
   /* ---------- FOTOS Y DOCUMENTOS: clientes, ventas, compras, vendedores, proveedores ---------- */
   const ARCH_TIT = { cliFoto: '📷 Foto del cliente', cliCsf: '🧾 Constancia de situación fiscal', ventaGuia: '📦 Guía de envío', ocGuia: '📦 Guía de envío', trGuia: '📦 Guía de envío', vendFoto: '📷 Foto del vendedor', provLogo: '🏷️ Logotipo del proveedor',
-    visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)' };
+    visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)', sucFoto: '🏬 Foto de la sucursal' };
   const ARCH_MULTIFOTO = { visFoto: 1 }, ARCH_SOLOVER = { recFirma: 1, recPdf: 1 };
-  const ARCH_FOTO = { cliFoto: 1, vendFoto: 1, provLogo: 1 };
+  const ARCH_FOTO = { cliFoto: 1, vendFoto: 1, provLogo: 1, sucFoto: 1 };
   const ACEPTA_FOTO = 'image/jpeg,image/png,image/heic,image/webp', ACEPTA_DOC = ACEPTA_FOTO + ',application/pdf';
   const bloqueArch = (tipo, id) => `<div class="fact-bloque arch-bloque no-imprimir" data-arch="${tipo}" data-id="${esc(id)}"><h4>${ARCH_TIT[tipo]}</h4><span class="muted">Cargando…</span></div>`;
   function cargarArchs(cont) { (cont || document).querySelectorAll('[data-arch]').forEach(el => cargarArch(el.dataset.arch, el.dataset.id)); }
@@ -1090,7 +1092,7 @@ const App = (() => {
   async function leerArch(tipo, f) { return ARCH_FOTO[tipo] || ARCH_MULTIFOTO[tipo] ? reducirImagen(f, tipo === 'provLogo' ? 600 : 1000) : leerComprobante(f); }
   function marcarArch(tipo, id) {
     if (S.minis && S.minis[tipo]) delete S.minis[tipo][id];
-    const arr = tipo === 'cliFoto' || tipo === 'cliCsf' ? D().clientes : tipo === 'provLogo' ? D().proveedores : tipo === 'vendFoto' ? D().vendedores : null;
+    const arr = tipo === 'cliFoto' || tipo === 'cliCsf' ? D().clientes : tipo === 'provLogo' ? D().proveedores : tipo === 'vendFoto' ? D().vendedores : tipo === 'sucFoto' ? D().sucursales : null;
     const x = arr && arr.find(o => String(o.id) === String(id));
     if (x) { x[tipo === 'provLogo' ? 'logo' : tipo === 'cliCsf' ? 'csf' : 'foto'] = 1; LS.set('datos', S.datos); }
   }
@@ -1098,12 +1100,12 @@ const App = (() => {
     const f = input.files && input.files[0]; if (!f) return;
     let uri; try { uri = await leerArch(tipo, f); } catch (e) { input.value = ''; return toast(e.message || 'No se pudo leer el archivo', true); }
     toast('Subiendo…');
-    try { await pedir('subirArchivo', { tipo: tipo, id: id, dataUri: uri }); toast('✔ Archivo guardado'); marcarArch(tipo, id); cargarArch(tipo, id); }
+    try { await pedir('subirArchivo', { tipo: tipo, id: id, dataUri: uri }); toast('✔ Archivo guardado'); marcarArch(tipo, id); cargarArch(tipo, id); if (tipo === 'sucFoto') { pintarMenu(); cargarSucsCfg(); } }
     catch (e) { input.value = ''; if (e.red) toast('Sin conexión: vuelve a intentarlo al reconectar', true); }
   }
   async function quitarArch(tipo, id, archivo) {
     if (!confirm('¿Quitar este archivo? No se borra: se mueve a la carpeta "Archivos quitados".')) return;
-    try { await pedir('quitarArchivo', { tipo: tipo, id: id, archivo: archivo }); toast('Archivo quitado'); if (S.minis && S.minis[tipo]) delete S.minis[tipo][id]; cargarArch(tipo, id); } catch (e) {}
+    try { await pedir('quitarArchivo', { tipo: tipo, id: id, archivo: archivo }); toast('Archivo quitado'); if (S.minis && S.minis[tipo]) delete S.minis[tipo][id]; cargarArch(tipo, id); if (tipo === 'sucFoto') { refrescarDatos(true).then(() => { pintarMenu(); cargarSucsCfg(); }).catch(() => {}); } } catch (e) {}
   }
   /** Para formularios de alta: elige archivo y lo muestra; se sube después de guardar el registro. */
   async function prevArchNuevo(input, tipo) {
@@ -1142,6 +1144,23 @@ const App = (() => {
         cont.querySelectorAll(`img[data-avatar="${t}"]`).forEach(im => { const u = S.minis[t][im.dataset.aid]; if (u) { im.src = u; im.parentNode.classList.add('con-foto'); } });
       }
     }
+  }
+
+  /* ---------- SUCURSALES (foto) ---------- */
+  function cargarSucsCfg() {
+    const el = $('#cfSucs'); if (!el) return;
+    const l = U().rol === 'Administrador' ? (D().sucursales || []) : sucsPermitidas();
+    S.sucsCfg = l;
+    el.innerHTML = tabla([{ t: 'Sucursal', h: x => `<div class="con-avatar">${avatarSuc(x.id)}<div><b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo || '')}</small></div></div>` },
+      { t: 'Dirección', cls: 'ocultar-movil', h: x => esc(x.direccion) }, { t: 'Teléfono', h: x => esc(x.tel) }], l, { clic: 'App.verSucCfg', vacio: 'Sin sucursales' });
+    cargarAvatares(el);
+  }
+  function verSucCfg(i) {
+    const x = S.sucsCfg[i]; if (!x) return;
+    const dato = (t, v) => v ? `<p style="margin:4px 0"><span class="muted">${t}:</span> ${esc(v)}</p>` : '';
+    modal('🏬 ' + x.nombre, `<div class="arch-par">${bloqueArch('sucFoto', x.id)}</div>
+      <div class="tarjeta" style="margin-top:10px">${dato('Tipo', x.tipo)}${dato('Dirección', x.direccion)}${dato('Teléfono', x.tel)}${dato('Correo', x.email)}${dato('Serie de notas', x.serie)}${dato('Lista de precios', x.lista)}</div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
   }
 
   /* ---------- VENDEDORES (fotos) y LOGOTIPO DE LA EMPRESA ---------- */
@@ -1955,7 +1974,7 @@ const App = (() => {
       ${kpi('Inventario a costo real', $$(T.inventario), (T.diasInventario === null ? '' : T.diasInventario + ' días de inventario · ') + 'GMROI ' + (T.gmroi === null ? '—' : T.gmroi))}
       ${kpi('Por cobrar', $$(T.cxc), 'vencido ' + $$(T.cxcVencida))}</div>
       <div class="tarjeta"><h3>Rentabilidad por sucursal · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3>` +
-      tabla([{ t: 'Sucursal', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo)}</small>` }, { t: 'Ventas', num: 1, h: x => $$(x.ventas) },
+      tabla([{ t: 'Sucursal', h: x => `<div class="con-avatar">${avatarSuc(x.suc)}<div><b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo)}</small></div></div>` }, { t: 'Ventas', num: 1, h: x => $$(x.ventas) },
         { t: '% del total', num: 1, cls: 'ocultar-movil', h: x => T.ventas ? (x.ventas / T.ventas * 100).toFixed(1) + '%' : '—' },
         { t: 'Utilidad bruta', num: 1, h: x => `${$$(x.utilidadBruta)}<br><span class="etq ${claseMg2(x.margenBruto)}">${pctTxt(x.margenBruto)}</span>` },
         { t: 'Mermas', num: 1, cls: 'ocultar-movil', h: x => $$(x.mermas) }, { t: 'Gastos + depr.', num: 1, cls: 'ocultar-movil', h: x => $$(x.operacion + x.depreciacion) },
@@ -1969,6 +1988,7 @@ const App = (() => {
         { t: 'Caducado', num: 1, cls: 'ocultar-movil', h: x => x.caducado ? `<span class="etq mal">${$$(x.caducado)}</span>` : '—' }, { t: 'Por cobrar', num: 1, h: x => $$(x.cxc) }], L, { clic: 'App.verSucursal' }) + `</div></div>
       <div class="tarjeta"><h3>¿Cómo leer estos indicadores?</h3><p class="muted"><b>Contribución</b> = utilidad bruta − mermas − gastos de operación − depreciación asignados a la sucursal: lo que la sucursal deja para cubrir lo financiero y la utilidad. Si es negativa, la sucursal cuesta más de lo que aporta.
       <b>Días de inventario</b> = cuántos días de venta (a costo) tienes en anaquel; menos es mejor. <b>GMROI</b> = utilidad bruta anualizada ÷ inventario: cuántos pesos de utilidad genera cada peso invertido en mercancía al año (arriba de 2 es sano en distribución). Los gastos se asignan en Gastos › Facturas (sin asignar = Matriz; "Prorrateo" = según % de ventas).</p></div>`;
+    cargarAvatares($('#sRes'));
     grafica('sgBar', { type: 'bar', data: { labels: L.map(x => x.nombre), datasets: [
       { label: 'Ventas', data: L.map(x => x.ventas), backgroundColor: css('--s1'), borderRadius: 4, maxBarThickness: 28 },
       { label: 'Contribución', data: L.map(x => x.contribucion), backgroundColor: css('--s3'), borderRadius: 4, maxBarThickness: 28 }] },
@@ -1980,7 +2000,7 @@ const App = (() => {
     const pct = v => x.ventas ? (v / x.ventas * 100).toFixed(1) + '%' : '—';
     const fila = (t, v, neg, tot) => `<tr class="${tot ? 'res-total' : ''}"><td>${neg ? '<span style="padding-left:16px"></span>' : ''}${t}</td><td class="num ${!neg && v < 0 ? 'error' : ''}">${neg ? '−' + $$(Math.abs(v)) : $$(v)}</td><td class="num muted">${pct(v)}</td></tr>`;
     const kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
-    modal('🔒 ' + x.nombre, `<div class="kpis">${kpi('Notas', nf(x.notas), 'ticket ' + $$(x.ticket))}${kpi('Clientes', nf(x.clientes), 'compraron en el periodo')}${kpi('Cobrado', $$(x.cobrado), 'por cobrar ' + $$(x.cxc) + ' · vencido ' + $$(x.cxcVencida))}
+    modal('🔒 ' + x.nombre, `<div class="arch-par">${bloqueArch('sucFoto', x.suc)}</div><div class="kpis">${kpi('Notas', nf(x.notas), 'ticket ' + $$(x.ticket))}${kpi('Clientes', nf(x.clientes), 'compraron en el periodo')}${kpi('Cobrado', $$(x.cobrado), 'por cobrar ' + $$(x.cxc) + ' · vencido ' + $$(x.cxcVencida))}
       ${kpi('Inventario', $$(x.inventario), nf(x.piezas) + ' pzs · ' + nf(x.productos) + ' productos')}${kpi('Días de inventario', x.diasInventario === null ? '—' : nf(x.diasInventario), 'GMROI ' + (x.gmroi === null ? '—' : x.gmroi))}
       ${kpi('Traspasos', $$(x.traspasosRecibidos), 'recibidos · enviados ' + $$(x.traspasosEnviados))}</div>
       <div class="rejilla-2"><div><h4>Estado de resultados</h4><div class="tabla-cont"><table class="estado-res"><tbody>
@@ -4146,7 +4166,7 @@ const App = (() => {
   /* ---------- CONFIGURACIÓN ---------- */
   V.config = async () => {
     const u = U();
-    setTimeout(() => CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }), 0);
+    setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); cargarSucsCfg(); }, 0);
     $('#vista').innerHTML = `<div class="tarjeta"><h3>Mi sesión</h3><p>${esc(u.nombre)} · <b>${esc(u.rolNombre || u.rol)}</b> · ${esc(u.correo)}<br>Sucursal: ${esc(sucNom(u.sucursal))} · Acceso: ${u.todasSucursales ? 'todas las sucursales' : 'solo su sucursal'}</p>
       <p class="muted">Datos guardados en este dispositivo: ${(D().productos || []).length} productos, ${(D().clientes || []).length} clientes, ${(D().stock || []).length} lotes. Última actualización: ${D().servidor ? new Date(D().servidor).toLocaleString('es-MX') : '—'}</p>
       <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
@@ -4162,6 +4182,7 @@ const App = (() => {
         <div class="logo-prev"><div><small class="muted">Actual</small><div class="logo-caja">${window.LOGO ? `<img src="${window.LOGO}" alt="">` : '<span class="muted">Sin logotipo</span>'}</div></div><div id="lgNuevo" class="logo-prev"></div></div>
         <div class="acciones"><label class="btn">📁 Elegir nuevo logotipo<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="App.prepararLogo(this)"></label><span id="lgAcc" style="display:contents"></span></div></div>` : ''}
       ${u.rol === 'Administrador' && puede('recetas') ? `<div class="tarjeta"><h3>💊 Datos para las recetas</h3><p class="muted">Aparecen al pie de cada receta en PDF, junto a la firma.</p><div id="cfRx"><span class="muted">Cargando…</span></div></div>` : ''}
+      <div class="tarjeta"><h3>🏬 Sucursales</h3><p class="muted">${u.rol === 'Administrador' ? 'Toca una sucursal para poner o cambiar su foto (carpeta Sucursal_Images). Los demás datos se editan en la hoja Catalogo_Sucursal.' : 'Datos de tu sucursal.'}</p><div id="cfSucs"></div></div>
       ${u.rol === 'Administrador' ? `<div class="tarjeta"><h3>👥 Vendedores y usuarios</h3><p class="muted">Foto de cada vendedor (carpeta Vendedor_Images). Los demás datos se editan en la hoja Catalogo_Vendedor.</p><div id="cfVend"><span class="muted">Cargando…</span></div></div>` : ''}
       ${puede('configuracion') ? `<div class="tarjeta"><h3>Pagos y saldos de las notas</h3><p class="muted">La app calcula lo pagado y el saldo de cada nota sumando sus cobros de la hoja Cobranza (relacionados por ID_Venta). Aquí puedes ver qué notas tienen guardado en Nota_Venta un pagado o saldo distinto y corregirlas.</p>
         <div class="fila"><button class="btn fijo" onclick="App.revisarSaldos(false)">Revisar notas</button></div><div id="cfSaldos" style="margin-top:12px"></div></div>` : ''}
@@ -4265,7 +4286,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    precargarAhora, vistaActual: () => S.vista,
+    precargarAhora, vistaActual: () => S.vista, verSucCfg,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, asignarSucGastos, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
