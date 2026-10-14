@@ -82,6 +82,110 @@ const App = (() => {
       '</tbody></table></div>';
   }
 
+  /* ---------------- copia local de consultas (para consultar sin conexión) ----------------
+   *  Cada consulta que se hace con internet se guarda en el dispositivo (IndexedDB). Sin señal, la app muestra
+   *  la última copia de esa misma consulta; si no existe con esos filtros exactos, la más reciente del mismo
+   *  tipo (y del mismo cliente / nota / producto). Además, cada 3 h se precargan las consultas principales.
+   *  Se borra al cerrar sesión. Nunca se guardan PDFs, fotos ni archivos.
+   */
+  const CQ = (() => {
+    const LECT = ('kardex listarVentas aniosRegistros pedidoSugerido seguimiento listarVisitas detalleVisita configReceta listarRecetas detalleReceta ' +
+      'detalleVenta listarCobros cuentasPorCobrar adjuntosCobro estadosCuenta estadoCuentaCliente listarPagosProv detallePagoProv listarCompras ' +
+      'detalleCompra listarTraspasos detalleTraspaso reporteTraspasos listarConteos detalleConteo historialAjustes selListaPrecios historialPrecios ' +
+      'listarMovimientos listarProveedores detalleCobro dashboard costosReales listarCotizaciones detalleCotizacion facturas detalleFactura facturasNota ' +
+      'porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto').split(' ');
+    const MAX = 300, MAX_TXT = 3e6;
+    let dbp = null;
+    const db = () => dbp || (dbp = new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open('iv_consultas', 1);
+        r.onupgradeneeded = () => { const st = r.result.createObjectStore('c', { keyPath: 'k' }); st.createIndex('a', 'a'); st.createIndex('t', 't'); };
+        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    }).catch(e => { dbp = null; throw e; }));
+    const tx = (modo, fn) => db().then(d => new Promise((res, rej) => {
+      const t = d.transaction('c', modo), st = t.objectStore('c'); let out;
+      fn(st, v => { out = v; }); t.oncomplete = () => res(out); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+    }));
+    const ordenado = o => o && typeof o === 'object' && !Array.isArray(o) ? Object.keys(o).sort().reduce((m, k) => (m[k] = ordenado(o[k]), m), {}) : o;
+    const usuario = () => String(U().id || '');
+    // Lo que identifica "de quién / de qué" es la consulta (cliente, nota, producto…): nunca se muestra la de otro.
+    const ident = p => JSON.stringify(Object.keys(p).filter(k => /^id/i.test(k) || ['folio', 'producto', 'tabla'].indexOf(k) >= 0).sort()
+      .filter(k => p[k] !== '' && p[k] !== null && p[k] !== undefined).map(k => [k, p[k]]));
+    const clave = (a, p) => usuario() + '|' + a + '|' + JSON.stringify(ordenado(p));
+    return {
+      guardable: a => typeof indexedDB !== 'undefined' && LECT.indexOf(a) >= 0,
+      guardar(a, p, d, largo) {
+        if (!usuario() || largo > MAX_TXT) return;
+        tx('readwrite', st => st.put({ k: clave(a, p), a: a, u: usuario(), i: ident(p), t: Date.now(), d: d }))
+          .then(() => tx('readwrite', st => {
+            const cnt = st.count(); cnt.onsuccess = () => { let sobran = cnt.result - MAX; if (sobran <= 0) return;
+              st.index('t').openCursor().onsuccess = ev => { const c = ev.target.result; if (c && sobran-- > 0) { c.delete(); c.continue(); } }; };
+          })).catch(() => {});
+      },
+      buscar(a, p) {
+        if (!usuario()) return Promise.resolve(null);
+        const k = clave(a, p), id = ident(p), u = usuario();
+        return tx('readonly', (st, fin) => {
+          const g = st.get(k);
+          g.onsuccess = () => {
+            if (g.result) return fin(Object.assign({ exacto: true }, g.result));
+            const q = st.index('a').getAll(a);
+            q.onsuccess = () => { const l = (q.result || []).filter(x => x.u === u && x.i === id).sort((x, y) => y.t - x.t); fin(l[0] ? Object.assign({ exacto: false }, l[0]) : null); };
+          };
+        });
+      },
+      contar: () => tx('readonly', (st, fin) => { const c = st.count(); c.onsuccess = () => fin(c.result); }).catch(() => 0),
+      borrar: () => tx('readwrite', st => st.clear()).catch(() => {})
+    };
+  })();
+  /** Aviso arriba de la vista cuando lo que se ve es una copia guardada. */
+  function avisoCache(c) {
+    let el = $('#avisoCache');
+    if (!el) { el = document.createElement('div'); el.id = 'avisoCache'; el.className = 'aviso-cache oculto'; const v = $('#vista'); if (!v) return; v.parentNode.insertBefore(el, v); }
+    const prev = Number(el.dataset.t || 0), t = prev ? Math.min(prev, c.t) : c.t, exacto = el.dataset.t ? el.dataset.exacto === '1' && c.exacto : c.exacto;
+    el.dataset.t = t; el.dataset.exacto = exacto ? '1' : '0';
+    const f = new Date(t), hoy = new Date().toDateString() === f.toDateString();
+    const cuando = (hoy ? 'hoy' : f.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })) + ' a las ' + f.toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' });
+    el.innerHTML = `<span>📦 <b>Sin conexión.</b> Estás viendo información guardada ${esc(cuando)}${exacto ? '' : ' (última consulta guardada; los filtros pueden ser distintos)'}${/\.$/.test(cuando) && exacto ? '' : '.'}</span>` +
+      `<button class="btn chico" onclick="App.ir(App.vistaActual(), true)">↻ Actualizar</button>`;
+    el.classList.remove('oculto');
+  }
+  function quitarAvisoCache() { const el = $('#avisoCache'); if (el) { el.classList.add('oculto'); el.dataset.t = ''; el.dataset.exacto = ''; } }
+  /** Precarga silenciosa de las consultas principales (cada 3 h, solo con internet) para tenerlas a la mano sin señal. */
+  async function precargar(forzar) {
+    if (!S.token || !navigator.onLine || S.precargando) return;
+    const ult = LS.get('precarga_' + (U().id || ''), 0);
+    if (!forzar && Date.now() - ult < 3 * 3600e3) return;
+    S.precargando = true;
+    const h = hoyISO(), dia = n => { const d = new Date(h + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+    const lista = [
+      ['seguimiento', 'seguimiento', { suc: '', vendedor: '' }],
+      ['seguimiento', 'listarVisitas', { desde: dia(-30), hasta: dia(60), vendedor: '', estado: '' }],
+      ['ventas', 'listarVentas', { desde: dia(-30), hasta: h, sucursal: '', texto: '', conSaldo: false, idCliente: '' }],
+      ['cobranza', 'cuentasPorCobrar', { sucursal: '' }],
+      ['cobranza', 'estadosCuenta', { texto: '', tramo: '' }],
+      ['cobranza', 'listarCobros', { desde: dia(-30), hasta: h, sucursal: '', forma: '', texto: '' }],
+      ['cotizaciones', 'listarCotizaciones', { sucursal: '', desde: dia(-60), hasta: h, estado: '', texto: '' }],
+      ['recetas', 'listarRecetas', { desde: dia(-90), hasta: h }]
+    ];
+    let ok = 0;
+    try {
+      for (const [perm, a, p] of lista) {
+        if (!puede(perm) || !navigator.onLine || !S.token) continue;
+        try { await call(a, p); ok++; } catch (e) { if (e.red) break; }
+      }
+      if (ok) LS.set('precarga_' + (U().id || ''), Date.now());
+    } finally { S.precargando = false; }
+    return ok;
+  }
+  async function precargarAhora() {
+    if (!navigator.onLine) return toast('Necesitas conexión para actualizar la información guardada', true);
+    cargando(true);
+    try { const n = await precargar(true); toast(n ? '✔ Información guardada en este dispositivo' : 'No se pudo actualizar', !n); }
+    finally { cargando(false); if (S.vista === 'config') V.config(); }
+  }
+
   /* ---------------- comunicación con el servidor ---------------- */
   function marcarRed(ok) {
     S.online = ok;
@@ -90,18 +194,24 @@ const App = (() => {
   }
   function call(accion, params) {
     return new Promise((res, rej) => {
-      if (typeof google === 'undefined' || !google.script) { const e = new Error('Sin conexión'); e.red = true; return rej(e); }
+      if (typeof google === 'undefined' || !google.script) {
+        const e = new Error('Sin conexión'); e.red = true;
+        if (!CQ.guardable(accion)) return rej(e);
+        return CQ.buscar(accion, params || {}).then(c => { if (!c) return rej(e); avisoCache(c); res(c.d); }).catch(() => rej(e));
+      }
       google.script.run
         .withSuccessHandler(txt => {
           marcarRed(true);
           const r = JSON.parse(txt);
-          if (r.ok) return res(r.data);
+          if (r.ok) { if (CQ.guardable(accion)) CQ.guardar(accion, params || {}, r.data, txt.length); return res(r.data); }
           if (String(r.error).indexOf('SESION') === 0) { salir(r.error.replace('SESION: ', '')); }
           rej(new Error(r.error));
         })
         .withFailureHandler(err => {
           const e = new Error('Sin conexión con el servidor'); e.red = true; e.original = err;
-          marcarRed(false); rej(e);
+          marcarRed(false);
+          if (!CQ.guardable(accion)) return rej(e);
+          CQ.buscar(accion, params || {}).then(c => { if (!c) return rej(e); avisoCache(c); res(c.d); }).catch(() => rej(e));
         })
         .api(S.token, accion, params || {});
     });
@@ -122,14 +232,14 @@ const App = (() => {
       const r = JSON.parse(txt);
       if (!r.ok) { $('#lgErr').textContent = r.error; return; }
       S.token = r.token; LS.set('token', r.token);
-      try { await refrescarDatos(); mostrarApp(); }
+      try { await refrescarDatos(); mostrarApp(); setTimeout(precargar, 20000); }
       catch (e) { $('#lgErr').textContent = e.message; }
     }).withFailureHandler(e => { btn.disabled = false; $('#lgErr').textContent = 'Sin conexión: ' + e.message; })
       .login($('#lgUser').value, $('#lgPass').value);
   }
   function salir(msg) {
     if (S.cola.length && !confirm('Tienes ' + S.cola.length + ' operaciones sin sincronizar. Se conservarán en este dispositivo. ¿Salir?')) return;
-    S.token = null; LS.del('token');
+    S.token = null; LS.del('token'); CQ.borrar(); quitarAvisoCache();
     $('#app').classList.add('oculto'); $('#login').classList.remove('oculto');
     if (msg) $('#lgErr').textContent = msg;
   }
@@ -312,7 +422,7 @@ const App = (() => {
     if (g) { S.ultGrupo = S.ultGrupo || {}; S.ultGrupo[g] = m.id === 'productos' ? 'productos:' + (S.tabProd || 'cat') : m.id; }
     S.charts.forEach(c => c.destroy()); S.charts = [];
     $('#titulo').textContent = g && tabsGrupo(g).length > 1 ? GRUPOS[g].t : m.t; menu(false); pintarMenu(); pintarSubnav();
-    $('#vista').innerHTML = '';
+    $('#vista').innerHTML = ''; quitarAvisoCache();
     (V[m.id] || V.inicio)();
     window.scrollTo(0, 0);
   }
@@ -4036,12 +4146,16 @@ const App = (() => {
   /* ---------- CONFIGURACIÓN ---------- */
   V.config = async () => {
     const u = U();
+    setTimeout(() => CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }), 0);
     $('#vista').innerHTML = `<div class="tarjeta"><h3>Mi sesión</h3><p>${esc(u.nombre)} · <b>${esc(u.rolNombre || u.rol)}</b> · ${esc(u.correo)}<br>Sucursal: ${esc(sucNom(u.sucursal))} · Acceso: ${u.todasSucursales ? 'todas las sucursales' : 'solo su sucursal'}</p>
       <p class="muted">Datos guardados en este dispositivo: ${(D().productos || []).length} productos, ${(D().clientes || []).length} clientes, ${(D().stock || []).length} lotes. Última actualización: ${D().servidor ? new Date(D().servidor).toLocaleString('es-MX') : '—'}</p>
       <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
       <div class="tarjeta"><h3>Operaciones pendientes de sincronizar (${S.cola.length})</h3>${tabla([{ t: 'Capturada', k: 'creado' }, { t: 'Operación', k: 'desc' }, { t: 'Error', h: o => o.error ? `<span class="error">${esc(o.error)}</span>` : 'En espera' },
         { t: '', h: o => `<button class="btn chico peligro" onclick="App.descartarOp('${o.opId}')">Descartar</button>` }], S.cola.slice().reverse(), { vacio: 'Todo sincronizado ✔' })}
       ${S.cola.length ? '<div class="acciones"><button class="btn primario" onclick="App.sincronizar(true)">Sincronizar ahora</button></div>' : ''}</div>
+      <div class="tarjeta"><h3>Consultas guardadas para usar sin conexión</h3><p class="muted">La app guarda en este dispositivo las consultas que haces (ventas, cotizaciones, seguimiento, visitas, cobranza, recetas…) y cada 3 horas actualiza las principales. Sin señal, verás la última copia guardada. Se borran al cerrar sesión.</p>
+        <p>Consultas guardadas: <b id="cqNum">…</b> · Última actualización automática: <b>${LS.get('precarga_' + (u.id || ''), 0) ? new Date(LS.get('precarga_' + (u.id || ''), 0)).toLocaleString('es-MX') : 'pendiente'}</b></p>
+        <div class="fila"><button class="btn fijo" onclick="App.precargarAhora()">⬇ Guardar información ahora</button></div></div>
       <div class="tarjeta"><h3>Mis permisos</h3><p class="muted">Los permisos por rol se editan en la hoja <b>APP_Permisos</b> (SI / NO). Usuarios, roles y contraseñas en <b>Catalogo_Vendedor</b>.</p>
       <div style="display:flex;flex-wrap:wrap;gap:6px">${Object.keys(u.permisos).map(k => `<span class="etq ${u.permisos[k] ? 'ok' : 'mal'}">${esc(k)}</span>`).join('')}</div></div>
       ${puede('dueno') ? `<div class="tarjeta"><h3>🏷️ Logotipo de la empresa</h3><p class="muted">Se usa en el menú de la app y en todos los PDF (notas, cotizaciones, compras, traspasos, estados de cuenta, listas de precios), también como marca de agua. Usa de preferencia un PNG con fondo transparente. El logotipo anterior no se borra: se guarda en la carpeta "_versiones anteriores (no usar)".</p>
@@ -4138,10 +4252,11 @@ const App = (() => {
     window.addEventListener('online', () => { marcarRed(true); sincronizar(); });
     window.addEventListener('offline', () => marcarRed(false));
     document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModal(); });
-    setInterval(() => { if (S.token && navigator.onLine) { sincronizar(); if (['venta', 'inventario'].indexOf(S.vista) < 0) refrescarStock(); } }, 90000);
+    setInterval(() => { if (S.token && navigator.onLine) { sincronizar(); if (['venta', 'inventario'].indexOf(S.vista) < 0) refrescarStock(); precargar(); } }, 90000);
+    window.addEventListener('online', () => { const el = $('#avisoCache'); if (el && !el.classList.contains('oculto')) el.querySelector('span').innerHTML = '🟢 <b>Ya hay conexión.</b> Toca “Actualizar” para ver la información al momento.'; setTimeout(precargar, 15000); });
     if (S.token && S.datos) {
       mostrarApp();
-      refrescarDatos(true).then(() => { pintarMenu(); sincronizar(); }).catch(() => {});
+      refrescarDatos(true).then(() => { pintarMenu(); sincronizar(); setTimeout(precargar, 20000); }).catch(() => {});
     } else {
       $('#login').classList.remove('oculto');
     }
@@ -4150,6 +4265,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
+    precargarAhora, vistaActual: () => S.vista,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, asignarSucGastos, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
