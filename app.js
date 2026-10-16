@@ -86,6 +86,13 @@ const App = (() => {
   const achicarUri = (uri, max) => new Promise((res, rej) => { const im = new Image(); im.onerror = rej; im.onload = () => {
     const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
     const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', .8)); }; im.src = uri; });
+  /** C.P., Régimen fiscal y Uso de CFDI del cliente (encabezado de notas, cotizaciones, comprobantes y estados de cuenta). */
+  const fiscalHtml = (f, sinCp) => { if (!f) return ''; const l = [];
+    if (f.cp && !sinCp) l.push('C.P. ' + esc(f.cp));
+    const et = (c, t) => !t ? c : String(t).indexOf(c) === 0 ? t : c + ' – ' + t;
+    if (f.regimen) l.push('Régimen fiscal: ' + esc(et(f.regimen, f.regimenTxt)));
+    if (f.uso) l.push('Uso de CFDI: ' + esc(et(f.uso, f.usoTxt)));
+    return l.length ? '<br><small>' + l.join('<br>') + '</small>' : ''; };
   const logoHtml = () => window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario" style="height:64px">` : '<h3 style="color:#1f6f4a">🐾 Interés Veterinario</h3>';
   let toastT;
   function toast(msg, mal) {
@@ -596,7 +603,7 @@ const App = (() => {
     try { r = await pedir('dashboard', p); } catch (e) { $('#dash').innerHTML = '<div class="vacio">El tablero requiere conexión.</div>'; return; }
     const k = r.kpi, c = k.utilidad !== undefined;
     const kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
-    $('#dash').innerHTML = `<div class="kpis">
+    $('#dash').innerHTML = `${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}<div class="kpis">
       ${kpi('Ventas netas (sin IVA)', $$(k.ventas), k.notas + ' notas · ticket ' + $$(k.ticket))}
       ${c ? kpi(U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)') : ''}
       ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%') : ''}
@@ -645,6 +652,20 @@ const App = (() => {
     }
   }
   /* ---------- Estado de resultados (solo el dueño) ---------- */
+  /** Inicio (dueño): de las ventas a la UTILIDAD NETA del periodo, paso por paso. */
+  function htmlUtilNeta(R) {
+    const pct = v => R.ventas ? (v / R.ventas * 100).toFixed(1) + '%' : '—';
+    const paso = (t, v, cls, menos) => `<div class="un-paso ${cls || ''}"><small>${menos ? '− ' : ''}${t}</small><b>${menos ? $$(Math.abs(v)) : $$(v)}</b>${!menos ? `<span>${pct(v)} de ventas</span>` : ''}</div>`;
+    const neta = R.utilidadNeta, est = neta < 0 ? 'mal' : (R.ventas && neta / R.ventas < 0.05 ? 'av' : 'ok');
+    return `<div class="tarjeta un-card"><div class="un-cab"><div><h3 style="margin:0">💰 Utilidad neta del periodo</h3>
+        <p class="muted" style="margin:4px 0 0">Lo que realmente le queda a la empresa: ventas − costo de lo vendido − mermas − gastos de operación − depreciación − gastos financieros. Sin IVA.</p></div>
+        <div class="un-total ${est}"><small>Utilidad neta</small><b>${$$(neta)}</b><span>Margen neto ${pct(neta)}</span></div></div>
+      <div class="un-flujo">
+        ${paso('Ventas netas', R.ventas)}${paso('Costo de lo vendido', R.costo, 'resta', 1)}${paso('Utilidad bruta', R.utilidadBruta, 'sub')}
+        ${paso('Mermas', R.mermas, 'resta', 1)}${paso('Gastos de operación', R.gastosOperacion, 'resta', 1)}${R.depreciacion ? paso('Depreciación', R.depreciacion, 'resta', 1) : ''}
+        ${paso('Utilidad de operación', R.utilidadOperacion, 'sub')}${paso('Gastos financieros', R.financieros, 'resta', 1)}${paso('Utilidad neta', neta, 'fin ' + est)}
+      </div></div>`;
+  }
   function htmlResultados(R) {
     if (R.error) return `<div class="tarjeta"><h3>🔒 Estado de resultados</h3><p class="error">No se pudieron leer los egresos: ${esc(R.error)}</p></div>`;
     S.resultados = R;
@@ -902,7 +923,9 @@ const App = (() => {
   }
   function notaOffline(v, t, params) {
     const c = cliente(v.cli) || {};
+    const conRfc = c.rfc && !/^X[AE]XX010101000$/i.test(c.rfc);
     return htmlNota({ folio: 'PENDIENTE', fecha: new Date().toLocaleDateString('es-MX'), cliente: c.nombre, razon: c.razon, rfc: c.rfc, cel: c.cel,
+      fiscal: { cp: c.cp || '', regimen: conRfc ? c.regimen || '' : '', uso: conRfc ? c.uso || '' : '' },
       domicilio: [c.calle, c.colonia, c.municipio, c.estado].filter(Boolean).join(', '), lista: v.lista, dias: v.dias, metodo: v.metodo,
       sub: t.sub, desc: t.desc, descPC: t.descPC, iva: t.iva, flete: t.flete, total: t.total, cobrado: params.pago ? params.pago.monto : 0,
       saldo: t.total - (params.pago ? params.pago.monto : 0), estatus: params.Estatus, sucursal: { id: v.suc, nombre: sucNom(v.suc) }, vendedor: U().nombre,
@@ -925,7 +948,7 @@ const App = (() => {
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>NOTA DE VENTA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div><div>${etqEstatus(d.estatus)}</div>${htmlFacturaNota(d)}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
-        <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${esc(d.rfc || '')} ${esc(d.domicilio || '')}</div>
+        <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${d.rfc ? 'RFC ' + esc(d.rfc) : ''} ${esc(d.domicilio || '')}${fiscalHtml(d.fiscal)}</div>
         <div style="text-align:right">Crédito: ${d.dias} días ${d.venc ? '· Vence ' + esc(d.venc) : ''}<br>Vendedor: ${esc(d.vendedor || '')}<br>Envío: ${esc(d.envio || 'Entrega física')}${d.guia ? ' · Guía ' + esc(d.guia) : ''}</div></div>
       ${(() => { const canc = !offline && d.id && !pagada && d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto' && puede('ventas_cancelar'); return `
       <div class="tabla-cont"><table><thead><tr><th class="num">Cant.</th><th>Producto</th><th>Lote</th><th>Cad.</th><th class="num">Precio</th><th class="num">Importe</th>${canc ? '<th class="no-imprimir"></th>' : ''}</tr></thead><tbody>
@@ -988,7 +1011,7 @@ const App = (() => {
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>COMPROBANTE DE PAGO</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div></div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px">
-        <div><small style="color:#666">Recibimos de</small><br><b style="font-size:16px">${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}${d.rfc ? '<br>RFC ' + esc(d.rfc) : ''}</div>
+        <div><small style="color:#666">Recibimos de</small><br><b style="font-size:16px">${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}${d.rfc ? '<br>RFC ' + esc(d.rfc) : ''}${fiscalHtml(d.fiscal)}</div>
         <div style="text-align:right"><small style="color:#666">La cantidad de</small><br><b style="font-size:24px;color:#1f6f4a">${$$(d.monto)}</b></div></div>
       <p><small>(${esc(d.letras)})</small></p>
       <div class="tabla-cont"><table><thead><tr><th>Concepto</th><th>Forma de pago</th><th>Banco / cuenta</th><th class="num">Importe</th></tr></thead><tbody>
@@ -1494,7 +1517,7 @@ const App = (() => {
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>COTIZACIÓN</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div><div>${etqCot(d.estado)}</div><div class="fact-enc">Vigente hasta ${esc(d.vigencia)}</div>${d.venta ? `<div class="fact-enc"><b>Venta ${esc(d.venta.folio)}</b></div>` : ''}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
-        <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${esc(d.rfc || '')} ${esc(d.domicilio || '')}</div>
+        <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${d.rfc ? 'RFC ' + esc(d.rfc) : ''} ${esc(d.domicilio || '')}${fiscalHtml(d.fiscal)}</div>
         <div style="text-align:right">Atendió: ${esc(d.vendedor || '')}</div></div>
       <div class="tabla-cont"><table><thead><tr><th class="num">Cant.</th><th>Producto</th>${d.lineas.some(l => l.lote) ? '<th>Lote</th><th>Cad.</th>' : ''}<th class="num">Precio unit.</th>${d.desc ? '<th class="num">Descuento</th>' : ''}<th class="num">IVA</th><th class="num">Importe</th></tr></thead><tbody>
       ${d.lineas.map(l => `<tr><td class="num">${nf(l.cant)}</td><td>${esc(l.nombre)}</td>${d.lineas.some(x => x.lote) ? `<td>${esc(l.lote || 'Auto')}</td><td>${esc(l.cad || '')}</td>` : ''}<td class="num">${$$(l.precioLista !== undefined ? l.precioLista : l.precio)}</td>${d.desc ? `<td class="num">${l.desc ? '−' + $$(l.desc) : '—'}</td>` : ''}<td class="num">${l.iva ? $$(l.ivaMonto !== undefined ? l.ivaMonto : l.importe * l.iva) : 'Exento'}</td><td class="num">${$$(l.bruto !== undefined ? l.bruto : l.importe)}</td></tr>`).join('')}
@@ -1701,7 +1724,7 @@ const App = (() => {
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id)}</div><div>${esc(d.sucursal.nombre || '')}</div></div>
         <div style="text-align:right"><b>ESTADO DE CUENTA</b><div style="font-size:16px">${esc(d.folio)}</div><div>Corte al ${esc(d.corte)}</div>${d.periodo ? `<small class="muted">Notas del ${esc(d.periodo.desde || 'inicio')} al ${esc(d.periodo.hasta || d.corte)}</small>` : ''}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px">
-        <div><small class="muted">Cliente</small><br><b style="font-size:16px">${esc(d.cliente.razon || d.cliente.nombre)}</b>${d.cliente.razon && d.cliente.nombre !== d.cliente.razon ? '<br>' + esc(d.cliente.nombre) : ''}${d.cliente.rfc ? '<br><small>RFC ' + esc(d.cliente.rfc) + '</small>' : ''}</div>
+        <div><small class="muted">Cliente</small><br><b style="font-size:16px">${esc(d.cliente.razon || d.cliente.nombre)}</b>${d.cliente.razon && d.cliente.nombre !== d.cliente.razon ? '<br>' + esc(d.cliente.nombre) : ''}${d.cliente.rfc ? '<br><small>RFC ' + esc(d.cliente.rfc) + '</small>' : ''}${d.cliente.domicilio ? '<br><small class="muted">' + esc(d.cliente.domicilio) + '</small>' : ''}${fiscalHtml(d.cliente.fiscal, true)}</div>
         <div style="text-align:right"><small class="muted">Crédito</small><br>${d.cliente.diasCredito ? d.cliente.diasCredito + ' días' : 'Contado'}${d.vendedor ? '<br><small class="muted">Ejecutivo: ' + esc(d.vendedor) + '</small>' : ''}</div></div>
       <div class="ec-cajas">${caja('Importe de las notas', $$(R.total), '#8a8e83')}${caja('Pagado', $$(R.cobrado), 'var(--info)')}${caja('Vencido', $$(R.vencido), 'var(--peligro)', R.vencido > 0.009 ? ';background:var(--peligro-suave)' : '')}${caja('Saldo a pagar', $$(R.saldo), 'var(--marca)', ';background:var(--marca-suave)')}</div>
       <div class="ec-leyenda" style="margin-top:8px">${d.tramos.map(t => `<span><i style="background:${COL_TRAMO[t.k]}"></i>${esc(t.t)} <b>${$$(R.tramos[t.k])}</b></span>`).join('')}</div>
