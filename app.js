@@ -711,8 +711,9 @@ const App = (() => {
     const cat = D().catalogos || {};
     v.estatus = v.estatus || 'Pendiente'; v.idFlete = v.idFlete || ENVIO_DEFAULT; v.guia = v.guia || '';
     const paqs = cat.paqueterias && cat.paqueterias.length ? cat.paqueterias : [{ id: ENVIO_DEFAULT, nombre: 'Entrega física' }];
-    const ed = !!v.editId;
+    const ed = !!v.editId, vse = (D().config || {}).ventaSinExist || {};
     $('#vista').innerHTML = `
+      ${vse.vigente ? `<div class="filtro-activo">⚠️ Venta sin existencia permitida${vse.hasta ? ' hasta el ' + esc(fechaCorta(vse.hasta)) : ''}: si el sistema no tiene piezas, la nota se guarda y la existencia queda en negativo para cuadrarla en el inventario físico.</div>` : ''}
       ${ed ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">✏️ <b>Editando la nota ${esc(v.editFolio)}</b><br><small class="muted">Al guardar se reemplazan sus productos y condiciones; se conservan folio, fecha y cobros. Si estaba entregada, el inventario se ajusta solo.</small></div>
         <button class="btn fijo" onclick="App.limpiarVenta()">Salir sin guardar</button></div></div>` : ''}
       ${v.desdeCot && !ed ? `<div class="tarjeta" style="border-color:var(--s1)"><div class="fila"><div style="flex:3 1 260px">📝 <b>Venta desde la cotización ${esc(v.desdeCot.folio)}</b><br><small class="muted">Al guardar, la cotización queda como vendida y ligada a esta nota. Revisa existencias y lotes.</small></div>
@@ -1176,6 +1177,28 @@ const App = (() => {
     }
   }
 
+  /* ---------- VENDER SIN EXISTENCIA (temporal, mientras se cuadran inventarios) ---------- */
+  const fechaCorta = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + '/' + m[2] + '/' + m[1] : iso; };
+  function tarjetaVentaSinExist() {
+    const c = (D().config || {}).ventaSinExist || {}, d15 = new Date(Date.now() + 15 * 86400000), def = new Date(d15 - d15.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const neg = {}; (D().stock || []).forEach(x => { if (x.q < -0.0001) (neg[x.s] = neg[x.s] || []).push(x); });
+    const nNeg = Object.keys(neg).reduce((t, k) => t + neg[k].length, 0);
+    return `<div class="tarjeta" style="${c.vigente ? 'border-color:var(--aviso)' : ''}"><h3>📦 Vender aunque el sistema no tenga existencia</h3>
+      <p class="muted">Úsalo mientras haces los inventarios físicos. Solo aplica a <b>notas de venta</b> (crear, editar y entregar): si el sistema no tiene piezas, la nota se guarda y la existencia queda en <b>negativo</b>; la app avisa qué productos quedaron así. Traspasos y ajustes siguen validando existencia.</p>
+      <div class="fila"><label class="check fijo"><input type="checkbox" id="vseAct" ${c.vigente ? 'checked' : ''}> Permitir</label>
+        <label class="fijo">Hasta<input type="date" id="vseHasta" value="${esc(c.vigente && c.hasta ? c.hasta : def)}"></label>
+        <button class="btn primario fijo" onclick="App.guardarVentaSinExist()">Guardar</button></div>
+      <p class="muted" style="margin-top:6px">${c.vigente ? `Activo${c.hasta ? ' hasta el ' + esc(fechaCorta(c.hasta)) : ''} · lo activó ${esc(c.quien || '')}` : c.activo && c.hasta ? 'Venció el ' + esc(fechaCorta(c.hasta)) + ': las ventas vuelven a validar existencia.' : 'Desactivado: las ventas validan existencia.'}</p>
+      ${nNeg ? `<details style="margin-top:8px"><summary><b>${nNeg}</b> lote(s) con existencia negativa (revísalos en el inventario físico)</summary>${Object.keys(neg).map(k => `<p style="margin:8px 0 2px"><b>${esc(sucNom(k))}</b></p>` +
+        neg[k].map(x => `<div class="muted" style="font-size:13px">${esc((prod(x.p) || {}).nombre || x.p)} · lote ${esc(x.l)} · <span class="error">${nf(x.q)}</span></div>`).join('')).join('')}</details>` : ''}</div>`;
+  }
+  async function guardarVentaSinExist() {
+    const act = $('#vseAct').checked, hasta = $('#vseHasta').value;
+    if (act && hasta && hasta < hoyISO()) return toast('La fecha "hasta" ya pasó', true);
+    try { const c = await pedir('guardarVentaSinExist', { activo: act, hasta: hasta }); S.datos.config = Object.assign(D().config || {}, { ventaSinExist: c }); LS.set('datos', S.datos);
+      toast(c.vigente ? '✔ Ventas sin existencia permitidas' + (c.hasta ? ' hasta el ' + fechaCorta(c.hasta) : '') : '✔ Las ventas vuelven a validar existencia'); V.config(); } catch (e) {}
+  }
+
   /* ---------- SUCURSALES (foto) ---------- */
   function cargarSucsCfg() {
     const el = $('#cfSucs'); if (!el) return;
@@ -1312,7 +1335,7 @@ const App = (() => {
   }
   async function entregarVenta(id) {
     if (!confirm('¿Marcar la nota como Entregada? Se descontarán las piezas del inventario de la sucursal.')) return;
-    try { await pedir('entregarVenta', { ID_Venta: id }); toast('✔ Nota entregada: inventario descontado'); refrescarStock(); verVenta(id); if ($('#lVentas')) buscarVentas(); } catch (e) {}
+    try { const r = await pedir('entregarVenta', { ID_Venta: id }); toast('✔ Nota entregada: inventario descontado'); (r.avisos || []).forEach(a => setTimeout(() => toast('⚠️ ' + a, true), 2900)); refrescarStock(); verVenta(id); if ($('#lVentas')) buscarVentas(); } catch (e) {}
   }
   function formEnvio(id) {
     const d = S.ultimaVenta, cat = D().catalogos || {};
@@ -4260,6 +4283,7 @@ const App = (() => {
         <div class="fila"><button class="btn fijo" onclick="App.cargarGrupos()">Ver / editar grupos</button></div><div id="cfGrupos" style="margin-top:12px"></div></div>` : ''}
       ${puede('configuracion') ? `<div class="tarjeta"><h3>Registros de inventario</h3><p class="muted">Busca renglones de compras, ventas y traspasos que ya tienen su movimiento en <b>Movimientos_Inventario</b> pero aún dicen <i>Mov_Registrado = FALSE</i>, y órdenes o notas que ya deberían estar como recibidas / entregadas. La app nunca vuelve a meter al inventario un renglón que ya tiene movimiento.</p>
         <div class="fila"><button class="btn fijo" onclick="App.repararRegistros(false)">Revisar registros</button></div><div id="cfReg" style="margin-top:12px"></div></div>` : ''}
+      ${u.rol === 'Administrador' ? tarjetaVentaSinExist() : ''}
       ${puede('configuracion') ? '<div class="tarjeta"><h3>Folios por sucursal</h3><p class="muted">Último número usado. El siguiente documento tomará el número + 1 (la app nunca repite un folio ya existente).</p><div id="cfFol"></div></div>' : ''}`;
     if (u.rol === 'Administrador') cargarVendedores();
     if (u.rol === 'Administrador' && puede('recetas')) cargarCfgReceta();
@@ -4356,7 +4380,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    precargarAhora, vistaActual: () => S.vista, verSucCfg,
+    precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, asignarSucGastos, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
