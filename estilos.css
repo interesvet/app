@@ -494,6 +494,7 @@ tr.grupo small { color: var(--texto-2); font-weight: 500; }
 .doc-suc { height: 64px; width: auto; max-width: 140px; object-fit: cover; border-radius: 8px; border: 1px solid var(--borde); background: #fff; }
 .doc-suc:not([src]) { display: none; }
 .tr-emp .doc-suc { height: 56px; }
+.avatar-logo img { object-fit: contain; padding: 2px; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

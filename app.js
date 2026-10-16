@@ -52,6 +52,9 @@ const App = (() => {
     return (D().stock || []).filter(s => s.p === idProd && s.s === suc && s.q > 0)
       .sort((a, b) => ((fechaDe(a.c) || new Date(9e15)) - (fechaDe(b.c) || new Date(9e15))));
   }
+  /** "Otras sucursales: Champotón 4 · Escárcega 2" (solo las que tienen existencia). */
+  const existOtras = (idProd, suc) => { const m = {}; (D().stock || []).forEach(s => { if (s.p === idProd && s.s !== suc && s.q > 0) m[s.s] = (m[s.s] || 0) + s.q; });
+    const l = Object.keys(m).map(k => sucNom(k) + ' ' + nf(m[k])); return l.length ? 'Otras sucursales: ' + l.join(' · ') : ''; };
   const existencia = (idProd, suc) => r2((D().stock || []).filter(s => s.p === idProd && (!suc || s.s === suc)).reduce((t, s) => t + s.q, 0));
   /** Existencia de todos los productos de una vez (suc vacío = todas). */
   const mapaExist = suc => { const m = {}; (D().stock || []).forEach(s => { if (!suc || s.s === suc) m[s.p] = (m[s.p] || 0) + s.q; }); return m; };
@@ -65,7 +68,7 @@ const App = (() => {
 
   /* ---------------- interfaz común ---------------- */
   /** Foto de la sucursal que emite el documento (se llena sola; sin foto no ocupa espacio). */
-  const fotoSucDoc = id => { const x = (D().sucursales || []).find(o => o.id === id); if (!x || !x.foto) return ''; setTimeout(llenarFotosSuc, 0); return `<img class="doc-suc" data-sucdoc="${esc(id)}" alt="">`; };
+  const fotoSucDoc = id => { const x = (D().sucursales || []).find(o => o.id === id); if (!x || !x.foto || esMatriz(id)) return ''; setTimeout(llenarFotosSuc, 0); return `<img class="doc-suc" data-sucdoc="${esc(id)}" alt="">`; };
   async function llenarFotosSuc() {
     const ims = Array.from(document.querySelectorAll('img[data-sucdoc]:not([src])')); if (!ims.length) return;
     S.minis = S.minis || {}; const m = S.minis.sucFoto = Object.assign(LS.get('minisSuc', {}), S.minis.sucFoto || {});
@@ -388,7 +391,10 @@ const App = (() => {
       <button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div>`;
     cargarAvatares($('#menu'));
   }
-  const avatarSuc = id => { const x = (D().sucursales || []).find(o => o.id === id) || {}; return avatar('sucFoto', id, x.foto, x.nombre || id); };
+  const esMatriz = id => { const x = (D().sucursales || []).find(o => o.id === id); return id === 'SUC_MAT_1' || !!(x && /^matriz$/i.test(String(x.tipo || ''))); };
+  const avatarSuc = id => { const x = (D().sucursales || []).find(o => o.id === id) || {};
+    if (esMatriz(id) && window.LOGO) return `<span class="avatar con-foto avatar-logo"><img src="${window.LOGO}" alt=""><b>M</b></span>`;
+    return avatar('sucFoto', id, x.foto, x.nombre || id); };
   function cambiarSuc(v) { S.suc = v; LS.set('suc', v); ir(S.vista); }
   function menu(v) { document.body.classList.toggle('menu-abierto', v); }
   /* Secciones con pestañas: cada pestaña es una pantalla (v) y opcionalmente una sub-pestaña (a). */
@@ -778,7 +784,7 @@ const App = (() => {
         if (l.lote && !ls.some(x => x.k === l.lote)) ls.unshift({ k: l.lote, l: 'Lote actual ' + l.lote.replace(l.id + '-' + sucNom(v.suc) + '-', '').replace(/-([^-]*)$/, ' · $1'), c: 'de esta nota', q: '' });
         return `<div class="linea" data-i="${i}">
           <div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)} · Exist. ${nf(existencia(l.id, v.suc))}${p.iva ? ' · IVA <span data-iva></span>' : ''}</small></div>
-          <div>${p.usaLote === false ? '<small class="muted">Sin lote</small>' : `<select data-f="lote"><option value="">Auto (caduca primero)</option>${ls.map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)}${x.q !== '' ? ' · ' + nf(x.q) : ''}</option>`).join('')}</select>`}</div>
+          <div>${p.usaLote === false && !ls.length ? '<small class="muted">Sin lote</small>' : `<select data-f="lote"><option value="">Auto (caduca primero)</option>${ls.map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)}${x.q !== '' ? ' · ' + nf(x.q) : ''}</option>`).join('')}</select>`}</div>
           <div><input type="number" data-f="cant" min="0" step="any" value="${l.cant}" inputmode="decimal"></div>
           <div><input type="number" data-f="precio" step="0.01" value="${l.precio}" ${editarPrecio ? '' : 'readonly'} inputmode="decimal"><span data-ref>${refPrecio(p.precios[v.lista], l.precio)}</span></div>
           <div><input type="number" data-f="desc" step="0.01" value="${l.desc}" ${editarPrecio ? '' : 'readonly'} inputmode="decimal"></div>
@@ -1079,6 +1085,7 @@ const App = (() => {
       : (r.motivo && !ARCH_SOLOVER[tipo] ? `<p class="muted" style="margin:6px 0 0;font-size:13px">${esc(r.motivo)}</p>` : '');
     el.innerHTML = `<h4>${ARCH_TIT[tipo]} <span class="muted" style="font-weight:400;font-size:13px">${foto ? '' : a.length ? a.length + (a.length === 1 ? ' archivo' : ' archivos') : 'sin archivos'}</span></h4>
       ${foto ? `<div class="arch-foto">${act ? `<img alt="" data-actual="${act.id}" onclick="App.verArch('${tipo}','${esc(id)}','${act.id}')"><span class="muted">Cargando imagen…</span>` : '<span class="muted">Sin imagen</span>'}</div>` : ''}
+      ${tipo === 'sucFoto' && act && r.quitar ? `<button class="btn chico peligro" style="margin-top:6px" onclick="App.quitarArch('${tipo}','${esc(id)}','${act.id}')">🗑️ Quitar imagen</button>` : ''}
       ${foto && resto.length ? `<details style="margin-top:6px"><summary class="muted" style="font-size:13px;cursor:pointer">Anteriores (${resto.length})</summary>${resto.map(fila).join('')}</details>` : resto.map(fila).join('')}
       ${!foto && !a.length ? `<p class="muted" style="margin:4px 0 0;font-size:13px">No hay archivos.</p>` : ''}${subir}`;
     if (act) {
@@ -1209,11 +1216,16 @@ const App = (() => {
   function verSucCfg(i) {
     const x = S.sucsCfg[i]; if (!x) return;
     const dato = (t, v) => v ? `<p style="margin:4px 0"><span class="muted">${t}:</span> ${esc(v)}</p>` : '';
-    modal('🏬 ' + x.nombre, `<div class="arch-par">${bloqueArch('sucFoto', x.id)}</div>
+    const fotoBloque = bloqueFotoSuc(x.id);
+    modal('🏬 ' + x.nombre, `<div class="arch-par">${fotoBloque}</div>
       <div class="tarjeta" style="margin-top:10px">${dato('Tipo', x.tipo)}${dato('Dirección', x.direccion)}${dato('Teléfono', x.tel)}${dato('Correo', x.email)}${dato('Serie de notas', x.serie)}${dato('Lista de precios', x.lista)}</div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
   }
-
+  /** Imagen de la sucursal: Matriz usa el logotipo general; las demás su foto (con Cambiar / Quitar). */
+  function bloqueFotoSuc(id) {
+    return esMatriz(id) ? `<div class="fact-bloque arch-bloque"><h4>🏬 Imagen de la sucursal</h4><div class="arch-foto">${window.LOGO ? `<img src="${window.LOGO}" alt="" style="background:#fff">` : '<span class="muted">Sin logotipo</span>'}</div>
+      <p class="muted" style="margin:6px 0 0;font-size:13px">Matriz usa el <b>logotipo general</b> de la app (en notas y documentos solo sale una vez). Se cambia en Configuración → Logotipo de la empresa.</p></div>` : bloqueArch('sucFoto', id);
+  }
   /* ---------- VENDEDORES (fotos) y LOGOTIPO DE LA EMPRESA ---------- */
   async function cargarVendedores() {
     const el = $('#cfVend'); if (!el) return;
@@ -1376,7 +1388,7 @@ const App = (() => {
         <div class="tarjeta"><h3>Totales</h3><div class="totales" id="cTot"></div>
           <div class="acciones"><button class="btn peligro" onclick="App.limpiarCot()">${ed ? 'Salir sin guardar' : 'Descartar'}</button>
           <button class="btn primario" id="cGuardar" onclick="App.guardarCot()">${ed ? '💾 Guardar cambios' : '💾 Guardar cotización'}</button></div></div></div>`;
-    if ($('#cSuc')) $('#cSuc').onchange = e => { v.suc = e.target.value; guardarBorradorCot(); V.cotizaciones('nueva'); };
+    if ($('#cSuc')) $('#cSuc').onchange = e => { v.suc = e.target.value; v.lineas.forEach(l => l.lote = ''); guardarBorradorCot(); V.cotizaciones('nueva'); };
     buscador($('#cCli'), { fuente: fuenteClientes, alElegir: x => elegirClienteCot(x.id) });
     buscador($('#cProd'), { fuente: q => fuenteProductos(v.suc, v.lista, true)(q), limpiar: true, alElegir: x => agregarLineaCot(x.id) });
     $('#cObs').oninput = e => { v.obs = e.target.value; guardarBorradorCot(); };
@@ -1398,14 +1410,17 @@ const App = (() => {
   function pintarLineasCot() {
     const v = S.cot, ep = puede('precio_editar'), cont = $('#cLineas');
     cont.innerHTML = !v.lineas.length ? '<div class="vacio">Agrega productos con el buscador</div>' :
-      `<div class="linea cab"><div>Producto</div><div></div><div>Cant.</div><div>Precio</div><div>Desc %</div><div class="num">Importe</div><div></div></div>` +
-      v.lineas.map((l, i) => { const p = prod(l.id) || { nombre: l.id };
-        return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)} · Exist. ${nf(existencia(l.id, v.suc))}${p.iva ? ' · IVA <span data-iva></span>' : ' · Exento de IVA'}</small></div><div></div>
+      `<div class="linea cab"><div>Producto</div><div>Lote</div><div>Cant.</div><div>Precio</div><div>Desc %</div><div class="num">Importe</div><div></div></div>` +
+      v.lineas.map((l, i) => { const p = prod(l.id) || { nombre: l.id }, ls = lotes(l.id, v.suc), ex = existencia(l.id, v.suc), otras = existOtras(l.id, v.suc);
+        if (l.lote && !ls.some(x => x.k === l.lote)) ls.unshift({ k: l.lote, l: (l.loteTxt || 'Lote guardado'), c: l.cadTxt || 'sin existencia hoy', q: '' });
+        const selLote = ls.length ? `<select data-f="lote"><option value="">Auto (caduca primero)</option>${ls.map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)}${x.q !== '' ? ' · ' + nf(x.q) + ' disp.' : ''}</option>`).join('')}</select>`
+          : `<small class="${ex > 0 ? 'muted' : 'error'}">${ex > 0 ? 'Sin lote' : 'Sin existencia en ' + esc(sucNom(v.suc))}</small>`;
+        return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)} · Exist. <span style="font-weight:600" class="${ex < (Number(l.cant) || 0) ? 'error' : ''}">${nf(ex)}</span> en ${esc(sucNom(v.suc))}${p.iva ? ' · IVA <span data-iva></span>' : ' · Exento de IVA'}</small>${otras ? `<small class="muted">${esc(otras)}</small>` : ''}</div><div>${selLote}</div>
           <div><input type="number" data-f="cant" min="0" step="any" value="${l.cant}" inputmode="decimal"></div>
           <div><input type="number" data-f="precio" step="0.01" value="${l.precio}" ${ep ? '' : 'readonly'} inputmode="decimal"><span data-ref>${refPrecio((p.precios || {})[v.lista], l.precio)}</span></div>
           <div><input type="number" data-f="desc" step="0.01" value="${l.desc}" ${ep ? '' : 'readonly'} inputmode="decimal"><small class="ref-precio baja" data-dsc></small></div>
           <div class="num" data-imp></div><div class="lin-btns">${ep ? '<button class="icono" data-regalo title="Sin cargo ($0.01)">🎁</button>' : ''}<button class="icono" data-del title="Quitar">✕</button></div></div>`; }).join('');
-    cont.oninput = cont.onchange = e => { const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return; const l = v.lineas[+row.dataset.i]; l[f] = Number(e.target.value) || 0;
+    cont.oninput = cont.onchange = e => { const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return; const l = v.lineas[+row.dataset.i]; l[f] = f === 'lote' ? e.target.value : Number(e.target.value) || 0;
       if (f === 'precio') { const p = prod(l.id) || { precios: {} }; row.querySelector('[data-ref]').innerHTML = refPrecio(p.precios[v.lista], l.precio); }
       guardarBorradorCot(); totalesCot(); };
     cont.onclick = e => { const row = e.target.closest('[data-i]'); if (!row) return;
@@ -1437,7 +1452,7 @@ const App = (() => {
     $('#cGuardar').disabled = true;
     try {
       const r = await pedir('guardarCotizacion', { ID_Cotizacion: v.editId || v.nuevoId || (v.nuevoId = uid()), nueva: !v.editId, ID_Sucursal: v.suc, ID_Cliente: v.cli, Observacion: v.obs,
-        lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc })) });
+        lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, lote: l.lote || '' })) });
       toast('✔ Cotización ' + r.folio + ' guardada · ' + $$(r.total));
       S.cot = cotNueva(); guardarBorradorCot(); S.tabCot = 'lista';
       if (S.fcot && S.fcot.hasta && S.fcot.hasta < hoyISO()) { S.fcot.hasta = hoyISO(); S.fcot.hastaHoy = S.fcot.hasta; }   // que la nueva sí aparezca en la lista
@@ -1454,8 +1469,8 @@ const App = (() => {
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
         <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${esc(d.rfc || '')} ${esc(d.domicilio || '')}</div>
         <div style="text-align:right">Atendió: ${esc(d.vendedor || '')}</div></div>
-      <div class="tabla-cont"><table><thead><tr><th class="num">Cant.</th><th>Producto</th><th class="num">Precio unit.</th>${d.desc ? '<th class="num">Descuento</th>' : ''}<th class="num">IVA</th><th class="num">Importe</th></tr></thead><tbody>
-      ${d.lineas.map(l => `<tr><td class="num">${nf(l.cant)}</td><td>${esc(l.nombre)}</td><td class="num">${$$(l.precioLista !== undefined ? l.precioLista : l.precio)}</td>${d.desc ? `<td class="num">${l.desc ? '−' + $$(l.desc) : '—'}</td>` : ''}<td class="num">${l.iva ? $$(l.ivaMonto !== undefined ? l.ivaMonto : l.importe * l.iva) : 'Exento'}</td><td class="num">${$$(l.bruto !== undefined ? l.bruto : l.importe)}</td></tr>`).join('')}
+      <div class="tabla-cont"><table><thead><tr><th class="num">Cant.</th><th>Producto</th>${d.lineas.some(l => l.lote) ? '<th>Lote</th><th>Cad.</th>' : ''}<th class="num">Precio unit.</th>${d.desc ? '<th class="num">Descuento</th>' : ''}<th class="num">IVA</th><th class="num">Importe</th></tr></thead><tbody>
+      ${d.lineas.map(l => `<tr><td class="num">${nf(l.cant)}</td><td>${esc(l.nombre)}</td>${d.lineas.some(x => x.lote) ? `<td>${esc(l.lote || 'Auto')}</td><td>${esc(l.cad || '')}</td>` : ''}<td class="num">${$$(l.precioLista !== undefined ? l.precioLista : l.precio)}</td>${d.desc ? `<td class="num">${l.desc ? '−' + $$(l.desc) : '—'}</td>` : ''}<td class="num">${l.iva ? $$(l.ivaMonto !== undefined ? l.ivaMonto : l.importe * l.iva) : 'Exento'}</td><td class="num">${$$(l.bruto !== undefined ? l.bruto : l.importe)}</td></tr>`).join('')}
       </tbody></table></div>
       <div class="totales" style="margin-top:10px">${totalesHtml(d.sub, d.desc || 0, d.iva, d.total)}</div>
       ${d.letras ? `<p><small>(${esc(d.letras)})</small></p>` : ''}${d.obs ? `<p><small>${esc(d.obs)}</small></p>` : ''}
@@ -1478,7 +1493,7 @@ const App = (() => {
     if (S.cot && S.cot.lineas.length && S.cot.editId !== id && !confirm('Tienes una cotización en captura que se va a descartar. ¿Continuar?')) return;
     const listas = (D().catalogos || {}).listas || [], c = cliente(d.idCliente);
     S.cot = { editId: d.id, editFolio: d.folio, suc: d.sucursal.id, cli: d.idCliente, lista: c && listas.indexOf(c.lista) >= 0 ? c.lista : 'Publico', obs: d.obs, descPC: 0, flete: 0,
-      lineas: d.lineas.map(l => ({ id: l.prod, cant: l.cant, precio: l.descPct ? l.precioLista : l.precio, desc: l.descPct || 0 })) };
+      lineas: d.lineas.map(l => ({ id: l.prod, cant: l.cant, precio: l.descPct ? l.precioLista : l.precio, desc: l.descPct || 0, lote: l.k || '', loteTxt: l.lote || '', cadTxt: l.cad || '' })) };
     guardarBorradorCot(); cerrarModal(); S.tabCot = 'nueva'; ir('cotizaciones');
   }
   function cotAVenta(id) {
@@ -1488,7 +1503,7 @@ const App = (() => {
     if ((D().permitidas || []).indexOf(d.sucursal.id) >= 0) v.suc = d.sucursal.id;
     v.cli = d.idCliente; v.lista = c && listas.indexOf(c.lista) >= 0 ? c.lista : 'Publico'; v.dias = c ? c.credito || 0 : 0; v.metodo = v.dias > 0 ? 'PPD' : 'PUE';
     v.comentarios = 'Cotización ' + d.folio + (d.obs ? ' · ' + d.obs : '');
-    v.lineas = d.lineas.map(l => ({ id: l.prod, cant: l.cant, precio: l.descPct ? l.precioLista : l.precio, desc: l.descPct || 0, lote: '' }));
+    v.lineas = d.lineas.map(l => ({ id: l.prod, cant: l.cant, precio: l.descPct ? l.precioLista : l.precio, desc: l.descPct || 0, lote: l.k && lotes(l.prod, v.suc).some(x => x.k === l.k) ? l.k : '' }));
     v.desdeCot = { id: d.id, folio: d.folio };
     S.venta = v; guardarBorrador(); cerrarModal(); ir('venta');
     const sin = d.lineas.filter(l => existencia(l.prod, v.suc) < l.cant); if (sin.length) toast('⚠️ ' + sin.length + ' producto(s) sin existencia suficiente en ' + sucNom(v.suc), true);
@@ -2051,7 +2066,7 @@ const App = (() => {
     const pct = v => x.ventas ? (v / x.ventas * 100).toFixed(1) + '%' : '—';
     const fila = (t, v, neg, tot) => `<tr class="${tot ? 'res-total' : ''}"><td>${neg ? '<span style="padding-left:16px"></span>' : ''}${t}</td><td class="num ${!neg && v < 0 ? 'error' : ''}">${neg ? '−' + $$(Math.abs(v)) : $$(v)}</td><td class="num muted">${pct(v)}</td></tr>`;
     const kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
-    modal('🔒 ' + x.nombre, `<div class="arch-par">${bloqueArch('sucFoto', x.suc)}</div><div class="kpis">${kpi('Notas', nf(x.notas), 'ticket ' + $$(x.ticket))}${kpi('Clientes', nf(x.clientes), 'compraron en el periodo')}${kpi('Cobrado', $$(x.cobrado), 'por cobrar ' + $$(x.cxc) + ' · vencido ' + $$(x.cxcVencida))}
+    modal('🔒 ' + x.nombre, `<div class="arch-par">${bloqueFotoSuc(x.suc)}</div><div class="kpis">${kpi('Notas', nf(x.notas), 'ticket ' + $$(x.ticket))}${kpi('Clientes', nf(x.clientes), 'compraron en el periodo')}${kpi('Cobrado', $$(x.cobrado), 'por cobrar ' + $$(x.cxc) + ' · vencido ' + $$(x.cxcVencida))}
       ${kpi('Inventario', $$(x.inventario), nf(x.piezas) + ' pzs · ' + nf(x.productos) + ' productos')}${kpi('Días de inventario', x.diasInventario === null ? '—' : nf(x.diasInventario), 'GMROI ' + (x.gmroi === null ? '—' : x.gmroi))}
       ${kpi('Traspasos', $$(x.traspasosRecibidos), 'recibidos · enviados ' + $$(x.traspasosEnviados))}</div>
       <div class="rejilla-2"><div><h4>Estado de resultados</h4><div class="tabla-cont"><table class="estado-res"><tbody>
