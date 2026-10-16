@@ -3533,7 +3533,7 @@ const App = (() => {
       return ps.filter(p => C.ids[p.id] || (p.activo && (filtro || !ids.length) && (!C.labs.length || C.labs.indexOf(p.lab) >= 0) && (!C.cats.length || C.cats.indexOf(p.categoria) >= 0))); };
     S.portEnPdf = enPdf;
     const cuenta = () => { const l = enPdf(), nP = Object.keys(C.ids).filter(k => C.ids[k]).length;
-      $('#cpCuenta').innerHTML = `El PDF llevará <b>${l.length}</b> ${l.length === 1 ? 'producto' : 'productos'}${l.length > 300 ? ' <b class="txt-mal">(máximo 300: acota la selección)</b>' : ''}` +
+      $('#cpCuenta').innerHTML = `El PDF llevará <b>${l.length}</b> ${l.length === 1 ? 'producto' : 'productos'}${l.length > PORT_LOTE ? ' <span class="muted">(se arma por partes; puede tardar unos minutos)</span>' : ''}` +
         `<span class="muted"> · ${!C.labs.length && !C.cats.length && !nP ? 'todo el portafolio activo' : [C.labs.length ? C.labs.length + ' laboratorio(s)' : '', C.cats.length ? C.cats.length + ' categoría(s)' : '', nP ? nP + ' elegido(s) a mano' : ''].filter(Boolean).join(' + ')}</span>`;
       $('#cpNL').textContent = C.labs.length ? '(' + C.labs.length + ')' : ''; $('#cpNC').textContent = C.cats.length ? '(' + C.cats.length + ')' : ''; $('#cpNP').textContent = nP; };
     const box = $('#pCont .cat-pdf');
@@ -3626,19 +3626,70 @@ const App = (() => {
     await Promise.all(trab);
     return pend.length;
   }
+  const PORT_LOTE = 60;            // productos por parte del PDF (los portafolios grandes se arman por partes y se unen aquí)
+  function cargarPdfLib() {
+    if (window.PDFLib) return Promise.resolve(window.PDFLib);
+    return new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https:' + '\/\/cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+      sc.onload = () => window.PDFLib ? res(window.PDFLib) : rej(new Error('No se pudo cargar el unidor de PDF')); sc.onerror = () => rej(new Error('No se pudo cargar el unidor de PDF (revisa la conexión)')); document.head.appendChild(sc); });
+  }
+  const b64aBytes = b => { const s = atob(b), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; };
+  function bytesAB64(u) { let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); }
   async function pdfCatalogo() {
     const C = S.catPdf || { labs: [], cats: [], ids: {} }, l = S.portEnPdf ? S.portEnPdf() : [];
     if (!l.length) return toast('No hay productos en la selección', true);
-    if (l.length > 300) return toast('Son ' + l.length + ' productos: acota a 300 o menos', true);
-    const ids = Object.keys(C.ids || {}).filter(k => C.ids[k]);
+    const ids = Object.keys(C.ids || {}).filter(k => C.ids[k]), sel = { labs: C.labs, cats: C.cats, ids: ids };
     const t = [C.labs.join(', '), C.cats.join(', ')].filter(Boolean).join(' · ') || (ids.length ? 'Selección de productos' : 'Portafolio completo');
-    modal('📄 Portafolio de productos', `<p><b>${l.length}</b> productos · ${esc(t)}</p><p id="cpProg" class="muted">Revisando imágenes…</p><div class="barra-prog"><div id="cpBarra" style="width:5%"></div></div>`);
+    const info = { asunto: 'Portafolio de productos Interés Veterinario — ' + t, texto: 'Le comparto nuestro portafolio de productos (' + t + '):', volver: "App.vistaProductos('port')" };
+    modal('📄 Portafolio de productos', `<p><b>${l.length}</b> productos · ${esc(t)}</p><p id="cpProg" class="muted">Revisando imágenes…</p><div class="barra-prog"><div id="cpBarra" style="width:3%"></div></div>
+      <p class="muted" style="font-size:12px;margin-top:10px">No cierres esta ventana mientras se arma el PDF.</p>`);
+    const prog = (txt, pct) => { const e = $('#cpProg'), b = $('#cpBarra'); if (e) e.textContent = txt; if (b && pct !== undefined) b.style.width = Math.round(pct) + '%'; };
     try {
-      await prepararSinFondo(l.filter(p => p.foto).map(p => p.id), (n, tot) => { const e = $('#cpProg'), b = $('#cpBarra'); if (e) e.textContent = 'Quitando el fondo de las imágenes: ' + n + ' de ' + tot + ' (solo la primera vez)…'; if (b) b.style.width = Math.round(5 + 75 * n / Math.max(1, tot)) + '%'; });
+      await prepararSinFondo(l.filter(p => p.foto).map(p => p.id), (n, tot) => prog('Quitando el fondo de las imágenes: ' + n + ' de ' + tot + ' (solo la primera vez)…', 3 + 27 * n / Math.max(1, tot)));
     } catch (e) { if (e.red) return; }
-    if ($('#cpProg')) { $('#cpProg').textContent = 'Armando el PDF… puede tardar unos segundos.'; $('#cpBarra').style.width = '90%'; }
-    generarPdf('pdfCatalogo', { labs: C.labs, cats: C.cats, ids: ids }, { asunto: 'Portafolio de productos Interés Veterinario — ' + t, texto: 'Le comparto nuestro portafolio de productos (' + t + '):', volver: "App.vistaProductos('port')" });
+    if (l.length <= PORT_LOTE) { prog('Armando el PDF… puede tardar unos segundos.', 90); return generarPdf('pdfCatalogo', sel, info); }
+    // ---- portafolio grande: por partes
+    let lista;
+    try { lista = await pedir('portafolioIds', sel); } catch (e) { return; }
+    const n = lista.ids.length, partes = Math.ceil(n / PORT_LOTE), pdfs = [];
+    try {
+      for (let k = 0; k < partes; k++) {
+        prog('Armando el PDF: parte ' + (k + 1) + ' de ' + partes + '…', 30 + 50 * k / partes);
+        const ini = k * PORT_LOTE, r = await pedir('pdfCatalogo', { orden: lista.ids.slice(ini, ini + PORT_LOTE), parte: true, portada: k === 0, pie: k === partes - 1,
+          labPrevio: ini ? lista.labs[ini - 1] : '', todosLabs: lista.labs, total: n, titulo: lista.titulo });
+        pdfs.push(r.b64);
+      }
+      prog('Uniendo las ' + partes + ' partes…', 82);
+      const PL = await cargarPdfLib(), doc = await PL.PDFDocument.create();
+      for (const b of pdfs) { const src = await PL.PDFDocument.load(b64aBytes(b)); (await doc.copyPages(src, src.getPageIndices())).forEach(pg => doc.addPage(pg)); }
+      doc.setTitle('Portafolio de productos — Interés Veterinario'); doc.setAuthor('Interés Veterinario');
+      const bytes = await doc.save(), nombre = (/^Portafolio/.test(lista.titulo) ? '' : 'Portafolio ') + String(lista.titulo).slice(0, 60) + ' ' + hoyISO();
+      const local = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      // guardar en Drive: pedazos de 3 MB (múltiplos de 3 bytes para poder pegar el base64)
+      prog('Guardando en tu Drive…', 90);
+      let r = null;
+      try {
+        const T = 3 * 1024 * 1024, ses = uid(), nP = Math.ceil(bytes.length / T);
+        for (let k = 0; k < nP; k++) { await pedir('subirPdfParte', { sesion: ses, i: k, b64: bytesAB64(bytes.subarray(k * T, (k + 1) * T)) }); prog('Guardando en tu Drive… ' + (k + 1) + ' de ' + nP, 90 + 9 * (k + 1) / nP); }
+        r = await pedir('unirPdfPartes', { sesion: ses, n: nP, nombre: nombre, productos: n });
+      } catch (e) { r = null; }
+      const msg = info.texto + (r ? '\n' + r.url : '');
+      modal('PDF listo', `<p>📄 <b>${esc(nombre)}.pdf</b> · ${n} productos · ${(bytes.length / 1048576).toFixed(1)} MB</p>
+        <p class="muted">${r ? 'Quedó guardado en tu Drive, carpeta “Interés Veterinario - PDF / Portafolios”.' : 'No se pudo guardar en Drive; descárgalo y compártelo desde tu equipo.'}</p>
+        <div class="acciones" style="justify-content:flex-start">
+          <a class="btn primario" href="${local}" download="${esc(nombre)}.pdf">⬇️ Descargar / abrir</a>
+          ${r ? `<a class="btn" href="${esc(r.url)}" target="_blank">📄 Abrir en Drive</a>
+          <a class="btn" target="_blank" href="${WA_BASE}?text=${encodeURIComponent(msg)}">💬 WhatsApp</a>
+          <a class="btn" target="_blank" href="mailto:?subject=${encodeURIComponent(info.asunto)}&body=${encodeURIComponent(msg)}">✉️ Correo</a>` : ''}
+          ${navigator.canShare ? `<button class="btn" onclick="App.compartirPdfLocal()">📤 Compartir</button>` : ''}
+          <button class="btn" onclick="${info.volver}">Volver</button></div>`);
+      S.pdfLocal = { bytes: bytes, nombre: nombre + '.pdf' };
+    } catch (e) { if (!e.red) toast(e.message || 'No se pudo armar el PDF', true); cerrarModal(); }
   }
+  async function compartirPdfLocal() {
+    const x = S.pdfLocal; if (!x) return;
+    try { const f = new File([x.bytes], x.nombre, { type: 'application/pdf' }); if (navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: x.nombre }); else toast('Este equipo no permite compartir archivos; usa Descargar', true); } catch (e) {}
+  }
+
   async function prodMargen() {
     const listas = (D().catalogos || {}).listas || [];
     $('#pCont').innerHTML = filtrosProd(`<label>Margen sobre<select id="pfBase"><option value="real">Costo real de compra</option><option value="lista">Costo de lista</option></select></label>
@@ -4763,7 +4814,7 @@ const App = (() => {
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes,
     actualizarStock: async () => { await refrescarStock(); pintarExist(); toast('Existencias actualizadas'); },
     kardexDe: id => { cerrarModal(); S.tabInv = 'kardex'; V.inventario('kardex'); invKardex(id); },
-    vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, firmaArch, guardarProducto,
+    vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
     abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
