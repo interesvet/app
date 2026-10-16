@@ -3515,6 +3515,51 @@ const App = (() => {
     enlazarFiltros(pintar); pintar();
   }
   /* ---------- PORTAFOLIO DE PRODUCTOS: datos técnicos, fichas y PDF para clientes (sin precios) ---------- */
+  /* ---- Presentaciones: el mismo producto en distintos tamaños se muestra una sola vez ----
+   *  "DORACIDE, Frasco de 50 ml." + "DORACIDE, Frasco de 500 ml." → DORACIDE · "Frascos de 50 y 500 ml." */
+  function presentacionesDe_(nombre) {
+    const s = String(nombre || '').replace(/\s+/g, ' ').trim(), i = s.indexOf(',');
+    let base = i >= 0 ? s.slice(0, i) : s, pres = i >= 0 ? s.slice(i + 1).trim() : '';
+    const m = base.match(/^(.*?\S)\s+(\d+(?:[.,]\d+)?\s*(?:ml|lts?|l|kgs?|grs?|g|mg)\.?)$/i);   // "SOLFOS-T 20 L"
+    if (m && m[1].length >= 2) { base = m[1]; if (!pres) pres = m[2]; }
+    return { base: base.replace(/[\s.,*-]+$/, '').trim(), pres: pres.replace(/^[\s,]+/, '') };
+  }
+  function claveGrupo_(lab, nombre) {
+    return String(lab || '').toUpperCase() + '|' + presentacionesDe_(nombre).base.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[®*™]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  const UNI_ = { ml: ['ml', 'v', 1], l: ['L', 'v', 1000], lt: ['L', 'v', 1000], lts: ['L', 'v', 1000], g: ['g', 'm', 1], gr: ['g', 'm', 1], grs: ['g', 'm', 1], kg: ['kg', 'm', 1000], kgs: ['kg', 'm', 1000], mg: ['mg', 'm', 0.001] };
+  function plural_(w) { const p = w.split(' '); p[0] = /[aeiouáéó]$/i.test(p[0]) ? p[0] + 's' : p[0] + 'es'; return p.join(' '); }
+  function y_(a) { return a.length <= 1 ? a.join('') : a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1]; }
+  const may_ = t => t.charAt(0).toUpperCase() + t.slice(1);
+  /** Junta las presentaciones: "Frascos de 50, 100 y 200 ml.", "Cajas con 60 y 180 caps."; las que no se parecen van en renglones. */
+  function resumenPresentaciones_(lista) {
+    const ps = []; lista.forEach(x => { const t = String(x || '').trim().replace(/\.+$/, ''); if (t && ps.indexOf(t) < 0) ps.push(t); });
+    if (!ps.length) return '';
+    const cubos = {}, orden = [], sueltas = [];
+    ps.forEach(p => {
+      const m = p.match(/^(?:(.*?)\s+(de|con)\s+)?(\d+(?:[.,]\d+)?)\s*([a-zA-Záéíóú]+)\.?$/);
+      if (!m) { sueltas.push(p); return; }
+      const k = UNI_[m[4].toLowerCase()] || [m[4], 'w:' + m[4].toLowerCase(), 1], cont = (m[1] || '').trim();
+      const key = cont.toLowerCase() + '|' + k[1];
+      if (!cubos[key]) { cubos[key] = { cont: cont, con: m[2] || 'de', l: [] }; orden.push(key); }
+      cubos[key].l.push({ n: m[3].replace(',', '.'), u: k[0], o: Number(m[3].replace(',', '.')) * k[2] });
+    });
+    const lineas = orden.map(key => {
+      const c = cubos[key], l = c.l.sort((a, b) => a.o - b.o);
+      if (l.length === 1) return (c.cont ? may_(c.cont) + ' ' + c.con + ' ' : '') + l[0].n + ' ' + l[0].u;
+      const partes = []; l.forEach(a => { const g = partes[partes.length - 1]; if (g && g.u === a.u) g.n.push(a.n); else partes.push({ u: a.u, n: [a.n] }); });
+      const tam = partes.length === 1 ? y_(partes[0].n) + ' ' + partes[0].u : y_(partes.map(g => y_(g.n) + ' ' + g.u));
+      return (c.cont ? plural_(may_(c.cont)) + ' ' + c.con + ' ' : '') + tam;
+    }).concat(sueltas.map(may_));
+    return lineas.length === 1 ? lineas[0] + '.' : lineas.map(t => '• ' + t + '.').join('\n');
+  }
+  /** Tarjetas del portafolio en la app: [{ base, pres, rep, miembros }] (productos del catálogo de la app). */
+    function agruparPortafolio(l) {
+      const m = {}, out = [];
+      l.forEach(p => { const k = claveGrupo_(p.lab, p.nombre); if (!m[k]) { m[k] = { base: presentacionesDe_(p.nombre).base, miembros: [] }; out.push(m[k]); } m[k].miembros.push(p); });
+      out.forEach(t => { t.pres = resumenPresentaciones_(t.miembros.map(p => presentacionesDe_(p.nombre).pres || p.unidad)); t.rep = t.miembros.find(p => p.foto) || t.miembros[0]; });
+      return out;
+    }
   function prodPortafolio() {
     const ps = D().productos || [];
     const cats = [...new Set(ps.map(p => p.categoria).filter(Boolean))].sort(), labs = [...new Set(ps.map(p => p.lab).filter(Boolean))].sort();
@@ -3532,8 +3577,8 @@ const App = (() => {
     const enPdf = () => { const ids = Object.keys(C.ids).filter(k => C.ids[k]), filtro = C.labs.length || C.cats.length;
       return ps.filter(p => C.ids[p.id] || (p.activo && (filtro || !ids.length) && (!C.labs.length || C.labs.indexOf(p.lab) >= 0) && (!C.cats.length || C.cats.indexOf(p.categoria) >= 0))); };
     S.portEnPdf = enPdf;
-    const cuenta = () => { const l = enPdf(), nP = Object.keys(C.ids).filter(k => C.ids[k]).length;
-      $('#cpCuenta').innerHTML = `El PDF llevará <b>${l.length}</b> ${l.length === 1 ? 'producto' : 'productos'}${l.length > PORT_LOTE ? ' <span class="muted">(se arma por partes; puede tardar unos minutos)</span>' : ''}` +
+    const cuenta = () => { const l = enPdf(), nG = agruparPortafolio(l).length, nP = Object.keys(C.ids).filter(k => C.ids[k]).length;
+      $('#cpCuenta').innerHTML = `El PDF llevará <b>${nG}</b> ${nG === 1 ? 'producto' : 'productos'}${l.length > nG ? ' <span class="muted">(' + l.length + ' presentaciones juntas)</span>' : ''}${nG > PORT_LOTE ? ' <span class="muted">· se arma por partes; puede tardar unos minutos</span>' : ''}` +
         `<span class="muted"> · ${!C.labs.length && !C.cats.length && !nP ? 'todo el portafolio activo' : [C.labs.length ? C.labs.length + ' laboratorio(s)' : '', C.cats.length ? C.cats.length + ' categoría(s)' : '', nP ? nP + ' elegido(s) a mano' : ''].filter(Boolean).join(' + ')}</span>`;
       $('#cpNL').textContent = C.labs.length ? '(' + C.labs.length + ')' : ''; $('#cpNC').textContent = C.cats.length ? '(' + C.cats.length + ')' : ''; $('#cpNP').textContent = nP; };
     const box = $('#pCont .cat-pdf');
@@ -3545,19 +3590,21 @@ const App = (() => {
       C[k] = todo ? (k === 'labs' ? labs : cats).slice() : []; box.querySelectorAll(`[data-c="${k}"]`).forEach(i => { i.checked = todo; i.parentNode.classList.toggle('on', todo); }); cuenta(); });
     const pintar = () => {
       const fi = $('#pfFicha').checked, el = $('#pfElegidos').checked;
-      const l = prodFiltrados().filter(p => (!fi || p.ficha) && (!el || C.ids[p.id])).sort((a, b) => String(a.lab || '').localeCompare(String(b.lab || '')) || a.nombre.localeCompare(b.nombre)); S.lista = l;
-      const nf2 = l.filter(p => p.ficha).length;
-      $('#pRes').innerHTML = `<p class="muted">${l.length} productos · ${nf2} con ficha técnica${l.length > 300 ? ' · se muestran los primeros 300: usa los filtros' : ''}</p><div class="port-grid">${l.slice(0, 300).map((p, i) => `
-        <div class="port-card${C.ids[p.id] ? ' elegido' : ''}" onclick="App.abrirProducto(${i})">
-          <label class="port-sel" onclick="event.stopPropagation()" title="Incluir en el PDF"><input type="checkbox" data-pid="${esc(p.id)}" ${C.ids[p.id] ? 'checked' : ''}></label>
+      const l = prodFiltrados().filter(p => (!fi || p.ficha) && (!el || C.ids[p.id])).sort((a, b) => String(a.lab || '').localeCompare(String(b.lab || '')) || a.nombre.localeCompare(b.nombre));
+      const T = agruparPortafolio(l); S.lista = T.map(t => t.rep); S.portTarj = T;
+      const nf2 = T.filter(t => t.miembros.some(p => p.ficha)).length;
+      $('#pRes').innerHTML = `<p class="muted">${T.length} productos${l.length > T.length ? ' (' + l.length + ' presentaciones)' : ''} · ${nf2} con ficha técnica${T.length > 300 ? ' · se muestran los primeros 300: usa los filtros' : ''}</p><div class="port-grid">${T.slice(0, 300).map((t, i) => { const p = t.rep, todos = t.miembros.every(m => C.ids[m.id]); return `
+        <div class="port-card${todos ? ' elegido' : ''}" onclick="App.abrirProducto(${i})">
+          <label class="port-sel" onclick="event.stopPropagation()" title="Incluir en el PDF"><input type="checkbox" data-pid="${esc(t.miembros.map(m => m.id).join(','))}" ${todos ? 'checked' : ''}></label>
           ${p.foto ? `<img class="port-img" data-mini="${esc(p.id)}" alt="">` : '<span class="port-img sin-foto">📦</span>'}
-          <div class="port-txt"><b>${esc(p.nombre)}</b><small class="muted">${esc(p.id)}${p.unidad ? ' · ' + esc(p.unidad) : ''}</small>
+          <div class="port-txt"><b>${esc(t.base || p.nombre)}</b><small class="muted">${esc(t.miembros.map(m => m.id).join(', '))}</small>
+          ${t.pres ? `<small class="port-pres">📦 ${esc(t.pres).replace(/\n/g, '<br>')}</small>` : ''}
           <small>${esc([p.lab, p.categoria].filter(Boolean).join(' · '))}</small>${p.especies ? `<small class="muted">🐾 ${esc(p.especies)}</small>` : ''}
-          <div class="port-etq">${p.registro ? `<span class="etq">Reg. ${esc(p.registro)}</span>` : ''}${p.ficha ? `<button class="etq ok" onclick="event.stopPropagation();App.verFicha('${esc(p.id)}')">📑 Ficha técnica</button>` : '<span class="etq av">Sin ficha</span>'}${p.activo ? '' : '<span class="etq mal">Inactivo</span>'}</div></div></div>`).join('')}</div>`;
+          <div class="port-etq">${p.registro ? `<span class="etq">Reg. ${esc(p.registro)}</span>` : ''}${(t.miembros.find(m => m.ficha)) ? `<button class="etq ok" onclick="event.stopPropagation();App.verFicha('${esc(t.miembros.find(m => m.ficha).id)}')">📑 Ficha técnica</button>` : '<span class="etq av">Sin ficha</span>'}${t.miembros.some(m => m.activo) ? '' : '<span class="etq mal">Inactivo</span>'}</div></div></div>`; }).join('')}</div>`;
       activarMinis($('#pRes'));
     };
-    $('#pRes').addEventListener('change', e => { const id = e.target.dataset && e.target.dataset.pid; if (!id) return; C.ids[id] = e.target.checked; if (!e.target.checked) delete C.ids[id]; e.target.closest('.port-card').classList.toggle('elegido', e.target.checked); cuenta(); });
-    $('#pfMarcar').onclick = () => { (S.lista || []).slice(0, 300).forEach(p => C.ids[p.id] = true); cuenta(); pintar(); };
+    $('#pRes').addEventListener('change', e => { const v = e.target.dataset && e.target.dataset.pid; if (!v) return; v.split(',').forEach(id => { if (e.target.checked) C.ids[id] = true; else delete C.ids[id]; }); e.target.closest('.port-card').classList.toggle('elegido', e.target.checked); cuenta(); });
+    $('#pfMarcar').onclick = () => { (S.portTarj || []).slice(0, 300).forEach(t => t.miembros.forEach(p => C.ids[p.id] = true)); cuenta(); pintar(); };
     enlazarFiltros(pintar); enlazarFiltro('#pfFicha', pintar); enlazarFiltro('#pfElegidos', pintar); cuenta(); pintar();
   }
   async function verFicha(id) {
@@ -3638,23 +3685,26 @@ const App = (() => {
     const C = S.catPdf || { labs: [], cats: [], ids: {} }, l = S.portEnPdf ? S.portEnPdf() : [];
     if (!l.length) return toast('No hay productos en la selección', true);
     const ids = Object.keys(C.ids || {}).filter(k => C.ids[k]), sel = { labs: C.labs, cats: C.cats, ids: ids };
+    const nT = agruparPortafolio(l).length;
     const t = [C.labs.join(', '), C.cats.join(', ')].filter(Boolean).join(' · ') || (ids.length ? 'Selección de productos' : 'Portafolio completo');
     const info = { asunto: 'Portafolio de productos Interés Veterinario — ' + t, texto: 'Le comparto nuestro portafolio de productos (' + t + '):', volver: "App.vistaProductos('port')" };
-    modal('📄 Portafolio de productos', `<p><b>${l.length}</b> productos · ${esc(t)}</p><p id="cpProg" class="muted">Revisando imágenes…</p><div class="barra-prog"><div id="cpBarra" style="width:3%"></div></div>
+    modal('📄 Portafolio de productos', `<p><b>${nT}</b> productos · ${esc(t)}</p><p id="cpProg" class="muted">Revisando imágenes…</p><div class="barra-prog"><div id="cpBarra" style="width:3%"></div></div>
       <p class="muted" style="font-size:12px;margin-top:10px">No cierres esta ventana mientras se arma el PDF.</p>`);
     const prog = (txt, pct) => { const e = $('#cpProg'), b = $('#cpBarra'); if (e) e.textContent = txt; if (b && pct !== undefined) b.style.width = Math.round(pct) + '%'; };
-    try {
-      await prepararSinFondo(l.filter(p => p.foto).map(p => p.id), (n, tot) => prog('Quitando el fondo de las imágenes: ' + n + ' de ' + tot + ' (solo la primera vez)…', 3 + 27 * n / Math.max(1, tot)));
-    } catch (e) { if (e.red) return; }
-    if (l.length <= PORT_LOTE) { prog('Armando el PDF… puede tardar unos segundos.', 90); return generarPdf('pdfCatalogo', sel, info); }
-    // ---- portafolio grande: por partes
     let lista;
-    try { lista = await pedir('portafolioIds', sel); } catch (e) { return; }
-    const n = lista.ids.length, partes = Math.ceil(n / PORT_LOTE), pdfs = [];
+    try { lista = await pedir('portafolioIds', sel); } catch (e) { return cerrarModal(); }
+    const fotoDe = {}; (D().productos || []).forEach(p => fotoDe[p.id] = p.foto);
+    try {
+      await prepararSinFondo(lista.reps.filter(id => fotoDe[id]), (n, tot) => prog('Quitando el fondo de las imágenes: ' + n + ' de ' + tot + ' (solo la primera vez)…', 3 + 27 * n / Math.max(1, tot)));
+    } catch (e) { if (e.red) return; }
+    const n = lista.grupos.length;
+    if (n <= PORT_LOTE) { prog('Armando el PDF… puede tardar unos segundos.', 90); return generarPdf('pdfCatalogo', sel, info); }
+    // ---- portafolio grande: por partes (cada producto con todas sus presentaciones va en la misma parte)
+    const partes = Math.ceil(n / PORT_LOTE), pdfs = [];
     try {
       for (let k = 0; k < partes; k++) {
         prog('Armando el PDF: parte ' + (k + 1) + ' de ' + partes + '…', 30 + 50 * k / partes);
-        const ini = k * PORT_LOTE, r = await pedir('pdfCatalogo', { orden: lista.ids.slice(ini, ini + PORT_LOTE), parte: true, portada: k === 0, pie: k === partes - 1,
+        const ini = k * PORT_LOTE, r = await pedir('pdfCatalogo', { orden: [].concat.apply([], lista.grupos.slice(ini, ini + PORT_LOTE)), parte: true, portada: k === 0, pie: k === partes - 1,
           labPrevio: ini ? lista.labs[ini - 1] : '', todosLabs: lista.labs, total: n, titulo: lista.titulo });
         pdfs.push(r.b64);
       }

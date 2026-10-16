@@ -566,6 +566,7 @@ body.sin-scroll { overflow: hidden; touch-action: none; }
 .port-txt { padding-right: 30px; }
 .barra-prog { height: 8px; background: var(--superficie-2); border-radius: 6px; overflow: hidden; margin-top: 8px; }
 .barra-prog div { height: 100%; background: var(--marca); transition: width .3s; }
+.port-pres { color: var(--marca) !important; font-weight: 600; -webkit-line-clamp: 4 !important; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
