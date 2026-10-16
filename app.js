@@ -69,12 +69,18 @@ const App = (() => {
   async function llenarFotosSuc() {
     const ims = Array.from(document.querySelectorAll('img[data-sucdoc]:not([src])')); if (!ims.length) return;
     S.minis = S.minis || {}; const m = S.minis.sucFoto = Object.assign(LS.get('minisSuc', {}), S.minis.sucFoto || {});
-    const faltan = Array.from(new Set(ims.map(i => i.dataset.sucdoc).filter(id => m[id] === undefined)));
+    Object.keys(m).forEach(k => { if (!m[k]) delete m[k]; });
+    const faltan = Array.from(new Set(ims.map(i => i.dataset.sucdoc).filter(id => !m[id])));
     if (faltan.length && navigator.onLine !== false) {
-      try { Object.assign(m, await pedir('minisArchivo', { tipo: 'sucFoto', ids: faltan }, true)); LS.set('minisSuc', m); } catch (e) {}
+      try { const r = await pedir('minisArchivo', { tipo: 'sucFoto', ids: faltan }, true); Object.keys(r).forEach(k => { if (r[k]) m[k] = r[k]; }); guardarMinisSuc(m); } catch (e) {}
     }
     document.querySelectorAll('img[data-sucdoc]:not([src])').forEach(im => { if (m[im.dataset.sucdoc]) im.src = m[im.dataset.sucdoc]; });
   }
+  const guardarMinisSuc = m => { const o = {}; Object.keys(m || {}).forEach(k => { if (m[k]) o[k] = m[k]; }); LS.set('minisSuc', o); };
+  /** Achica una imagen (dataURI) a "max" px del lado mayor, en JPEG. */
+  const achicarUri = (uri, max) => new Promise((res, rej) => { const im = new Image(); im.onerror = rej; im.onload = () => {
+    const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', .8)); }; im.src = uri; });
   const logoHtml = () => window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario" style="height:64px">` : '<h3 style="color:#1f6f4a">🐾 Interés Veterinario</h3>';
   let toastT;
   function toast(msg, mal) {
@@ -243,7 +249,7 @@ const App = (() => {
       const r = JSON.parse(txt);
       if (!r.ok) { $('#lgErr').textContent = r.error; return; }
       S.token = r.token; LS.set('token', r.token);
-      try { await refrescarDatos(); mostrarApp(); setTimeout(precargar, 20000); }
+      try { await refrescarDatos(); mostrarApp(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); }
       catch (e) { $('#lgErr').textContent = e.message; }
     }).withFailureHandler(e => { btn.disabled = false; $('#lgErr').textContent = 'Sin conexión: ' + e.message; })
       .login($('#lgUser').value, $('#lgPass').value);
@@ -1112,7 +1118,8 @@ const App = (() => {
     const f = input.files && input.files[0]; if (!f) return;
     let uri; try { uri = await leerArch(tipo, f); } catch (e) { input.value = ''; return toast(e.message || 'No se pudo leer el archivo', true); }
     toast('Subiendo…');
-    try { await pedir('subirArchivo', { tipo: tipo, id: id, dataUri: uri }); toast('✔ Archivo guardado'); marcarArch(tipo, id); cargarArch(tipo, id); if (tipo === 'sucFoto') { pintarMenu(); cargarSucsCfg(); } }
+    let mini = ''; if (tipo === 'sucFoto') { try { mini = await achicarUri(uri, 360); } catch (e) {} }
+    try { await pedir('subirArchivo', { tipo: tipo, id: id, dataUri: uri, mini: mini }); toast('✔ Archivo guardado'); marcarArch(tipo, id); cargarArch(tipo, id); if (tipo === 'sucFoto') { pintarMenu(); cargarSucsCfg(); } }
     catch (e) { input.value = ''; if (e.red) toast('Sin conexión: vuelve a intentarlo al reconectar', true); }
   }
   async function quitarArch(tipo, id, archivo) {
@@ -1165,7 +1172,39 @@ const App = (() => {
     S.sucsCfg = l;
     el.innerHTML = tabla([{ t: 'Sucursal', h: x => `<div class="con-avatar">${avatarSuc(x.id)}<div><b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo || '')}</small></div></div>` },
       { t: 'Dirección', cls: 'ocultar-movil', h: x => esc(x.direccion) }, { t: 'Teléfono', h: x => esc(x.tel) }], l, { clic: 'App.verSucCfg', vacio: 'Sin sucursales' });
-    cargarAvatares(el);
+    cargarAvatares(el).then(() => { if (U().rol === 'Administrador') repararMinisSuc(l); });
+  }
+  /** Al abrir la app (administrador): revisa qué sucursales con foto aún no tienen miniatura y la crea. */
+  async function revisarMinisSuc() {
+    if (U().rol !== 'Administrador' || navigator.onLine === false) return;
+    const l = (D().sucursales || []).filter(x => x.foto); if (!l.length) return;
+    try {
+      const r = await pedir('minisArchivo', { tipo: 'sucFoto', ids: l.map(x => x.id) }, true);
+      S.minis = S.minis || {}; const m = S.minis.sucFoto = S.minis.sucFoto || {};
+      Object.keys(r).forEach(k => { if (r[k]) m[k] = r[k]; else delete m[k]; }); guardarMinisSuc(m);
+      await repararMinisSuc(l);
+    } catch (e) {}
+  }
+  /** Fotos de sucursal subidas antes de las miniaturas: se crea su miniatura una sola vez (solo el administrador). */
+  async function repararMinisSuc(l) {
+    if (S.reparandoMinis || navigator.onLine === false) return;
+    const m = (S.minis && S.minis.sucFoto) || {}, pend = l.filter(x => x.foto && !m[x.id]);
+    if (!pend.length) return;
+    S.reparandoMinis = true;
+    try {
+      for (const x of pend) {
+        try {
+          const r = await pedir('archivos', { tipo: 'sucFoto', id: x.id }, true), act = (r.archivos || []).find(a => a.actual);
+          if (!act) continue;
+          const v = await pedir('verArchivo', { tipo: 'sucFoto', id: x.id, archivo: act.id }, true);
+          if (!v.uri) continue;
+          const mini = await achicarUri(v.uri, 360);
+          await pedir('subirArchivo', { tipo: 'sucFoto', id: x.id, soloMini: 1, mini: mini }, true);
+          m[x.id] = mini; S.minis.sucFoto = m; guardarMinisSuc(m);
+          document.querySelectorAll(`img[data-avatar="sucFoto"][data-aid="${CSS.escape(x.id)}"]`).forEach(im => { im.src = mini; im.parentNode.classList.add('con-foto'); });
+        } catch (e) {}
+      }
+    } finally { S.reparandoMinis = false; }
   }
   function verSucCfg(i) {
     const x = S.sucsCfg[i]; if (!x) return;
@@ -4289,7 +4328,7 @@ const App = (() => {
     window.addEventListener('online', () => { const el = $('#avisoCache'); if (el && !el.classList.contains('oculto')) el.querySelector('span').innerHTML = '🟢 <b>Ya hay conexión.</b> Toca “Actualizar” para ver la información al momento.'; setTimeout(precargar, 15000); });
     if (S.token && S.datos) {
       mostrarApp();
-      refrescarDatos(true).then(() => { pintarMenu(); sincronizar(); setTimeout(precargar, 20000); }).catch(() => {});
+      refrescarDatos(true).then(() => { pintarMenu(); sincronizar(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); }).catch(() => {});
     } else {
       $('#login').classList.remove('oculto');
     }
