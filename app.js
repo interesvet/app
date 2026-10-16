@@ -4283,7 +4283,7 @@ const App = (() => {
         <div class="fila"><button class="btn fijo" onclick="App.cargarGrupos()">Ver / editar grupos</button></div><div id="cfGrupos" style="margin-top:12px"></div></div>` : ''}
       ${puede('configuracion') ? `<div class="tarjeta"><h3>Registros de inventario</h3><p class="muted">Busca renglones de compras, ventas y traspasos que ya tienen su movimiento en <b>Movimientos_Inventario</b> pero aún dicen <i>Mov_Registrado = FALSE</i>, y órdenes o notas que ya deberían estar como recibidas / entregadas. La app nunca vuelve a meter al inventario un renglón que ya tiene movimiento.</p>
         <div class="fila"><button class="btn fijo" onclick="App.repararRegistros(false)">Revisar registros</button></div><div id="cfReg" style="margin-top:12px"></div></div>` : ''}
-      ${u.rol === 'Administrador' ? tarjetaVentaSinExist() : ''}
+      ${puede('dueno') ? tarjetaVentaSinExist() : ''}
       ${puede('configuracion') ? '<div class="tarjeta"><h3>Folios por sucursal</h3><p class="muted">Último número usado. El siguiente documento tomará el número + 1 (la app nunca repite un folio ya existente).</p><div id="cfFol"></div></div>' : ''}`;
     if (u.rol === 'Administrador') cargarVendedores();
     if (u.rol === 'Administrador' && puede('recetas')) cargarCfgReceta();
