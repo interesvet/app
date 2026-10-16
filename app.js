@@ -417,7 +417,7 @@ const App = (() => {
     compras: { t: 'Compras', tabs: [
       { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: ['compras', 'traspasos'] }] },
     productos: { t: 'Productos', tabs: [
-      { v: 'productos', a: 'cat', t: '💊 Catálogo', p: 'listas_precios' }, { v: 'productos', a: 'port', t: '📚 Portafolio', p: 'listas_precios' }, { v: 'precios', t: '💲 Lista de precios', p: 'listas_precios' },
+      { v: 'productos', a: 'cat', t: '💊 Catálogo', p: 'listas_precios' }, { v: 'productos', a: 'port', t: '📚 Portafolio de productos', p: 'listas_precios' }, { v: 'precios', t: '💲 Lista de precios', p: 'listas_precios' },
       { v: 'productos', a: 'margen', t: '📊 Análisis de precios', p: 'analisis_precios' },
       { v: 'matriz', t: '🔄 Actualizar desde Matriz', p: 'productos_editar' }] }
   };
@@ -3129,7 +3129,7 @@ const App = (() => {
       </div>
       <div class="fila" style="margin-top:10px">
         <label class="check fijo"><input type="checkbox" id="lpIva" ${f.iva ? 'checked' : ''}> Mostrar precio con IVA</label>
-        <label class="check fijo"><input type="checkbox" id="lpExist" ${f.exist ? 'checked' : ''}> Solo con existencia en ${esc(sucNom(sucTrabajo()))}</label>
+        <label class="check fijo"><input type="checkbox" id="lpExist" ${f.exist ? 'checked' : ''}> Solo con existencia en ${sucFiltro() ? esc(sucNom(sucFiltro())) : 'alguna sucursal'}</label>
         <button class="btn fijo" onclick="App.imprimir()">🖨️ Imprimir / PDF</button>
       </div></div><div class="espacio"></div><div id="lpRes" class="imprimible"></div>`;
     document.querySelectorAll('[data-modo]').forEach(x => x.onclick = () => { f.modo = x.dataset.modo; V.precios(); });
@@ -3152,7 +3152,7 @@ const App = (() => {
     pintarPrecios();
   };
   function pintarPrecios() {
-    const f = S.fPrecios, listas = D().catalogos.listas, suc = sucTrabajo();
+    const f = S.fPrecios, listas = D().catalogos.listas, suc = sucFiltro();
     const c = f.modo === 'cliente' && f.cli ? cliente(f.cli) : null;
     if (f.modo === 'cliente' && !c) { $('#lpRes').innerHTML = '<div class="vacio">Busca un cliente para ver sus precios</div>'; return; }
     const lista = f.modo === 'cliente' ? (listas.indexOf(c.lista) >= 0 ? c.lista : 'Publico') : f.lista;
@@ -3195,7 +3195,7 @@ const App = (() => {
     activarMinis($('#lpRes'));
   }
   function lpFiltrados() {
-    const f = S.fPrecios, suc = sucTrabajo(), labs = f.lab === '__varios' ? f.labs : f.lab ? [f.lab] : [];
+    const f = S.fPrecios, suc = sucFiltro(), labs = f.lab === '__varios' ? f.labs : f.lab ? [f.lab] : [];
     return (D().productos || []).filter(p => p.activo && (!f.cat || p.categoria === f.cat) && (!labs.length || labs.indexOf(p.lab) >= 0) &&
       (!f.txt || coincide(p.id + ' ' + p.nombre, f.txt)) && (!f.exist || existencia(p.id, suc) > 0));
   }
@@ -3514,49 +3514,130 @@ const App = (() => {
       activarMinis($('#pRes')); };
     enlazarFiltros(pintar); pintar();
   }
-  /* ---------- PORTAFOLIO: datos técnicos, fichas y catálogo PDF ---------- */
+  /* ---------- PORTAFOLIO DE PRODUCTOS: datos técnicos, fichas y PDF para clientes (sin precios) ---------- */
   function prodPortafolio() {
-    const ps = D().productos || [], listas = (D().catalogos || {}).listas || [];
+    const ps = D().productos || [];
     const cats = [...new Set(ps.map(p => p.categoria).filter(Boolean))].sort(), labs = [...new Set(ps.map(p => p.lab).filter(Boolean))].sort();
-    const C = S.catPdf = S.catPdf || { labs: [], cats: [], lista: '' };
+    const C = S.catPdf = S.catPdf || { labs: [], cats: [], ids: {} }; C.ids = C.ids || {};
     const chips = (arr, k) => `<div class="chips">${arr.map(x => `<label class="chip${C[k].indexOf(x) >= 0 ? ' on' : ''}"><input type="checkbox" data-c="${k}" value="${esc(x)}" ${C[k].indexOf(x) >= 0 ? 'checked' : ''}>${esc(x)}</label>`).join('')}</div>`;
-    $('#pCont').innerHTML = filtrosProd(`<label class="check fijo"><input type="checkbox" id="pfFicha"> Solo con ficha técnica</label>`) +
-      `<details class="tarjeta no-imprimir cat-pdf" ${C.abierto ? 'open' : ''}><summary><b>📄 Catálogo en PDF</b> <span class="muted">con tu logotipo y colores · elige laboratorios y categorías</span></summary>
-        <div style="margin-top:10px"><div class="muted" style="font-size:12.5px;font-weight:600">Laboratorios <span id="cpNL"></span> <a href="#" data-todo="labs">todos</a> · <a href="#" data-nada="labs">ninguno</a></div>${chips(labs, 'labs')}
-        <div class="muted" style="font-size:12.5px;font-weight:600;margin-top:10px">Categorías <span id="cpNC"></span> <a href="#" data-todo="cats">todas</a> · <a href="#" data-nada="cats">ninguna</a></div>${chips(cats, 'cats')}
-        <div class="fila" style="margin-top:10px"><label>Precios<select id="cpLista">${opts([['', 'Sin precios']].concat(puede('ver_importes') ? listas.map(x => [x, 'Lista ' + x]) : []), C.lista)}</select></label>
-        <div class="fijo" style="align-self:flex-end"><span id="cpCuenta" class="muted"></span></div>
-        <button class="btn primario fijo" style="align-self:flex-end" onclick="App.pdfCatalogo()">📄 Generar catálogo</button></div>
-        <p class="muted" style="font-size:12px;margin:6px 0 0">Sin elegir nada se incluye todo el portafolio activo (máx. 400 productos por catálogo).</p></div></details>
-      <div id="pRes"></div>`;
-    const cuenta = () => { const n = ps.filter(p => p.activo && (!C.labs.length || C.labs.indexOf(p.lab) >= 0) && (!C.cats.length || C.cats.indexOf(p.categoria) >= 0)).length;
-      $('#cpCuenta').innerHTML = `<b>${n}</b> productos activos en el catálogo`; $('#cpNL').textContent = C.labs.length ? '(' + C.labs.length + ')' : ''; $('#cpNC').textContent = C.cats.length ? '(' + C.cats.length + ')' : ''; };
+    $('#pCont').innerHTML = `<div class="tarjeta no-imprimir cat-pdf">
+        <div class="cat-pdf-enc"><div><h3 style="margin:0">📄 Portafolio de productos en PDF</h3><p class="muted" style="margin:2px 0 0;font-size:13px">Para compartir con tus clientes: con tu logotipo, datos técnicos e imagen sin fondo de cada producto. <b>No lleva precios.</b></p></div>
+        <button class="btn primario fijo" onclick="App.pdfCatalogo()">📄 Generar portafolio</button></div>
+        <div class="muted cat-pdf-sub">Laboratorios <span id="cpNL"></span> <a href="#" data-todo="labs">todos</a> · <a href="#" data-nada="labs">ninguno</a></div>${chips(labs, 'labs')}
+        <div class="muted cat-pdf-sub">Categorías <span id="cpNC"></span> <a href="#" data-todo="cats">todas</a> · <a href="#" data-nada="cats">ninguna</a></div>${chips(cats, 'cats')}
+        <div class="cat-pdf-sub"><span class="muted">Productos elegidos:</span> <b id="cpNP">0</b> <a href="#" id="cpVerSel">ver</a> · <a href="#" id="cpQuitarSel">quitar todos</a></div>
+        <p class="cat-pdf-res" id="cpCuenta"></p></div>` +
+      filtrosProd(`<label class="check fijo"><input type="checkbox" id="pfFicha"> Solo con ficha técnica</label><label class="check fijo"><input type="checkbox" id="pfElegidos"> Solo elegidos</label>
+        <button class="btn chico fijo" id="pfMarcar">☑️ Elegir los visibles</button>`) + '<div id="pRes"></div>';
+    const enPdf = () => { const ids = Object.keys(C.ids).filter(k => C.ids[k]), filtro = C.labs.length || C.cats.length;
+      return ps.filter(p => C.ids[p.id] || (p.activo && (filtro || !ids.length) && (!C.labs.length || C.labs.indexOf(p.lab) >= 0) && (!C.cats.length || C.cats.indexOf(p.categoria) >= 0))); };
+    S.portEnPdf = enPdf;
+    const cuenta = () => { const l = enPdf(), nP = Object.keys(C.ids).filter(k => C.ids[k]).length;
+      $('#cpCuenta').innerHTML = `El PDF llevará <b>${l.length}</b> ${l.length === 1 ? 'producto' : 'productos'}${l.length > 300 ? ' <b class="txt-mal">(máximo 300: acota la selección)</b>' : ''}` +
+        `<span class="muted"> · ${!C.labs.length && !C.cats.length && !nP ? 'todo el portafolio activo' : [C.labs.length ? C.labs.length + ' laboratorio(s)' : '', C.cats.length ? C.cats.length + ' categoría(s)' : '', nP ? nP + ' elegido(s) a mano' : ''].filter(Boolean).join(' + ')}</span>`;
+      $('#cpNL').textContent = C.labs.length ? '(' + C.labs.length + ')' : ''; $('#cpNC').textContent = C.cats.length ? '(' + C.cats.length + ')' : ''; $('#cpNP').textContent = nP; };
     const box = $('#pCont .cat-pdf');
-    box.addEventListener('toggle', () => { C.abierto = box.open; });
-    box.addEventListener('change', e => { const c = e.target.dataset.c; if (c) { const v = e.target.value; C[c] = C[c].filter(x => x !== v); if (e.target.checked) C[c].push(v); e.target.parentNode.classList.toggle('on', e.target.checked); cuenta(); } if (e.target.id === 'cpLista') C.lista = e.target.value; });
-    box.addEventListener('click', e => { const a = e.target.closest('[data-todo],[data-nada]'); if (!a) return; e.preventDefault(); const k = a.dataset.todo || a.dataset.nada, todo = !!a.dataset.todo;
+    box.addEventListener('change', e => { const c = e.target.dataset.c; if (!c) return; const v = e.target.value; C[c] = C[c].filter(x => x !== v); if (e.target.checked) C[c].push(v); e.target.parentNode.classList.toggle('on', e.target.checked); cuenta(); });
+    box.addEventListener('click', e => {
+      if (e.target.id === 'cpVerSel') { e.preventDefault(); $('#pfElegidos').checked = true; pintar(); return; }
+      if (e.target.id === 'cpQuitarSel') { e.preventDefault(); C.ids = {}; cuenta(); pintar(); return; }
+      const a = e.target.closest('[data-todo],[data-nada]'); if (!a) return; e.preventDefault(); const k = a.dataset.todo || a.dataset.nada, todo = !!a.dataset.todo;
       C[k] = todo ? (k === 'labs' ? labs : cats).slice() : []; box.querySelectorAll(`[data-c="${k}"]`).forEach(i => { i.checked = todo; i.parentNode.classList.toggle('on', todo); }); cuenta(); });
-    cuenta();
     const pintar = () => {
-      const fi = $('#pfFicha').checked, l = prodFiltrados().filter(p => !fi || p.ficha).sort((a, b) => String(a.lab || '').localeCompare(String(b.lab || '')) || a.nombre.localeCompare(b.nombre)); S.lista = l;
+      const fi = $('#pfFicha').checked, el = $('#pfElegidos').checked;
+      const l = prodFiltrados().filter(p => (!fi || p.ficha) && (!el || C.ids[p.id])).sort((a, b) => String(a.lab || '').localeCompare(String(b.lab || '')) || a.nombre.localeCompare(b.nombre)); S.lista = l;
       const nf2 = l.filter(p => p.ficha).length;
       $('#pRes').innerHTML = `<p class="muted">${l.length} productos · ${nf2} con ficha técnica${l.length > 300 ? ' · se muestran los primeros 300: usa los filtros' : ''}</p><div class="port-grid">${l.slice(0, 300).map((p, i) => `
-        <div class="port-card" onclick="App.abrirProducto(${i})">${p.foto ? `<img class="port-img" data-mini="${esc(p.id)}" alt="">` : '<span class="port-img sin-foto">📦</span>'}
+        <div class="port-card${C.ids[p.id] ? ' elegido' : ''}" onclick="App.abrirProducto(${i})">
+          <label class="port-sel" onclick="event.stopPropagation()" title="Incluir en el PDF"><input type="checkbox" data-pid="${esc(p.id)}" ${C.ids[p.id] ? 'checked' : ''}></label>
+          ${p.foto ? `<img class="port-img" data-mini="${esc(p.id)}" alt="">` : '<span class="port-img sin-foto">📦</span>'}
           <div class="port-txt"><b>${esc(p.nombre)}</b><small class="muted">${esc(p.id)}${p.unidad ? ' · ' + esc(p.unidad) : ''}</small>
           <small>${esc([p.lab, p.categoria].filter(Boolean).join(' · '))}</small>${p.especies ? `<small class="muted">🐾 ${esc(p.especies)}</small>` : ''}
           <div class="port-etq">${p.registro ? `<span class="etq">Reg. ${esc(p.registro)}</span>` : ''}${p.ficha ? `<button class="etq ok" onclick="event.stopPropagation();App.verFicha('${esc(p.id)}')">📑 Ficha técnica</button>` : '<span class="etq av">Sin ficha</span>'}${p.activo ? '' : '<span class="etq mal">Inactivo</span>'}</div></div></div>`).join('')}</div>`;
       activarMinis($('#pRes'));
     };
-    enlazarFiltros(pintar); enlazarFiltro('#pfFicha', pintar); pintar();
+    $('#pRes').addEventListener('change', e => { const id = e.target.dataset && e.target.dataset.pid; if (!id) return; C.ids[id] = e.target.checked; if (!e.target.checked) delete C.ids[id]; e.target.closest('.port-card').classList.toggle('elegido', e.target.checked); cuenta(); });
+    $('#pfMarcar').onclick = () => { (S.lista || []).slice(0, 300).forEach(p => C.ids[p.id] = true); cuenta(); pintar(); };
+    enlazarFiltros(pintar); enlazarFiltro('#pfFicha', pintar); enlazarFiltro('#pfElegidos', pintar); cuenta(); pintar();
   }
   async function verFicha(id) {
     try { const r = await pedir('archivos', { tipo: 'prodFicha', id: id }); const a = r.archivos || [], act = a.find(x => x.actual) || a[0];
       if (!act) return toast('Este producto aún no tiene ficha técnica', true); verArch('prodFicha', id, act.id); } catch (e) {}
   }
-  function pdfCatalogo() {
-    const C = S.catPdf || { labs: [], cats: [] };
-    const t = [C.labs.length ? C.labs.join(', ') : '', C.cats.length ? C.cats.join(', ') : ''].filter(Boolean).join(' · ') || 'Portafolio';
-    generarPdf('pdfCatalogo', { labs: C.labs, cats: C.cats, lista: C.lista || '' }, { asunto: 'Catálogo de productos Interés Veterinario — ' + t, texto: 'Te comparto nuestro catálogo de productos (' + t + '):', volver: "App.vistaProductos('port')" });
+  /** Quita el fondo liso de la foto (relleno desde los bordes), recorta y la deja sobre blanco. Regresa JPG o '' si no conviene. */
+  function quitarFondo(uri) {
+    return new Promise(res => {
+      const im = new Image();
+      im.onerror = () => res('');
+      im.onload = () => {
+        try {
+          const k = Math.min(1, 640 / Math.max(im.width, im.height)), w = Math.max(1, Math.round(im.width * k)), h = Math.max(1, Math.round(im.height * k));
+          const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.drawImage(im, 0, 0, w, h);
+          const d = x.getImageData(0, 0, w, h), px = d.data, N = w * h;
+          // color de fondo: mediana de los bordes
+          const borde = []; for (let i = 0; i < w; i++) { borde.push(i, (h - 1) * w + i); } for (let j = 0; j < h; j++) { borde.push(j * w, j * w + w - 1); }
+          const med = ch => { const v = borde.map(q => px[q * 4 + ch]).sort((a, b) => a - b); return v[v.length >> 1]; };
+          const bg = [med(0), med(1), med(2)];
+          const dist = (q, r, g, b) => { const a = q * 4; return Math.hypot(px[a] - r, px[a + 1] - g, px[a + 2] - b); };
+          const lisos = borde.filter(q => dist(q, bg[0], bg[1], bg[2]) < 40).length / borde.length;
+          const fuera = new Uint8Array(N);
+          if (lisos >= 0.6) {                    // fondo liso: se "inunda" desde los bordes
+            const T = 42, pila = [];
+            borde.forEach(q => { if (!fuera[q] && dist(q, bg[0], bg[1], bg[2]) < T) { fuera[q] = 1; pila.push(q); } });
+            while (pila.length) {
+              const q = pila.pop(), qx = q % w, a = q * 4;
+              const vec = [qx > 0 ? q - 1 : -1, qx < w - 1 ? q + 1 : -1, q - w, q + w];
+              for (const n of vec) {
+                if (n < 0 || n >= N || fuera[n]) continue;
+                const db = dist(n, bg[0], bg[1], bg[2]), dn = dist(n, px[a], px[a + 1], px[a + 2]);
+                if (db < T || (dn < 9 && db < T * 1.9)) { fuera[n] = 1; pila.push(n); }   // sigue sombras y degradados suaves
+              }
+            }
+          }
+          let x0 = w, y0 = h, x1 = -1, y1 = -1, quedan = 0;
+          for (let q = 0; q < N; q++) if (!fuera[q]) { quedan++; const qx = q % w, qy = (q / w) | 0; if (qx < x0) x0 = qx; if (qx > x1) x1 = qx; if (qy < y0) y0 = qy; if (qy > y1) y1 = qy; }
+          if (quedan < N * 0.03 || x1 < 0) { x0 = 0; y0 = 0; x1 = w - 1; y1 = h - 1; fuera.fill(0); }       // no se distinguió el producto: se deja completa
+          for (let q = 0; q < N; q++) if (fuera[q]) { const a = q * 4; px[a] = px[a + 1] = px[a + 2] = 255; }
+            else {                                   // borde suave: mezcla con blanco los pixeles pegados al fondo
+              const qx = q % w; let f = 0; if (qx > 0 && fuera[q - 1]) f++; if (qx < w - 1 && fuera[q + 1]) f++; if (q >= w && fuera[q - w]) f++; if (q + w < N && fuera[q + w]) f++;
+              if (f) { const a = q * 4, t = 0.18 * f; px[a] += (255 - px[a]) * t; px[a + 1] += (255 - px[a + 1]) * t; px[a + 2] += (255 - px[a + 2]) * t; }
+            }
+          x.putImageData(d, 0, 0);
+          const m = Math.round(Math.max(x1 - x0, y1 - y0) * 0.04), cw = x1 - x0 + 1 + 2 * m, chh = y1 - y0 + 1 + 2 * m;
+          const s2 = Math.min(1, 420 / Math.max(cw, chh)), o = document.createElement('canvas'); o.width = Math.round(cw * s2); o.height = Math.round(chh * s2);
+          const ox = o.getContext('2d'); ox.fillStyle = '#fff'; ox.fillRect(0, 0, o.width, o.height);
+          ox.imageSmoothingQuality = 'high'; ox.drawImage(c, x0, y0, x1 - x0 + 1, y1 - y0 + 1, m * s2, m * s2, (x1 - x0 + 1) * s2, (y1 - y0 + 1) * s2);
+          res(o.toDataURL('image/jpeg', 0.88));
+        } catch (e) { res(''); }
+      };
+      im.src = uri;
+    });
+  }
+  /** Prepara (una sola vez por foto) las imágenes sin fondo de los productos del PDF. */
+  async function prepararSinFondo(ids, aviso) {
+    let pend = [];
+    for (let i = 0; i < ids.length; i += 300) { const r = await pedir('sinFondoPendientes', { ids: ids.slice(i, i + 300) }, true); pend = pend.concat(r.pendientes || []); }
+    let hechos = 0;
+    const uno = async id => {
+      try { const f = await pedir('fotoProducto', { id: id }, true); if (f.uri && /^data:/.test(f.uri)) { const u = await quitarFondo(f.uri); if (u) await pedir('subirSinFondo', { id: id, dataUri: u }, true); } } catch (e) {}
+      hechos++; aviso(hechos, pend.length);
+    };
+    const cola = pend.slice(); const trab = Array.from({ length: Math.min(3, cola.length) }, async () => { while (cola.length) await uno(cola.shift()); });
+    await Promise.all(trab);
+    return pend.length;
+  }
+  async function pdfCatalogo() {
+    const C = S.catPdf || { labs: [], cats: [], ids: {} }, l = S.portEnPdf ? S.portEnPdf() : [];
+    if (!l.length) return toast('No hay productos en la selección', true);
+    if (l.length > 300) return toast('Son ' + l.length + ' productos: acota a 300 o menos', true);
+    const ids = Object.keys(C.ids || {}).filter(k => C.ids[k]);
+    const t = [C.labs.join(', '), C.cats.join(', ')].filter(Boolean).join(' · ') || (ids.length ? 'Selección de productos' : 'Portafolio completo');
+    modal('📄 Portafolio de productos', `<p><b>${l.length}</b> productos · ${esc(t)}</p><p id="cpProg" class="muted">Revisando imágenes…</p><div class="barra-prog"><div id="cpBarra" style="width:5%"></div></div>`);
+    try {
+      await prepararSinFondo(l.filter(p => p.foto).map(p => p.id), (n, tot) => { const e = $('#cpProg'), b = $('#cpBarra'); if (e) e.textContent = 'Quitando el fondo de las imágenes: ' + n + ' de ' + tot + ' (solo la primera vez)…'; if (b) b.style.width = Math.round(5 + 75 * n / Math.max(1, tot)) + '%'; });
+    } catch (e) { if (e.red) return; }
+    if ($('#cpProg')) { $('#cpProg').textContent = 'Armando el PDF… puede tardar unos segundos.'; $('#cpBarra').style.width = '90%'; }
+    generarPdf('pdfCatalogo', { labs: C.labs, cats: C.cats, ids: ids }, { asunto: 'Portafolio de productos Interés Veterinario — ' + t, texto: 'Le comparto nuestro portafolio de productos (' + t + '):', volver: "App.vistaProductos('port')" });
   }
   async function prodMargen() {
     const listas = (D().catalogos || {}).listas || [];

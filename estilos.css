@@ -176,7 +176,7 @@ tr.grupo small { color: var(--texto-2); font-weight: 500; }
 .modal-cuerpo { padding: 18px; overflow-y: auto; }
 .acciones { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 16px; }
 
-.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(120px); background: var(--texto); color: var(--superficie); padding: 11px 18px; border-radius: 10px; z-index: 80; transition: transform .25s; max-width: calc(100% - 32px); }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(120px); background: var(--texto); color: var(--superficie); padding: 11px 18px; border-radius: 10px; z-index: 2100; transition: transform .25s; max-width: calc(100% - 32px); }
 .toast.ver { transform: translateX(-50%) translateY(0); }
 .toast.mal { background: var(--peligro); color: #fff; }
 .cargando { position: fixed; inset: 0; background: rgba(255,255,255,.35); z-index: 90; display: grid; place-items: center; }
@@ -555,6 +555,17 @@ body.sin-scroll { overflow: hidden; touch-action: none; }
   .port-grid { grid-template-columns: 1fr; }
   .firma-pad.firma-grande { height: min(52vh, 360px); }
 }
+
+.cat-pdf-enc { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.cat-pdf-sub { font-size: 12.5px; font-weight: 600; margin-top: 12px; }
+.cat-pdf-res { margin: 12px 0 0; padding: 8px 12px; background: var(--marca-suave); border-radius: 10px; font-size: 14px; }
+.port-card { position: relative; }
+.port-card.elegido { border-color: var(--marca); box-shadow: 0 0 0 2px var(--marca) inset; }
+.port-sel { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; display: grid; place-items: center; background: var(--superficie); border-radius: 8px; cursor: pointer; }
+.port-sel input { width: 20px; height: 20px; accent-color: var(--marca); cursor: pointer; }
+.port-txt { padding-right: 30px; }
+.barra-prog { height: 8px; background: var(--superficie-2); border-radius: 6px; overflow: hidden; margin-top: 8px; }
+.barra-prog div { height: 100%; background: var(--marca); transition: width .3s; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
