@@ -4702,11 +4702,15 @@ const App = (() => {
 
   /* ---------- PROVEEDORES ---------- */
   V.proveedores = () => {
-    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila"><label>Buscar<input id="pvTxt" placeholder="Nombre o RFC"></label><button class="btn primario fijo" onclick="App.formProveedor(null)">+ Nuevo proveedor</button></div></div><div class="espacio"></div><div id="pvRes"></div>`;
-    const pintar = () => { const t = $('#pvTxt').value; const l = (D().proveedores || []).filter(p => !t || coincide(p.nombre + ' ' + p.razon + ' ' + p.rfc, t)); S.lista = l;
+    const nIn = (D().proveedores || []).filter(p => !p.activo).length;
+    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila"><label>Buscar<input id="pvTxt" placeholder="Nombre o RFC"></label>
+      <label>Estado<select id="pvEst"><option value="SI">Activos</option><option value="NO">Inactivos${nIn ? ' (' + nIn + ')' : ''}</option><option value="">Todos</option></select></label>
+      <button class="btn primario fijo" onclick="App.formProveedor(null)">+ Nuevo proveedor</button></div>
+      ${nIn ? `<p class="muted" style="margin:8px 0 0;font-size:13px">Hay ${nIn} ${nIn === 1 ? 'proveedor inactivo' : 'proveedores inactivos'}: no aparecen en compras ni en los documentos. Para volver a usar uno, elige <b>Inactivos</b> y tócale <b>Activar</b>.</p>` : ''}</div><div class="espacio"></div><div id="pvRes"></div>`;
+    const pintar = () => { const t = $('#pvTxt').value, est = $('#pvEst').value; const l = (D().proveedores || []).filter(p => (!est || (est === 'SI') === !!p.activo) && (!t || coincide(p.nombre + ' ' + p.razon + ' ' + p.rfc, t))); S.lista = l;
       $('#pvRes').innerHTML = tabla([{ t: 'Proveedor', h: p => `<div class="con-avatar">${avatar('provLogo', p.id, p.logo, p.nombre)}<b>${esc(p.nombre)}</b></div>` }, { t: 'RFC', k: 'rfc' }, { t: 'Contacto', k: 'contacto' }, { t: 'Teléfono', k: 'tel' }, { t: 'Crédito', num: 1, h: p => p.credito + ' d' },
-        { t: 'Estado', h: p => `<span class="etq ${p.activo ? 'ok' : 'mal'}">${p.activo ? 'Activo' : 'Baja'}</span>` }], l, { clic: 'App.abrirProveedor' }); cargarAvatares($('#pvRes')); };
-    $('#pvTxt').oninput = pintar; pintar();
+        { t: 'Estado', h: p => p.activo ? '<span class="etq ok">Activo</span>' : `<span class="etq mal">Inactivo</span>${puede('proveedores') ? ` <button class="btn chico" onclick="event.stopPropagation();App.activarProveedor('${esc(p.id)}')">✅ Activar</button>` : ''}` }], l, { clic: 'App.abrirProveedor', vacio: $('#pvEst').value === 'NO' ? 'No hay proveedores inactivos' : 'Sin proveedores' }); cargarAvatares($('#pvRes')); };
+    $('#pvTxt').oninput = pintar; $('#pvEst').onchange = pintar; pintar();
   };
   async function formProveedor(i) {
     const p = i === null ? null : S.lista[i];
@@ -4716,9 +4720,14 @@ const App = (() => {
       { k: 'D_Credito', t: 'Días de crédito', tipo: 'number' }, { k: 'Gerente', t: 'Gerente' }, { k: 'Celular', t: 'Celular' }, { k: 'Telefono', t: 'Teléfono' }, { k: 'e-mail_empresa', t: 'Correo empresa' },
       { k: 'Enc_Ventas', t: 'Ejecutivo de ventas' }, { k: 'Cel_Enc_Ventas', t: 'Cel. ventas' }, { k: 'e-mail_Ventas', t: 'Correo ventas' }, { k: 'Calle', t: 'Calle' }, { k: 'Colonia', t: 'Colonia' },
       { k: 'C.P.', t: 'C.P.' }, { k: 'Localidad', t: 'Localidad' }, { k: 'Estado', t: 'Estado' }, { k: 'Banco', t: 'Banco' }, { k: 'CLABE', t: 'CLABE' }, { k: 'No_CTA.', t: 'No. cuenta' },
-      { k: 'Activo', t: 'Estado', tipo: 'select', ops: [['SI', 'Activo'], ['NO', 'Baja']] }];
+      { k: 'Activo', t: 'Estado', tipo: 'select', ops: [['SI', 'Activo'], ['NO', 'Inactivo (no se muestra en compras ni documentos)']] }];
     S.formIni = p ? full : { Activo: 'SI', D_Credito: 0 };
     modal(p ? p.nombre : 'Nuevo proveedor', `<div class="arch-par">${p ? bloqueArch('provLogo', p.id) : bloqueArchNuevo('provLogo', 'provLogoN')}</div><div id="fProv">${formulario(campos, S.formIni)}</div><div class="acciones">${p && puede('compras') ? `<button class="btn" onclick="App.comprasDeProveedor('${esc(p.id)}','${esc(String(p.nombre || '').replace(/'/g, ''))}')">📦 Ver sus compras</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarProveedor()">Guardar</button></div>`);
+  }
+  async function activarProveedor(id) {
+    const p = (D().proveedores || []).find(x => x.id === id); if (!p) return;
+    if (!confirm('¿Activar a ' + p.nombre + '? Volverá a aparecer en compras y documentos.')) return;
+    try { await pedir('guardarProveedor', { ID_Proveedor: id, Activo: 'SI' }); toast('✔ ' + p.nombre + ' activado'); D().proveedores = await pedir('listarProveedores', {}, true); LS.set('datos', S.datos); V.proveedores(); } catch (e) {}
   }
   async function guardarProveedor() {
     const f = leerForm($('#fProv')), ini = S.formIni;
@@ -4868,7 +4877,7 @@ const App = (() => {
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
     abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
-    abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor,
+    abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
     abrirVisita: i => verVisita(S.visAg[i].id), abrirVisitaR: i => verVisita(S.visHechas[i].id),
