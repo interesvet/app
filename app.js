@@ -43,6 +43,8 @@ const App = (() => {
   const cliente = id => (D().clientes || []).find(c => c.id === id);
   const sucNom = id => { const s = (D().sucursales || []).find(x => x.id === id); return s ? s.nombre : id || ''; };
   const sucsPermitidas = () => (D().sucursales || []).filter(s => (D().permitidas || []).indexOf(s.id) >= 0);
+  /** Filtro de sucursal por omisión en reportes y consultas: el dueño ve TODAS; los demás, su sucursal de trabajo. */
+  const sucFiltro = () => puede('dueno') ? '' : sucTrabajo();
   const sucTrabajo = () => (S.suc && (D().permitidas || []).indexOf(S.suc) >= 0) ? S.suc : U().sucursal;
   const opts = (lista, sel, vacio) => (vacio !== undefined ? `<option value="">${esc(vacio)}</option>` : '') +
     lista.map(o => { const v = Array.isArray(o) ? o[0] : o.id, t = Array.isArray(o) ? o[1] : (o.nombre || o.id); return `<option value="${esc(v)}" ${String(v) === String(sel) ? 'selected' : ''}>${esc(t)}</option>`; }).join('');
@@ -860,6 +862,8 @@ const App = (() => {
     };
     $('#vGuardar').disabled = true;
     if (v.editId) {
+      const rep = v.lineas.filter((l, i) => v.lineas.findIndex(x => x.id === l.id && (x.lote || '') === (l.lote || '')) !== i);
+      if (rep.length && !confirm('Hay productos repetidos en la nota (' + rep.map(l => (prod(l.id) || {}).nombre || l.id).join(', ') + '). ¿Guardar así?')) { $('#vGuardar').disabled = false; return; }
       params.ID_Venta = v.editId; delete params.pago;
       try {
         const r = await pedir('editarVenta', params);
@@ -1538,7 +1542,7 @@ const App = (() => {
       $('#vista').innerHTML = `${barra}
         <div class="tarjeta"><div class="fila">
         <label>Desde<input type="date" id="fDesde" value="${ini}"></label><label>Hasta<input type="date" id="fHasta" value="${h}"></label>
-        ${U().todasSucursales ? `<label>Sucursal<select id="fSuc">${optsSuc(sucTrabajo(), false, 'Todas')}</select></label>` : ''}
+        ${U().todasSucursales ? `<label>Sucursal<select id="fSuc">${optsSuc(sucFiltro(), false, 'Todas')}</select></label>` : ''}
         <label>Buscar<input id="fTxt" placeholder="Folio o cliente"></label>
         <button class="btn primario fijo" onclick="App.buscarUtilidad()">Buscar</button></div>
         <p class="muted" style="margin-top:8px">Solo tú ves este apartado. Venta neta sin IVA (con descuentos). Costo real = costo de compra del lote vendido (bonificaciones y flete incluidos).</p></div>
@@ -1552,7 +1556,7 @@ const App = (() => {
     const vs = S.ventasSuc; S.ventasSuc = null;   // desde Sucursales: esa sucursal, todas las fechas
     $('#vista').innerHTML = barra + (vc ? `<div class="filtro-activo">🧾 Mostrando solo las ventas de <b>${esc(vc.nombre)}</b> (todas las sucursales)<button class="btn chico" onclick="App.quitarFiltroCliente()">✕ Quitar filtro</button></div>` : '') + `<div class="tarjeta"><div class="fila">
       <label>Desde<input type="date" id="fDesde" value="${vc || vs ? '' : ini}"></label><label>Hasta<input type="date" id="fHasta" value="${vc || vs ? '' : h}"></label>
-      ${U().todasSucursales ? `<label>Sucursal<select id="fSuc">${optsSuc(vc ? '' : vs || sucTrabajo(), false, 'Todas')}</select></label>` : ''}
+      ${U().todasSucursales ? `<label>Sucursal<select id="fSuc">${optsSuc(vc ? '' : vs || sucFiltro(), false, 'Todas')}</select></label>` : ''}
       <label>Buscar<input id="fTxt" placeholder="Folio o cliente" value="${esc(vc ? '' : S.filtroVentas || '')}"></label>
       <label>Estatus<select id="fEst">${opts([['Entregado', 'Entregado'], ['Pendiente', 'Pendiente de entrega'], ['Cancelado', 'Cancelado'], ['Devuelto', 'Devuelto']], '', 'Todos')}</select></label>
       <label>Factura<select id="fFact">${opts([['SI', 'Facturadas'], ['Parcial', 'Facturadas en parte'], ['NO', 'Sin facturar']], '', 'Todas')}</select></label>
@@ -2839,7 +2843,7 @@ const App = (() => {
   };
   function invExist() {
     const cats = [...new Set((D().productos || []).map(p => p.categoria).filter(Boolean))].sort();
-    $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label>Sucursal<select id="ieSuc">${U().todasSucursales ? optsSuc(sucTrabajo(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
+    $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label>Sucursal<select id="ieSuc">${U().todasSucursales ? optsSuc(sucFiltro(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
       <label>Buscar<input id="ieTxt" placeholder="Producto, clave, laboratorio"></label><label>Categoría<select id="ieCat">${opts(cats.map(c => [c, c]), '', 'Todas')}</select></label>
       <label class="check fijo"><input type="checkbox" id="ieMin"> Bajo mínimo</label><button class="btn fijo" onclick="App.actualizarStock()">⟳ Actualizar</button></div></div><div class="espacio"></div><div id="ieRes"></div>`;
     ['#ieSuc', '#ieTxt', '#ieCat', '#ieMin'].forEach(s => enlazarFiltro(s, pintarExist));
@@ -2887,7 +2891,7 @@ const App = (() => {
   function invMov() {
     const d30 = new Date(Date.now() - 30 * 86400000); const ini = new Date(d30 - d30.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label>Desde<input type="date" id="imDesde" value="${ini}"></label><label>Hasta<input type="date" id="imHasta" value="${hoyISO()}"></label>
-      <label>Sucursal<select id="imSuc">${U().todasSucursales ? optsSuc(sucTrabajo(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
+      <label>Sucursal<select id="imSuc">${U().todasSucursales ? optsSuc(sucFiltro(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
       <label>Tipo<select id="imTipo">${opts(['Nota de Venta', 'Orden de Compra', 'Traspaso', 'Merma', 'Entrada por ajuste', 'Salida por ajuste', 'Entrada por Devolución', 'Conversión'].map(x => [x, x]), '', 'Todos')}</select></label>
       <button class="btn primario fijo" id="imBtn">Buscar</button></div></div><div class="espacio"></div><div id="imRes"></div>`;
     $('#imBtn').onclick = async () => {
@@ -2900,7 +2904,7 @@ const App = (() => {
   }
   function invKardex(idProd) {
     $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label style="flex:3 1 260px">Producto<div class="buscador"><input id="ikProd" placeholder="Buscar producto" autocomplete="off" value="${idProd ? esc((prod(idProd) || {}).nombre) : ''}"></div></label>
-      <label>Sucursal<select id="ikSuc">${U().todasSucursales ? optsSuc(sucTrabajo(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label></div></div><div class="espacio"></div><div id="ikRes"></div>`;
+      <label>Sucursal<select id="ikSuc">${U().todasSucursales ? optsSuc(sucFiltro(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label></div></div><div class="espacio"></div><div id="ikRes"></div>`;
     let sel = idProd;
     const cargar = async () => { if (!sel) return; try { const l = await pedir('kardex', { producto: sel, sucursal: $('#ikSuc').value });
       $('#ikRes').innerHTML = tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Referencia', k: 'ref' }, { t: 'Movimiento', k: 'tipo' }, { t: 'Sucursal', h: m => esc(sucNom(m.suc)) }, { t: 'Lote', k: 'lote' }, { t: 'Cad.', k: 'cad' },
@@ -3335,15 +3339,15 @@ const App = (() => {
   function prodFiltrados() {
     const txt = $('#pfTxt').value, cat = $('#pfCat').value, lab = $('#pfLab').value, act = $('#pfAct').value;
     return (D().productos || []).filter(p => (!txt || coincide(p.id + ' ' + p.nombre, txt)) && (!cat || p.categoria === cat) && (!lab || p.lab === lab) && (!act || (act === 'SI') === p.activo))
-      .sort(porExistencia(mapaExist(sucTrabajo()), p => p.id, p => p.nombre));
+      .sort(porExistencia(mapaExist(sucFiltro()), p => p.id, p => p.nombre));
   }
   const enlazarFiltros = fn => ['#pfTxt', '#pfCat', '#pfLab', '#pfAct', '#pfLista'].forEach(s => enlazarFiltro(s, fn));
   function prodCatalogo() {
     $('#pCont').innerHTML = filtrosProd(puede('productos_editar') ? '<button class="btn primario fijo" onclick="App.formProducto(null)">+ Nuevo producto</button>' : '') + '<div id="pRes"></div>';
-    const pintar = () => { const l = prodFiltrados(); S.lista = l; const suc = sucTrabajo();
+    const pintar = () => { const l = prodFiltrados(); S.lista = l; const suc = sucFiltro();
       $('#pRes').innerHTML = `<p class="muted">${l.length} productos</p>` + tabla([{ t: '', h: p => imgMini(p) }, { t: 'Clave', k: 'id' }, { t: 'Producto', h: p => `<b>${esc(p.nombre)}</b>` }, { t: 'Unidad', k: 'unidad', cls: 'ocultar-movil' },
         { t: 'Categoría', k: 'categoria', cls: 'ocultar-movil' }, { t: 'Laboratorio', k: 'lab', cls: 'ocultar-movil' }, { t: 'P. Público', num: 1, h: p => $$(p.precios.Publico) },
-        { t: 'Exist. ' + sucNom(suc), num: 1, h: p => nf(existencia(p.id, suc)) }, { t: 'Estado', h: p => `<span class="etq ${p.activo ? 'ok' : 'mal'}">${p.activo ? 'Activo' : 'Inactivo'}</span>` }], l.slice(0, 1000), { clic: 'App.abrirProducto' });
+        { t: suc ? 'Exist. ' + sucNom(suc) : 'Exist. total', num: 1, h: p => nf(existencia(p.id, suc)) }, { t: 'Estado', h: p => `<span class="etq ${p.activo ? 'ok' : 'mal'}">${p.activo ? 'Activo' : 'Inactivo'}</span>` }], l.slice(0, 1000), { clic: 'App.abrirProducto' });
       activarMinis($('#pRes')); };
     enlazarFiltros(pintar); pintar();
   }
