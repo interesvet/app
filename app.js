@@ -417,7 +417,7 @@ const App = (() => {
     compras: { t: 'Compras', tabs: [
       { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: ['compras', 'traspasos'] }] },
     productos: { t: 'Productos', tabs: [
-      { v: 'productos', a: 'cat', t: '💊 Catálogo', p: 'listas_precios' }, { v: 'precios', t: '💲 Lista de precios', p: 'listas_precios' },
+      { v: 'productos', a: 'cat', t: '💊 Catálogo', p: 'listas_precios' }, { v: 'productos', a: 'port', t: '📚 Portafolio', p: 'listas_precios' }, { v: 'precios', t: '💲 Lista de precios', p: 'listas_precios' },
       { v: 'productos', a: 'margen', t: '📊 Análisis de precios', p: 'analisis_precios' },
       { v: 'matriz', t: '🔄 Actualizar desde Matriz', p: 'productos_editar' }] }
   };
@@ -746,7 +746,7 @@ const App = (() => {
         ${puede('clientes_editar') ? '<button class="btn fijo" onclick="App.formCliente(null,true)">+ Cliente</button>' : ''}
       </div>
       <div id="vCliInfo" class="muted" style="margin-top:8px">${c ? `Lista <b>${esc(v.lista)}</b> · Crédito ${c.credito} días · ${esc(c.rfc || 'Sin RFC')} · ${esc(c.localidad || c.municipio || '')} ${c.status === 'Inactivo' ? '<span class="etq mal">Inactivo</span>' : ''}` : 'Selecciona un cliente para aplicar su lista de precios.'}</div></div>
-      <div class="tarjeta"><div class="buscador"><input id="vProd" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
+      <div class="tarjeta"><div class="buscador buscador-prod"><input id="vProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
         <div class="espacio"></div>
         <div class="doc-lineas" id="vLineas"></div></div>
       <div class="rejilla-2" style="margin-top:14px">
@@ -973,7 +973,7 @@ const App = (() => {
         ${!offline && d.id && d.estatus !== 'Cancelado' && puede('ventas') ? `<button class="btn" onclick="App.formEnvio('${d.id}')">🚚 Envío / guía</button>` : ''}
         ${!offline && d.id && d.saldo > 0.009 && d.estatus !== 'Cancelado' && puede('cobranza') ? `<button class="btn" onclick="App.formCobro('${d.id}')">💵 Cobrar</button>` : ''}
         ${!offline && d.id && !pagada && d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto' && puede('ventas_cancelar') ? `<button class="btn peligro" onclick="App.cancelarVenta('${d.id}')">Cancelar toda la nota</button>` : ''}
-      </div>${!offline && d.id && d.estatus !== 'Cancelado' && puede('facturacion') ? '<div id="notaFact" class="no-imprimir fact-bloque"><span class="muted">Cargando facturación…</span></div>' : ''}${!offline && d.id && puede('ventas') ? bloqueArch('ventaGuia', d.id) : ''}${pagada ? '<p class="muted no-imprimir" style="text-align:right;margin-top:6px">🔒 Nota pagada al 100 %: ya no se pueden quitar productos, cancelarla ni editarla.</p>' : ''}`;
+      </div>${!offline && d.id && d.estatus !== 'Cancelado' && puede('facturacion') ? '<div id="notaFact" class="no-imprimir fact-bloque"><span class="muted">Cargando facturación…</span></div>' : ''}${!offline && d.id && puede('ventas') ? bloqueArch('ventaGuia', d.id) + (d.estatus === 'Entregado' ? bloqueArch('ventaFirma', d.id) : '') : ''}${pagada ? '<p class="muted no-imprimir" style="text-align:right;margin-top:6px">🔒 Nota pagada al 100 %: ya no se pueden quitar productos, cancelarla ni editarla.</p>' : ''}`;
   }
   /* ---------- PDF: se genera en el servidor, se guarda en Drive y se abre para compartir ---------- */
   async function generarPdf(accion, params, info) {
@@ -1037,13 +1037,25 @@ const App = (() => {
       volver: id => verPagoProv(id), volverTxt: 'Volver al pago', lista: () => { if ($('#lPP')) buscarPagosProv(); } }
   };
   const icoAdj = t => t === 'pdf' ? '📄' : t === 'foto' ? '🖼️' : t === 'xml' ? '🧾' : '📎';
-  function htmlAdj(tipo, id, a) {
+  /** Casillas: comprobante del pago (foto y PDF, puede tener ambos) y, en notas de crédito, el PDF y el XML de la N/C. */
+  const CASILLAS = { foto: { t: '🖼️ Foto del comprobante', acc: 'image/&#42;', btn: '📷 Agregar foto' }, pdf: { t: '📄 PDF del comprobante', acc: 'application/pdf', btn: '📄 Agregar PDF' },
+    ncPdf: { t: '📄 PDF de la nota de crédito', acc: 'application/pdf', btn: '📄 Agregar PDF', nc: 1 }, ncXml: { t: '🧾 XML de la nota de crédito', acc: '.xml,text/xml,application/xml', btn: '🧾 Agregar XML', nc: 1 } };
+  function htmlAdj(tipo, id, a, esNC) {
     a = a || [];
-    return `<div class="fact-bloque no-imprimir"><h4>📎 Comprobantes del pago <span class="muted" style="font-weight:400;font-size:13px">${a.length ? a.length + (a.length === 1 ? ' archivo' : ' archivos') : 'sin archivos'}</span></h4>
-      ${a.map(x => `<div class="fact-fila"><span style="flex:1;min-width:0;word-break:break-all">${icoAdj(x.tipo)} ${esc(x.etiqueta || x.nombre)}</span><button class="btn chico" onclick="App.verAdj('${tipo}','${id}','${x.id}')">Ver</button>${U().rol === 'Administrador' ? `<button class="btn chico peligro" title="Quitar este comprobante del pago" onclick="App.quitarAdj('${tipo}','${id}','${x.id}')">Quitar</button>` : ''}</div>`).join('')}
-      ${a.length ? `<p class="muted" style="margin:8px 0 0;font-size:13px">🔒 Este pago ya tiene su comprobante; no se pueden adjuntar más.${a.filter(x => x.tipo === 'foto' || x.tipo === 'pdf').length > 1 && tipo === 'cobro' ? ' <b>Hay ' + a.length + ' archivos: revisa si alguno está repetido.</b>' : ''}</p>`
-        : `<p class="muted" style="margin:4px 0 0;font-size:13px">No hay foto ni PDF relacionados con este pago.</p>
-      <label class="btn chico" style="margin-top:8px;display:inline-block;cursor:pointer">➕ Agregar foto o PDF<input type="file" accept="image/&#42;,application/pdf" style="display:none" onchange="App.subirAdj('${tipo}','${id}', this)"></label>`}</div>`;
+    const casOf = x => x.casilla || (x.tipo === 'pdf' ? 'pdf' : x.tipo === 'xml' ? 'xml' : 'foto');
+    const llaves = esNC ? ['ncPdf', 'ncXml'].concat(a.some(x => casOf(x) === 'foto') ? ['foto'] : [], a.some(x => casOf(x) === 'pdf') ? ['pdf'] : []) : ['foto', 'pdf'];
+    const fila = x => `<div class="fact-fila"><span style="flex:1;min-width:0;word-break:break-all">${icoAdj(x.tipo)} ${esc(x.etiqueta || x.nombre)}</span><button class="btn chico" onclick="App.verAdj('${tipo}','${id}','${x.id}')">Ver</button>${U().rol === 'Administrador' ? `<button class="btn chico peligro" title="Quitar este archivo (no se borra)" onclick="App.quitarAdj('${tipo}','${id}','${x.id}')">Quitar</button>` : ''}</div>`;
+    const usados = {};
+    const bloques = llaves.map(k => {
+      const c = CASILLAS[k], l = a.filter(x => casOf(x) === k); l.forEach(x => usados[x.id] = 1);
+      return `<div class="adj-casilla"><div class="adj-cas-tit">${c.t}${l.length ? ' <span class="etq ok">✔</span>' : ''}</div>${l.map(fila).join('')}
+        ${l.length ? (l.length > 1 ? '<p class="muted" style="margin:4px 0 0;font-size:12px"><b>Hay ' + l.length + ' archivos: revisa si alguno está repetido.</b></p>' : '')
+          : `<label class="btn chico" style="margin-top:4px;display:inline-block;cursor:pointer">${c.btn}<input type="file" accept="${c.acc}" style="display:none" onchange="App.subirAdj('${tipo}','${id}', this, '${k}')"></label>`}</div>`;
+    }).join('');
+    const otros = a.filter(x => !usados[x.id]);
+    return `<div class="fact-bloque no-imprimir"><h4>📎 ${esNC ? 'Nota de crédito y comprobantes' : 'Comprobantes del pago'} <span class="muted" style="font-weight:400;font-size:13px">${a.length ? a.length + (a.length === 1 ? ' archivo' : ' archivos') : 'sin archivos'}</span></h4>
+      <div class="adj-casillas">${bloques}</div>${otros.length ? `<div style="margin-top:6px"><small class="muted">Otros archivos</small>${otros.map(fila).join('')}</div>` : ''}
+      <p class="muted" style="margin:6px 0 0;font-size:12px">🔒 Se acepta un archivo por casilla; si uno está mal, el Administrador lo quita y se sube el correcto.</p></div>`;
   }
   const htmlAdjCobro = d => htmlAdj('cobro', d.id, d.adjuntos);
   function uriABlobUrl(uri) {
@@ -1077,12 +1089,33 @@ const App = (() => {
     if (String(f.type || '').toLowerCase().indexOf('image') !== 0) throw new Error('Solo se aceptan fotos o PDF');
     return reducirImagen(f, maxFoto || 1600);
   }
-  async function subirAdj(tipo, id, input) {
+  /** XML (CFDI) → data URI text/xml (máx. 2 MB). */
+  async function leerXml(f) {
+    if (!/\.xml$/i.test(f.name || '') && !/xml/i.test(f.type || '')) throw new Error('Elige un archivo XML');
+    if (f.size > 2 * 1024 * 1024) throw new Error('El XML es muy grande');
+    return String(await leerArchivo(f)).replace(/^data:[^;]*;/, 'data:text/xml;');
+  }
+  /** Hasta dos comprobantes: una foto y un PDF. */
+  async function leerComprobantes(input, maxFoto) {
+    const fs = Array.from((input && input.files) || []); if (!fs.length) return [];
+    const out = []; let foto = 0, pdf = 0;
+    for (const f of fs) {
+      const u = await leerComprobante(f, maxFoto), esPdf = /^data:application\/pdf/.test(u);
+      if (esPdf ? pdf++ : foto++) throw new Error('Elige como máximo una foto y un PDF');
+      out.push(u);
+    }
+    return out;
+  }
+  async function subirAdj(tipo, id, input, cas) {
     const c = ADJ[tipo], f = input.files && input.files[0]; if (!f) return;
+    const k = CASILLAS[cas] || {};
     let uri;
-    try { uri = await leerComprobante(f); } catch (e) { return toast(e.message || 'No se pudo leer el archivo', true); }
     try {
-      await pedir(c.subir, c.ps(id, uri));
+      if (cas === 'ncXml') uri = await leerXml(f);
+      else { uri = await leerComprobante(f); if ((cas === 'pdf' || cas === 'ncPdf') && !/^data:application\/pdf/.test(uri)) throw new Error('Esta casilla es para el PDF'); if (cas === 'foto' && !/^data:image/.test(uri)) throw new Error('Esta casilla es para la foto'); }
+    } catch (e) { input.value = ''; return toast(e.message || 'No se pudo leer el archivo', true); }
+    try {
+      await pedir(c.subir, Object.assign(c.ps(id, uri), k.nc ? { nc: true } : {}));
       toast('✔ Comprobante agregado'); c.volver(id); c.lista();
     } catch (e) { if (e.red) toast('Sin conexión: vuelve a intentarlo al reconectar', true); }
   }
@@ -1094,7 +1127,11 @@ const App = (() => {
   const verAdjCob = (id, f) => verAdj('cobro', id, f), subirAdjCob = (id, i) => subirAdj('cobro', id, i), quitarAdjCob = (id, f) => quitarAdj('cobro', id, f);
   /* ---------- FOTOS Y DOCUMENTOS: clientes, ventas, compras, vendedores, proveedores ---------- */
   const ARCH_TIT = { cliFoto: '📷 Foto del cliente', cliCsf: '🧾 Constancia de situación fiscal', ventaGuia: '📦 Guía de envío', ocGuia: '📦 Guía de envío', trGuia: '📦 Guía de envío', vendFoto: '📷 Foto del vendedor', provLogo: '🏷️ Logotipo del proveedor',
-    visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)', sucFoto: '🏬 Foto de la sucursal' };
+    visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)', sucFoto: '🏬 Foto de la sucursal',
+    ocFactura: '🧾 Factura del proveedor (PDF y XML)', prodFicha: '📑 Ficha técnica (PDF)', ventaFirma: '✍️ Firma de recibido', ocFirma: '✍️ Firma de recepción', trFirma: '✍️ Firma de recibido' };
+  const ARCH_ACEPTA = { ocFactura: 'application/pdf,.xml,text/xml,application/xml', prodFicha: 'application/pdf' };
+  const ARCH_BTN = { ocFactura: '➕ Adjuntar PDF o XML', prodFicha: '📑 Subir ficha técnica (PDF)' };
+  const ARCH_FIRMA = { ventaFirma: 1, ocFirma: 1, trFirma: 1 };
   const ARCH_MULTIFOTO = { visFoto: 1 }, ARCH_SOLOVER = { recFirma: 1, recPdf: 1 };
   const ARCH_FOTO = { cliFoto: 1, vendFoto: 1, provLogo: 1, sucFoto: 1 };
   const ACEPTA_FOTO = 'image/jpeg,image/png,image/heic,image/webp', ACEPTA_DOC = ACEPTA_FOTO + ',application/pdf';
@@ -1108,8 +1145,10 @@ const App = (() => {
     catch (e) { el = elArch(tipo, id); if (el) el.innerHTML = `<h4>${ARCH_TIT[tipo]}</h4><span class="muted">${e.red ? 'Disponible cuando haya conexión' : esc(e.message || 'No disponible')}</span>`; return; }
     el = elArch(tipo, id); if (!el) return;
     const a = r.archivos || [], foto = !!ARCH_FOTO[tipo], act = foto ? a.find(x => x.actual) : null, resto = act ? a.filter(x => x !== act) : a;
-    const fila = x => `<div class="fact-fila"><span style="flex:1;min-width:0;word-break:break-all">${x.tipo === 'pdf' ? '📄' : '🖼️'} ${esc(x.etiqueta || x.nombre)}</span><button class="btn chico" onclick="App.verArch('${tipo}','${esc(id)}','${x.id}')">Ver</button>${r.quitar ? `<button class="btn chico peligro" title="Quitar (el archivo no se borra)" onclick="App.quitarArch('${tipo}','${esc(id)}','${x.id}')">Quitar</button>` : ''}</div>`;
-    const subir = r.puedeSubir ? `<label class="btn chico arch-subir">${foto ? (act ? '📷 Cambiar' : '📷 Agregar') + (tipo === 'provLogo' ? ' logotipo' : ' foto') : ARCH_MULTIFOTO[tipo] ? '📷 Agregar foto' : '➕ Adjuntar imagen o PDF'}<input type="file" accept="${foto || ARCH_MULTIFOTO[tipo] ? ACEPTA_FOTO : ACEPTA_DOC}" style="display:none" onchange="App.subirArch('${tipo}','${esc(id)}', this)"></label>`
+    const fila = x => `<div class="fact-fila"><span style="flex:1;min-width:0;word-break:break-all">${icoAdj(x.tipo)} ${esc(x.etiqueta || x.nombre)}${x.actual && tipo === 'prodFicha' ? ' <span class="etq ok">vigente</span>' : ''}</span><button class="btn chico" onclick="App.verArch('${tipo}','${esc(id)}','${x.id}')">Ver</button>${r.quitar ? `<button class="btn chico peligro" title="Quitar (el archivo no se borra)" onclick="App.quitarArch('${tipo}','${esc(id)}','${x.id}')">Quitar</button>` : ''}</div>`;
+    const subir = r.puedeSubir && ARCH_FIRMA[tipo] ? (a.length ? '' : `<button class="btn chico arch-subir" onclick="App.firmaArch('${tipo}','${esc(id)}')">✍️ Capturar firma</button>`)
+      : r.puedeSubir && ARCH_ACEPTA[tipo] ? `<label class="btn chico arch-subir">${tipo === 'prodFicha' && a.length ? '📑 Subir versión nueva (PDF)' : ARCH_BTN[tipo]}<input type="file" accept="${ARCH_ACEPTA[tipo]}" style="display:none" onchange="App.subirArch('${tipo}','${esc(id)}', this)"></label>`
+      : r.puedeSubir ? `<label class="btn chico arch-subir">${foto ? (act ? '📷 Cambiar' : '📷 Agregar') + (tipo === 'provLogo' ? ' logotipo' : ' foto') : ARCH_MULTIFOTO[tipo] ? '📷 Agregar foto' : '➕ Adjuntar imagen o PDF'}<input type="file" accept="${foto || ARCH_MULTIFOTO[tipo] ? ACEPTA_FOTO : ACEPTA_DOC}" style="display:none" onchange="App.subirArch('${tipo}','${esc(id)}', this)"></label>`
       : (r.motivo && !ARCH_SOLOVER[tipo] ? `<p class="muted" style="margin:6px 0 0;font-size:13px">${esc(r.motivo)}</p>` : '');
     el.innerHTML = `<h4>${ARCH_TIT[tipo]} <span class="muted" style="font-weight:400;font-size:13px">${foto ? '' : a.length ? a.length + (a.length === 1 ? ' archivo' : ' archivos') : 'sin archivos'}</span></h4>
       ${foto ? `<div class="arch-foto">${act ? `<img alt="" data-actual="${act.id}" onclick="App.verArch('${tipo}','${esc(id)}','${act.id}')"><span class="muted">Cargando imagen…</span>` : '<span class="muted">Sin imagen</span>'}</div>` : ''}
@@ -1135,16 +1174,24 @@ const App = (() => {
     let r; try { r = await pedir('verArchivo', { tipo: tipo, id: id, archivo: archivo }); } catch (e) { return cerrarVisor(); }
     const cerrar = '<button class="btn" onclick="App.cerrarVisor()">✕ Cerrar</button>';
     const drive = r.drive ? `<a class="btn" target="_blank" rel="noopener" href="${esc(r.drive)}">Abrir en Drive</a>` : '';
+    if (r.tipo === 'xml' && r.texto !== undefined) return visor(`<h4 style="margin:0 0 8px;word-break:break-all">🧾 ${esc(r.nombre)}</h4><pre style="white-space:pre-wrap;word-break:break-all;max-height:68vh;overflow:auto;font-size:11px;background:var(--superficie-2);padding:10px;border-radius:8px">${esc(r.texto)}</pre><div class="acciones">${cerrar}${drive}</div>`);
     if (r.grande || !r.uri) return visor(`<h4>${esc(r.nombre)}</h4><p class="muted">El archivo es muy grande para mostrarlo aquí.</p><div class="acciones">${cerrar}${drive}</div>`);
     const url = uriABlobUrl(r.uri);
     const vista = r.tipo === 'pdf' ? `<iframe src="${url}" title="Documento" style="width:100%;height:72vh;border:0;border-radius:8px;background:#fff"></iframe>`
       : `<img src="${url}" alt="" style="max-width:100%;max-height:74vh;border-radius:8px;display:block;margin:auto">`;
     visor(`<h4 style="margin:0 0 8px;word-break:break-all">${esc(r.nombre)}</h4>${vista}<div class="acciones">${cerrar}<a class="btn" href="${url}" download="${esc(r.nombre)}">⬇️ Descargar</a><a class="btn" target="_blank" rel="noopener" href="${url}">Abrir aparte</a>${drive}</div>`);
   }
-  async function leerArch(tipo, f) { return ARCH_FOTO[tipo] || ARCH_MULTIFOTO[tipo] ? reducirImagen(f, tipo === 'provLogo' ? 600 : 1000) : leerComprobante(f); }
+  async function leerArch(tipo, f) {
+    if (ARCH_FOTO[tipo] || ARCH_MULTIFOTO[tipo]) return reducirImagen(f, tipo === 'provLogo' ? 600 : 1000);
+    if (tipo === 'ocFactura' && (/\.xml$/i.test(f.name || '') || /xml/i.test(f.type || ''))) return leerXml(f);
+    const u = await leerComprobante(f);
+    if ((tipo === 'prodFicha' || tipo === 'ocFactura') && !/^data:application\/pdf/.test(u)) throw new Error(tipo === 'prodFicha' ? 'La ficha técnica debe ser PDF' : 'La factura se adjunta en PDF o XML');
+    return u;
+  }
   function marcarArch(tipo, id) {
     if (S.minis && S.minis[tipo]) delete S.minis[tipo][id];
     if (tipo === 'sucFoto') { const m = LS.get('minisSuc', {}); delete m[id]; LS.set('minisSuc', m); }
+    if (tipo === 'prodFicha') { const pr = prod(id); if (pr) { pr.ficha = 1; LS.set('datos', S.datos); } }
     const arr = tipo === 'cliFoto' || tipo === 'cliCsf' ? D().clientes : tipo === 'provLogo' ? D().proveedores : tipo === 'vendFoto' ? D().vendedores : tipo === 'sucFoto' ? D().sucursales : null;
     const x = arr && arr.find(o => String(o.id) === String(id));
     if (x) { x[tipo === 'provLogo' ? 'logo' : tipo === 'cliCsf' ? 'csf' : 'foto'] = 1; LS.set('datos', S.datos); }
@@ -1357,8 +1404,13 @@ const App = (() => {
     } catch (e) {}
   }
   async function entregarVenta(id) {
-    if (!confirm('¿Marcar la nota como Entregada? Se descontarán las piezas del inventario de la sucursal.')) return;
-    try { const r = await pedir('entregarVenta', { ID_Venta: id }); toast('✔ Nota entregada: inventario descontado'); (r.avisos || []).forEach(a => setTimeout(() => toast('⚠️ ' + a, true), 2900)); refrescarStock(); verVenta(id); if ($('#lVentas')) buscarVentas(); } catch (e) {}
+    const d = S.ultimaVenta && S.ultimaVenta.id === id ? S.ultimaVenta : {};
+    const f = await capturarFirma({ titulo: 'Entregar nota ' + (d.folio || '') + ' · firma de recibido', verbo: 'recibe', nombreIni: d.recibio || '', nombreObl: false, opcional: true, omitirTxt: 'Entregar sin firma', okTxt: 'Firmar y entregar' });
+    if (!f) return;
+    if (f.omitida && !confirm('¿Marcar la nota como Entregada sin firma? Se descontarán las piezas del inventario de la sucursal.')) return;
+    try { const r = await pedir('entregarVenta', Object.assign({ ID_Venta: id }, f.nombre ? { Recibio: f.nombre } : {}));
+      if (f.png) { if (await subirFirma('ventaFirma', id, f)) toast('✔ Firma guardada'); }
+      toast('✔ Nota entregada: inventario descontado'); (r.avisos || []).forEach(a => setTimeout(() => toast('⚠️ ' + a, true), 2900)); refrescarStock(); verVenta(id); if ($('#lVentas')) buscarVentas(); } catch (e) {}
   }
   function formEnvio(id) {
     const d = S.ultimaVenta, cat = D().catalogos || {};
@@ -1431,7 +1483,7 @@ const App = (() => {
         ${U().todasSucursales && !ed ? `<label class="fijo" style="min-width:180px">Sucursal<select id="cSuc">${optsSuc(v.suc)}</select></label>` : ''}
         <label style="flex:3 1 280px">Cliente<div class="buscador"><input id="cCli" placeholder="Buscar por nombre, razón social, RFC o teléfono…" value="${c ? esc(c.razon || c.nombre) : ''}" autocomplete="off"></div></label></div>
         <div class="muted" style="margin-top:8px">${c ? `Lista <b>${esc(v.lista)}</b> · ${esc(c.rfc || 'Sin RFC')} · ${esc(c.localidad || c.municipio || '')}` : 'Selecciona un cliente para aplicar su lista de precios.'}</div></div>
-      <div class="tarjeta"><div class="buscador"><input id="cProd" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
+      <div class="tarjeta"><div class="buscador buscador-prod"><input id="cProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
         <div class="espacio"></div><div class="doc-lineas" id="cLineas"></div></div>
       <div class="rejilla-2" style="margin-top:14px">
         <div class="tarjeta"><h3>Observaciones</h3><label>Notas para el cliente (salen en el PDF)<input id="cObs" value="${esc(v.obs)}" placeholder="Ej. precios con envío incluido, tiempo de entrega 3 días…"></label></div>
@@ -2171,19 +2223,19 @@ const App = (() => {
       <label>Forma de pago<select id="cbForma">${opts(cat.formasPago, '1')}</select></label>
       <label>Cuenta / caja<select id="cbBanco">${opts(cat.bancos, 'EFECTI10')}</select></label>
       <label style="grid-column:1/-1">Nota<input id="cbNota"></label>
-      <label style="grid-column:1/-1">Comprobante (foto o PDF, opcional)<input type="file" id="cbArch" accept="image/&#42;,application/pdf"></label></div>
+      <label style="grid-column:1/-1">Comprobante (foto y/o PDF, opcional — puedes elegir ambos)<input type="file" id="cbArch" multiple accept="image/&#42;,application/pdf"></label></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarCobro('${idVenta}')">Guardar cobro</button></div>`);
   }
   async function guardarCobro(idVenta) {
     const p = { ID_Venta: idVenta, ID_Cobranza: uid(), monto: Number($('#cbMonto').value), fecha: $('#cbFecha').value, forma: $('#cbForma').value, banco: $('#cbBanco').value, nota: $('#cbNota').value };
     if (!(p.monto > 0)) return toast('Captura el monto', true);
-    const arch = $('#cbArch') && $('#cbArch').files[0];
-    let adj = '';
-    if (arch) { try { adj = await leerComprobante(arch, navigator.onLine === false ? 1200 : 1600); } catch (e) { return toast(e.message || 'No se pudo leer el comprobante', true); } }
+    let adjs;
+    try { adjs = await leerComprobantes($('#cbArch'), navigator.onLine === false ? 1200 : 1600); } catch (e) { return toast(e.message || 'No se pudo leer el comprobante', true); }
+    const adj = adjs.length;
     const encolarAdj = () => {
-      if (!adj) return '';
-      if (adj.length > 900000) return ' El comprobante es pesado: agrégalo desde el cobro cuando tengas señal.';
-      encolar('subirAdjuntoCobro', { ID_Cobranza: p.ID_Cobranza, dataUri: adj }, 'Comprobante del cobro ' + $$(p.monto)); return '';
+      let av = '';
+      adjs.forEach(u => { if (u.length > 900000) av = ' Un comprobante es pesado: agrégalo desde el cobro cuando tengas señal.'; else encolar('subirAdjuntoCobro', { ID_Cobranza: p.ID_Cobranza, dataUri: u }, 'Comprobante del cobro ' + $$(p.monto)); });
+      return av;
     };
     let r;
     try { r = await pedir('guardarCobro', p); }
@@ -2191,7 +2243,7 @@ const App = (() => {
     if (S.cacheTot) S.cacheTot = {};
     let msg = '✔ Cobro registrado. Saldo: ' + $$(r.saldo);
     if (adj) {
-      try { await pedir('subirAdjuntoCobro', { ID_Cobranza: p.ID_Cobranza, dataUri: adj }); msg += ' · comprobante adjunto'; }
+      try { for (const u of adjs) await pedir('subirAdjuntoCobro', { ID_Cobranza: p.ID_Cobranza, dataUri: u }); msg += adjs.length > 1 ? ' · foto y PDF adjuntos' : ' · comprobante adjunto'; }
       catch (e) { if (e.red) { const av = encolarAdj(); msg += av || ' · el comprobante se enviará al reconectar'; } else msg += ' · el comprobante no se pudo subir, agrégalo desde el cobro'; }
     }
     toast(msg); cerrarModal(); if ($('#lCob')) buscarCobros(); if ($('#lVentas')) buscarVentas();
@@ -2229,7 +2281,7 @@ const App = (() => {
       const todos = l;
       if ($('#ppSinAdj').checked) l = l.filter(x => !x.adj);
       S.lista = l;
-      const pagos = todos.filter(x => !x.nc), ncs = todos.filter(x => x.nc);
+      const pagos = todos.filter(x => !x.nc && !x.esNC), ncs = todos.filter(x => x.nc || x.esNC);
       const tot = pagos.reduce((a, x) => a + x.monto, 0), totNC = ncs.reduce((a, x) => a + x.monto, 0), sinAdj = todos.filter(x => !x.adj).length;
       const prov = {}; pagos.forEach(x => { const k = x.proveedor || 'Sin proveedor'; prov[k] = (prov[k] || 0) + x.monto; });
       const top = Object.keys(prov).sort((a, b) => prov[b] - prov[a]).slice(0, 2);
@@ -2240,7 +2292,7 @@ const App = (() => {
         <div class="kpi${sinAdj ? ' kpi-clic' : ''}" ${sinAdj ? 'onclick="App.pagosSinAdj()"' : ''}><small>Sin comprobante</small><b>${sinAdj}</b><span>${sinAdj ? 'pagos sin foto ni PDF' : 'todos tienen comprobante'}</span></div>
       </div>` + tabla([
         { t: 'Fecha', k: 'fecha' }, { t: 'Orden', h: x => `<b>${esc(x.folioOC)}</b>` }, { t: 'Proveedor', k: 'proveedor' }, { t: 'Factura', cls: 'ocultar-movil', k: 'factura' },
-        { t: 'Forma de pago', cls: 'ocultar-movil', h: x => x.nc ? `<span class="etq">Nota de crédito ${esc(x.nc)}</span>` : esc(x.forma) }, { t: 'Cuenta', cls: 'ocultar-movil', k: 'banco' },
+        { t: 'Forma de pago', cls: 'ocultar-movil', h: x => x.nc || x.esNC ? `<span class="etq">Nota de crédito ${esc(x.nc || '')}</span>` : esc(x.forma) }, { t: 'Cuenta', cls: 'ocultar-movil', k: 'banco' },
         { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }, { t: '📎', h: x => x.adj ? `<span title="${x.adj} archivo(s)">📎${x.adj > 1 ? x.adj : ''}</span>` : '<span class="muted" title="Sin comprobante">—</span>' },
         { t: 'Comentarios', cls: 'ocultar-movil', k: 'comentarios' }
       ], l, { clic: 'App.abrirPagoProv', vacio: 'No hay pagos en ese periodo' });
@@ -2262,7 +2314,7 @@ const App = (() => {
         ${d.comentarios ? `<tr><td>Comentarios</td><td>${esc(d.comentarios)}</td></tr>` : ''}
         ${d.oc ? `<tr><td>Saldo de la orden</td><td>${$$(d.oc.saldo)} <span class="muted">de ${$$(d.oc.total)}</span></td></tr>` : ''}
       </tbody></table></div></div>
-      ${htmlAdj('pago', d.id, d.adjuntos)}
+      ${htmlAdj('pago', d.id, d.adjuntos, d.esNC || !!d.nc)}
       <div class="acciones no-imprimir">${d.oc ? `<button class="btn" onclick="App.abrirCompraId('${d.oc.id}')">📦 Ver orden ${esc(d.oc.folio)}</button>` : ''}</div>`);
   }
   function pagosSinAdj() { $('#ppSinAdj').checked = true; buscarPagosProv(); }
@@ -2329,17 +2381,80 @@ const App = (() => {
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', k: 'lote' }, { t: 'Cad.', k: 'cad' }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$(x.total) }], d.lineas)}
       <div class="totales" style="margin-top:10px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div><div><span>IVA</span><span>${$$(d.iva)}</span></div>${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}
       <div class="gran"><span>Total</span><span>${$$(d.total)}</span></div><div><span>Pagado</span><span>${$$(d.pagado)}</span></div><div><b>Saldo</b><b>${$$(d.saldo)}</b></div></div>
-      ${d.pagos && d.pagos.length ? `<div style="margin-top:14px;break-inside:avoid"><b>Pagos realizados</b><div class="tabla-cont" style="margin-top:6px"><table><thead><tr><th>Fecha</th><th>Comentarios</th><th class="num">Importe</th></tr></thead><tbody>
-        ${d.pagos.map(x => `<tr><td>${esc(x.fecha)}${x.id && puede('pagos_proveedor') ? ` <a class="no-imprimir" href="#" title="Ver el pago y su comprobante" onclick="App.verPagoProv('${x.id}');return false">${x.adj ? '📎' + x.adj : '🧾'}</a>` : ''}</td><td>${esc(x.comentarios || '')}</td><td class="num">${$$(x.monto)}</td></tr>`).join('')}
-        </tbody></table></div></div>` : ''}</div></div>
+      ${tablaPagosOC(d)}</div></div>
       ${pend.length && puede('compras') ? `<div class="tarjeta no-imprimir" style="margin-top:12px"><h3>Recibir mercancía en ${esc(sucNom(d.suc))}</h3>
         ${pend.map(l => `<div class="fila" data-det="${esc(l.idDet)}" style="margin-bottom:6px"><div style="flex:2 1 200px"><b>${esc(l.nombre)}</b> × ${nf(l.cant)}</div>
           <label>Lote<input data-k="Lote" value="${esc(l.lote === 'SIN LOTE' ? '' : l.lote)}"></label><label>Caducidad<input type="date" data-k="F_Caducidad" value="${isoDe(l.cad)}"></label></div>`).join('')}
         <div class="acciones"><button class="btn primario" onclick="App.recibirCompra('${d.id}')">✔ Recibir en inventario</button></div></div>` : ''}
-      ${bloqueArch('ocGuia', d.id)}
+      ${bloqueArch('ocFactura', d.id)}${bloqueArch('ocGuia', d.id)}${bloqueArch('ocFirma', d.id)}
       <div class="acciones no-imprimir"><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button>
       ${puede('compras') ? `<button class="btn" onclick="App.formFacturaCompra('${d.id}')">🧾 ${d.factura ? 'Editar' : 'Capturar'} factura</button>` : ''}
-      ${d.saldo > 0.009 && puede('pagos_proveedor') ? `<button class="btn primario" onclick="App.formPagoProv('${d.id}',${d.saldo})">Registrar pago</button>` : ''}</div>`);
+      ${d.saldo > 0.009 && puede('pagos_proveedor') ? `<button class="btn" onclick="App.formNotaCredito('${d.id}',${d.saldo})">🧾 Nota de crédito</button><button class="btn primario" onclick="App.formPagoProv('${d.id}',${d.saldo})">Registrar pago</button>` : ''}</div>`);
+  }
+  /** Pagos y notas de crédito de la orden, separados y con totales. */
+  function tablaPagosOC(d) {
+    const l = d.pagos || []; if (!l.length) return '';
+    const nc = l.filter(x => x.esNC), pg = l.filter(x => !x.esNC), sum = a => a.reduce((t, x) => t + (Number(x.monto) || 0), 0);
+    const lnk = x => x.id && puede('pagos_proveedor') ? ` <a class="no-imprimir" href="#" title="Ver ${x.esNC ? 'la nota de crédito' : 'el pago'} y sus archivos" onclick="App.verPagoProv('${x.id}');return false">${x.adj ? '📎' + x.adj : '🧾'}</a>` : '';
+    const t = (tit, a, cols) => a.length ? `<div style="margin-top:14px;break-inside:avoid"><b>${tit}</b><div class="tabla-cont" style="margin-top:6px"><table><thead><tr><th>Fecha</th>${cols[0]}<th class="num">Importe</th></tr></thead><tbody>
+      ${a.map(x => `<tr><td>${esc(x.fecha)}${lnk(x)}</td>${cols[1](x)}<td class="num">${$$(x.monto)}</td></tr>`).join('')}
+      <tr><td colspan="${cols[2]}"><b>Total</b></td><td class="num"><b>${$$(sum(a))}</b></td></tr></tbody></table></div></div>` : '';
+    return t('Pagos realizados', pg, ['<th>Comentarios</th>', x => `<td>${esc(x.comentarios || '')}</td>`, 2]) +
+      t('Notas de crédito', nc, ['<th>Folio N/C</th><th>Motivo</th>', x => `<td><b>${esc(x.nc || '—')}</b></td><td>${esc(x.motivoNC || x.comentarios || '')}</td>`, 3]);
+  }
+  const MOTIVOS_NC = ['Pronto pago', 'Devolución', 'Bonificación', 'Descuento comercial', 'Producto dañado o caducado', 'Otro'];
+  function formNotaCredito(id, saldo) {
+    const d = S.ultimaCompra || {};
+    S.ncArch = {};
+    modal('🧾 Nota de crédito · Orden ' + (d.folio || ''), `<p class="muted" style="margin-top:0">${esc(d.proveedor || '')} · saldo de la orden <b>${$$(saldo)}</b>. La nota de crédito reduce el saldo como un pago.</p>
+      <div class="fact-bloque"><h4>🧾 XML de la nota de crédito (opcional)</h4><p class="muted" style="margin:0 0 6px;font-size:13px">Si eliges el XML, lleno el folio, el monto y el UUID por ti.</p>
+        <label class="btn chico" style="cursor:pointer">Elegir XML<input type="file" id="ncXml" accept=".xml,text/xml,application/xml" style="display:none" onchange="App.leerXmlNC(this)"></label> <span id="ncXmlInfo" class="muted"></span></div>
+      <div class="rejilla"><label>Folio de la N/C *<input id="ncFolio" placeholder="Ej. NC 1234"></label>
+        <label>Motivo *<select id="ncMotivo" onchange="document.getElementById('ncOtroL').style.display=this.value==='Otro'?'':'none'">${MOTIVOS_NC.map(m => `<option>${m}</option>`).join('')}</select></label>
+        <label id="ncOtroL" style="display:none">Especifica<input id="ncOtro" placeholder="Motivo"></label>
+        <label>% (opcional)<input type="number" id="ncPct" placeholder="Ej. 6" oninput="App.ncPorcentaje(${Number(d.total) || 0})"></label>
+        <label>Monto $ *<input type="number" id="ncMonto" step="0.01"></label>
+        <label style="grid-column:1/-1">Folio fiscal (UUID, opcional)<input id="ncUuid" placeholder="XXXXXXXX-XXXX-…"></label>
+        <label style="grid-column:1/-1">PDF de la nota de crédito (opcional)<input type="file" id="ncPdf" accept="application/pdf"></label></div>
+      <div class="acciones"><button class="btn" onclick="App.abrirCompraId('${id}')">Volver</button><button class="btn primario" onclick="App.guardarNotaCredito('${id}',${saldo})">Guardar nota de crédito</button></div>`);
+  }
+  function ncPorcentaje(total) { const p = Number($('#ncPct').value) || 0; if (p > 0 && total > 0) $('#ncMonto').value = (Math.round(total * p) / 100).toFixed(2); }
+  /** Lee el CFDI de egreso (tipo E) y llena folio, monto y UUID. */
+  async function leerXmlNC(input) {
+    const f = input.files && input.files[0], info = $('#ncXmlInfo'); S.ncArch = S.ncArch || {}; S.ncArch.xml = '';
+    if (!f) { info.textContent = ''; return; }
+    try {
+      const uri = await leerXml(f); S.ncArch.xml = uri;
+      const txt = await f.text(), doc = new DOMParser().parseFromString(txt, 'application/xml');
+      const all = n => Array.from(doc.getElementsByTagName('*')).filter(e => e.localName === n);
+      const c = all('Comprobante')[0], tf = all('TimbreFiscalDigital')[0];
+      if (!c) throw new Error('No parece un CFDI');
+      const g = k => c.getAttribute(k) || '', folio = [g('Serie'), g('Folio')].filter(String).join(' ');
+      if (folio && !$('#ncFolio').value) $('#ncFolio').value = folio;
+      if (g('Total')) $('#ncMonto').value = Number(g('Total')).toFixed(2);
+      if (tf && tf.getAttribute('UUID')) $('#ncUuid').value = tf.getAttribute('UUID');
+      const rel = all('CfdiRelacionado').map(e => e.getAttribute('UUID')).filter(Boolean);
+      const em = all('Emisor')[0];
+      info.innerHTML = `✔ ${esc(f.name)}${g('TipoDeComprobante') && g('TipoDeComprobante') !== 'E' ? ' · <b class="txt-mal">ojo: no es tipo Egreso (E)</b>' : ''}${em ? ' · ' + esc(em.getAttribute('Nombre') || em.getAttribute('Rfc') || '') : ''}${rel.length ? ' · relaciona ' + rel.length + ' factura(s)' : ''}`;
+    } catch (e) { info.textContent = e.message || 'No se pudo leer el XML'; }
+  }
+  async function guardarNotaCredito(id, saldo) {
+    const motivo = $('#ncMotivo').value === 'Otro' ? $('#ncOtro').value.trim() : $('#ncMotivo').value + ($('#ncPct').value ? ' ' + $('#ncPct').value + '%' : '');
+    const monto = Number($('#ncMonto').value) || 0, folio = $('#ncFolio').value.trim();
+    if (!folio) return toast('Captura el folio de la nota de crédito', true);
+    if (!motivo) return toast('Indica el motivo', true);
+    if (monto <= 0) return toast('Captura el monto', true);
+    if (monto > saldo + 0.01) return toast('El monto excede el saldo de la orden (' + $$(saldo) + ')', true);
+    let pdf = ''; const fp = $('#ncPdf') && $('#ncPdf').files[0];
+    if (fp) { try { pdf = await leerComprobante(fp); if (!/^data:application\/pdf/.test(pdf)) throw new Error('El archivo de la N/C debe ser PDF'); } catch (e) { return toast(e.message, true); } }
+    const xml = (S.ncArch || {}).xml || '', idP = uid();
+    try {
+      const r = await pedir('guardarNotaCreditoProv', { ID_Pago_Proveedor: idP, ID_O_Compra: id, folio: folio, motivo: motivo, monto: monto, uuid: $('#ncUuid').value.trim() });
+      S.cacheTot = {}; let msg = '✔ Nota de crédito registrada. Saldo ' + $$(r.saldo), mal = 0;
+      for (const u of [pdf, xml]) { if (!u) continue; try { await pedir('subirAdjuntoPago', { id: r.id || idP, dataUri: u, nc: true }); } catch (e) { mal++; } }
+      if (pdf || xml) msg += mal ? ' · ' + mal + ' archivo(s) no se pudieron subir: agrégalos desde la nota de crédito' : ' · archivos adjuntos';
+      toast(msg); verCompra(id); if ($('#lOC')) buscarCompras(); if ($('#lPP')) buscarPagosProv();
+    } catch (e) {}
   }
   function formFacturaCompra(id) {
     const d = S.ultimaCompra || {};
@@ -2352,24 +2467,26 @@ const App = (() => {
   }
   async function recibirCompra(id) {
     const lineas = Array.from(document.querySelectorAll('[data-det]')).map(r => ({ ID_Detalle_O_Compra: r.dataset.det, Lote: r.querySelector('[data-k=Lote]').value, F_Caducidad: r.querySelector('[data-k=F_Caducidad]').value }));
-    try { const r = await pedir('recibirCompra', { ID_O_Compra: id, lineas: lineas }); toast(r.renglones ? '✔ ' + r.renglones + ' productos ingresados al inventario' + (r.yaRegistrados ? ' (' + r.yaRegistrados + ' ya estaban)' : '') : '✔ Esos productos ya estaban en el inventario: no se duplicó nada'); cerrarModal(); refrescarStock(); buscarCompras(); } catch (e) {}
+    try { const r = await pedir('recibirCompra', { ID_O_Compra: id, lineas: lineas }); toast(r.renglones ? '✔ ' + r.renglones + ' productos ingresados al inventario' + (r.yaRegistrados ? ' (' + r.yaRegistrados + ' ya estaban)' : '') : '✔ Esos productos ya estaban en el inventario: no se duplicó nada'); refrescarStock(); buscarCompras();
+      const f = await capturarFirma({ titulo: 'Firma de quien recibió la mercancía', verbo: 'recibe', nombreObl: false, opcional: true, omitirTxt: 'Omitir firma' });
+      if (f && f.png && await subirFirma('ocFirma', id, f)) toast('✔ Firma guardada');
+      verCompra(id); } catch (e) {}
   }
   function formPagoProv(id, saldo) {
     const cat = D().catalogos;
     modal('Pago a proveedor', `<div class="rejilla"><label>Monto $<input type="number" id="ppMonto" value="${saldo}"></label>
       <label>Forma de pago<select id="ppForma">${opts(cat.formasPago, '3')}</select></label><label>Cuenta<select id="ppBanco">${opts(cat.bancos, '')}</select></label>
       <label style="grid-column:1/-1">Comentarios<input id="ppCom"></label>
-      <label style="grid-column:1/-1">Comprobante (foto o PDF, opcional)<input type="file" id="ppArch" accept="image/&#42;,application/pdf"></label></div>
+      <label style="grid-column:1/-1">Comprobante (foto y/o PDF, opcional — puedes elegir ambos)<input type="file" id="ppArch" multiple accept="image/&#42;,application/pdf"></label></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarPagoProv('${id}')">Guardar pago</button></div>`);
   }
   async function guardarPagoProv(id) {
-    const arch = $('#ppArch') && $('#ppArch').files[0];
-    let adj = '';
-    if (arch) { try { adj = await leerComprobante(arch); } catch (e) { return toast(e.message || 'No se pudo leer el comprobante', true); } }
+    let adjs;
+    try { adjs = await leerComprobantes($('#ppArch')); } catch (e) { return toast(e.message || 'No se pudo leer el comprobante', true); }
     const idPago = uid();
     try { const r = await pedir('guardarPagoProv', { ID_O_Compra: id, ID_Pago_Proveedor: idPago, monto: Number($('#ppMonto').value), forma: $('#ppForma').value, banco: $('#ppBanco').value, comentarios: $('#ppCom').value });
       S.cacheTot = {}; let msg = '✔ Pago registrado. Saldo ' + $$(r.saldo);
-      if (adj) { try { await pedir('subirAdjuntoPago', { id: r.id || idPago, dataUri: adj }); msg += ' · comprobante adjunto'; } catch (e) { msg += ' · el comprobante no se pudo subir: agrégalo desde Pagos a proveedores'; } }
+      if (adjs.length) { try { for (const u of adjs) await pedir('subirAdjuntoPago', { id: r.id || idPago, dataUri: u }); msg += adjs.length > 1 ? ' · foto y PDF adjuntos' : ' · comprobante adjunto'; } catch (e) { msg += ' · un comprobante no se pudo subir: agrégalo desde Pagos a proveedores'; } }
       toast(msg); cerrarModal(); if ($('#lOC')) buscarCompras(); if ($('#lPP')) buscarPagosProv(); } catch (e) {}
   }
   function nuevaCompra() {
@@ -2385,9 +2502,9 @@ const App = (() => {
       <label class="check"><input type="checkbox" id="ocRec" ${o.recibido ? 'checked' : ''}> Mercancía ya recibida (entra al inventario)</label>
       <label class="check"><input type="checkbox" id="ocCosto" ${o.actCosto ? 'checked' : ''}> Actualizar costo del producto</label>
       <label style="grid-column:1/-1">Observaciones<input id="ocObs" value="${esc(o.obs)}"></label></div></div>
-      <div class="tarjeta"><div class="buscador"><input id="ocProd" placeholder="🔍 Agregar producto…" autocomplete="off"></div><div class="espacio"></div><div class="doc-lineas" id="ocLineas"></div></div>
+      <div class="tarjeta"><div class="buscador buscador-prod"><input id="ocProd" enterkeyhint="search" placeholder="🔍 Agregar producto…" autocomplete="off"></div><div class="espacio"></div><div class="doc-lineas" id="ocLineas"></div></div>
       <div class="tarjeta"><div class="fila"><label>Pagar ahora $<input type="number" id="ocPago" value="${o.pago}"></label><label>Forma<select id="ocForma">${opts(cat.formasPago, '3')}</select></label><label>Cuenta<select id="ocBanco">${opts(cat.bancos, '')}</select></label></div>
-      <div class="totales" id="ocTot" style="margin-top:12px"></div><div class="acciones"><button class="btn peligro" onclick="App.limpiarCompra()">Descartar</button><button class="btn primario" onclick="App.guardarCompra()">💾 Guardar orden</button></div></div>`;
+      <div class="totales" id="ocTot" style="margin-top:12px"></div><div class="acciones"><button class="btn peligro" onclick="App.limpiarCompra()">Descartar</button><button class="btn primario" id="ocGuardar" onclick="App.guardarCompra()">💾 Guardar orden</button></div></div>`;
     const bind = (id, k, tipo) => { const el = $(id); el.oninput = el.onchange = e => { o[k] = tipo === 'c' ? e.target.checked : tipo === 'n' ? Number(e.target.value) || 0 : e.target.value; totalesCompra(); }; };
     bind('#ocProv', 'prov'); bind('#ocSuc', 'suc'); bind('#ocFac', 'factura'); bind('#ocFecha', 'fecha'); bind('#ocDias', 'dias'); bind('#ocDE', 'descEsp', 'n'); bind('#ocPP', 'descPP', 'n');
     $('#ocSuc').addEventListener('change', () => mostrarFolio('ocFolio', o.suc, 'Orden de Compra'));
@@ -2464,8 +2581,8 @@ const App = (() => {
       <label>Método de envío *<select id="trPaq">${opts(paqueterias(), t.paq, 'Selecciona…')}</select></label>
       <label>No. de guía<input id="trGuia" value="${esc(t.guia)}" placeholder="Si va por paquetería"></label>
       ${verImpC() ? `<label>Costo de flete $<input type="number" id="trFlete" step="0.01" min="0" value="${esc(t.flete)}" placeholder="Costo estimado o real"></label>` : ''}</div></div>
-      <div class="tarjeta"><div class="buscador"><input id="trProd" placeholder="🔍 Agregar producto con existencia en origen…" autocomplete="off"></div><div class="espacio"></div><div class="doc-lineas" id="trLineas"></div>
-      <div class="acciones"><button class="btn peligro" onclick="App.limpiarTraspaso()">Descartar</button><button class="btn primario" onclick="App.guardarTraspaso()">🚚 Registrar traspaso</button></div></div>`;
+      <div class="tarjeta"><div class="buscador buscador-prod"><input id="trProd" enterkeyhint="search" placeholder="🔍 Agregar producto con existencia en origen…" autocomplete="off"></div><div class="espacio"></div><div class="doc-lineas" id="trLineas"></div>
+      <div class="acciones"><button class="btn peligro" onclick="App.limpiarTraspaso()">Descartar</button><button class="btn primario" id="trGuardar" onclick="App.guardarTraspaso()">🚚 Registrar traspaso</button></div></div>`;
     $('#trOri').onchange = e => { t.ori = e.target.value; t.lineas = []; V.traspasos('nuevo'); };
     mostrarFolio('trFolio', t.ori, 'Traspaso');
     $('#trDes').onchange = e => { t.des = e.target.value; pintarLineasTr(); }; $('#trRec').oninput = e => t.recibio = e.target.value; $('#trCom').oninput = e => t.com = e.target.value;
@@ -2566,7 +2683,7 @@ const App = (() => {
           ${imp ? `<table class="tr-tot"><tr><td>Subtotal</td><td class="num">${$$(sub)}</td></tr><tr><td>IVA</td><td class="num">${$$(iva)}</td></tr><tr><td>Flete</td><td class="num">${$$(flete)}</td></tr><tr class="total"><td>TOTAL</td><td class="num">${$$(total)}</td></tr></table>` : ''}</div>
         <div class="tr-firmas"><div><span></span><b>Entregó</b><small>Almacén ${esc(d.origenNombre)}</small></div><div><span></span><b>Transportista</b><small>${esc([d.envio, d.guia].filter(Boolean).join(' · ') || '—')}</small></div><div><span></span><b>Recibió</b><small>${d.recibio ? esc(d.recibio) + ' · ' : ''}Almacén ${esc(d.destinoNombre)}</small></div></div>
       </div></div>
-        ${d.id ? bloqueArch('trGuia', d.id) : ''}
+        ${d.id ? bloqueArch('trGuia', d.id) + bloqueArch('trFirma', d.id) : ''}
         <div class="acciones no-imprimir">${d.editable ? `<button class="btn" onclick="App.formEditarTraspaso()">✏️ Editar envío y datos</button>` : ''}<button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button><button class="btn primario" onclick="App.pdfTraspaso('${esc(d.folio)}')">📄 PDF para enviar</button></div>`);
       S.trDet = d; } catch (e) {}
   }
@@ -2610,8 +2727,8 @@ const App = (() => {
     $('#vista').innerHTML = barra + `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="ajFolio"></div></div><div class="rejilla"><label>Tipo<select id="ajTipo">${opts(tipos, a.tipo)}</select></label>
       <label>Sucursal<select id="ajSuc">${optsSuc(a.suc)}</select></label>
       <label>Motivo *<input id="ajMot" list="ajMotivos" value="${esc(a.motivo)}"><datalist id="ajMotivos"><option>Caducado</option><option>Dañado</option><option>Pérdida</option><option>Ajuste por conteo físico</option><option>Muestra médica</option><option>Inventario inicial</option></datalist></label></div></div>
-      <div class="tarjeta"><div class="buscador"><input id="ajProd" placeholder="🔍 Agregar producto…" autocomplete="off"></div><div class="espacio"></div><div class="doc-lineas" id="ajLineas"></div>
-      <div class="acciones"><button class="btn peligro" onclick="App.limpiarAjuste()">Descartar</button><button class="btn primario" onclick="App.guardarAjuste()">💾 Registrar</button></div></div>`;
+      <div class="tarjeta"><div class="buscador buscador-prod"><input id="ajProd" enterkeyhint="search" placeholder="🔍 Agregar producto…" autocomplete="off"></div><div class="espacio"></div><div class="doc-lineas" id="ajLineas"></div>
+      <div class="acciones"><button class="btn peligro" onclick="App.limpiarAjuste()">Descartar</button><button class="btn primario" id="ajGuardar" onclick="App.guardarAjuste()">💾 Registrar</button></div></div>`;
     $('#ajTipo').onchange = e => { a.tipo = e.target.value; a.lineas = []; V.ajustes(); };
     $('#ajSuc').onchange = e => { a.suc = e.target.value; a.lineas = []; V.ajustes(); };
     mostrarFolio('ajFolio', a.suc, a.tipo === 'Merma' ? 'Merma' : 'Ajuste');
@@ -2827,7 +2944,7 @@ const App = (() => {
   }
   function formEncontrado() {
     modal('Producto encontrado', `<p class="muted">Para productos o lotes que encontraste en anaquel y que no aparecen en la lista.</p>
-      <div class="buscador"><input id="ceProd" placeholder="🔍 Producto…" autocomplete="off"></div><div id="ceSel" class="espacio"></div>
+      <div class="buscador buscador-prod"><input id="ceProd" enterkeyhint="search" placeholder="🔍 Producto…" autocomplete="off"></div><div id="ceSel" class="espacio"></div>
       <div class="rejilla"><label>Lote<input id="ceLote"></label><label>Caducidad<input type="date" id="ceCad"></label><label>Cantidad contada<input type="number" id="ceCant" min="0" step="any"></label></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.agregarEncontrado()">Agregar</button></div>`);
     buscador($('#ceProd'), { fuente: fuenteProductos(S.cto.suc, null, false), alElegir: x => { S.ceProd = x.id; $('#ceSel').innerHTML = `<b>${esc((prod(x.id) || {}).nombre || x.id)}</b>`; $('#ceProd').value = ''; } });
@@ -3228,7 +3345,7 @@ const App = (() => {
     tab = tab || S.tabProd || 'cat'; if (tab === 'lista' || (tab === 'margen' && !puede('analisis_precios'))) tab = 'cat'; S.tabProd = tab;
     $('#vista').innerHTML = `<div id="pCont"></div>`;
     if (S.vista === 'productos') pintarSubnav();
-    ({ cat: prodCatalogo, margen: prodMargen })[tab]();
+    ({ cat: prodCatalogo, margen: prodMargen, port: prodPortafolio })[tab]();
   };
   /* ---------- ACTUALIZAR PRECIOS DESDE LA MATRIZ (hoja "Matriz Precios Venta y CRM Int Vet") ---------- */
   V.matriz = () => {
@@ -3397,6 +3514,50 @@ const App = (() => {
       activarMinis($('#pRes')); };
     enlazarFiltros(pintar); pintar();
   }
+  /* ---------- PORTAFOLIO: datos técnicos, fichas y catálogo PDF ---------- */
+  function prodPortafolio() {
+    const ps = D().productos || [], listas = (D().catalogos || {}).listas || [];
+    const cats = [...new Set(ps.map(p => p.categoria).filter(Boolean))].sort(), labs = [...new Set(ps.map(p => p.lab).filter(Boolean))].sort();
+    const C = S.catPdf = S.catPdf || { labs: [], cats: [], lista: '' };
+    const chips = (arr, k) => `<div class="chips">${arr.map(x => `<label class="chip${C[k].indexOf(x) >= 0 ? ' on' : ''}"><input type="checkbox" data-c="${k}" value="${esc(x)}" ${C[k].indexOf(x) >= 0 ? 'checked' : ''}>${esc(x)}</label>`).join('')}</div>`;
+    $('#pCont').innerHTML = filtrosProd(`<label class="check fijo"><input type="checkbox" id="pfFicha"> Solo con ficha técnica</label>`) +
+      `<details class="tarjeta no-imprimir cat-pdf" ${C.abierto ? 'open' : ''}><summary><b>📄 Catálogo en PDF</b> <span class="muted">con tu logotipo y colores · elige laboratorios y categorías</span></summary>
+        <div style="margin-top:10px"><div class="muted" style="font-size:12.5px;font-weight:600">Laboratorios <span id="cpNL"></span> <a href="#" data-todo="labs">todos</a> · <a href="#" data-nada="labs">ninguno</a></div>${chips(labs, 'labs')}
+        <div class="muted" style="font-size:12.5px;font-weight:600;margin-top:10px">Categorías <span id="cpNC"></span> <a href="#" data-todo="cats">todas</a> · <a href="#" data-nada="cats">ninguna</a></div>${chips(cats, 'cats')}
+        <div class="fila" style="margin-top:10px"><label>Precios<select id="cpLista">${opts([['', 'Sin precios']].concat(puede('ver_importes') ? listas.map(x => [x, 'Lista ' + x]) : []), C.lista)}</select></label>
+        <div class="fijo" style="align-self:flex-end"><span id="cpCuenta" class="muted"></span></div>
+        <button class="btn primario fijo" style="align-self:flex-end" onclick="App.pdfCatalogo()">📄 Generar catálogo</button></div>
+        <p class="muted" style="font-size:12px;margin:6px 0 0">Sin elegir nada se incluye todo el portafolio activo (máx. 400 productos por catálogo).</p></div></details>
+      <div id="pRes"></div>`;
+    const cuenta = () => { const n = ps.filter(p => p.activo && (!C.labs.length || C.labs.indexOf(p.lab) >= 0) && (!C.cats.length || C.cats.indexOf(p.categoria) >= 0)).length;
+      $('#cpCuenta').innerHTML = `<b>${n}</b> productos activos en el catálogo`; $('#cpNL').textContent = C.labs.length ? '(' + C.labs.length + ')' : ''; $('#cpNC').textContent = C.cats.length ? '(' + C.cats.length + ')' : ''; };
+    const box = $('#pCont .cat-pdf');
+    box.addEventListener('toggle', () => { C.abierto = box.open; });
+    box.addEventListener('change', e => { const c = e.target.dataset.c; if (c) { const v = e.target.value; C[c] = C[c].filter(x => x !== v); if (e.target.checked) C[c].push(v); e.target.parentNode.classList.toggle('on', e.target.checked); cuenta(); } if (e.target.id === 'cpLista') C.lista = e.target.value; });
+    box.addEventListener('click', e => { const a = e.target.closest('[data-todo],[data-nada]'); if (!a) return; e.preventDefault(); const k = a.dataset.todo || a.dataset.nada, todo = !!a.dataset.todo;
+      C[k] = todo ? (k === 'labs' ? labs : cats).slice() : []; box.querySelectorAll(`[data-c="${k}"]`).forEach(i => { i.checked = todo; i.parentNode.classList.toggle('on', todo); }); cuenta(); });
+    cuenta();
+    const pintar = () => {
+      const fi = $('#pfFicha').checked, l = prodFiltrados().filter(p => !fi || p.ficha).sort((a, b) => String(a.lab || '').localeCompare(String(b.lab || '')) || a.nombre.localeCompare(b.nombre)); S.lista = l;
+      const nf2 = l.filter(p => p.ficha).length;
+      $('#pRes').innerHTML = `<p class="muted">${l.length} productos · ${nf2} con ficha técnica${l.length > 300 ? ' · se muestran los primeros 300: usa los filtros' : ''}</p><div class="port-grid">${l.slice(0, 300).map((p, i) => `
+        <div class="port-card" onclick="App.abrirProducto(${i})">${p.foto ? `<img class="port-img" data-mini="${esc(p.id)}" alt="">` : '<span class="port-img sin-foto">📦</span>'}
+          <div class="port-txt"><b>${esc(p.nombre)}</b><small class="muted">${esc(p.id)}${p.unidad ? ' · ' + esc(p.unidad) : ''}</small>
+          <small>${esc([p.lab, p.categoria].filter(Boolean).join(' · '))}</small>${p.especies ? `<small class="muted">🐾 ${esc(p.especies)}</small>` : ''}
+          <div class="port-etq">${p.registro ? `<span class="etq">Reg. ${esc(p.registro)}</span>` : ''}${p.ficha ? `<button class="etq ok" onclick="event.stopPropagation();App.verFicha('${esc(p.id)}')">📑 Ficha técnica</button>` : '<span class="etq av">Sin ficha</span>'}${p.activo ? '' : '<span class="etq mal">Inactivo</span>'}</div></div></div>`).join('')}</div>`;
+      activarMinis($('#pRes'));
+    };
+    enlazarFiltros(pintar); enlazarFiltro('#pfFicha', pintar); pintar();
+  }
+  async function verFicha(id) {
+    try { const r = await pedir('archivos', { tipo: 'prodFicha', id: id }); const a = r.archivos || [], act = a.find(x => x.actual) || a[0];
+      if (!act) return toast('Este producto aún no tiene ficha técnica', true); verArch('prodFicha', id, act.id); } catch (e) {}
+  }
+  function pdfCatalogo() {
+    const C = S.catPdf || { labs: [], cats: [] };
+    const t = [C.labs.length ? C.labs.join(', ') : '', C.cats.length ? C.cats.join(', ') : ''].filter(Boolean).join(' · ') || 'Portafolio';
+    generarPdf('pdfCatalogo', { labs: C.labs, cats: C.cats, lista: C.lista || '' }, { asunto: 'Catálogo de productos Interés Veterinario — ' + t, texto: 'Te comparto nuestro catálogo de productos (' + t + '):', volver: "App.vistaProductos('port')" });
+  }
   async function prodMargen() {
     const listas = (D().catalogos || {}).listas || [];
     $('#pCont').innerHTML = filtrosProd(`<label>Margen sobre<select id="pfBase"><option value="real">Costo real de compra</option><option value="lista">Costo de lista</option></select></label>
@@ -3437,7 +3598,7 @@ const App = (() => {
     if (!editar) {
       modal(p.nombre, `${bloqueFoto(p)}<p><b>${esc(p.id)}</b> · ${esc(p.unidad)} · ${esc(p.categoria)} · ${esc(p.lab)} · Reg. ${esc(full.No_Registro || '')}</p>
         ${['Descripcion', 'Indicaciones', 'Especies', 'Dosis', 'Tiempo_retiro', 'Advertencias'].filter(k => full[k]).map(k => `<h4 style="margin-top:12px">${k.replace('_', ' ')}</h4><p style="white-space:pre-wrap">${esc(full[k])}</p>`).join('')}
-        <h4 style="margin-top:12px">Precios</h4>${tabla([{ t: 'Lista', k: 'l' }, { t: 'Precio', num: 1, h: x => $$(x.v) }], Object.keys(p.precios).map(k => ({ l: k, v: p.precios[k] })))}`);
+        <h4 style="margin-top:12px">Precios</h4>${tabla([{ t: 'Lista', k: 'l' }, { t: 'Precio', num: 1, h: x => $$(x.v) }], Object.keys(p.precios).map(k => ({ l: k, v: p.precios[k] })))}${bloqueArch('prodFicha', p.id)}`);
       cargarFotoGrande(p.id);
       return;
     }
@@ -3458,7 +3619,7 @@ const App = (() => {
     modal(p ? 'Editar ' + p.nombre : 'Nuevo producto', `${p ? `<div class="foto-editar"><div class="foto-prod" id="fotoEdit" data-grande="${esc(p.id)}">${p.foto ? '<span class="muted">Cargando foto…</span>' : '<span class="muted">Sin foto</span>'}</div>
       <label class="btn">📷 ${p.foto ? 'Cambiar foto' : 'Agregar foto'}<input type="file" accept="image/&#42;" style="display:none" onchange="App.subirFoto('${esc(p.id)}', this)"></label></div>`
       : `<div class="foto-editar"><div class="foto-prod" id="fotoEdit"><span class="muted">Sin foto</span></div>
-      <label class="btn">📷 Agregar foto<input type="file" id="fotoNueva" accept="image/&#42;" style="display:none" onchange="App.fotoNuevaPrev(this)"></label></div>`}<div id="fProd">${formulario(campos, ini)}</div>
+      <label class="btn">📷 Agregar foto<input type="file" id="fotoNueva" accept="image/&#42;" style="display:none" onchange="App.fotoNuevaPrev(this)"></label></div>`}<div id="fProd">${formulario(campos, ini)}</div>${p ? bloqueArch('prodFicha', p.id) : ''}
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarProducto(${p ? 'false' : 'true'})">Guardar</button></div>`);
     if (p && p.foto) cargarFotoGrande(p.id);
   }
@@ -4020,16 +4181,121 @@ const App = (() => {
     if ($('#rxMasT')) $('#rxMasT').disabled = S.rx.lineas.length >= ((S.rxCfg && S.rxCfg.maxT) || 8);
   }
   function rxMas() { if (S.rx.lineas.length < ((S.rxCfg && S.rxCfg.maxT) || 8)) { S.rx.lineas.push({ prod: '', texto: '' }); pintarRxLineas(); const t = document.querySelectorAll('#rxLin [data-prod]'); if (t.length) t[t.length - 1].focus(); } }
+  /** Panel de firma: dedo, mouse o Apple Pencil (pointer events), nítido en pantallas Retina, sin mover la página. */
+  /* ---------- MÓVIL: barra fija con el total y el botón Guardar (venta, cotización, compra, traspaso, ajuste) ---------- */
+  const BARRAS_DOC = [['#vGuardar', '#vTot', '#vLineas'], ['#cGuardar', '#cTot', '#cLineas'], ['#ocGuardar', '#ocTot', '#ocLineas'], ['#trGuardar', '', '#trLineas'], ['#ajGuardar', '', '#ajLineas']];
+  const barraDoc = { btn: null };
+  function revisarBarraDoc() {
+    const def = BARRAS_DOC.find(d => $(d[0]) && $(d[0]).closest('#vista'));
+    if (!def) { quitarBarraDoc(); return; }
+    const btn = $(def[0]); if (barraDoc.btn === btn) return actBarraDoc();
+    quitarBarraDoc();
+    const b = document.createElement('div'); b.id = 'barraDoc'; b.className = 'barra-doc oculta';
+    b.innerHTML = '<div class="bd-info"><small></small><b></b></div><button class="btn primario"></button>';
+    b.querySelector('button').onclick = () => { const x = barraDoc.btn; if (x && !x.disabled) x.click(); };
+    document.body.appendChild(b);
+    Object.assign(barraDoc, { btn: btn, tot: def[1], lin: def[2], el: b, visible: false });
+    barraDoc.io = new IntersectionObserver(e => { barraDoc.visible = e[0].isIntersecting; actBarraDoc(); }); barraDoc.io.observe(btn);
+    actBarraDoc();
+  }
+  function actBarraDoc() {
+    const B = barraDoc, b = B.el; if (!b || !B.btn) return;
+    if (!document.body.contains(B.btn)) return quitarBarraDoc();
+    const n = document.querySelectorAll(B.lin + ' .linea:not(.cab)').length;
+    const g = B.tot && $(B.tot) && $(B.tot).querySelector('.gran span:last-child, .gran b:last-child');
+    b.querySelector('small').textContent = n ? n + (n === 1 ? ' producto' : ' productos') : 'Sin productos';
+    b.querySelector('b').textContent = g ? g.textContent : '';
+    const bt = b.querySelector('button'); bt.textContent = B.btn.textContent.trim(); bt.disabled = B.btn.disabled;
+    b.classList.toggle('oculta', B.visible || !n || !$('#modal').classList.contains('oculto'));
+  }
+  function quitarBarraDoc() { if (barraDoc.io) barraDoc.io.disconnect(); if (barraDoc.el) barraDoc.el.remove(); Object.assign(barraDoc, { btn: null, el: null, io: null }); }
+  let tBarraDoc = 0;
+  function iniciarBarraDoc() {
+    const mo = new MutationObserver(() => { clearTimeout(tBarraDoc); tBarraDoc = setTimeout(revisarBarraDoc, 120); });
+    const v = $('#vista'); if (v) mo.observe(v, { childList: true, subtree: true, characterData: true });
+    const m = $('#modal'); if (m) new MutationObserver(() => actBarraDoc()).observe(m, { attributes: true, attributeFilter: ['class'] });
+  }
+  /* ---------- MÓVIL: al agregar un producto, el buscador queda a la vista y listo para el siguiente ---------- */
+  function iniciarBuscadorMovil() {
+    document.addEventListener('focusin', e => {
+      const i = e.target; if (!i.matches || !i.matches('.buscador-prod input')) return;
+      if (window.innerWidth <= 700) setTimeout(() => { try { i.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (er) {} }, 250);
+    });
+  }
   function padFirma(cv) {
-    if (!cv) return;
-    const x = cv.getContext('2d'); x.lineWidth = 2.4; x.lineCap = 'round'; x.strokeStyle = '#1a2a6c';
-    let pinta = false;
+    if (!cv || cv._pad) return; cv._pad = 1;
+    const r0 = cv.getBoundingClientRect(), dpr = Math.min(3, window.devicePixelRatio || 1);
+    if (r0.width > 0 && r0.height > 0) { cv.width = Math.round(r0.width * dpr); cv.height = Math.round(r0.height * dpr); }
+    const x = cv.getContext('2d'), base = 2.2 * (cv.width / Math.max(1, r0.width || cv.width));
+    x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#1a2a6c'; x.lineWidth = base;
+    let pinta = false, ult = null;
     const pos = e => { const r = cv.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return [(t.clientX - r.left) * cv.width / r.width, (t.clientY - r.top) * cv.height / r.height]; };
-    const ini = e => { pinta = true; const [a, b] = pos(e); x.beginPath(); x.moveTo(a, b); e.preventDefault(); };
-    const mov = e => { if (!pinta) return; const [a, b] = pos(e); x.lineTo(a, b); x.stroke(); cv._firmado = true; e.preventDefault(); };
-    const fin = () => { pinta = false; };
-    cv.addEventListener('mousedown', ini); cv.addEventListener('mousemove', mov); window.addEventListener('mouseup', fin);
-    cv.addEventListener('touchstart', ini, { passive: false }); cv.addEventListener('touchmove', mov, { passive: false }); cv.addEventListener('touchend', fin);
+    const ini = e => { pinta = true; ult = pos(e); x.beginPath(); x.moveTo(ult[0], ult[1]); if (e.pointerId !== undefined && cv.setPointerCapture) { try { cv.setPointerCapture(e.pointerId); } catch (er) {} } e.preventDefault(); };
+    const mov = e => {
+      if (!pinta) return; e.preventDefault();
+      const pts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      (pts.length ? pts : [e]).forEach(ev => {
+        const p = pos(ev), m = [(ult[0] + p[0]) / 2, (ult[1] + p[1]) / 2];
+        x.lineWidth = ev.pointerType === 'pen' && ev.pressure ? base * (0.5 + ev.pressure) : base;
+        x.quadraticCurveTo(ult[0], ult[1], m[0], m[1]); x.stroke(); x.beginPath(); x.moveTo(m[0], m[1]); ult = p;
+      });
+      cv._firmado = true;
+    };
+    const fin = () => { pinta = false; ult = null; };
+    if (window.PointerEvent) {
+      cv.addEventListener('pointerdown', ini); cv.addEventListener('pointermove', mov); cv.addEventListener('pointerup', fin); cv.addEventListener('pointercancel', fin);
+      cv.addEventListener('touchstart', e => e.preventDefault(), { passive: false }); cv.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    } else {
+      cv.addEventListener('mousedown', ini); cv.addEventListener('mousemove', mov); window.addEventListener('mouseup', fin);
+      cv.addEventListener('touchstart', ini, { passive: false }); cv.addEventListener('touchmove', mov, { passive: false }); cv.addEventListener('touchend', fin);
+    }
+  }
+  /** Firma de recibido a pantalla completa (iPhone / iPad). Resuelve { png, nombre }, { omitida: true } o null (cancelar). */
+  function capturarFirma(o) {
+    o = o || {};
+    return new Promise(res => {
+      const capa = document.createElement('div'); capa.className = 'firma-capa';
+      capa.innerHTML = `<div class="firma-caja"><div class="firma-enc"><b>✍️ ${esc(o.titulo || 'Firma')}</b><button class="btn chico" data-a="x">✕</button></div>
+        ${o.nombre !== false ? `<label class="firma-nom">Nombre de quien ${esc(o.verbo || 'recibe')}<input id="fmNom" value="${esc(o.nombreIni || '')}" autocomplete="off"></label>` : ''}
+        <div class="firma-zona"><canvas class="firma-pad firma-grande"></canvas><span class="firma-guia">Firme aquí</span></div>
+        <div class="acciones"><button class="btn" data-a="b">🧽 Borrar</button>${o.opcional ? `<button class="btn" data-a="o">${esc(o.omitirTxt || 'Continuar sin firma')}</button>` : ''}<button class="btn primario" data-a="g">✔ ${esc(o.okTxt || 'Guardar firma')}</button></div></div>`;
+      document.body.appendChild(capa); document.body.classList.add('sin-scroll');
+      const cv = capa.querySelector('canvas'); requestAnimationFrame(() => padFirma(cv));
+      const cerrar = v => { capa.remove(); document.body.classList.remove('sin-scroll'); res(v); };
+      capa.addEventListener('click', e => {
+        const a = e.target.closest('[data-a]'); if (!a) return;
+        if (a.dataset.a === 'x') cerrar(null);
+        else if (a.dataset.a === 'o') cerrar({ omitida: true, nombre: capa.querySelector('#fmNom') ? capa.querySelector('#fmNom').value.trim() : '' });
+        else if (a.dataset.a === 'b') { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); cv._firmado = false; }
+        else if (a.dataset.a === 'g') {
+          if (!cv._firmado) return toast('Falta la firma', true);
+          const nom = capa.querySelector('#fmNom') ? capa.querySelector('#fmNom').value.trim() : '';
+          if (o.nombre !== false && o.nombreObl !== false && !nom) return toast('Escribe el nombre de quien ' + (o.verbo || 'recibe'), true);
+          cerrar({ png: firmaPng(cv), nombre: nom });
+        }
+      });
+    });
+  }
+  /** PNG recortado a la firma y reducido (máx. 900 px de ancho) para que pese poco. */
+  function firmaPng(cv) {
+    const w = cv.width, h = cv.height, d = cv.getContext('2d').getImageData(0, 0, w, h).data;
+    let x0 = w, y0 = h, x1 = 0, y1 = 0;
+    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) if (d[(y * w + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 <= x0) return cv.toDataURL('image/png');
+    const m = 12; x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(w, x1 + m); y1 = Math.min(h, y1 + m);
+    const k = Math.min(1, 900 / (x1 - x0)), c2 = document.createElement('canvas'); c2.width = Math.round((x1 - x0) * k); c2.height = Math.round((y1 - y0) * k);
+    c2.getContext('2d').drawImage(cv, x0, y0, x1 - x0, y1 - y0, 0, 0, c2.width, c2.height);
+    return c2.toDataURL('image/png');
+  }
+  const FIRMA_INFO = { ventaFirma: { titulo: 'Firma de recibido', verbo: 'recibe' }, ocFirma: { titulo: 'Firma de recepción de mercancía', verbo: 'recibe' }, trFirma: { titulo: 'Firma de recibido del traspaso', verbo: 'recibe' } };
+  async function subirFirma(tipo, id, f) {
+    try { await pedir('subirArchivo', { tipo: tipo, id: id, dataUri: f.png, recibio: f.nombre || '' }); return true; }
+    catch (e) { if (e.red) toast('Sin conexión: la firma no se guardó; captúrala al reconectar', true); return false; }
+  }
+  async function firmaArch(tipo, id) {
+    const f = await capturarFirma(Object.assign({}, FIRMA_INFO[tipo], { nombreObl: tipo !== 'ocFirma' })); if (!f || !f.png) return;
+    toast('Guardando firma…');
+    if (await subirFirma(tipo, id, f)) { toast('✔ Firma guardada'); cargarArch(tipo, id); }
   }
   function rxLimpiarFirma() { const cv = $('#rxFirma'); if (cv) { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); cv._firmado = false; } }
   async function guardarReceta() {
@@ -4390,6 +4656,7 @@ const App = (() => {
     window.addEventListener('online', () => { marcarRed(true); sincronizar(); });
     window.addEventListener('offline', () => marcarRed(false));
     document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModal(); });
+    try { iniciarBarraDoc(); iniciarBuscadorMovil(); } catch (e) {}
     setInterval(() => { if (S.token && navigator.onLine) { sincronizar(); if (['venta', 'inventario'].indexOf(S.vista) < 0) refrescarStock(); precargar(); } }, 90000);
     window.addEventListener('online', () => { const el = $('#avisoCache'); if (el && !el.classList.contains('oculto')) el.querySelector('span').innerHTML = '🟢 <b>Ya hay conexión.</b> Toca “Actualizar” para ver la información al momento.'; setTimeout(precargar, 15000); });
     if (S.token && S.datos) {
@@ -4409,13 +4676,13 @@ const App = (() => {
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
-    vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, formPagoProv, guardarPagoProv, limpiarCompra, guardarCompra,
+    vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes,
     actualizarStock: async () => { await refrescarStock(); pintarExist(); toast('Existencias actualizadas'); },
     kardexDe: id => { cerrarModal(); S.tabInv = 'kardex'; V.inventario('kardex'); invKardex(id); },
-    vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, guardarProducto,
+    vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
     abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
