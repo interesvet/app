@@ -211,7 +211,7 @@ const App = (() => {
       'detalleVenta listarCobros cuentasPorCobrar adjuntosCobro estadosCuenta estadoCuentaCliente listarPagosProv detallePagoProv listarCompras ' +
       'detalleCompra listarTraspasos detalleTraspaso reporteTraspasos listarConteos detalleConteo historialAjustes selListaPrecios historialPrecios ' +
       'listarMovimientos listarProveedores detalleCobro dashboard costosReales listarCotizaciones detalleCotizacion facturas detalleFactura facturasNota ' +
-      'porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto').split(' ');
+      'detalleRequisicion detalleDevolucion porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto').split(' ');
     const MAX = 300, MAX_TXT = 3e6;
     let dbp = null;
     const db = () => dbp || (dbp = new Promise((res, rej) => {
@@ -293,7 +293,7 @@ const App = (() => {
         if (!puede(perm) || !navigator.onLine || !S.token) continue;
         try { await call(a, p); ok++; } catch (e) { if (e.red) break; }
       }
-      if (ok) LS.set('precarga_' + (U().id || ''), Date.now());
+      if (ok) { LS.set('precarga_' + (U().id || ''), Date.now()); guardarLibs(); }
     } finally { S.precargando = false; }
     return ok;
   }
@@ -311,7 +311,7 @@ const App = (() => {
     if (e) { e.className = 'pastilla ' + (ok ? 'ok' : 'off'); e.textContent = ok ? 'En línea' : 'Sin conexión'; }
   }
   // Ventas y cobros (con ID propio, el servidor no los duplica): con señal débil no se espera de más; se guardan en la cola.
-  const ENCOLA_RAPIDO = { guardarVenta: 1, guardarCobro: 1 };
+  const ENCOLA_RAPIDO = { guardarVenta: 1, guardarCobro: 1, guardarCotizacion: 1 };
   function call(accion, params) {
     return new Promise((res0, rej0) => {
       const t0 = Date.now(); let listo = false;
@@ -439,7 +439,7 @@ const App = (() => {
     cargando(true);
     try {
       if (S.cola.length) await sincronizar(true);
-      await refrescarDatos(true); await precargar(true); await renovarSesion(); precargarVisor();
+      await refrescarDatos(true); await precargar(true); await renovarSesion(); await guardarLibs();
       toast('✔ Listo para ruta: la información quedó guardada en este equipo');
     } catch (e) { toast('No se pudo completar con esta señal; intenta de nuevo', true); }
     finally { cargando(false); pintarBienvEstado(); }
@@ -1141,14 +1141,16 @@ const App = (() => {
   function notaOffline(v, t, params) {
     const c = cliente(v.cli) || {};
     const conRfc = c.rfc && !/^X[AE]XX010101000$/i.test(c.rfc);
-    return htmlNota({ folio: 'PENDIENTE', fecha: new Date().toLocaleDateString('es-MX'), cliente: c.nombre, razon: c.razon, rfc: c.rfc, cel: c.cel,
+    const d = { folio: 'PENDIENTE', fecha: new Date().toLocaleDateString('es-MX'), cliente: c.nombre, razon: c.razon, rfc: c.rfc, cel: c.cel,
       fiscal: { cp: c.cp || '', regimen: conRfc ? c.regimen || '' : '', uso: conRfc ? c.uso || '' : '' },
       domicilio: [c.calle, c.colonia, c.municipio, c.estado].filter(Boolean).join(', '), lista: v.lista, dias: v.dias, metodo: v.metodo,
       sub: t.sub, desc: t.desc, descPC: t.descPC, iva: t.iva, flete: t.flete, total: t.total, cobrado: params.pago ? params.pago.monto : 0,
       saldo: t.total - (params.pago ? params.pago.monto : 0), estatus: params.Estatus, sucursal: { id: v.suc, nombre: sucNom(v.suc) }, vendedor: U().nombre,
       envio: ((D().catalogos.paqueterias || []).find(x => x.id === params.ID_Flete) || { nombre: 'Entrega física' }).nombre, guia: params.No_Guia,
-      lineas: v.lineas.map((l, i) => ({ nombre: (prod(l.id) || {}).nombre, prod: l.id, cant: l.cant, precio: l.precio, total: t.imps[i], lote: l.lote ? 'Elegido' : 'Auto', cad: '' })),
-      cobros: [] }, true);
+      lineas: v.lineas.map((l, i) => ({ nombre: (prod(l.id) || {}).nombre, prod: l.id, cant: l.cant, precio: l.precio, sub: t.brutos[i], desc: t.descs[i], iva: t.ivas[i], total: t.imps[i], lote: l.lote ? 'Elegido' : 'Auto', cad: '' })),
+      cobros: [] };
+    S.notaOff = d;
+    return htmlNota(d, true);
   }
 
   /* ---------- NOTA DE VENTA (impresión / WhatsApp) ---------- */
@@ -1184,7 +1186,7 @@ const App = (() => {
         </tbody></table></div></div>` : ''}
       <p style="margin-top:36px;text-align:center">_______________________________<br><small>Recibí de conformidad</small></p></div></div>
       <div class="acciones no-imprimir">
-        ${!offline && d.id ? `<button class="btn primario" onclick="App.pdfNota('${d.id}')">📄 PDF para enviar / imprimir</button>` : '<button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button>'}
+        ${!offline && d.id ? `<button class="btn primario" onclick="App.pdfNota('${d.id}')">📄 PDF para enviar / imprimir</button>` : '<button class="btn primario" onclick="App.pdfNotaOffline()">📄 PDF para enviar</button><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button>'}
         ${d.cel ? `<a class="btn" target="_blank" href="${WA_BASE}52${String(d.cel).replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent('Interés Veterinario — Nota ' + d.folio + '\nTotal: ' + $$(d.total) + '\nSaldo: ' + $$(d.saldo) + '\n¡Gracias por su compra!')}">💬 WhatsApp</a>` : ''}
         ${!offline && d.id && viva && !bloq && d.saldo > 0.009 && puede('ventas_editar') ? `<button class="btn" onclick="App.editarNota('${d.id}')">✏️ Editar nota</button>` : ''}
         ${!offline && d.id && d.estatus === 'Pendiente' && puede('ventas') ? `<button class="btn primario" onclick="App.entregarVenta('${d.id}')">📦 Marcar como entregado</button>` : ''}
@@ -1197,6 +1199,7 @@ const App = (() => {
   }
   /* ---------- PDF: se genera en el servidor, se guarda en Drive y se abre para compartir ---------- */
   async function generarPdf(accion, params, info) {
+    if (DOC_LOCAL[accion] && (navigator.onLine === false || S.online === false)) return pdfSinConexion(accion, params, info);
     let w = null;
     try { w = window.open('', '_blank'); if (w) w.document.write('<p style="font-family:-apple-system,sans-serif;padding:24px;font-size:18px">Generando PDF…</p>'); } catch (e) { w = null; }
     try {
@@ -1212,7 +1215,7 @@ const App = (() => {
           <a class="btn" target="_blank" href="${WA_BASE}${tel ? '52' + tel : ''}?text=${encodeURIComponent(msg)}">💬 WhatsApp</a>
           <a class="btn" target="_blank" href="mailto:${encodeURIComponent(info.correo || '')}?subject=${encodeURIComponent(info.asunto)}&body=${encodeURIComponent(msg)}">✉️ Correo${info.correo ? ' a ' + esc(info.correo) : ''}</a>
           <button class="btn" onclick="${info.volver}">Volver</button></div>`);
-    } catch (e) { if (w) { try { w.close(); } catch (x) {} } }
+    } catch (e) { if (w) { try { w.close(); } catch (x) {} } if (e.red && DOC_LOCAL[accion]) pdfSinConexion(accion, params, info); }
   }
   function pdfNota(id) {
     const d = S.ultimaVenta || {};
@@ -1907,7 +1910,30 @@ const App = (() => {
       S.cot = cotNueva(); guardarBorradorCot(); S.tabCot = 'lista';
       if (S.fcot && S.fcot.hasta && S.fcot.hasta < hoyISO()) { S.fcot.hasta = hoyISO(); S.fcot.hastaHoy = S.fcot.hasta; }   // que la nueva sí aparezca en la lista
       V.cotizaciones('lista'); verCotizacion(r.id);
-    } catch (e) { if (e.red) toast('Guardar la cotización requiere conexión (quedó en tu borrador)', true); if ($('#cGuardar')) $('#cGuardar').disabled = false; }
+    } catch (e) {
+      if (e.red) return cotOffline(v);
+      if ($('#cGuardar')) $('#cGuardar').disabled = false;
+    }
+  }
+  /** Sin señal: la cotización queda en la cola (el folio se asigna al sincronizar) y ya se puede mandar en PDF. */
+  function cotOffline(v) {
+    const t = calcVenta(v), c = cliente(v.cli) || {}, conRfc = c.rfc && !/^X[AE]XX010101000$/i.test(c.rfc);
+    const params = { ID_Cotizacion: v.editId || v.nuevoId || (v.nuevoId = uid()), nueva: !v.editId, ID_Sucursal: v.suc, ID_Cliente: v.cli, Observacion: v.obs,
+      lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, lote: l.lote || '' })) };
+    encolar('guardarCotizacion', params, 'Cotización a ' + (c.razon || c.nombre || '') + ' por ' + $$(t.total));
+    const vig = new Date(); vig.setDate(vig.getDate() + 15);
+    const d = { id: params.ID_Cotizacion, folio: v.editFolio || 'PROVISIONAL', fecha: new Date().toLocaleDateString('es-MX'), vigencia: vig.toLocaleDateString('es-MX'), vigenciaDias: 15,
+      cliente: c.nombre, razon: c.razon, rfc: c.rfc, cel: c.cel, domicilio: [c.calle, c.colonia, c.municipio, c.estado].filter(Boolean).join(', '),
+      fiscal: { cp: c.cp || '', regimen: conRfc ? c.regimen || '' : '', uso: conRfc ? c.uso || '' : '' }, obs: v.obs, vendedor: U().nombre, sucursal: sucDe(v.suc),
+      lineas: v.lineas.map((l, i) => { const p = prod(l.id) || {}; return { nombre: p.nombre || l.id, unidad: p.unidad || '', cant: l.cant, precioLista: l.precio, desc: t.descs[i], importe: r2c(t.brutos[i] - t.descs[i]), ivaMonto: t.ivas[i], total: t.imps[i], lote: '', cad: '' }; }),
+      sub: t.sub, desc: t.desc, iva: t.iva, total: t.total };
+    S.cotOff = d;
+    S.cot = cotNueva(); guardarBorradorCot(); S.tabCot = 'lista';
+    V.cotizaciones('lista');
+    modal('Cotización guardada en el equipo', `<p>📴 Sin conexión: la cotización para <b>${esc(c.razon || c.nombre || '')}</b> por <b>${$$(t.total)}</b> quedó guardada en este equipo.
+      El folio se asigna al sincronizar, en cuanto haya buena señal.</p>
+      <div class="acciones" style="justify-content:flex-start"><button class="btn primario" onclick="App.pdfCotOffline()">📄 PDF para enviar</button>
+      ${c.cel ? `<a class="btn" target="_blank" href="${WA_BASE}52${String(c.cel).replace(/\D/g, '').slice(-10)}">💬 WhatsApp</a>` : ''}<button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
   }
   async function verCotizacion(id) {
     let d; try { d = await pedir('detalleCotizacion', { id: id }); } catch (e) { return; }
@@ -3411,7 +3437,7 @@ const App = (() => {
          <div class="kpi"><small>Sobrante</small><b>${nf(r.sobPzs)} pzs</b><span>${verC && r.sobVal !== null ? $$(r.sobVal) + (U().costoLista ? ' a costo de lista' : ' a costo real') : ''}</span></div>
          ${verC ? `<div class="kpi"><small>Diferencia neta</small><b>${$$(r.sobVal - r.faltVal)}</b><span></span></div>` : ''}</div>`}
       <div class="acciones">
-        <button class="btn" onclick="App.salirConteo()">← Conteos</button>
+        <button class="btn" onclick="App.salirConteo()">← Conteos</button><button class="btn" onclick="App.excelConteo()">📊 Exportar a Excel</button>
         ${abierto ? `<button class="btn" onclick="App.pdfConteo(true)">🖨️ Hoja para contar (PDF)</button><button class="btn" onclick="App.formEncontrado()">+ Producto encontrado</button>
           <button class="btn primario" onclick="App.guardarConteo()">💾 Guardar avance</button><button class="btn primario" onclick="App.formCerrarConteo()">✔ Cerrar conteo</button>
           <button class="btn peligro" onclick="App.cancelarConteo()">Cancelar conteo</button>${contados === 0 && !pend ? '<button class="btn peligro" onclick="App.eliminarConteo()">🗑️ Eliminar conteo</button>' : ''}` :
@@ -3549,7 +3575,7 @@ const App = (() => {
     const cats = [...new Set((D().productos || []).map(p => p.categoria).filter(Boolean))].sort();
     $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label>Sucursal<select id="ieSuc">${U().todasSucursales ? optsSuc(sucFiltro(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
       <label>Buscar<input id="ieTxt" placeholder="Producto, clave, laboratorio"></label><label>Categoría<select id="ieCat">${opts(cats.map(c => [c, c]), '', 'Todas')}</select></label>
-      <label class="check fijo"><input type="checkbox" id="ieMin"> Bajo mínimo</label><button class="btn fijo" onclick="App.actualizarStock()">⟳ Actualizar</button></div></div><div class="espacio"></div><div id="ieRes"></div>`;
+      <label class="check fijo"><input type="checkbox" id="ieMin"> Bajo mínimo</label><button class="btn fijo" onclick="App.actualizarStock()">⟳ Actualizar</button><button class="btn fijo" onclick="App.excelInventario()">📊 Exportar a Excel</button></div></div><div class="espacio"></div><div id="ieRes"></div>`;
     ['#ieSuc', '#ieTxt', '#ieCat', '#ieMin'].forEach(s => enlazarFiltro(s, pintarExist));
     pintarExist();
   }
@@ -4215,6 +4241,394 @@ const App = (() => {
     const cola = pend.slice(); const trab = Array.from({ length: Math.min(3, cola.length) }, async () => { while (cola.length) await uno(cola.shift()); });
     await Promise.all(trab);
     return pend.length;
+  }
+
+  /* =====================================================================================
+   *  DOCUMENTOS EN EL EQUIPO (sin conexión): PDF con jsPDF y Excel con ExcelJS.
+   *  Las librerías se bajan una vez con señal y quedan guardadas en el equipo (IndexedDB).
+   * ===================================================================================== */
+  const CDN = 'https:' + '//cdnjs.cloudflare.com/ajax/libs/';
+  const LIBS = {
+    jspdf: { url: CDN + 'jspdf/2.5.1/jspdf.umd.min.js', ok: () => window.jspdf && window.jspdf.jsPDF ? window.jspdf : null },
+    exceljs: { url: CDN + 'exceljs/4.4.0/exceljs.min.js', ok: () => window.ExcelJS || null }
+  };
+  async function textoLib(n) {
+    const L = LIBS[n];
+    try { const t = await fetch(L.url, { mode: 'cors' }).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }); if (t.length > 1000) { KV.set('lib_' + n, t); return t; } } catch (e) {}
+    const g = await KV.get('lib_' + n); if (g) return g;
+    throw new Error('Esta función necesita conexión la primera vez; ábrela una vez con señal');
+  }
+  function libLocal(n) {
+    const L = LIBS[n], ya = L.ok(); if (ya) return Promise.resolve(ya);
+    return L.p || (L.p = (async () => {
+      const t = await textoLib(n);
+      const sc = document.createElement('script'); sc.textContent = t; document.head.appendChild(sc);
+      const r = L.ok(); if (!r) throw new Error('No se pudo cargar ' + n);
+      return r;
+    })().catch(e => { L.p = null; throw e; }));
+  }
+  /** Con señal: deja guardadas en el equipo las librerías que falten (sin cargarlas). */
+  async function guardarLibs() {
+    if (navigator.onLine === false || typeof indexedDB === 'undefined') return;
+    for (const n of Object.keys(LIBS)) { try { if (!(await KV.get('lib_' + n))) await textoLib(n); } catch (e) {} }
+    precargarVisor();
+  }
+  /** Imagen (logo / foto de sucursal) → { data PNG, w, h } para el PDF y el Excel. */
+  function imgDatos(src) {
+    return new Promise(res => {
+      if (!src) return res(null);
+      const im = new Image(); im.crossOrigin = 'anonymous';
+      im.onload = () => { try { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext('2d').drawImage(im, 0, 0); res({ data: c.toDataURL('image/png'), w: c.width, h: c.height }); } catch (e) { res(null); } };
+      im.onerror = () => res(null); im.src = src;
+    });
+  }
+  async function logoDoc() { return S.logoDoc || (S.logoDoc = await imgDatos(window.LOGO)); }
+  function fotoSucDatos(id) {
+    const x = (D().sucursales || []).find(o => o.id === id); if (!x || !x.foto || esMatriz(id)) return Promise.resolve(null);
+    const u = (LS.get('minisSucPng', {}) || {})[id] || (LS.get('minisSuc', {}) || {})[id] || ((S.minis || {}).sucFoto || {})[id];
+    return imgDatos(u);
+  }
+  const txtPdf = s => String(s === null || s === undefined ? '' : s).replace(/[−–—]/g, '-').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/…/g, '...').replace(/•/g, '·').replace(/[^\x09\x0A\x0D\x20-\xFF]/g, '').trim();
+
+  /**
+   * PDF profesional a partir de una especificación:
+   * { titulo, folio, fecha, extra:[líneas], suc:{id,nombre,direccion,tel,email}, izq:[líneas (1a en negritas)], der:[líneas],
+   *   cols:[{t, w (fracción), num}], filas:[[celdas]], suma:[celdas] | null, totales:[[etiqueta, valor, negritas]], letras, notas:[líneas], firmas:[títulos], archivo }
+   */
+  async function pdfLocal(sp) {
+    const { jsPDF } = await libLocal('jspdf');
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+    const W = 612, H = 792, M = 36, AN = W - 2 * M, VERDE = [31, 111, 74], GRIS = [92, 98, 88], LINEA = [214, 220, 210];
+    const color = c => pdf.setTextColor(c[0], c[1], c[2]);
+    const fuente = (t, n) => { pdf.setFont('helvetica', t || 'normal'); pdf.setFontSize(n || 9); };
+    // --- encabezado
+    let y = M, xLogo = M;
+    const logo = await logoDoc(), fs = sp.suc && sp.suc.id ? await fotoSucDatos(sp.suc.id) : null;
+    if (logo) { const h = 50, w = Math.min(170, h * logo.w / logo.h); pdf.addImage(logo.data, 'PNG', M, y, w, h); xLogo = M + w + 10; }
+    if (fs) { const h = 46, w = Math.min(90, h * fs.w / fs.h); pdf.addImage(fs.data, 'PNG', xLogo, y + 2, w, h); }
+    if (!logo) { fuente('bold', 16); color(VERDE); pdf.text('Interés Veterinario', M, y + 20); }
+    let yl = y + 60; fuente('normal', 8); color(GRIS);
+    const sucTxt = [sp.suc && sp.suc.nombre, sp.suc && sp.suc.direccion].filter(Boolean).join(' · ');
+    if (sucTxt) { pdf.splitTextToSize(txtPdf(sucTxt), 300).forEach(l => { pdf.text(l, M, yl); yl += 10; }); }
+    const contacto = [sp.suc && sp.suc.tel ? 'Tel. ' + sp.suc.tel : '', sp.suc && sp.suc.email].filter(Boolean).join(' · ');
+    if (contacto) { pdf.text(txtPdf(contacto), M, yl); yl += 10; }
+    let yr = y + 12; fuente('bold', 12); color(VERDE); pdf.text(txtPdf(sp.titulo), W - M, yr, { align: 'right' });
+    yr += 18; fuente('bold', 16); color([27, 29, 24]); pdf.text(txtPdf(sp.folio || ''), W - M, yr, { align: 'right' });
+    yr += 13; fuente('normal', 9); color(GRIS); if (sp.fecha) { pdf.text(txtPdf(sp.fecha), W - M, yr, { align: 'right' }); yr += 11; }
+    fuente('normal', 8); (sp.extra || []).filter(Boolean).forEach(l => { pdf.text(txtPdf(l), W - M, yr, { align: 'right' }); yr += 10; });
+    y = Math.max(yl, yr) + 4; pdf.setDrawColor(VERDE[0], VERDE[1], VERDE[2]); pdf.setLineWidth(1.2); pdf.line(M, y, W - M, y); y += 14;
+    // --- bloques cliente / datos
+    let y1 = y, y2 = y;
+    (sp.izq || []).filter(Boolean).forEach((l, i) => { fuente(i ? 'normal' : 'bold', i ? 8.5 : 10.5); color(i ? GRIS : [27, 29, 24]); pdf.splitTextToSize(txtPdf(l), AN * 0.58).forEach(s => { pdf.text(s, M, y1); y1 += i ? 10.5 : 13; }); });
+    fuente('normal', 8.5); color(GRIS);
+    (sp.der || []).filter(Boolean).forEach(l => { pdf.splitTextToSize(txtPdf(l), AN * 0.4).forEach(s => { pdf.text(s, W - M, y2, { align: 'right' }); y2 += 10.5; }); });
+    y = Math.max(y1, y2) + 6;
+    // --- tabla
+    const cols = sp.cols || [], tf = cols.reduce((a, c) => a + c.w, 0), anchos = cols.map(c => AN * c.w / tf);
+    const encab = () => {
+      pdf.setFillColor(243, 245, 242); pdf.setDrawColor(LINEA[0], LINEA[1], LINEA[2]); pdf.setLineWidth(0.6); pdf.rect(M, y, AN, 18, 'FD');
+      fuente('bold', 8); color(GRIS); let x = M;
+      cols.forEach((c, i) => { pdf.text(txtPdf(c.t), c.num ? x + anchos[i] - 4 : x + 4, y + 12, { align: c.num ? 'right' : 'left' }); x += anchos[i]; });
+      y += 18;
+    };
+    const fila = (celdas, o) => {
+      o = o || {}; fuente(o.bold ? 'bold' : 'normal', 8.5);
+      const ls = celdas.map((v, i) => cols[i].num ? [txtPdf(v)] : pdf.splitTextToSize(txtPdf(v), anchos[i] - 8));
+      const h = Math.max(...ls.map(l => l.length)) * 10.5 + 7;
+      if (y + h > H - 54) { pdf.addPage(); y = M; encab(); fuente(o.bold ? 'bold' : 'normal', 8.5); }
+      if (o.zebra) { pdf.setFillColor(250, 251, 249); pdf.rect(M, y, AN, h, 'F'); }
+      if (o.suma) { pdf.setFillColor(237, 243, 239); pdf.rect(M, y, AN, h, 'F'); pdf.setDrawColor(150, 165, 150); pdf.setLineWidth(0.8); pdf.line(M, y, W - M, y); }
+      color([27, 29, 24]); let x = M;
+      ls.forEach((l, i) => { l.forEach((s, k) => pdf.text(s, cols[i].num ? x + anchos[i] - 4 : x + 4, y + 11 + k * 10.5, { align: cols[i].num ? 'right' : 'left' })); x += anchos[i]; });
+      y += h; pdf.setDrawColor(LINEA[0], LINEA[1], LINEA[2]); pdf.setLineWidth(0.4); pdf.line(M, y, W - M, y);
+    };
+    if (cols.length) {
+      encab(); (sp.filas || []).forEach((f, i) => fila(f, { zebra: i % 2 === 1 }));
+      if (sp.suma) fila(sp.suma, { bold: true, suma: true });
+      pdf.setDrawColor(LINEA[0], LINEA[1], LINEA[2]); pdf.setLineWidth(0.6); y += 8;
+    }
+    // --- totales (derecha) y letras (izquierda)
+    const tot = (sp.totales || []).filter(Boolean);
+    if (tot.length || sp.letras) {
+      const altoTot = tot.length * 15 + 10; if (y + altoTot > H - 54) { pdf.addPage(); y = M; }
+      let yt = y + 4; const xT = W - M - 230;
+      tot.forEach(t => {
+        if (t[2]) { pdf.setDrawColor(150, 165, 150); pdf.setLineWidth(0.8); pdf.line(xT, yt - 4, W - M, yt - 4); fuente('bold', 11.5); yt += 3; } else fuente('normal', 9);
+        color(t[2] ? [27, 29, 24] : GRIS); pdf.text(txtPdf(t[0]), xT, yt + 7); color([27, 29, 24]); pdf.text(txtPdf(typeof t[1] === 'number' ? $$(t[1]) : t[1]), W - M, yt + 7, { align: 'right' }); yt += t[2] ? 18 : 15;
+      });
+      if (sp.letras) { fuente('italic', 8); color(GRIS); pdf.splitTextToSize('(' + txtPdf(sp.letras) + ')', AN - 250).forEach((s, k) => pdf.text(s, M, y + 11 + k * 10)); }
+      y = Math.max(yt, y + 24) + 6;
+    }
+    // --- notas y firmas
+    fuente('normal', 8); color(GRIS);
+    (sp.notas || []).filter(Boolean).forEach(n => pdf.splitTextToSize(txtPdf(n), AN).forEach(s => { if (y > H - 60) { pdf.addPage(); y = M; } pdf.text(s, M, y); y += 10; }));
+    const fir = (sp.firmas || []).filter(Boolean);
+    if (fir.length) {
+      y += 44; if (y > H - 70) { pdf.addPage(); y = M + 50; }
+      const anc = AN / fir.length; pdf.setDrawColor(120, 125, 118); pdf.setLineWidth(0.6);
+      fir.forEach((f, i) => { const cx = M + anc * i + anc / 2; pdf.line(cx - 90, y, cx + 90, y); fuente('normal', 8); color(GRIS); pdf.text(txtPdf(f), cx, y + 11, { align: 'center' }); });
+    }
+    // --- pie en cada página
+    const n = pdf.getNumberOfPages();
+    for (let i = 1; i <= n; i++) {
+      pdf.setPage(i); fuente('normal', 7); color([140, 146, 136]);
+      pdf.text(txtPdf('Interés Veterinario' + (sp.pie ? ' · ' + sp.pie : '')), M, H - 22); pdf.text('Página ' + i + ' de ' + n, W - M, H - 22, { align: 'right' });
+    }
+    pdf.setProperties({ title: txtPdf(sp.titulo + ' ' + (sp.folio || '')), author: 'Interés Veterinario' });
+    return new Uint8Array(pdf.output('arraybuffer'));
+  }
+
+  /* ---- especificaciones por documento (a partir del mismo detalle que muestra la app) ---- */
+  const nn = v => v === null || v === undefined ? '' : nf(v);
+  const lineasImp = (ls, conLote, conDesc) => {
+    const cols = [{ t: 'Cant.', w: 0.6, num: 1 }, { t: 'Producto', w: conLote ? 2.8 : 3.8 }].concat(conLote ? [{ t: 'Lote', w: 0.9 }, { t: 'Cad.', w: 1.05 }] : [])
+      .concat([{ t: 'Precio unit.', w: 0.95, num: 1 }]).concat(conDesc ? [{ t: 'Descuento', w: 0.85, num: 1 }] : []).concat([{ t: 'Importe', w: 1, num: 1 }, { t: 'IVA $', w: 0.8, num: 1 }, { t: 'Total', w: 1, num: 1 }]);
+    let sI = 0, sV = 0, sT = 0, sD = 0;
+    const filas = ls.map(l => { sI += l.importe; sV += l.iva; sT += l.total; sD += l.desc || 0;
+      return [nn(l.cant), l.nombre].concat(conLote ? [l.lote || '', l.cad || ''] : []).concat([$$(l.precio)]).concat(conDesc ? [l.desc ? '-' + $$(l.desc) : ''] : []).concat([$$(l.importe), $$(l.iva), $$(l.total)]); });
+    const suma = ['', 'Suma de los productos'].concat(conLote ? ['', ''] : []).concat(['']).concat(conDesc ? [sD ? '-' + $$(sD) : ''] : []).concat([$$(sI), $$(sV), $$(sT)]);
+    return { cols: cols, filas: filas, suma: ls.length ? suma : null };
+  };
+  const r2c = n => Math.round((Number(n) || 0) * 100) / 100;
+  const sucDoc = s => s ? { id: s.id, nombre: s.nombre, direccion: s.direccion, tel: s.tel, email: s.email } : null;
+  const sucDe = id => { const x = (D().sucursales || []).find(o => o.id === id) || {}; return { id: id, nombre: x.nombre || sucNom(id), direccion: x.direccion, tel: x.tel, email: x.email }; };
+  const fiscalTxt = f => f ? [f.cp ? 'C.P. ' + f.cp : '', f.regimen ? 'Régimen ' + f.regimen : '', f.uso ? 'Uso CFDI ' + f.uso : ''].filter(Boolean).join(' · ') : '';
+  const DOC_LOCAL = {
+    pdfNota: { det: p => ['detalleVenta', { ID_Venta: p.ID_Venta }], ult: 'ultimaVenta', key: p => p.ID_Venta, map: d => {
+      const ls = d.lineas.filter(l => l.cant > 0).map(l => { const imp = r2c((l.sub !== undefined && l.sub !== null ? l.sub : l.cant * l.precio) - (l.desc || 0)); const iva = l.iva !== undefined && l.iva !== null ? l.iva : Math.max(0, r2c((l.total || 0) - imp));
+        return { cant: l.cant, nombre: l.nombre, lote: l.lote, cad: l.cad, precio: l.precio, importe: imp, iva: iva, total: l.total !== undefined ? l.total : r2c(imp + iva) }; });
+      const t = lineasImp(ls, true, false);
+      return Object.assign(t, { titulo: 'NOTA DE VENTA', folio: d.folio, fecha: d.fecha, extra: (d.facturas || []).map(f => 'Factura ' + f.sf + (f.uuid ? ' · ' + f.uuid : '')).concat(d.estatus ? [d.estatus === 'Pendiente' ? 'Pendiente de entrega' : d.estatus] : []),
+        suc: sucDoc(d.sucursal), izq: [d.razon || d.cliente, d.razon && d.razon !== d.cliente ? d.cliente : '', d.rfc ? 'RFC ' + d.rfc : '', d.domicilio, fiscalTxt(d.fiscal)],
+        der: ['Crédito: ' + (d.dias || 0) + ' días' + (d.venc ? ' · Vence ' + d.venc : ''), 'Vendedor: ' + (d.vendedor || ''), 'Envío: ' + (d.envio || 'Entrega física') + (d.guia ? ' · Guía ' + d.guia : '')],
+        totales: [['Subtotal', d.sub], d.desc ? ['Descuento', '-' + $$(d.desc)] : null, d.descPC ? ['Pronto pago', '-' + $$(d.descPC)] : null, ['IVA (suma de los productos)', d.iva], d.flete ? ['Flete', d.flete] : null,
+          ['Total', d.total, true], ['Pagado', d.cobrado || 0], ['Saldo', d.saldo || 0]],
+        letras: d.letras, notas: [d.comentarios], firmas: ['Recibí de conformidad'], archivo: 'Nota ' + d.folio + ' ' + (d.razon || d.cliente || '') }); } },
+    pdfCotizacion: { det: p => ['detalleCotizacion', { id: p.id }], ult: 'ultimaCot', key: p => p.id, map: d => {
+      const ls = d.lineas.map(l => ({ cant: l.cant, nombre: l.nombre + (l.unidad ? ' (' + l.unidad + ')' : ''), lote: l.lote, cad: l.cad, precio: l.precioLista, desc: l.desc, importe: l.importe, iva: l.ivaMonto, total: l.total }));
+      const t = lineasImp(ls, ls.some(l => l.lote || l.cad), ls.some(l => l.desc));
+      return Object.assign(t, { titulo: 'COTIZACIÓN', folio: d.folio, fecha: d.fecha, extra: [d.vigencia ? 'Vigente hasta ' + d.vigencia : ''], suc: sucDoc(d.sucursal),
+        izq: [d.razon || d.cliente, d.razon && d.razon !== d.cliente ? d.cliente : '', d.rfc ? 'RFC ' + d.rfc : '', d.domicilio, fiscalTxt(d.fiscal)], der: ['Atendió: ' + (d.vendedor || '')],
+        totales: [['Subtotal', d.sub], d.desc ? ['Descuento', '-' + $$(d.desc)] : null, ['IVA (suma de los productos)', d.iva], ['Total', d.total, true]], letras: d.letras,
+        notas: [d.obs, 'Cotización válida por ' + (d.vigenciaDias || 15) + ' días' + (d.vigencia ? ' (hasta el ' + d.vigencia + ')' : '') + '. Precios en pesos mexicanos; sujetos a existencias y a cambio sin previo aviso después de la vigencia.'],
+        archivo: 'Cotizacion ' + d.folio + ' ' + (d.razon || d.cliente || '') }); } },
+    pdfTraspaso: { det: p => ['detalleTraspaso', { folio: p.folio }], ult: 'trDet', key: p => p.folio, map: d => {
+      const imp = d.total !== null && d.total !== undefined;
+      let t;
+      if (imp) t = lineasImp(d.lineas.map(l => { const im = r2c(l.cant * (l.precio || 0)); return { cant: l.cant, nombre: l.nombre, lote: l.lote, cad: l.cad, precio: l.precio || 0, importe: im, iva: l.iva || 0, total: r2c(im + (l.iva || 0)) }; }), true, false);
+      else t = { cols: [{ t: 'Cant.', w: 0.7, num: 1 }, { t: 'Producto', w: 4 }, { t: 'Lote', w: 1.1 }, { t: 'Caducidad', w: 1 }], filas: d.lineas.map(l => [nn(l.cant), l.nombre, l.lote || '', l.cad || '']),
+        suma: ['' + nf(d.lineas.reduce((a, l) => a + l.cant, 0)), 'Piezas', '', ''] };
+      const sub = imp ? d.lineas.reduce((a, l) => a + r2c(l.cant * (l.precio || 0)), 0) : 0, iva = imp ? d.lineas.reduce((a, l) => a + (l.iva || 0), 0) : 0;
+      return Object.assign(t, { titulo: 'TRASPASO', folio: d.folio, fecha: d.fecha + (d.hora ? ' ' + d.hora : ''), suc: sucDe(d.origen),
+        izq: ['De ' + (d.origenNombre || sucNom(d.origen)) + ' a ' + (d.destinoNombre || sucNom(d.destino)), d.responsable ? 'Responsable: ' + d.responsable : ''],
+        der: [d.envio ? 'Envío: ' + d.envio : '', d.guia ? 'Guía ' + d.guia : '', d.recibio ? 'Recibió: ' + d.recibio : ''],
+        totales: imp ? [['Subtotal', r2c(sub)], ['IVA (suma de los productos)', r2c(iva)], d.flete ? ['Flete', d.flete] : null, ['Total', r2c(sub + iva + (d.flete || 0)), true]] : [],
+        notas: [d.comentarios], firmas: ['Entrega', 'Recibe'], archivo: 'Traspaso ' + d.folio }); } },
+    pdfRequisicion: { det: p => ['detalleRequisicion', { id: p.id }], ult: 'ultimaReq', key: p => p.id, map: d => {
+      const imp = !!d.importes;
+      const t = { cols: [{ t: 'Solicitado', w: 0.9, num: 1 }, { t: 'Surtido', w: 0.8, num: 1 }, { t: 'Producto', w: 3.6 }, { t: 'Laboratorio', w: 1.3 }].concat(imp ? [{ t: 'Importe', w: 1, num: 1 }, { t: 'IVA $', w: 0.8, num: 1 }, { t: 'Total', w: 1, num: 1 }] : []),
+        filas: d.lineas.map(l => [nn(l.cant), nn(l.surtido || 0), l.nombre + (l.unidad ? ' (' + l.unidad + ')' : ''), l.lab || ''].concat(imp ? [$$(l.importe), $$(l.iva), $$(r2c(l.importe + l.iva))] : [])) };
+      t.suma = [nf(d.lineas.reduce((a, l) => a + l.cant, 0)), nf(d.lineas.reduce((a, l) => a + (l.surtido || 0), 0)), 'Suma de los productos', ''].concat(imp ? [$$(d.importes.sub), $$(d.importes.iva), $$(d.importes.total)] : []);
+      return Object.assign(t, { titulo: 'REQUISICIÓN DE TRASPASO', folio: d.folio, fecha: d.fecha + (d.hora ? ' ' + d.hora : ''), extra: [d.estado, d.requerida ? 'Se requiere para el ' + d.requerida : ''], suc: sucDe(d.solicita),
+        izq: ['Solicita: ' + (d.solicitaNombre || ''), 'Surte: ' + (d.surteNombre || ''), d.solicito ? 'Pidió: ' + d.solicito : ''],
+        totales: imp ? [['Subtotal', d.importes.sub], ['IVA (suma de los productos)', d.importes.iva], ['Valor de la requisición', d.importes.total, true]] : [],
+        notas: [d.comentarios], firmas: ['Solicita', 'Surte'], archivo: 'Requisicion ' + d.folio }); } },
+    pdfCompra: { det: p => ['detalleCompra', { ID_O_Compra: p.ID_O_Compra }], ult: 'ultimaCompra', key: p => p.ID_O_Compra, map: d => {
+      const ls = d.lineas.map(l => ({ cant: l.cant, nombre: l.nombre, lote: l.lote, cad: l.cad, precio: l.precio, desc: l.desc, importe: r2c((l.sub || l.cant * l.precio) - (l.desc || 0)), iva: l.iva || 0, total: l.total }));
+      const t = lineasImp(ls, ls.some(l => l.lote || l.cad), ls.some(l => l.desc));
+      return Object.assign(t, { titulo: 'ORDEN DE COMPRA', folio: d.folio, fecha: d.fecha, extra: [d.factura ? 'Factura ' + d.factura : '', d.uuid ? 'Folio fiscal: ' + d.uuid : ''], suc: sucDe(d.suc),
+        izq: [d.proveedor, d.rfc ? 'RFC ' + d.rfc : ''], der: ['Destino: ' + sucNom(d.suc), d.recibido ? 'Recibido: ' + d.recibido : ''],
+        totales: [['Subtotal', d.sub], d.descEsp ? ['Descuento especial', '-' + $$(d.descEsp)] : null, d.descPP ? ['Descuento pronto pago', '-' + $$(d.descPP)] : null, ['IVA (suma de los productos)', d.iva],
+          d.flete ? ['Flete', d.flete] : null, ['Total', d.total, true], ['Pagado', d.pagado || 0], ['Saldo', d.saldo || 0]], letras: d.letras, notas: [d.obs], firmas: ['Elaboró', 'Recibió'], archivo: 'Orden de compra ' + d.folio }); } },
+    pdfDevolucion: { det: p => ['detalleDevolucion', { id: p.id }], ult: 'ultimaDev', key: p => p.id, map: d => {
+      const ver = d.total !== null;
+      const t = ver ? lineasImp(d.lineas.map(l => ({ cant: l.cant, nombre: l.nombre, lote: l.lote, cad: l.cad, precio: l.precio, desc: l.desc, importe: r2c(l.sub - (l.desc || 0)), iva: l.iva, total: l.total })), true, d.lineas.some(l => l.desc))
+        : { cols: [{ t: 'Cant.', w: 0.7, num: 1 }, { t: 'Producto', w: 4 }, { t: 'Lote', w: 1.1 }, { t: 'Caducidad', w: 1 }], filas: d.lineas.map(l => [nn(l.cant), l.nombre, l.lote || '', l.cad || '']) };
+      return Object.assign(t, { titulo: 'DEVOLUCIÓN', folio: d.folio, fecha: d.fecha + (d.hora ? ' ' + d.hora : ''), extra: ['Nota de venta ' + d.nota], suc: sucDoc(d.sucursal),
+        izq: [d.cliente, d.rfc ? 'RFC ' + d.rfc : '', d.domicilio, 'Motivo: ' + (d.motivo || '')], der: [d.facturas ? 'Factura: ' + d.facturas : 'Nota sin factura', d.docTipo || '', d.uuid ? 'Folio fiscal: ' + d.uuid : ''],
+        totales: ver ? [['Subtotal', d.sub], d.desc ? ['Descuentos', '-' + $$(d.desc)] : null, ['IVA (suma de los productos)', d.iva], d.flete ? ['Flete', d.flete] : null, ['Total devuelto', d.total, true], d.reembolso ? ['Reembolso', d.reembolso] : null] : [],
+        notas: [d.reembolsoForma ? 'Forma de reembolso: ' + d.reembolsoForma : '', 'Las ' + nf(d.piezas) + ' piezas devueltas regresaron al inventario.'], firmas: ['Entrega (cliente)', 'Recibe'], archivo: 'Devolucion ' + d.folio }); } },
+    pdfCobro: { det: p => ['detalleCobro', { ID_Cobranza: p.ID_Cobranza }], ult: 'ultimoCobro', key: p => p.ID_Cobranza, map: d => ({
+      titulo: 'COMPROBANTE DE PAGO', folio: d.folio, fecha: d.fecha, suc: sucDoc(d.sucursal), izq: ['Recibimos de: ' + (d.razon || d.cliente), d.rfc ? 'RFC ' + d.rfc : ''], der: ['La cantidad de ' + $$(d.monto)],
+      cols: [{ t: 'Concepto', w: 3.2 }, { t: 'Forma de pago', w: 1.4 }, { t: 'Banco / cuenta', w: 1.4 }, { t: 'Importe', w: 1, num: 1 }],
+      filas: [['Pago ' + (d.totalPagos > 1 ? d.numPago + ' de ' + d.totalPagos + ' ' : '') + 'a la nota de venta ' + d.folioNota + (d.fechaNota ? ' del ' + d.fechaNota : '') + (d.nota ? '. ' + d.nota : ''), d.forma || '', d.banco || '', $$(d.monto)]],
+      totales: [['Importe pagado', d.monto, true], d.saldoDespues !== undefined ? ['Saldo de la nota', Math.max(0, d.saldoDespues || 0)] : null], letras: d.letras, firmas: ['Recibió'], archivo: 'Comprobante ' + d.folio }) }
+  };
+  /** PDF sin conexión: se arma en el equipo con los datos que ya tiene (lo que se ve en pantalla o la última copia guardada). */
+  async function pdfSinConexion(accion, params, info, aviso) {
+    const L = DOC_LOCAL[accion]; if (!L) return toast('Este PDF necesita conexión', true);
+    cargando(true);
+    try {
+      const k = L.key(params), u = S[L.ult];
+      let d = u && k && (u.id === k || u.folio === k) ? u : null;
+      if (!d) { const [a, p] = L.det(params); d = await call(a, p); }
+      const sp = L.map(d); sp.pie = aviso === false ? '' : 'Generado en el equipo';
+      const bytes = await pdfLocal(sp);
+      verPdf(bytes, sp.archivo, { texto: info && info.texto, cel: info && info.cel });
+      if (aviso !== false) toast('📄 PDF hecho en el equipo, sin conexión. Compártelo con 📤');
+    } catch (e) { toast(e.red ? 'No hay una copia guardada de este documento en el equipo (ábrelo una vez con señal)' : (e.message || 'No se pudo hacer el PDF'), true); }
+    finally { cargando(false); }
+  }
+  /** PDF de un documento que solo existe en el equipo (venta o cotización capturada sin señal). */
+  async function pdfDeDatos(tipo, d) {
+    cargando(true);
+    try { const sp = DOC_LOCAL[tipo].map(d); sp.pie = 'Folio provisional: se asigna al sincronizar'; verPdf(await pdfLocal(sp), sp.archivo); }
+    catch (e) { toast(e.message || 'No se pudo hacer el PDF', true); } finally { cargando(false); }
+  }
+
+  /* ---------------- EXCEL con diseño profesional ---------------- */
+  /**
+   * hojas: [{ nombre, titulo, sub:[líneas], resumen:[[etiqueta, valor, fmt]], cols:[{t, w, fmt:'txt'|'num'|'mon'|'fecha', suma}], filas:[{v:[...], tono:'mal'|'av'|'ok'|'gris'}] }]
+   */
+  async function excelLocal(archivo, hojas) {
+    const ExcelJS = await libLocal('exceljs');
+    const wb = new ExcelJS.Workbook(); wb.creator = 'Interés Veterinario'; wb.created = new Date();
+    const logo = await logoDoc(); const idLogo = logo ? wb.addImage({ base64: logo.data, extension: 'png' }) : null;
+    const VERDE = 'FF1F6F4A', CLARO = 'FFEFF5F1', BORDE = { style: 'thin', color: { argb: 'FFD5DDD6' } };
+    const TONO = { mal: { font: 'FFB3261E', fill: 'FFFCE8E6' }, av: { font: 'FF8A5A00', fill: 'FFFFF4D6' }, ok: { font: 'FF1F6F4A' }, gris: { font: 'FF8A918C' } };
+    const FMT = { num: '#,##0.##;[Red]-#,##0.##', mon: '"$"#,##0.00;[Red]-"$"#,##0.00', fecha: 'dd/mm/yyyy' };
+    hojas.forEach(h => {
+      const ws = wb.addWorksheet(h.nombre.slice(0, 31), { views: [{ showGridLines: false }], properties: { tabColor: { argb: VERDE } } });
+      const nc = h.cols.length, ultCol = ws.getColumn(nc).letter;
+      h.cols.forEach((c, i) => { ws.getColumn(i + 1).width = c.w || 14; });
+      // encabezado con logo
+      ws.getRow(1).height = 30; ws.getRow(2).height = 18; ws.getRow(3).height = 16;
+      if (idLogo !== null) ws.addImage(idLogo, { tl: { col: 0.1, row: 0.15 }, ext: { width: Math.round(46 * logo.w / logo.h), height: 46 } });
+      const c0 = nc >= 4 ? 3 : 1;
+      ws.mergeCells(1, c0, 1, nc); const t = ws.getCell(1, c0); t.value = h.titulo; t.font = { name: 'Calibri', size: 16, bold: true, color: { argb: VERDE } }; t.alignment = { vertical: 'middle' };
+      ws.mergeCells(2, c0, 2, nc); const s = ws.getCell(2, c0); s.value = (h.sub || [])[0] || ''; s.font = { size: 10, color: { argb: 'FF5C6258' } };
+      ws.mergeCells(3, c0, 3, nc); const s2 = ws.getCell(3, c0); s2.value = (h.sub || []).slice(1).join('  ·  '); s2.font = { size: 9, italic: true, color: { argb: 'FF8A918C' } };
+      let r = 5;
+      // resumen: dos datos por renglón, cada uno en una celda combinada "Etiqueta  valor"
+      if (h.resumen && h.resumen.length) {
+        const mitad = Math.max(1, Math.floor(nc / 2));
+        for (let i = 0; i < h.resumen.length; i += 2) {
+          [h.resumen[i], h.resumen[i + 1]].forEach((x, j) => { if (!x) return;
+            const c1 = j ? mitad + 1 : 1, c2 = j ? nc : mitad; if (c2 > c1) ws.mergeCells(r, c1, r, c2);
+            const cell = ws.getCell(r, c1), val = x[2] === 'mon' ? $$(x[1]) : x[2] === 'num' ? nf(x[1]) : String(x[1] === null || x[1] === undefined ? '' : x[1]);
+            cell.value = { richText: [{ text: x[0] + ':  ', font: { size: 10, color: { argb: 'FF5C6258' } } }, { text: val, font: { size: 10, bold: true, color: { argb: 'FF1B1D18' } } }] };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CLARO } }; cell.border = { top: BORDE, bottom: BORDE, left: BORDE, right: BORDE }; cell.alignment = { vertical: 'middle', indent: 1 }; });
+          ws.getRow(r).height = 18; r++;
+        }
+        r++;
+      }
+      const filaEnc = r;
+      const he = ws.getRow(r); he.values = h.cols.map(c => c.t); he.height = 30;
+      he.eachCell(c => { c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: VERDE } };
+        c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; c.border = { top: BORDE, bottom: BORDE, left: BORDE, right: BORDE }; });
+      r++;
+      const ini = r;
+      h.filas.forEach((f, i) => {
+        const row = ws.getRow(r); row.values = f.v;
+        row.eachCell({ includeEmpty: true }, (c, j) => { const col = h.cols[j - 1]; if (!col) return;
+          c.border = { top: BORDE, bottom: BORDE, left: BORDE, right: BORDE }; c.font = { size: 10, color: f.tono && TONO[f.tono] ? { argb: TONO[f.tono].font } : undefined, italic: f.tono === 'gris' };
+          if (f.tono && TONO[f.tono] && TONO[f.tono].fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TONO[f.tono].fill } };
+          else if (i % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7FAF8' } };
+          if (FMT[col.fmt]) c.numFmt = FMT[col.fmt];
+          c.alignment = { vertical: 'top', horizontal: col.fmt === 'num' || col.fmt === 'mon' ? 'right' : col.fmt === 'fecha' ? 'center' : 'left', wrapText: col.fmt === 'txt' || !col.fmt }; });
+        r++;
+      });
+      const fin = r - 1;
+      if (h.cols.some(c => c.suma) && h.filas.length) {
+        const row = ws.getRow(r);
+        h.cols.forEach((c, i) => { const cell = row.getCell(i + 1);
+          if (c.suma) { const L = ws.getColumn(i + 1).letter; cell.value = { formula: `SUBTOTAL(9,${L}${ini}:${L}${fin})`, result: h.filas.reduce((a, f) => a + (Number(f.v[i]) || 0), 0) }; cell.numFmt = FMT[c.fmt] || FMT.num; cell.alignment = { horizontal: 'right' }; }
+          cell.font = { bold: true, size: 10 }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCEBE2' } }; cell.border = { top: { style: 'medium', color: { argb: VERDE } }, bottom: BORDE }; });
+        row.getCell(1).value = 'Totales'; r++;
+      }
+      ws.autoFilter = { from: { row: filaEnc, column: 1 }, to: { row: Math.max(filaEnc, fin), column: nc } };
+      ws.views = [{ state: 'frozen', ySplit: filaEnc, showGridLines: false }];
+      ws.pageSetup = { orientation: nc > 7 ? 'landscape' : 'portrait', paperSize: 1, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: filaEnc + ':' + filaEnc,
+        margins: { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 } };
+      ws.headerFooter = { oddFooter: '&L&8Interés Veterinario&C&8' + String(h.titulo).replace(/&/g, '&&') + '&R&8Página &P de &N' };
+      r += 1; ws.getCell(r, 1).value = 'Generado el ' + new Date().toLocaleString('es-MX') + ' · ' + (U().nombre || ''); ws.getCell(r, 1).font = { size: 8, italic: true, color: { argb: 'FF8A918C' } };
+    });
+    const buf = await wb.xlsx.writeBuffer();
+    return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  /** Entrega un archivo hecho en el equipo: ventana con Compartir (WhatsApp, correo, Archivos) y Descargar. */
+  function entregarArchivo(blob, nombre, que) {
+    S.archivoListo = { blob: blob, nombre: nombre };
+    const comp = !!(navigator.canShare && window.File && navigator.canShare({ files: [new File([blob], nombre, { type: blob.type })] }));
+    modal(que || 'Archivo listo', `<p>📊 <b>${esc(nombre)}</b> · ${tamTxt(blob.size)}</p>
+      <p class="muted">${comp ? 'Toca <b>Compartir</b> para mandarlo por WhatsApp o correo a tus sucursales, o guárdalo en Archivos.' : 'Descárgalo y envíalo por WhatsApp o correo a tus sucursales.'}</p>
+      <div class="acciones" style="justify-content:flex-start">${comp ? '<button class="btn primario" onclick="App.compartirArchivo()">📤 Compartir</button>' : ''}
+        <a class="btn ${comp ? '' : 'primario'}" href="${URL.createObjectURL(blob)}" download="${esc(nombre)}">⬇️ Descargar</a><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  async function compartirArchivo() {
+    const x = S.archivoListo; if (!x) return;
+    try { await navigator.share({ files: [new File([x.blob], x.nombre, { type: x.blob.type })], title: x.nombre }); } catch (e) { if (e && e.name !== 'AbortError') toast('No se pudo compartir; usa Descargar', true); }
+  }
+  const fechaXl = s => { const f = fechaDe(s); return f && !isNaN(f) ? f : (s || ''); };
+  const hoyTxt = () => new Date().toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' });
+  /** Inventario (con los filtros de la pantalla): existencias por producto y lotes con caducidad. */
+  async function excelInventario() {
+    cargando(true);
+    try {
+      const suc = $('#ieSuc') ? $('#ieSuc').value : '', txt = $('#ieTxt') ? $('#ieTxt').value : '', cat = $('#ieCat') ? $('#ieCat').value : '', min = $('#ieMin') && $('#ieMin').checked;
+      const verC = puede('ver_costos'), hoyD = new Date(); hoyD.setHours(0, 0, 0, 0);
+      const ok = p => (!txt || coincide(p.id + ' ' + p.nombre + ' ' + p.lab, txt)) && (!cat || p.categoria === cat);
+      const g = {}, lotes = [];
+      (D().stock || []).forEach(s => {
+        if (suc && s.s !== suc) return; const p = prod(s.p) || { id: s.p, nombre: s.p }; if (!ok(p) || Math.abs(s.q) < 0.0001) return;
+        const k = s.p + '|' + s.s; if (!g[k]) g[k] = { p: p, s: s.s, q: 0, lotes: 0, cad: null };
+        g[k].q += s.q; const f = fechaDe(s.c); if (s.q > 0) { g[k].lotes++; if (f && (!g[k].cad || f < g[k].cad)) g[k].cad = f; }
+        lotes.push({ s: s, p: p, f: f });
+      });
+      let ex = Object.values(g).filter(x => !min || x.q < (x.p.min || 0)).sort((a, b) => sucNom(a.s).localeCompare(sucNom(b.s)) || String(a.p.nombre).localeCompare(b.p.nombre));
+      const varias = !suc && new Set(ex.map(x => x.s)).size > 1;
+      const colsE = [{ t: 'Clave', w: 13 }, { t: 'Producto', w: 42 }, { t: 'Laboratorio', w: 18 }, { t: 'Categoría', w: 16 }].concat(varias ? [{ t: 'Sucursal', w: 16 }] : [])
+        .concat([{ t: 'Lotes', w: 8, fmt: 'num' }, { t: 'Próx. caducidad', w: 14, fmt: 'fecha' }, { t: 'Existencia', w: 12, fmt: 'num', suma: 1 }, { t: 'Mínimo', w: 10, fmt: 'num' }, { t: 'Estado', w: 16 }])
+        .concat(verC ? [{ t: U().costoLista ? 'Costo lista' : 'Costo', w: 13, fmt: 'mon' }, { t: 'Valor', w: 15, fmt: 'mon', suma: 1 }] : []);
+      const filasE = ex.map(x => { const est = x.q <= 0 ? 'Sin existencia' : x.p.min && x.q < x.p.min ? 'Bajo mínimo' : 'OK';
+        return { tono: x.q <= 0 ? 'mal' : est === 'Bajo mínimo' ? 'av' : '', v: [x.p.id, x.p.nombre, x.p.lab || '', x.p.categoria || ''].concat(varias ? [sucNom(x.s)] : [])
+          .concat([x.lotes, x.cad || '', r2c(x.q), x.p.min || 0, est]).concat(verC ? [x.p.costo || 0, r2c(x.q * (x.p.costo || 0))] : []) }; });
+      const lt = lotes.filter(x => x.s.q > 0 && (!min || (g[x.s.p + '|' + x.s.s] && g[x.s.p + '|' + x.s.s].q < (x.p.min || 0))))
+        .sort((a, b) => (a.f || 9e15) - (b.f || 9e15) || String(a.p.nombre).localeCompare(b.p.nombre));
+      const colsL = (varias ? [{ t: 'Sucursal', w: 16 }] : []).concat([{ t: 'Clave', w: 13 }, { t: 'Producto', w: 42 }, { t: 'Lote', w: 14 }, { t: 'Caducidad', w: 13, fmt: 'fecha' }, { t: 'Días para caducar', w: 11, fmt: 'num' },
+        { t: 'Piezas', w: 10, fmt: 'num', suma: 1 }, { t: 'Estado', w: 18 }]).concat(verC ? [{ t: 'Valor', w: 15, fmt: 'mon', suma: 1 }] : []);
+      const filasL = lt.map(x => { const dias = x.f ? Math.round((x.f - hoyD) / 86400000) : null;
+        const est = dias === null ? 'Sin caducidad' : dias < 0 ? 'Caducado' : dias <= 90 ? 'Por caducar (90 días)' : dias <= 180 ? 'Vigilar (180 días)' : 'Vigente';
+        return { tono: dias === null ? 'gris' : dias < 0 ? 'mal' : dias <= 90 ? 'av' : '', v: (varias ? [sucNom(x.s.s)] : []).concat([x.p.id, x.p.nombre, x.s.l || '', x.f || x.s.c || '', dias === null ? '' : dias, r2c(x.s.q), est])
+          .concat(verC ? [r2c(x.s.q * (x.p.costo || 0))] : []) }; });
+      const donde = suc ? sucNom(suc) : 'Todas las sucursales', filtro = [txt ? 'Búsqueda: ' + txt : '', cat ? 'Categoría: ' + cat : '', min ? 'Solo bajo mínimo' : ''].filter(Boolean).join(' · ');
+      const pzs = ex.reduce((a, x) => a + x.q, 0), val = verC ? ex.reduce((a, x) => a + x.q * (x.p.costo || 0), 0) : null;
+      const resumen = [['Productos', ex.length, 'num'], ['Piezas en existencia', r2c(pzs), 'num'], ['Bajo mínimo', ex.filter(x => x.q > 0 && x.p.min && x.q < x.p.min).length, 'num'],
+        ['Lotes caducados', filasL.filter(f => f.tono === 'mal').length, 'num']].concat(verC ? [['Valor del inventario' + (U().costoLista ? ' (costo de lista)' : ''), r2c(val), 'mon']] : []);
+      const blob = await excelLocal('', [
+        { nombre: 'Existencias', titulo: 'Inventario · ' + donde, sub: ['Existencias al ' + hoyTxt(), filtro], resumen: resumen, cols: colsE, filas: filasE },
+        { nombre: 'Lotes y caducidades', titulo: 'Lotes y caducidades · ' + donde, sub: ['Al ' + hoyTxt() + ' · ordenado por caducidad', filtro], cols: colsL, filas: filasL }]);
+      entregarArchivo(blob, 'Inventario ' + donde.replace(/[\\/:*?"<>|]+/g, '-') + ' ' + hoyISO() + '.xlsx', 'Inventario en Excel');
+    } catch (e) { toast(e.message || 'No se pudo hacer el Excel', true); } finally { cargando(false); }
+  }
+  /** Conteo físico: resumen + renglones con sistema, físico y diferencia. */
+  async function excelConteo() {
+    const d = S.cto; if (!d) return;
+    cargando(true);
+    try {
+      const verC = d.lineas.some(l => l.costo !== null && l.costo !== undefined) || (d.resumen && d.resumen.faltVal !== null && d.resumen.faltVal !== undefined);
+      const abierto = d.estatus === 'Abierto', r = d.resumen || {};
+      const cols = [{ t: 'Clave', w: 13 }, { t: 'Producto', w: 40 }, { t: 'Laboratorio', w: 16 }, { t: 'Categoría', w: 15 }, { t: 'Lote', w: 13 }, { t: 'Caducidad', w: 12 },
+        { t: 'Sistema', w: 10, fmt: 'num', suma: 1 }, { t: 'Físico', w: 10, fmt: 'num', suma: 1 }, { t: 'Diferencia', w: 11, fmt: 'num', suma: 1 }]
+        .concat(verC ? [{ t: 'Costo', w: 12, fmt: 'mon' }, { t: 'Valor diferencia', w: 15, fmt: 'mon', suma: 1 }] : []).concat([{ t: 'Estado', w: 14 }, { t: 'Nota', w: 26 }]);
+      const filas = d.lineas.slice().sort((a, b) => String(a.nombre).localeCompare(b.nombre)).map(l => {
+        const dif = l.dif !== null && l.dif !== undefined ? l.dif : (l.fisico !== null && l.fisico !== undefined ? r2c(l.fisico - l.ini) : null);
+        const est = l.fisico === null || l.fisico === undefined ? 'Sin contar' : dif < 0 ? 'Faltante' : dif > 0 ? 'Sobrante' : 'Coincide';
+        return { tono: est === 'Sin contar' ? 'gris' : est === 'Faltante' ? 'mal' : est === 'Sobrante' ? 'av' : 'ok',
+          v: [l.prod, l.nombre, l.lab || '', l.cat || '', l.lote || '', fechaXl(l.cad), l.ini, l.fisico === null || l.fisico === undefined ? '' : l.fisico, dif === null ? '' : dif]
+            .concat(verC ? [l.costo || 0, l.valor !== null && l.valor !== undefined ? l.valor : (dif === null ? '' : r2c(dif * (l.costo || 0)))] : []).concat([est + (l.agregado ? ' (encontrado)' : ''), l.nota || '']) }; });
+      // en un conteo abierto el resumen se calcula con lo capturado hasta ahora
+      const cnt = d.lineas.filter(l => l.fisico !== null && l.fisico !== undefined), difs = cnt.map(l => r2c(l.fisico - l.ini));
+      const falt = -difs.filter(x => x < 0).reduce((a, x) => a + x, 0), sob = difs.filter(x => x > 0).reduce((a, x) => a + x, 0);
+      const fVal = -cnt.reduce((a, l, i) => a + (difs[i] < 0 ? difs[i] * (l.costo || 0) : 0), 0), sVal = cnt.reduce((a, l, i) => a + (difs[i] > 0 ? difs[i] * (l.costo || 0) : 0), 0);
+      const resumen = [['Folio', d.folio], ['Estatus', d.estatus], ['Fecha', d.fecha + (d.hora ? ' ' + d.hora : '')], ['Responsable', d.responsable || ''],
+        ['Renglones', d.lineas.length, 'num'], ['Contados', cnt.length, 'num'], ['Coinciden', difs.filter(x => !x).length, 'num'], ['Sin contar', d.lineas.length - cnt.length, 'num'],
+        ['Faltante (piezas)', abierto ? r2c(falt) : r.faltPzs || 0, 'num'], ['Sobrante (piezas)', abierto ? r2c(sob) : r.sobPzs || 0, 'num']]
+        .concat(verC ? [['Faltante ($)', abierto || r.faltVal === null || r.faltVal === undefined ? r2c(fVal) : r.faltVal, 'mon'], ['Sobrante ($)', abierto || r.sobVal === null || r.sobVal === undefined ? r2c(sVal) : r.sobVal, 'mon']] : []);
+      const blob = await excelLocal('', [{ nombre: 'Conteo físico', titulo: 'Inventario físico ' + d.folio + ' · ' + (d.sucNombre || sucNom(d.suc)),
+        sub: [(d.alcance || '') + (abierto ? ' · conteo en curso' : d.cierre ? ' · cerrado el ' + d.cierre : ''), d.comentarios || ''], resumen: resumen, cols: cols, filas: filas }]);
+      entregarArchivo(blob, 'Conteo ' + d.folio + ' ' + (d.sucNombre || '') + '.xlsx', 'Conteo físico en Excel');
+    } catch (e) { toast(e.message || 'No se pudo hacer el Excel', true); } finally { cargando(false); }
   }
 
   /* ---------- VISOR DE PDF DENTRO DE LA APP ----------
@@ -5600,6 +6014,7 @@ const App = (() => {
     logoTransparente,
     pdfCompra: id => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,
+    excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
     vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } },
