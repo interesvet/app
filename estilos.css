@@ -626,6 +626,13 @@ body.con-bienv { overflow: hidden; }
 .btn-bienv span { width: 7px; height: 7px; border-radius: 2px; background: currentColor; opacity: .8; }
 .aviso-version { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 2200; display: flex; gap: 12px; align-items: center;
   background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .3); font-size: 14px; max-width: calc(100vw - 24px); }
+
+/* Mis portafolios */
+.port-lista { margin-top: 10px; display: grid; gap: 8px; max-height: 420px; overflow-y: auto; }
+.port-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 12px; background: var(--superficie-2); flex-wrap: wrap; }
+.port-ico { font-size: 22px; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--superficie); border: 1px solid var(--borde); }
+.port-info { flex: 1 1 200px; min-width: 0; } .port-info b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .port-info small { color: var(--texto-2); }
+.port-acc { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

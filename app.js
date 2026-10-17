@@ -3838,7 +3838,7 @@ const App = (() => {
     const cats = [...new Set(ps.map(p => p.categoria).filter(Boolean))].sort(), labs = [...new Set(ps.map(p => p.lab).filter(Boolean))].sort();
     const C = S.catPdf = S.catPdf || { labs: [], cats: [], ids: {} }; C.ids = C.ids || {};
     const chips = (arr, k) => `<div class="chips">${arr.map(x => `<label class="chip${C[k].indexOf(x) >= 0 ? ' on' : ''}"><input type="checkbox" data-c="${k}" value="${esc(x)}" ${C[k].indexOf(x) >= 0 ? 'checked' : ''}>${esc(x)}</label>`).join('')}</div>`;
-    $('#pCont').innerHTML = `<div class="tarjeta no-imprimir cat-pdf">
+    $('#pCont').innerHTML = `<div class="tarjeta no-imprimir port-guardados" id="cpGuardados"></div><div class="tarjeta no-imprimir cat-pdf">
         <div class="cat-pdf-enc"><div><h3 style="margin:0">📄 Portafolio de productos en PDF</h3><p class="muted" style="margin:2px 0 0;font-size:13px">Para compartir con tus clientes: con tu logotipo, datos técnicos e imagen sin fondo de cada producto. <b>No lleva precios.</b></p></div>
         <button class="btn primario fijo" onclick="App.pdfCatalogo()">📄 Generar portafolio</button></div>
         <div class="muted cat-pdf-sub">Laboratorios <span id="cpNL"></span> <a href="#" data-todo="labs">todos</a> · <a href="#" data-nada="labs">ninguno</a></div>${chips(labs, 'labs')}
@@ -3850,6 +3850,7 @@ const App = (() => {
     const enPdf = () => { const ids = Object.keys(C.ids).filter(k => C.ids[k]), filtro = C.labs.length || C.cats.length;
       return ps.filter(p => p.activo && (C.ids[p.id] || ((filtro || !ids.length) && (!C.labs.length || C.labs.indexOf(p.lab) >= 0) && (!C.cats.length || C.cats.indexOf(p.categoria) >= 0)))); };
     S.portEnPdf = enPdf;
+    pintarPortafolios(true);
     const cuenta = () => { const l = enPdf(), nG = agruparPortafolio(l).length, nP = Object.keys(C.ids).filter(k => C.ids[k]).length;
       $('#cpCuenta').innerHTML = `El PDF llevará <b>${nG}</b> ${nG === 1 ? 'producto' : 'productos'}${l.length > nG ? ' <span class="muted">(' + l.length + ' presentaciones juntas)</span>' : ''}${nG > PORT_LOTE ? ' <span class="muted">· se arma por partes; puede tardar unos minutos</span>' : ''}` +
         `<span class="muted"> · ${!C.labs.length && !C.cats.length && !nP ? 'todo el portafolio activo' : [C.labs.length ? C.labs.length + ' laboratorio(s)' : '', C.cats.length ? C.cats.length + ' categoría(s)' : '', nP ? nP + ' elegido(s) a mano' : ''].filter(Boolean).join(' + ')}</span>`;
@@ -4025,7 +4026,80 @@ const App = (() => {
           ${navigator.canShare ? `<button class="btn" onclick="App.compartirPdfLocal()">📤 Compartir</button>` : ''}
           <button class="btn" onclick="${info.volver}">Volver</button></div>`);
       S.pdfLocal = { bytes: bytes, nombre: nombre + '.pdf' };
+      // queda guardado en este equipo y en la lista de "Mis portafolios" (para compartirlo al instante, aun sin conexión)
+      try { await PDFDB.poner({ id: r && r.id ? r.id : 'local-' + uid(), nombre: nombre, fecha: Date.now(), tam: bytes.length, url: r ? r.url : '', blob: new Blob([bytes], { type: 'application/pdf' }) });
+        if (r && r.id) { const l = LS.get('portafoliosSrv', []).filter(x => x.id !== r.id); l.unshift({ id: r.id, nombre: nombre, fecha: Date.now(), tam: bytes.length, url: r.url }); LS.set('portafoliosSrv', l); }
+        pintarPortafolios(); } catch (e) {}
     } catch (e) { if (!e.red) toast(e.message || 'No se pudo armar el PDF', true); cerrarModal(); }
+  }
+  /* ---------- MIS PORTAFOLIOS: los PDF generados quedan en Drive y también en el equipo (IndexedDB) para abrirlos y compartirlos sin conexión ---------- */
+  const PDFDB = (() => {
+    let db = null;
+    const abrir = () => db ? Promise.resolve(db) : new Promise((ok, mal) => { const r = indexedDB.open('iv_portafolios', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('pdfs', { keyPath: 'id' }); r.onsuccess = () => { db = r.result; ok(db); }; r.onerror = () => mal(r.error); });
+    const tx = (modo, fn) => abrir().then(d => new Promise((ok, mal) => { const t = d.transaction('pdfs', modo), st = t.objectStore('pdfs'), q = fn(st); t.oncomplete = () => ok(q && q.result); t.onerror = () => mal(t.error); }));
+    return { todos: () => tx('readonly', st => st.getAll()).catch(() => []), uno: id => tx('readonly', st => st.get(id)), poner: o => tx('readwrite', st => st.put(o)), quitar: id => tx('readwrite', st => st.delete(id)) };
+  })();
+  const tamTxt = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  async function pintarPortafolios(sincronizar) {
+    const el = $('#cpGuardados'); if (!el) return;
+    const loc = await PDFDB.todos(), enEq = {}; loc.forEach(x => enEq[x.id] = x);
+    const srv = LS.get('portafoliosSrv', []), ids = {}, lista = [];
+    srv.concat(loc).forEach(x => { if (ids[x.id]) return; ids[x.id] = 1; lista.push({ id: x.id, nombre: x.nombre, fecha: x.fecha, tam: x.tam, url: x.url || (enEq[x.id] || {}).url || '', local: !!enEq[x.id] }); });
+    lista.sort((a, b) => b.fecha - a.fecha);
+    const nLoc = lista.filter(x => x.local).length, admin = U().rol === 'Administrador';
+    el.innerHTML = `<div class="cat-pdf-enc"><div><h3 style="margin:0">📁 Mis portafolios</h3><p class="muted" style="margin:2px 0 0;font-size:13px">Listos para compartir al instante. Los que dicen <b>📱 En este equipo</b> se abren y comparten aun sin conexión.</p></div>
+        ${S.online && lista.some(x => !x.local) ? `<button class="btn fijo" onclick="App.bajarPortafolios(true)">📥 Guardar todos en este equipo</button>` : ''}</div>
+      <p class="muted" id="cpGuardEst" style="margin:6px 0 0;font-size:12.5px">${lista.length ? `${lista.length} portafolios · ${nLoc} en este equipo` : 'Aún no hay portafolios: genera uno abajo y quedará aquí.'}</p>
+      ${lista.length ? `<div class="port-lista">${lista.map(x => `<div class="port-item">
+        <div class="port-ico">📄</div>
+        <div class="port-info"><b>${esc(x.nombre)}</b><small>${new Date(x.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}${x.tam ? ' · ' + tamTxt(x.tam) : ''} · ${x.local ? '<span class="txt-ok">📱 En este equipo</span>' : '☁️ En Drive'}</small></div>
+        <div class="port-acc">
+          ${x.local ? `<button class="btn primario chico" onclick="App.compartirPortafolio('${esc(x.id)}')">📤 Compartir</button><button class="btn chico" onclick="App.abrirPortafolio('${esc(x.id)}')">Abrir</button>`
+            : `${S.online ? `<button class="btn chico" onclick="App.bajarPortafolio('${esc(x.id)}')">📥 Guardar en el equipo</button>` : ''}${x.url ? `<a class="btn chico" href="${esc(x.url)}" target="_blank">Abrir en Drive</a>` : ''}`}
+          ${x.url ? `<a class="btn chico" target="_blank" href="${WA_BASE}?text=${encodeURIComponent('Le comparto nuestro portafolio de productos Interés Veterinario: ' + x.nombre + '\n' + x.url)}">💬 Enlace</a>` : ''}
+          ${x.local ? `<button class="icono" title="Quitar de este equipo (sigue en Drive)" onclick="App.quitarPortafolioLocal('${esc(x.id)}')">✕</button>` : admin && S.online ? `<button class="icono" title="Quitar de la lista (se mueve a Archivos quitados)" onclick="App.quitarPortafolioDrive('${esc(x.id)}')">🗂️</button>` : ''}
+        </div></div>`).join('')}</div>` : ''}`;
+    if (sincronizar && S.online) {
+      try { const r = await pedir('listarPortafolios', {}, true); LS.set('portafoliosSrv', r.map(x => ({ id: x.id, nombre: x.nombre, fecha: x.fecha, tam: x.tam, url: x.url })));
+        await pintarPortafolios(false); bajarPortafolios(false); } catch (e) {}
+    }
+  }
+  /** Baja al equipo los portafolios que faltan (los 20 más recientes, hasta 30 MB cada uno). */
+  async function bajarPortafolios(todos) {
+    if (S.bajandoPort || !S.online) return; S.bajandoPort = true;
+    try {
+      try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+      const loc = await PDFDB.todos(), ya = {}; loc.forEach(x => ya[x.id] = 1);
+      const faltan = LS.get('portafoliosSrv', []).filter(x => !ya[x.id] && (!x.tam || x.tam < 30 * 1048576)).slice(0, todos ? 200 : 20);
+      for (let i = 0; i < faltan.length; i++) { const e = $('#cpGuardEst'); if (e) e.textContent = 'Guardando en este equipo: ' + (i + 1) + ' de ' + faltan.length + '…'; await bajarPortafolio(faltan[i].id, true); }
+    } finally { S.bajandoPort = false; pintarPortafolios(); }
+  }
+  async function bajarPortafolio(id, callado) {
+    const x = LS.get('portafoliosSrv', []).find(o => o.id === id); if (!x) return;
+    try {
+      const partes = []; let ini = 0, total = 1;
+      while (ini < total) { const r = await pedir('bajarPortafolio', { id: id, ini: ini, tam: 3145728 }, true); total = r.total; const b = b64aBytes(r.b64); partes.push(b); ini += b.length; if (!b.length) break; }
+      await PDFDB.poner({ id: id, nombre: x.nombre, fecha: x.fecha, tam: total, url: x.url, blob: new Blob(partes, { type: 'application/pdf' }) });
+      if (!callado) { toast('✔ Guardado en este equipo'); pintarPortafolios(); }
+    } catch (e) { if (!callado) toast('No se pudo guardar en el equipo' + (e.message ? ': ' + e.message : ''), true); }
+  }
+  async function compartirPortafolio(id) {
+    const x = await PDFDB.uno(id); if (!x) return toast('Ese portafolio ya no está en este equipo', true);
+    const f = new File([x.blob], x.nombre + '.pdf', { type: 'application/pdf' });
+    try { if (navigator.canShare && navigator.canShare({ files: [f] })) return await navigator.share({ files: [f], title: x.nombre }); } catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(x.blob); a.download = x.nombre + '.pdf'; document.body.appendChild(a); a.click(); a.remove();
+    toast('Este equipo no permite compartir directo: se descargó el PDF');
+  }
+  async function abrirPortafolio(id) {
+    const x = await PDFDB.uno(id); if (!x) return;
+    const u = URL.createObjectURL(x.blob), w = window.open(u, '_blank');
+    if (!w) { const a = document.createElement('a'); a.href = u; a.download = x.nombre + '.pdf'; document.body.appendChild(a); a.click(); a.remove(); }
+  }
+  async function quitarPortafolioLocal(id) { if (!confirm('¿Quitarlo de este equipo? Sigue guardado en tu Drive.')) return; await PDFDB.quitar(id); pintarPortafolios(); }
+  async function quitarPortafolioDrive(id) {
+    if (!confirm('¿Quitar este portafolio de la lista? No se borra: se mueve a la carpeta "Archivos quitados" de Portafolios.')) return;
+    try { await pedir('quitarPortafolio', { id: id }); LS.set('portafoliosSrv', LS.get('portafoliosSrv', []).filter(x => x.id !== id)); toast('Portafolio quitado de la lista'); pintarPortafolios(); } catch (e) {}
   }
   async function compartirPdfLocal() {
     const x = S.pdfLocal; if (!x) return;
@@ -5161,6 +5235,7 @@ const App = (() => {
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
     vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
+    bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,
     bienvenida, bienvIr,
     vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } },
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
