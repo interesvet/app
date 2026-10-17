@@ -518,9 +518,11 @@ const App = (() => {
         ${puede('ventas') ? `<button class="bienv-cta" onclick="App.bienvIr('venta')"><span>🛒</span><div><b>Nueva venta</b><small>Captura una nota en segundos</small></div><em>›</em></button>` : ''}
         <div class="bienv-grid">${items.map(x => `<button class="bienv-item" onclick="App.bienvIr('${x.id}')"><span class="bienv-ico">${x.e.i}</span><b>${esc(x.e.t)}</b><small>${esc(SUB_MENU[x.id] || '')}</small></button>`).join('')}</div>
         <div class="bienv-pie">Interés Veterinario · ${new Date().getFullYear()}${S.cola && S.cola.length ? ` · <b>${S.cola.length} por sincronizar</b>` : ''}</div>
+        <button class="bienv-salir" onclick="App.salirBienv()" aria-label="Cerrar sesión">⏻ Cerrar sesión</button>
       </div>`;
     el.classList.remove('oculto'); el.scrollTop = 0; document.body.classList.add('con-bienv');
   }
+  function salirBienv() { if (!(S.cola && S.cola.length) && !confirm('¿Cerrar sesión en este dispositivo?')) return; salir(); }
   function bienvIr(id) { const el = $('#bienvenida'); if (el) el.classList.add('oculto'); document.body.classList.remove('con-bienv'); ir(id); }
   function botonBienvenida() {
     if ($('#btnBienv') || !esMovil()) return;
@@ -1044,14 +1046,15 @@ const App = (() => {
     return fs.map(f => `<div class="fact-enc"><b>Factura ${esc(f.sf)}</b>${f.uuid ? `<br><span>Folio fiscal: ${esc(f.uuid)}</span>` : ''}</div>`).join('');
   };
   function htmlNota(d, offline) {
-    const pagada = pagadaNota(d);
+    const pagada = pagadaNota(d), viva = d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto';
+    const bloq = pagada || (!!d.facturada && viva);   // facturada o pagada: sin quitar productos, editar ni cancelar
     return `<div class="imprimible"><div class="nota">
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>NOTA DE VENTA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div><div>${etqEstatus(d.estatus)}</div>${htmlFacturaNota(d)}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
         <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${d.rfc ? 'RFC ' + esc(d.rfc) : ''} ${esc(d.domicilio || '')}${fiscalHtml(d.fiscal)}</div>
         <div style="text-align:right">Crédito: ${d.dias} días ${d.venc ? '· Vence ' + esc(d.venc) : ''}<br>Vendedor: ${esc(d.vendedor || '')}<br>Envío: ${esc(d.envio || 'Entrega física')}${d.guia ? ' · Guía ' + esc(d.guia) : ''}</div></div>
-      ${(() => { const canc = !offline && d.id && !pagada && d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto' && puede('ventas_cancelar'); return `
+      ${(() => { const canc = !offline && d.id && !bloq && viva && puede('ventas_cancelar'); return `
       <div class="tabla-cont"><table><thead><tr><th class="num">Cant.</th><th>Producto</th><th>Lote</th><th>Cad.</th><th class="num">Precio</th><th class="num">Importe</th><th class="num">IVA $</th><th class="num">Total</th>${canc ? '<th class="no-imprimir"></th>' : ''}</tr></thead><tbody>
       ${d.lineas.filter(l => l.cant > 0 || !d.id || d.estatus === 'Cancelado').map(l => `<tr><td class="num">${l.cant > 0 ? nf(l.cant) : '<small class="error">cancelado</small>'}</td><td>${esc(l.nombre)}</td><td>${esc(l.lote || (d.estatus === 'Pendiente' ? 'Se asigna al entregar' : ''))}</td><td>${esc(l.cad || '')}</td><td class="num">${$$(l.precio)}</td>${(() => { const im = Math.round(((l.sub !== undefined && l.sub !== null ? l.sub : l.cant * l.precio) - (l.desc || 0)) * 100) / 100, iv = l.iva !== undefined && l.iva !== null ? l.iva : Math.max(0, Math.round(((l.total || 0) - im) * 100) / 100); return `<td class="num">${$$(im)}</td><td class="num">${$$(iv)}</td><td class="num"><b>${$$(l.total !== undefined ? l.total : im + iv)}</b></td>`; })()}${canc ? `<td class="no-imprimir">${l.cant > 0 ? `<button class="btn chico peligro" onclick="App.formCancelarLinea('${d.id}','${esc(l.idDet)}')">Cancelar</button>` : ''}</td>` : ''}</tr>`).join('')}`; })()}
       </tbody></table></div>
@@ -1069,12 +1072,14 @@ const App = (() => {
       <div class="acciones no-imprimir">
         ${!offline && d.id ? `<button class="btn primario" onclick="App.pdfNota('${d.id}')">📄 PDF para enviar / imprimir</button>` : '<button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button>'}
         ${d.cel ? `<a class="btn" target="_blank" href="${WA_BASE}52${String(d.cel).replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent('Interés Veterinario — Nota ' + d.folio + '\nTotal: ' + $$(d.total) + '\nSaldo: ' + $$(d.saldo) + '\n¡Gracias por su compra!')}">💬 WhatsApp</a>` : ''}
-        ${!offline && d.id && d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto' && d.saldo > 0.009 && puede('ventas_editar') ? `<button class="btn" onclick="App.editarNota('${d.id}')">✏️ Editar nota</button>` : ''}
+        ${!offline && d.id && viva && !bloq && d.saldo > 0.009 && puede('ventas_editar') ? `<button class="btn" onclick="App.editarNota('${d.id}')">✏️ Editar nota</button>` : ''}
         ${!offline && d.id && d.estatus === 'Pendiente' && puede('ventas') ? `<button class="btn primario" onclick="App.entregarVenta('${d.id}')">📦 Marcar como entregado</button>` : ''}
         ${!offline && d.id && d.estatus !== 'Cancelado' && puede('ventas') ? `<button class="btn" onclick="App.formEnvio('${d.id}')">🚚 Envío / guía</button>` : ''}
         ${!offline && d.id && d.saldo > 0.009 && d.estatus !== 'Cancelado' && puede('cobranza') ? `<button class="btn" onclick="App.formCobro('${d.id}')">💵 Cobrar</button>` : ''}
-        ${!offline && d.id && !pagada && d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto' && puede('ventas_cancelar') ? `<button class="btn peligro" onclick="App.cancelarVenta('${d.id}')">Cancelar toda la nota</button>` : ''}
-      </div>${!offline && d.id && d.estatus !== 'Cancelado' && puede('facturacion') ? '<div id="notaFact" class="no-imprimir fact-bloque"><span class="muted">Cargando facturación…</span></div>' : ''}${!offline && d.id && puede('ventas') ? bloqueArch('ventaGuia', d.id) + (d.estatus === 'Entregado' ? bloqueArch('ventaFirma', d.id) : '') : ''}${pagada ? '<p class="muted no-imprimir" style="text-align:right;margin-top:6px">🔒 Nota pagada al 100 %: ya no se pueden quitar productos, cancelarla ni editarla.</p>' : ''}`;
+        ${!offline && d.id && !bloq && viva && puede('ventas_cancelar') ? `<button class="btn peligro" onclick="App.cancelarVenta('${d.id}')">Cancelar toda la nota</button>` : ''}
+        ${!offline && d.id && bloq && viva && puede('devoluciones') ? `<button class="btn peligro" onclick="App.nuevaDevolucion('${d.id}')">↩️ Devolución de la nota completa</button>` : ''}
+        ${d.devolucion && puede('devoluciones') ? `<button class="btn" onclick="App.verDev('${esc(d.devolucion.id)}')">↩️ Ver devolución ${esc(d.devolucion.folio)}</button>` : ''}
+      </div>${!offline && d.id && d.estatus !== 'Cancelado' && puede('facturacion') ? '<div id="notaFact" class="no-imprimir fact-bloque"><span class="muted">Cargando facturación…</span></div>' : ''}${!offline && d.id && puede('ventas') ? bloqueArch('ventaGuia', d.id) + (d.estatus === 'Entregado' ? bloqueArch('ventaFirma', d.id) : '') : ''}${bloq ? `<p class="muted no-imprimir" style="text-align:right;margin-top:6px">🔒 Nota ${[d.facturada ? 'facturada' : '', pagada ? 'pagada al 100 %' : ''].filter(Boolean).join(' y ')}: ya no se pueden quitar productos, editarla ni cancelarla.${puede('devoluciones') ? ' Si el cliente regresa la mercancía, usa “Devolución de la nota completa”' + (d.facturada ? ' con el acuse de cancelación o la nota de crédito.' : '.') : ''}</p>` : ''}`;
   }
   /* ---------- PDF: se genera en el servidor, se guarda en Drive y se abre para compartir ---------- */
   async function generarPdf(accion, params, info) {
@@ -1229,9 +1234,9 @@ const App = (() => {
   /* ---------- FOTOS Y DOCUMENTOS: clientes, ventas, compras, vendedores, proveedores ---------- */
   const ARCH_TIT = { cliFoto: '📷 Foto del cliente', cliCsf: '🧾 Constancia de situación fiscal', ventaGuia: '📦 Guía de envío', ocGuia: '📦 Guía de envío', trGuia: '📦 Guía de envío', vendFoto: '📷 Foto del vendedor', provLogo: '🏷️ Logotipo del proveedor',
     visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)', sucFoto: '🏬 Foto de la sucursal',
-    ocFactura: '🧾 Factura del proveedor (PDF y XML)', prodFicha: '📑 Ficha técnica (PDF)', ventaFirma: '✍️ Firma de recibido', ocFirma: '✍️ Firma de recepción', trFirma: '✍️ Firma de recibido' };
-  const ARCH_ACEPTA = { ocFactura: 'application/pdf,.xml,text/xml,application/xml', prodFicha: 'application/pdf' };
-  const ARCH_BTN = { ocFactura: '➕ Adjuntar PDF o XML', prodFicha: '📑 Subir ficha técnica (PDF)' };
+    ocFactura: '🧾 Factura del proveedor (PDF y XML)', prodFicha: '📑 Ficha técnica (PDF)', ventaFirma: '✍️ Firma de recibido', ocFirma: '✍️ Firma de recepción', trFirma: '✍️ Firma de recibido', devDoc: '🧾 Documento fiscal de cancelación (XML y PDF)' };
+  const ARCH_ACEPTA = { devDoc: 'application/pdf,.xml,text/xml,application/xml', ocFactura: 'application/pdf,.xml,text/xml,application/xml', prodFicha: 'application/pdf' };
+  const ARCH_BTN = { devDoc: '➕ Agregar XML o PDF', ocFactura: '➕ Adjuntar PDF o XML', prodFicha: '📑 Subir ficha técnica (PDF)' };
   const ARCH_FIRMA = { ventaFirma: 1, ocFirma: 1, trFirma: 1 };
   const ARCH_MULTIFOTO = { visFoto: 1 }, ARCH_SOLOVER = { recFirma: 1, recPdf: 1 };
   const ARCH_FOTO = { cliFoto: 1, vendFoto: 1, provLogo: 1, sucFoto: 1 };
@@ -1538,6 +1543,130 @@ const App = (() => {
   }
 
 
+  /* ---------- DEVOLUCIONES (nota completa facturada o pagada) ---------- */
+  function vistaDevoluciones(barra) {
+    S.devSub = S.devSub || 'lista';
+    const sb = (id, n) => `<button class="${S.devSub === id ? 'activo' : ''}" onclick="App.subDev('${id}')">${n}</button>`;
+    const sub = `<div class="pestanas">${sb('lista', 'Devoluciones registradas')}${sb('nueva', '+ Nueva devolución')}</div>`;
+    if (S.devSub === 'nueva') return formDevolucion(barra + sub);
+    const h = hoyISO(), f = alDia(S.fdev || (S.fdev = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, texto: '', sucursal: '' }));
+    $('#vista').innerHTML = barra + sub + `<div class="tarjeta no-imprimir"><div class="fila">
+      <label>Desde<input type="date" id="dvDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="dvHasta" value="${f.hasta}"></label>
+      ${U().todasSucursales ? `<label>Sucursal<select id="dvSuc">${optsSuc(f.sucursal || '', false, 'Todas')}</select></label>` : ''}
+      <label>Buscar<input id="dvTxt" placeholder="Folio, nota, cliente, factura o UUID" value="${esc(f.texto)}"></label>
+      <button class="btn primario fijo" onclick="App.cargarDev()">Buscar</button></div>
+      <p class="muted" style="margin-top:8px">Las notas facturadas o pagadas ya no se cancelan ni se les quitan productos: si el cliente regresa la mercancía se registra aquí la devolución de la nota completa.
+      Si la nota está facturada se exige el documento fiscal de cancelación (acuse de cancelación de la factura o nota de crédito).</p></div>
+      <div class="espacio"></div><div id="lDev"><div class="vacio">Cargando…</div></div>`;
+    $('#dvTxt').onkeydown = e => { if (e.key === 'Enter') cargarDev(); };
+    if ($('#dvSuc')) $('#dvSuc').onchange = cargarDev;
+    agregarMesAnio('dvDesde', 'dvHasta', cargarDev);
+    cargarDev();
+  }
+  async function cargarDev() {
+    S.fdev = marcarHoy({ desde: $('#dvDesde').value, hasta: $('#dvHasta').value, texto: $('#dvTxt').value.trim(), sucursal: $('#dvSuc') ? $('#dvSuc').value : '' });
+    let r; try { r = await pedir('listarDevoluciones', S.fdev); } catch (e) { if ($('#lDev')) $('#lDev').innerHTML = '<div class="vacio">Consultar devoluciones requiere conexión.</div>'; return; }
+    if (!$('#lDev')) return;
+    S.lista = r.devoluciones; const k = r.kpi, ver = k.total !== null;
+    $('#lDev').innerHTML = `<div class="kpis"><div class="kpi"><small>Devoluciones</small><b>${nf(k.num)}</b><span>${nf(k.piezas)} piezas regresaron al inventario</span></div>
+      ${ver ? `<div class="kpi"><small>Importe devuelto</small><b>${$$(k.total)}</b><span>con IVA</span></div><div class="kpi"><small>Reembolsos</small><b>${$$(k.reembolso)}</b><span>de lo que ya habían pagado</span></div>` : ''}</div>` +
+      tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Nota', h: x => esc(x.nota) }, { t: 'Cliente', h: x => esc(x.cliente) },
+        { t: 'Factura / documento', cls: 'ocultar-movil', h: x => x.facturas ? `${esc(x.facturas)}<br><small class="muted">${esc(x.docTipo || '')}</small>` : '<small class="muted">Sin factura</small>' },
+        { t: 'Piezas', num: 1, h: x => nf(x.piezas) }].concat(ver ? [{ t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Reembolso', num: 1, cls: 'ocultar-movil', h: x => x.reembolso ? $$(x.reembolso) : '—' }] : [])
+        .concat(U().todasSucursales ? [{ t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }] : []), r.devoluciones, { clic: 'App.abrirDev', vacio: 'Sin devoluciones en el periodo' });
+  }
+  function subDev(id) { S.devSub = id; if (id === 'nueva' && !S.devPrep) S.devNota = ''; V.ventas('dev'); }
+  function nuevaDevolucion(idVenta) { cerrarModal(); S.tabVen = 'dev'; S.devSub = 'nueva'; S.devPrep = null; S.devNota = idVenta; if (S.vista === 'ventas') V.ventas('dev'); else ir('ventas', true); }
+  function formDevolucion(barra) {
+    const P = S.devPrep;
+    if (!P) {
+      $('#vista').innerHTML = barra + `<div class="tarjeta"><h3 style="margin-top:0">¿Qué nota se devuelve?</h3>
+        <div class="fila"><label>Buscar nota<input id="dvBus" placeholder="Folio (ej. No/Rem-0622), cliente o RFC"></label><button class="btn primario fijo" onclick="App.buscarNotaDev()">Buscar</button></div>
+        <p class="muted" style="margin-top:6px">Solo aparecen notas facturadas o pagadas. Las demás se cancelan desde la propia nota.</p></div><div class="espacio"></div><div id="dvRes"></div>`;
+      $('#dvBus').onkeydown = e => { if (e.key === 'Enter') buscarNotaDev(); };
+      if (S.devNota) { const id = S.devNota; S.devNota = ''; elegirNotaDev(id); }
+      return;
+    }
+    const d = P.nota, conPago = d.cobrado > 0.009;
+    $('#vista').innerHTML = barra + `<div class="tarjeta">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><h3 style="margin:0">Devolución de la nota ${esc(d.folio)}</h3>
+        <span class="muted">${esc(d.fecha)} · ${esc(d.razon || d.cliente)}${d.rfc ? ' · RFC ' + esc(d.rfc) : ''} · ${esc(d.sucursal.nombre || '')}</span></div>
+        <div style="text-align:right"><small class="muted">Folio de la devolución</small><div><b>${esc(P.folio)}</b></div></div></div>
+      <div style="margin-top:6px">${P.facturada ? '<span class="etq av">Facturada</span> ' : ''}${P.pagada ? '<span class="etq ok">Pagada</span> ' : ''}${P.facturas.map(f => `<small class="muted">Factura <b>${esc(f.sf)}</b>${f.uuid ? ' · ' + esc(f.uuid) : ''}</small>`).join('<br>')}</div>
+      <div class="tabla-cont" style="margin-top:10px"><table><thead><tr><th class="num">Cant.</th><th>Producto</th><th>Lote</th><th class="num">Importe</th><th class="num">IVA $</th><th class="num">Total</th></tr></thead><tbody>
+      ${d.lineas.filter(l => l.cant > 0).map(l => `<tr><td class="num">${nf(l.cant)}</td><td>${esc(l.nombre)}</td><td>${esc(l.lote || '')}</td><td class="num">${$$(l.sub - (l.desc || 0))}</td><td class="num">${$$(l.iva)}</td><td class="num"><b>${$$(l.total)}</b></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="totales" style="margin-top:8px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div>${d.desc + d.descPC ? `<div><span>Descuentos</span><span>−${$$(d.desc + d.descPC)}</span></div>` : ''}
+        <div><span>IVA (suma de los productos)</span><span>${$$(d.iva)}</span></div>${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}<div class="gran"><span>Total a devolver</span><span>${$$(d.total)}</span></div>
+        <div><span>Pagado por el cliente</span><span>${$$(d.cobrado)}</span></div></div></div>
+      ${P.facturada ? `<div class="tarjeta" style="margin-top:12px"><h3 style="margin-top:0">🧾 Documento fiscal de cancelación <span class="error">*</span></h3>
+        <p class="muted" style="margin-top:0">La nota está facturada: sube el <b>acuse de cancelación</b> de la factura (SAT) o la <b>nota de crédito</b> (CFDI de egreso). Con el XML se valida solo que corresponda a la factura de esta nota.</p>
+        <div class="rejilla"><label>XML del documento<input type="file" id="dvXml" accept=".xml,text/xml,application/xml"></label><label>PDF del documento<input type="file" id="dvPdf" accept="application/pdf"></label></div>
+        <div class="rejilla" style="margin-top:6px"><label>Tipo de documento<select id="dvTipo">${opts(Object.keys(P.tiposDoc).map(k => [k, P.tiposDoc[k]]), '', 'Elige (si no subes el XML)')}</select></label>
+          <label>Folio fiscal (UUID)<input id="dvUuid" placeholder="Si solo subes el PDF" autocapitalize="characters"></label><label>Serie-folio del documento<input id="dvDocFolio" placeholder="Opcional (ej. NC-15)"></label></div></div>` : ''}
+      <div class="tarjeta" style="margin-top:12px"><div class="rejilla">
+        <label>Motivo de la devolución <span class="error">*</span><textarea id="dvMotivo" rows="2" placeholder="Ej. producto dañado, error de pedido…"></textarea></label>
+        ${conPago ? `<label>¿Cómo se regresan los ${$$(d.cobrado)} pagados? <span class="error">*</span><select id="dvReemb">${opts(P.reembolsos.map(x => [x, x]), '', 'Elige')}</select></label>` : ''}
+        <label>Comentarios<textarea id="dvCom" rows="2"></textarea></label></div>
+        <p class="muted">Al registrarla: la nota queda <b>Devuelto</b> (sale de ventas, utilidades y cobranza)${d.lineas.some(l => l.movido && l.cant > 0) ? ', las piezas regresan al inventario de ' + esc(d.sucursal.nombre || '') : ''}${P.facturada ? ' y, con el acuse, la factura queda marcada como Cancelada' : ''}. No se puede deshacer.</p>
+        <div class="acciones"><button class="btn" onclick="App.cancelarCapturaDev()">Elegir otra nota</button><button class="btn primario" id="dvBtn" onclick="App.guardarDev()">↩️ Registrar devolución</button></div></div>`;
+  }
+  async function buscarNotaDev() {
+    const t = $('#dvBus').value.trim(); if (t.length < 2) return toast('Escribe al menos 2 letras del folio o del cliente', true);
+    let r; try { r = await pedir('notasDevolucion', { texto: t }); } catch (e) { return; }
+    S.devRes = r;
+    $('#dvRes').innerHTML = tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Nota', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', h: x => esc(x.cliente) },
+      { t: 'Estado', h: x => (x.facturada ? '<span class="etq av">Facturada</span> ' : '') + (x.pagada ? '<span class="etq ok">Pagada</span>' : '') + (!x.puede ? '<small class="muted">Sin factura ni pago completo: cancélala desde la nota</small>' : '') },
+      { t: 'Factura', cls: 'ocultar-movil', h: x => esc(x.facturas || '') }, { t: 'Total', num: 1, h: x => $$(x.total) }], r, { clic: 'App.elegirNotaDevI', vacio: 'No encontré notas con ese texto' });
+  }
+  async function elegirNotaDev(id) {
+    try { S.devPrep = await pedir('prepararDevolucion', { ID_Venta: id }); } catch (e) { return; }
+    if (!S.devPrep.facturada && !S.devPrep.pagada) { const d = S.devPrep.nota; S.devPrep = null; toast('La nota ' + d.folio + ' no está facturada ni pagada: cancélala desde la propia nota', true); return; }
+    S.devSub = 'nueva'; V.ventas('dev');
+  }
+  function cancelarCapturaDev() { S.devPrep = null; S.devNota = ''; V.ventas('dev'); }
+  async function guardarDev() {
+    const P = S.devPrep; if (!P) return;
+    const prm = { ID_Venta: P.nota.id, motivo: $('#dvMotivo').value.trim(), comentarios: $('#dvCom').value.trim(), reembolsoForma: $('#dvReemb') ? $('#dvReemb').value : '' };
+    if (!prm.motivo) return toast('Escribe el motivo de la devolución', true);
+    if ($('#dvReemb') && !prm.reembolsoForma) return toast('Indica cómo se regresa lo que pagó el cliente', true);
+    if (P.facturada) {
+      const fx = $('#dvXml').files[0], fp = $('#dvPdf').files[0];
+      if (!fx && !fp) return toast('Sube el XML o el PDF del acuse de cancelación o de la nota de crédito', true);
+      if (fp && fp.size > 8e6) return toast('El PDF es muy grande (máx. 8 MB)', true);
+      try { prm.xml = fx ? await leerArchivo(fx, true) : ''; prm.pdf = fp ? await leerArchivo(fp) : ''; } catch (e) { return toast('No se pudo leer el archivo', true); }
+      prm.docTipo = $('#dvTipo').value; prm.uuid = $('#dvUuid').value.trim(); prm.docFolio = $('#dvDocFolio').value.trim();
+      if (!fx && (!prm.docTipo || !prm.uuid)) return toast('Sin XML, indica el tipo de documento y su folio fiscal (UUID)', true);
+    }
+    if (!confirm('¿Registrar la devolución completa de la nota ' + P.nota.folio + ' por ' + $$(P.nota.total) + '? No se puede deshacer.')) return;
+    const b = $('#dvBtn'); if (b) b.disabled = true;
+    try {
+      const r = await pedir('guardarDevolucion', prm);
+      S.devPrep = null; S.devSub = 'lista'; toast('✔ Devolución ' + r.folio + ' registrada'); refrescarStock();
+      V.ventas('dev'); verDev(r.id, r.avisos);
+    } catch (e) { if (b) b.disabled = false; }
+  }
+  async function verDev(id, avisos) {
+    let d; try { d = await pedir('detalleDevolucion', { id: id }); } catch (e) { return; }
+    S.ultimaDev = d; const ver = d.total !== null;
+    modal('Devolución ' + d.folio, `${avisos && avisos.length ? `<div class="aviso-cand">${avisos.map(esc).join('<br>')}</div>` : ''}
+      <div class="enc" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><b>${esc(d.cliente || '')}</b>${d.rfc ? '<br>RFC ' + esc(d.rfc) : ''}<br><small class="muted">${esc(d.sucursal.nombre || '')}</small></div>
+        <div style="text-align:right"><b>DEVOLUCIÓN ${esc(d.folio)}</b><div>${esc(d.fecha)} ${esc(d.hora || '')}</div><div><a href="#" onclick="App.verVentaId('${esc(d.idVenta)}');return false">Nota ${esc(d.nota)}</a></div></div></div>
+      <p style="margin:8px 0"><b>Motivo:</b> ${esc(d.motivo || '')}</p>
+      <p class="muted" style="margin:0 0 8px">${d.facturas ? 'Factura ' + esc(d.facturas) + ' · ' : 'Nota sin factura · '}${esc(d.docTipo || 'sin documento fiscal')}${d.docFolio ? ' ' + esc(d.docFolio) : ''}${d.uuid ? '<br>Folio fiscal: ' + esc(d.uuid) : ''}</p>
+      <div class="tabla-cont"><table><thead><tr><th class="num">Cant.</th><th>Producto</th><th>Lote</th>${ver ? '<th class="num">Importe</th><th class="num">IVA $</th><th class="num">Total</th>' : ''}</tr></thead><tbody>
+      ${d.lineas.map(l => `<tr><td class="num">${nf(l.cant)}</td><td>${esc(l.nombre)}</td><td>${esc(l.lote || '')}</td>${ver ? `<td class="num">${$$(l.sub - (l.desc || 0))}</td><td class="num">${$$(l.iva)}</td><td class="num"><b>${$$(l.total)}</b></td>` : ''}</tr>`).join('')}
+      ${ver ? `<tr><td colspan="3" style="text-align:right"><b>Suma de los productos</b></td><td class="num"><b>${$$(d.lineas.reduce((t, l) => t + l.sub - (l.desc || 0), 0))}</b></td><td class="num"><b>${$$(d.lineas.reduce((t, l) => t + (l.iva || 0), 0))}</b></td><td class="num"><b>${$$(d.lineas.reduce((t, l) => t + (l.total || 0), 0))}</b></td></tr>` : ''}
+      </tbody></table></div>
+      ${ver ? `<div class="totales" style="margin-top:8px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div>${d.desc ? `<div><span>Descuentos</span><span>−${$$(d.desc)}</span></div>` : ''}<div><span>IVA (suma de los productos)</span><span>${$$(d.iva)}</span></div>
+        ${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}<div class="gran"><span>Total devuelto</span><span>${$$(d.total)}</span></div>
+        ${d.reembolso ? `<div><span>Reembolso</span><span>${$$(d.reembolso)}</span></div><div><small class="muted">${esc(d.reembolsoForma || '')}</small></div>` : ''}</div>` : ''}
+      <p class="muted">${nf(d.piezas)} piezas regresaron al inventario · Registró ${esc(d.usuario || '')}${d.comentarios ? '<br>' + esc(d.comentarios) : ''}</p>
+      <div class="acciones no-imprimir"><button class="btn primario" onclick="App.pdfDev('${esc(d.id)}')">📄 PDF para enviar / imprimir</button></div>
+      ${bloqueArch('devDoc', d.id)}`);
+  }
+  function pdfDev(id) { const d = S.ultimaDev || {}; generarPdf('pdfDevolucion', { id: id }, { asunto: 'Devolución ' + (d.folio || ''), texto: 'Interés Veterinario — Devolución ' + (d.folio || '') + ' de la nota ' + (d.nota || ''), volver: `App.verDev('${id}')` }); }
+
   /* ---------- COTIZACIONES ---------- */
   const COT_ETQ = { Abierta: 'av', Vendida: 'ok', Vencida: 'mal', Cancelada: 'mal' };
   const etqCot = e => `<span class="etq ${COT_ETQ[e] || ''}">${esc(e)}</span>`;
@@ -1549,7 +1678,7 @@ const App = (() => {
     const barra = `<div class="pestanas">${tb('lista', 'Cotizaciones')}${tb('nueva', S.cot && S.cot.editId ? '✏️ Editando ' + esc(S.cot.editFolio) : '+ Nueva cotización')}</div>`;
     if (tab === 'nueva') return editorCot(barra);
     const h = hoyISO();
-    if (!S.fcot) S.fcot = { desde: h.slice(0, 5) + '01-01', hasta: h, hastaHoy: h, estado: '', texto: '' };
+    if (!S.fcot) S.fcot = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, estado: '', texto: '' };
     const f = alDia(S.fcot);
     $('#vista').innerHTML = barra + `<div class="tarjeta no-imprimir"><div class="fila">
       <label>Desde<input type="date" id="fDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="fHasta" value="${f.hasta}"></label>
@@ -1732,15 +1861,15 @@ const App = (() => {
   /* ---------- HISTORIAL DE VENTAS ---------- */
   V.ventas = (tab) => {
     const tabs = (puede('ventas') ? [['notas', 'Notas de venta']] : []).concat(puede('cobranza') ? [['cobranza', '💵 Cobranza'], ['edocta', '📑 Estados de cuenta']] : [])
-      .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('dueno') ? [['util', '🔒 Utilidad por nota']] : []);
+      .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('devoluciones') ? [['dev', '↩️ Devoluciones']] : []).concat(puede('dueno') ? [['util', '🔒 Utilidad por nota']] : []);
     tab = tab || S.tabVen || 'notas'; if (!tabs.some(x => x[0] === tab)) tab = tabs[0][0]; S.tabVen = tab;
-    const h = hoyISO();
-    const d30 = new Date(Date.now() - 30 * 86400000); const ini = new Date(d30 - d30.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const h = hoyISO(), ini = h.slice(0, 8) + '01';   // mes en curso: del día 1 a hoy
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaVentas('${id}')">${n}</button>`;
     const barra = tabs.length > 1 ? `<div class="pestanas">${tabs.map(x => tb(x[0], x[1])).join('')}</div>` : '';
     if (tab === 'fact') return vistaFacturacion(barra);
     if (tab === 'cobranza') return V.cobranza(barra);
     if (tab === 'edocta') return vistaEdoCta(barra);
+    if (tab === 'dev') return vistaDevoluciones(barra);
     if (tab === 'util') {
       $('#vista').innerHTML = `${barra}
         <div class="tarjeta"><div class="fila">
@@ -1982,7 +2111,7 @@ const App = (() => {
   function refrescarVentasVista() { if (S.tabVen === 'fact') cargarFacturacion(); else if ($('#lVentas')) buscarVentas(); }
 
   function vistaFacturacion(barra) {
-    const h = hoyISO(), ini = h.slice(0, 5) + '01-01';
+    const h = hoyISO(), ini = h.slice(0, 8) + '01';
     S.tabFact = S.tabFact || 'facturas';
     const sb = (id, n) => `<button class="${S.tabFact === id ? 'activo' : ''}" onclick="App.subFact('${id}')">${n}</button>`;
     $('#vista').innerHTML = barra + `<div class="pestanas">${sb('facturas', 'Facturas')}${sb('pend', 'Por facturar')}${sb('revisar', 'Marcadas SI sin factura')}</div>
@@ -2005,7 +2134,8 @@ const App = (() => {
     const p = { desde: $('#fDesde').value, hasta: $('#fHasta').value, sucursal: $('#fSuc') ? $('#fSuc').value : '', texto: $('#fTxt').value, cuadre: $('#fCuadre') ? $('#fCuadre').value : '' };
     $('#lFact').innerHTML = '<div class="vacio">Cargando…</div>';
     if (S.tabFact === 'facturas') {
-      let r; try { r = await pedir('facturas', p); } catch (e) { $('#lFact').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+      let r; try { r = await pedir('facturas', p); } catch (e) { if ($('#lFact')) $('#lFact').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+      if (!$('#lFact')) return;
       S.lista = r.facturas;
       $('#lFact').innerHTML = `<div class="kpis"><div class="kpi"><small>Facturas</small><b>${nf(r.totales.facturas)}</b><span></span></div>
         <div class="kpi"><small>Total facturado</small><b>${$$(r.totales.total)}</b><span>según XML</span></div>
@@ -2018,7 +2148,8 @@ const App = (() => {
           r.facturas, { clic: 'App.abrirFactura', vacio: 'Sin facturas en el periodo' });
       return;
     }
-    let r; try { r = await pedir('porFacturar', Object.assign(p, { revisar: S.tabFact === 'revisar' })); } catch (e) { $('#lFact').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    let r; try { r = await pedir('porFacturar', Object.assign(p, { revisar: S.tabFact === 'revisar' })); } catch (e) { if ($('#lFact')) $('#lFact').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    if (!$('#lFact')) return;
     S.lista = r.notas;
     $('#lFact').innerHTML = (S.tabFact === 'revisar' ? '<p class="muted">Notas con <b>Facturado? = SI</b> (o Parcial) pero sin una factura ligada. Ábrelas y asigna su factura.</p>' :
       `<div class="kpis"><div class="kpi"><small>Notas por facturar</small><b>${nf(r.totales.notas)}</b><span></span></div><div class="kpi"><small>Monto por facturar</small><b>${$$(r.totales.porFacturar)}</b><span>con IVA</span></div></div>`) +
@@ -2425,7 +2556,7 @@ const App = (() => {
   }
   function pagosSinAdj() { $('#ppSinAdj').checked = true; buscarPagosProv(); }
   function listaCompras() {
-    const d90 = new Date(Date.now() - 90 * 86400000); const ini = new Date(d90 - d90.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const ini = hoyISO().slice(0, 8) + '01';
     const pv = S.comprasProv;   // historial de un proveedor: todas las fechas
     $('#cCont').innerHTML = (pv ? `<div class="filtro-activo">📦 Mostrando solo las compras a <b>${esc(pv.nombre)}</b><button class="btn chico" onclick="App.quitarFiltroProv()">✕ Quitar filtro</button></div>` : '') +
       `<div class="tarjeta"><div class="fila"><label>Desde<input type="date" id="oDesde" value="${pv ? '' : ini}"></label><label>Hasta<input type="date" id="oHasta" value="${pv ? '' : hoyISO()}"></label>
@@ -2838,7 +2969,7 @@ const App = (() => {
     const barra = `<div class="pestanas">${tb('lista', 'Requisiciones')}${tb('nueva', S.rq && S.rq.editId ? '✏️ Editando ' + esc(S.rq.editFolio) : '+ Nueva requisición')}</div>`;
     if (tab === 'nueva') return editorReq(barra);
     const h = hoyISO();
-    if (!S.freq) S.freq = { desde: h.slice(0, 5) + '01-01', hasta: h, hastaHoy: h, estado: '', texto: '', sucursal: '' };
+    if (!S.freq) S.freq = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, estado: '', texto: '', sucursal: '' };
     const f = alDia(S.freq);
     $('#vista').innerHTML = barra + `<div class="tarjeta no-imprimir"><div class="fila">
       <label>Desde<input type="date" id="rqDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="rqHasta" value="${f.hasta}"></label>
@@ -3038,7 +3169,7 @@ const App = (() => {
   function ajHistorial(barra) {
     const tipos = [['', 'Todos']].concat(puede('mermas') ? [['merma', 'Mermas']] : []).concat(puede('ajustes') ? [['salida', 'Ajustes de salida'], ['entrada', 'Ajustes de entrada']] : []);
     $('#vista').innerHTML = barra + `<div class="tarjeta"><div class="fila">
-      <label>Desde<input type="date" id="ahDesde" value=""></label><label>Hasta<input type="date" id="ahHasta" value=""></label>
+      <label>Desde<input type="date" id="ahDesde" value="${hoyISO().slice(0, 8) + '01'}"></label><label>Hasta<input type="date" id="ahHasta" value="${hoyISO()}"></label>
       ${U().todasSucursales ? `<label>Sucursal<select id="ahSuc">${optsSuc('', false, 'Todas')}</select></label>` : ''}
       <label>Tipo<select id="ahTipo">${opts(tipos, '')}</select></label>
       <label>Buscar<input id="ahTxt" placeholder="Folio, producto, lote o motivo"></label>
@@ -3348,7 +3479,7 @@ const App = (() => {
     $('#icSuc').onchange = pintar; $('#icDias').oninput = pintar; pintar();
   }
   function invMov() {
-    const d30 = new Date(Date.now() - 30 * 86400000); const ini = new Date(d30 - d30.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const ini = hoyISO().slice(0, 8) + '01';
     $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label>Desde<input type="date" id="imDesde" value="${ini}"></label><label>Hasta<input type="date" id="imHasta" value="${hoyISO()}"></label>
       <label>Sucursal<select id="imSuc">${U().todasSucursales ? optsSuc(sucFiltro(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
       <label>Tipo<select id="imTipo">${opts(['Nota de Venta', 'Orden de Compra', 'Traspaso', 'Merma', 'Entrada por ajuste', 'Salida por ajuste', 'Entrada por Devolución', 'Conversión'].map(x => [x, x]), '', 'Todos')}</select></label>
@@ -4639,7 +4770,7 @@ const App = (() => {
   /* ----- Recetas ----- */
   async function cfgRx() { if (!S.rxCfg) { try { S.rxCfg = await pedir('configReceta', {}, true); } catch (e) { S.rxCfg = { vigencia: 15, especies: RX_ESPECIES, maxT: 8 }; } } return S.rxCfg; }
   V.recetas = () => {
-    const f = S.fRx = alDia(S.fRx || { desde: sumaDias(hoyISO(), -180), hasta: hoyISO(), hastaHoy: hoyISO(), q: '' });
+    const f = S.fRx = alDia(S.fRx || { desde: hoyISO().slice(0, 8) + '01', hasta: hoyISO(), hastaHoy: hoyISO(), q: '' });
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
         <label>Desde<input type="date" id="rxDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="rxHasta" value="${f.hasta}"></label>
         <label style="flex:2 1 220px">Buscar<input id="rxQ" value="${esc(f.q)}" placeholder="Folio, propietario, animal, diagnóstico o medicamento"></label>
@@ -5261,7 +5392,8 @@ const App = (() => {
     logoTransparente,
     pdfCompra: id => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,
-    bienvenida, bienvIr,
+    bienvenida, bienvIr, salirBienv,
+    subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
     vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } },
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
