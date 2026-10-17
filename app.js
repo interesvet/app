@@ -439,7 +439,7 @@ const App = (() => {
     cargando(true);
     try {
       if (S.cola.length) await sincronizar(true);
-      await refrescarDatos(true); await precargar(true); await renovarSesion();
+      await refrescarDatos(true); await precargar(true); await renovarSesion(); precargarVisor();
       toast('✔ Listo para ruta: la información quedó guardada en este equipo');
     } catch (e) { toast('No se pudo completar con esta señal; intenta de nuevo', true); }
     finally { cargando(false); pintarBienvEstado(); }
@@ -4216,6 +4216,91 @@ const App = (() => {
     await Promise.all(trab);
     return pend.length;
   }
+
+  /* ---------- VISOR DE PDF DENTRO DE LA APP ----------
+   * iPhone / iPad (Safari) no abren un PDF guardado en el equipo en otra pestaña ("WebKitBlobResource 1").
+   * Aquí se dibuja cada página con pdf.js, dentro de la app, y funciona sin señal. Solo se dibujan las páginas
+   * cercanas a la pantalla (las lejanas se liberan) para no agotar la memoria del iPhone con portafolios grandes.
+   */
+  const PDFJS_V = '3.11.174', PDFJS_URL = 'https:' + '//cdnjs.cloudflare.com/ajax/libs/pdf.js/' + PDFJS_V + '/';
+  /** Texto de un archivo del visor: de internet (y se guarda en el equipo) o, sin señal, la copia guardada. */
+  async function textoVisor(arch) {
+    try { const t = await fetch(PDFJS_URL + arch, { mode: 'cors' }).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }); if (t.length > 1000) { KV.set('pdfjs_' + arch, t); return t; } } catch (e) {}
+    const g = await KV.get('pdfjs_' + arch); if (g) return g;
+    throw new Error('El visor de PDF necesita conexión la primera vez; ábrelo una vez con señal');
+  }
+  function cargarPdfJs() {
+    if (window.pdfjsLib && S.pdfjsWorker) return Promise.resolve(window.pdfjsLib);
+    return S.pdfjsP || (S.pdfjsP = (async () => {
+      const [main, worker] = await Promise.all([textoVisor('pdf.min.js'), textoVisor('pdf.worker.min.js')]);
+      if (!window.pdfjsLib) { const sc = document.createElement('script'); sc.textContent = main; document.head.appendChild(sc); }
+      const L = window.pdfjsLib; if (!L) throw new Error('No se pudo cargar el visor de PDF');
+      const u = URL.createObjectURL(new Blob([worker], { type: 'text/javascript' }));
+      try { L.GlobalWorkerOptions.workerPort = new Worker(u); } catch (e) { L.GlobalWorkerOptions.workerSrc = u; }
+      S.pdfjsWorker = 1;
+      return L;
+    })().catch(e => { S.pdfjsP = null; throw e; }));
+  }
+  /** Precarga el visor (con señal) y lo deja guardado en el equipo para abrir PDFs sin conexión. */
+  function precargarVisor() { if (navigator.onLine !== false) cargarPdfJs().catch(() => {}); }
+  async function verPdf(bytesOBlob, nombre, extra) {
+    extra = extra || {};
+    let el = $('#visorPdf');
+    if (!el) { el = document.createElement('section'); el.id = 'visorPdf'; el.className = 'visor-pdf'; document.body.appendChild(el); }
+    const comp = !!(navigator.canShare && window.File);
+    el.innerHTML = `<div class="vp-barra"><button class="icono" onclick="App.cerrarVisor()" aria-label="Cerrar">✕</button>
+      <div class="vp-tit"><b>${esc(nombre)}</b><small id="vpInfo">Abriendo…</small></div>
+      <button class="icono" onclick="App.zoomVisor(-1)" aria-label="Alejar">−</button><button class="icono" onclick="App.zoomVisor(1)" aria-label="Acercar">+</button>
+      ${comp ? '<button class="btn chico" onclick="App.compartirVisor()">📤</button>' : ''}${extra.url && navigator.onLine !== false ? `<a class="btn chico" target="_blank" href="${esc(extra.url)}">Drive</a>` : ''}</div>
+      <div class="vp-hojas" id="vpHojas"></div>`;
+    el.classList.remove('oculto'); document.body.classList.add('con-visor');
+    const blob = bytesOBlob instanceof Blob ? bytesOBlob : new Blob([bytesOBlob], { type: 'application/pdf' });
+    S.visor = { blob: blob, nombre: /\.pdf$/i.test(nombre) ? nombre : nombre + '.pdf', zoom: 1, doc: null };
+    try {
+      const L = await cargarPdfJs();
+      const datos = new Uint8Array(await blob.arrayBuffer());
+      const doc = await L.getDocument({ data: datos, isEvalSupported: false }).promise;
+      if (!S.visor || el.classList.contains('oculto')) { doc.destroy(); return; }
+      S.visor.doc = doc;
+      const p1 = await doc.getPage(1), vp1 = p1.getViewport({ scale: 1 });
+      S.visor.ratio = vp1.height / vp1.width;
+      $('#vpInfo').textContent = doc.numPages + ' páginas';
+      armarHojasVisor();
+    } catch (e) {
+      $('#vpHojas').innerHTML = `<div class="vacio" style="color:#fff">${esc(e.message || 'No se pudo abrir el PDF')}<br><br>${comp ? '<button class="btn" onclick="App.compartirVisor()">📤 Abrir con otra app</button>' : ''}</div>`;
+      const i = $('#vpInfo'); if (i) i.textContent = '';
+    }
+  }
+  function armarHojasVisor() {
+    const V = S.visor, cont = $('#vpHojas'); if (!V || !V.doc || !cont) return;
+    if (V.obs) V.obs.disconnect();
+    const ancho = Math.min(cont.clientWidth - 16, 900) * V.zoom;
+    cont.innerHTML = Array.from({ length: V.doc.numPages }, (_, i) => `<div class="vp-hoja" data-p="${i + 1}" style="width:${ancho}px;height:${Math.round(ancho * V.ratio)}px"><span>${i + 1}</span></div>`).join('');
+    V.obs = new IntersectionObserver(ents => ents.forEach(en => en.isIntersecting ? pintarHojaVisor(en.target) : soltarHojaVisor(en.target)), { root: cont, rootMargin: '150% 0px' });
+    cont.querySelectorAll('.vp-hoja').forEach(h => V.obs.observe(h));
+  }
+  async function pintarHojaVisor(h) {
+    const V = S.visor; if (!V || !V.doc || h.dataset.ok) return; h.dataset.ok = '1';
+    try {
+      const pg = await V.doc.getPage(Number(h.dataset.p)), w = h.clientWidth, dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const vp = pg.getViewport({ scale: w / pg.getViewport({ scale: 1 }).width * dpr });
+      const c = document.createElement('canvas'); c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+      await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      if (!h.dataset.ok) return; h.innerHTML = ''; h.appendChild(c);
+    } catch (e) { delete h.dataset.ok; }
+  }
+  function soltarHojaVisor(h) { if (!h.dataset.ok) return; delete h.dataset.ok; const c = h.querySelector('canvas'); if (c) { c.width = c.height = 0; } h.innerHTML = '<span>' + h.dataset.p + '</span>'; }
+  function zoomVisor(d) { const V = S.visor; if (!V || !V.doc) return; V.zoom = Math.max(1, Math.min(3, V.zoom + d * 0.5)); armarHojasVisor(); }
+  function cerrarVisor() {
+    const el = $('#visorPdf'); if (el) { el.classList.add('oculto'); el.innerHTML = ''; } document.body.classList.remove('con-visor');
+    if (S.visor) { if (S.visor.obs) S.visor.obs.disconnect(); if (S.visor.doc) S.visor.doc.destroy(); } S.visor = null;
+  }
+  async function compartirVisor() {
+    const V = S.visor; if (!V) return;
+    const f = new File([V.blob], V.nombre, { type: 'application/pdf' });
+    try { if (navigator.canShare && navigator.canShare({ files: [f] })) return await navigator.share({ files: [f], title: V.nombre }); } catch (e) { if (e && e.name === 'AbortError') return; }
+    toast('Este equipo no permite compartir el archivo desde aquí; usa el botón Drive o 💬 Enlace', true);
+  }
   const PORT_LOTE = 60;            // productos por parte del PDF (los portafolios grandes se arman por partes y se unen aquí)
   function cargarPdfLib() {
     if (window.PDFLib) return Promise.resolve(window.PDFLib);
@@ -4288,7 +4373,7 @@ const App = (() => {
       modal('PDF listo', `<p>📄 <b>${esc(nombre)}.pdf</b> · ${n} productos · ${(bytes.length / 1048576).toFixed(1)} MB</p>
         <p class="muted">${r ? 'Quedó guardado en tu Drive, carpeta “Interés Veterinario - PDF / Portafolios”.' : 'No se pudo guardar en Drive; descárgalo y compártelo desde tu equipo.'}</p>
         <div class="acciones" style="justify-content:flex-start">
-          <a class="btn primario" href="${local}" download="${esc(nombre)}.pdf">⬇️ Descargar / abrir</a>
+          <button class="btn primario" onclick="App.verPdfLocal()">👁️ Ver</button><a class="btn" href="${local}" download="${esc(nombre)}.pdf">⬇️ Descargar</a>
           ${r ? `<a class="btn" href="${esc(r.url)}" target="_blank">📄 Abrir en Drive</a>
           <a class="btn" target="_blank" href="${WA_BASE}?text=${encodeURIComponent(msg)}">💬 WhatsApp</a>
           <a class="btn" target="_blank" href="mailto:?subject=${encodeURIComponent(info.asunto)}&body=${encodeURIComponent(msg)}">✉️ Correo</a>` : ''}
@@ -4311,6 +4396,7 @@ const App = (() => {
   })();
   const tamTxt = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
   async function pintarPortafolios(sincronizar) {
+    if (S.online) precargarVisor();
     const el = $('#cpGuardados'); if (!el) return;
     const loc = await PDFDB.todos(), enEq = {}; loc.forEach(x => enEq[x.id] = x);
     const srv = LS.get('portafoliosSrv', []), ids = {}, lista = [];
@@ -4357,13 +4443,13 @@ const App = (() => {
     const x = await PDFDB.uno(id); if (!x) return toast('Ese portafolio ya no está en este equipo', true);
     const f = new File([x.blob], x.nombre + '.pdf', { type: 'application/pdf' });
     try { if (navigator.canShare && navigator.canShare({ files: [f] })) return await navigator.share({ files: [f], title: x.nombre }); } catch (e) { if (e && e.name === 'AbortError') return; }
+    if (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) { verPdf(x.blob, x.nombre, { url: x.url }); return toast('Aquí no se puede compartir el archivo directo: usa 💬 Enlace o ábrelo en Drive', true); }
     const a = document.createElement('a'); a.href = URL.createObjectURL(x.blob); a.download = x.nombre + '.pdf'; document.body.appendChild(a); a.click(); a.remove();
     toast('Este equipo no permite compartir directo: se descargó el PDF');
   }
   async function abrirPortafolio(id) {
-    const x = await PDFDB.uno(id); if (!x) return;
-    const u = URL.createObjectURL(x.blob), w = window.open(u, '_blank');
-    if (!w) { const a = document.createElement('a'); a.href = u; a.download = x.nombre + '.pdf'; document.body.appendChild(a); a.click(); a.remove(); }
+    const x = await PDFDB.uno(id); if (!x) return toast('Ese portafolio ya no está en este equipo', true);
+    verPdf(x.blob, x.nombre, { url: x.url });
   }
   async function quitarPortafolioLocal(id) { if (!confirm('¿Quitarlo de este equipo? Sigue guardado en tu Drive.')) return; await PDFDB.quitar(id); pintarPortafolios(); }
   async function quitarPortafolioDrive(id) {
@@ -5514,7 +5600,7 @@ const App = (() => {
     logoTransparente,
     pdfCompra: id => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,
-    bienvenida, bienvIr, salirBienv, prepararRuta,
+    bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
     vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } },
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
