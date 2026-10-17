@@ -6,11 +6,69 @@
  * ========================================================================== */
 const App = (() => {
   /* ---------------- almacenamiento local ---------------- */
+  /* Copia durable (IndexedDB) de lo que se necesita para trabajar sin señal: catálogos/existencias ('datos')
+   * y operaciones por enviar ('cola'). localStorage tiene ~5 MB; IndexedDB no se llena con los datos ni con fotos de comprobantes. */
+  const KV = (() => {
+    let p = null;
+    const db = () => p || (p = new Promise((res, rej) => {
+      try { const r = indexedDB.open('iv_local', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }
+      catch (e) { rej(e); }
+    }).catch(e => { p = null; throw e; }));
+    const op = (modo, f) => db().then(d => new Promise((res, rej) => {
+      const t = d.transaction('kv', modo), q = f(t.objectStore('kv')); let out;
+      if (q) q.onsuccess = () => { out = q.result; };
+      t.oncomplete = () => res(out); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+    }));
+    const pend = {};
+    return {
+      get: k => op('readonly', st => st.get(k)).catch(() => undefined),
+      set: (k, v) => { clearTimeout(pend[k]); pend[k] = setTimeout(() => op('readwrite', st => st.put(v, k)).catch(() => {}), 400); },
+      del: k => op('readwrite', st => st.delete(k)).catch(() => {})
+    };
+  })();
+  const DURABLE = { datos: 1, cola: 1 };
   const LS = {
     get(k, d) { try { const v = localStorage.getItem('iv_' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
-    set(k, v) { try { localStorage.setItem('iv_' + k, JSON.stringify(v)); } catch (e) { console.warn('Almacenamiento lleno', e); } },
+    set(k, v) {
+      if (k === 'datos' && v) v._t = Date.now();
+      if (DURABLE[k] && typeof indexedDB !== 'undefined') KV.set(k, v);
+      try { localStorage.setItem('iv_' + k, JSON.stringify(v)); } catch (e) { console.warn('Almacenamiento lleno (queda la copia en IndexedDB)', e); }
+    },
     del(k) { try { localStorage.removeItem('iv_' + k); } catch (e) {} }
   };
+  /** Al abrir: completa lo guardado con la copia de IndexedDB (la más reciente gana; en la cola no se pierde ninguna operación). */
+  async function cargarLocal() {
+    if (typeof indexedDB === 'undefined') return;
+    try {
+      const [d, c] = await Promise.race([Promise.all([KV.get('datos'), KV.get('cola')]), new Promise(r => setTimeout(() => r([null, null]), 2500))]);
+      if (d && d.user && (!S.datos || (d._t || 0) > (S.datos._t || 0))) S.datos = d;
+      if (Array.isArray(c) && c.length) { const ya = {}; S.cola.forEach(o => ya[o.opId] = 1); c.forEach(o => { if (o && !ya[o.opId]) S.cola.push(o); }); }
+    } catch (e) {}
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+  }
+
+  /* ---------------- calidad de la señal ---------------- */
+  const RED = { lat: [], prueba: 0, fuerte: null };
+  /** 'sin' | 'debil' | 'buena' | '?' (sin dato del sistema) */
+  const debilSistema = () => { const c = navigator.connection; return !!(c && (/2g$/.test(c.effectiveType || '') || (c.downlink && c.downlink < 0.35) || (c.rtt && c.rtt > 1500))); };
+  function senal() {
+    if (navigator.onLine === false) return 'sin';
+    const c = navigator.connection;
+    if (debilSistema()) return 'debil';
+    const l = RED.lat.slice(-3);
+    if (l.length >= 2 && l.reduce((a, b) => a + b, 0) / l.length > 9000) return 'debil';
+    return c && c.effectiveType ? 'buena' : '?';
+  }
+  /** ¿Hay señal suficiente para sincronizar? Prueba real con el servidor (respuesta en menos de 6 s), máx. una vez por minuto. */
+  async function senalFuerte(forzar) {
+    // lo que diga el sistema (sin red / 2G) descarta; si no, manda la prueba real (las respuestas lentas de antes no cuentan)
+    if (navigator.onLine === false || debilSistema()) return (RED.fuerte = false);
+    if (!forzar && RED.fuerte !== null && Date.now() - RED.prueba < 60000) return RED.fuerte;
+    const t0 = Date.now(); let ok = false;
+    try { await Promise.race([call('ping', {}), new Promise((_, r) => setTimeout(() => r(new Error('lento')), 8000))]); ok = Date.now() - t0 < 6000; } catch (e) { ok = false; }
+    RED.prueba = Date.now(); RED.fuerte = ok;
+    return ok;
+  }
 
   const S = {
     token: LS.get('token', null), datos: LS.get('datos', null), cola: LS.get('cola', []),
@@ -252,8 +310,18 @@ const App = (() => {
     const e = $('#estadoRed');
     if (e) { e.className = 'pastilla ' + (ok ? 'ok' : 'off'); e.textContent = ok ? 'En línea' : 'Sin conexión'; }
   }
+  // Ventas y cobros (con ID propio, el servidor no los duplica): con señal débil no se espera de más; se guardan en la cola.
+  const ENCOLA_RAPIDO = { guardarVenta: 1, guardarCobro: 1 };
   function call(accion, params) {
-    return new Promise((res, rej) => {
+    return new Promise((res0, rej0) => {
+      const t0 = Date.now(); let listo = false;
+      const res = v => { if (listo) return; listo = true; RED.lat.push(Date.now() - t0); if (RED.lat.length > 10) RED.lat.shift(); res0(v); };
+      const rej = e => { if (listo) return; listo = true; rej0(e); };
+      if (ENCOLA_RAPIDO[accion]) {
+        const s = senal();
+        if (s === 'sin') { const e = new Error('Sin conexión'); e.red = true; return rej(e); }
+        setTimeout(() => { const e = new Error('Señal débil'); e.red = true; e.lento = true; RED.fuerte = false; rej(e); }, s === 'debil' ? 15000 : 35000);
+      }
       if (typeof google === 'undefined' || !google.script) {
         const e = new Error('Sin conexión'); e.red = true;
         if (!CQ.guardable(accion)) return rej(e);
@@ -320,29 +388,69 @@ const App = (() => {
   /* ---------------- cola offline ---------------- */
   function encolar(tipo, params, desc) {
     S.cola.push({ opId: uid() + uid(), tipo: tipo, params: params, desc: desc, creado: new Date().toLocaleString('es-MX'), error: '' });
-    LS.set('cola', S.cola); pintarCola();
+    LS.set('cola', S.cola); pintarCola(); pintarBienvEstado();
   }
   function pintarCola() {
     const b = $('#btnSync'); if (!b) return;
     b.classList.toggle('oculto', !S.cola.length);
     b.textContent = '⟳ ' + S.cola.length + ' por sincronizar';
   }
+  /**
+   * Envía la cola al servidor solo con señal fuerte (prueba real), en lotes pequeños y en orden
+   * (una venta va antes que su cobro). Cada operación lleva su opId: si una llega dos veces, el servidor no la duplica.
+   */
   async function sincronizar(manual) {
     if (S.sincronizando || !S.cola.length || !S.token) { if (manual && !S.cola.length) toast('Todo está sincronizado'); return; }
-    S.sincronizando = true;
+    if (!manual && !(await senalFuerte())) return;
+    S.sincronizando = true; pintarCola();
+    let hechos = 0, stock = null;
     try {
-      const r = await call('sync', { ops: S.cola.map(o => ({ opId: o.opId, tipo: o.tipo, params: o.params })) });
-      const res = {}; r.resultados.forEach(x => res[x.opId] = x);
-      const antes = S.cola.length;
-      S.cola = S.cola.filter(o => { const x = res[o.opId]; if (x && !x.ok) o.error = x.error; return !(x && x.ok); });
-      LS.set('cola', S.cola);
-      if (r.stock) { S.datos.stock = r.stock; LS.set('datos', S.datos); }
-      const hechos = antes - S.cola.length;
-      if (hechos) toast('✔ ' + hechos + ' operaciones sincronizadas');
-      if (S.cola.length) toast(S.cola.length + ' operaciones con error. Revísalas en Configuración.', true);
-      if (hechos) refrescarDatos(true).catch(() => {});
+      const ops = S.cola.slice(); let i = 0;
+      while (i < ops.length) {
+        const lote = []; let peso = 0;
+        while (i < ops.length && lote.length < 8) { const w = JSON.stringify(ops[i].params || {}).length; if (lote.length && peso + w > 1500000) break; lote.push(ops[i]); peso += w; i++; }
+        const r = await call('sync', { ops: lote.map(o => ({ opId: o.opId, tipo: o.tipo, params: o.params })) });
+        const res = {}; r.resultados.forEach(x => res[x.opId] = x);
+        S.cola = S.cola.filter(o => { const x = res[o.opId]; if (!x) return true; if (!x.ok) { o.error = x.error; return true; } hechos++; return false; });
+        LS.set('cola', S.cola); pintarCola();
+        if (r.stock) stock = r.stock;
+      }
     } catch (e) { if (manual) toast(e.message, true); }
-    finally { S.sincronizando = false; pintarCola(); }
+    finally {
+      S.sincronizando = false; pintarCola();
+      if (stock && S.datos) { S.datos.stock = stock; LS.set('datos', S.datos); }
+      if (hechos) { toast('✔ ' + hechos + ' operaciones sincronizadas'); refrescarDatos(true).catch(() => {}); }
+      const mal = S.cola.filter(o => o.error).length;
+      if (hechos && mal) toast(mal + ' operaciones con error. Revísalas en Configuración.', true);
+      pintarBienvEstado();
+    }
+  }
+  /** Renueva la sesión al abrir con señal, para que no caduque a media ruta. */
+  async function renovarSesion() {
+    try {
+      const exp = Number((atob(String(S.token || '').split('.')[0].replace(/-/g, '+').replace(/_/g, '/')).split('|')[1]) || 0);
+      if (exp && exp - Date.now() > 6.5 * 86400000) return;
+      const r = await call('renovarSesion', {}); if (r && r.token) { S.token = r.token; LS.set('token', r.token); }
+    } catch (e) {}
+  }
+  /** Antes de salir a ruta: catálogos, clientes, existencias y consultas principales al día en el equipo. */
+  async function prepararRuta() {
+    if (navigator.onLine === false) return toast('Necesitas señal para actualizar la información', true);
+    cargando(true);
+    try {
+      if (S.cola.length) await sincronizar(true);
+      await refrescarDatos(true); await precargar(true); await renovarSesion();
+      toast('✔ Listo para ruta: la información quedó guardada en este equipo');
+    } catch (e) { toast('No se pudo completar con esta señal; intenta de nuevo', true); }
+    finally { cargando(false); pintarBienvEstado(); }
+  }
+  function haceTxt(t) { if (!t) return 'sin datos'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'hace un momento' : m < 60 ? 'hace ' + m + ' min' : m < 1440 ? 'hace ' + Math.round(m / 60) + ' h' : 'hace ' + Math.round(m / 1440) + ' días'; }
+  function pintarBienvEstado() {
+    const el = $('#bienvEstado'); if (!el) return;
+    const d = S.datos || {}, n = S.cola.length;
+    el.innerHTML = `<span>📦 Información en este equipo: <b>${haceTxt(d._t)}</b> · ${(d.clientes || []).length} clientes · ${(d.productos || []).length} productos</span>
+      ${n ? `<span>⟳ <b>${n}</b> por sincronizar${S.sincronizando ? ' (enviando…)' : ' · se envían solas con buena señal'}</span>` : '<span>✔ Todo sincronizado</span>'}
+      <button onclick="App.prepararRuta()">📥 Actualizar para ruta</button>`;
   }
 
 
@@ -515,14 +623,20 @@ const App = (() => {
         <div class="bienv-marca">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : '<b>Interés Veterinario</b>'}</div>
         <div class="bienv-tit"><b>CRM &amp; Ventas</b><span>Inteligencia y Gestión Comercial</span></div>
         <div class="bienv-hola"><h2>${saludo()}${nombre ? ', ' + esc(nombre) : ''}</h2><p>${esc(fecha.charAt(0).toUpperCase() + fecha.slice(1))} · ${esc(u.rolNombre || u.rol || '')}</p></div>
+        <div class="bienv-estado" id="bienvEstado"></div>
         ${puede('ventas') ? `<button class="bienv-cta" onclick="App.bienvIr('venta')"><span>🛒</span><div><b>Nueva venta</b><small>Captura una nota en segundos</small></div><em>›</em></button>` : ''}
         <div class="bienv-grid">${items.map(x => `<button class="bienv-item" onclick="App.bienvIr('${x.id}')"><span class="bienv-ico">${x.e.i}</span><b>${esc(x.e.t)}</b><small>${esc(SUB_MENU[x.id] || '')}</small></button>`).join('')}</div>
         <div class="bienv-pie">Interés Veterinario · ${new Date().getFullYear()}${S.cola && S.cola.length ? ` · <b>${S.cola.length} por sincronizar</b>` : ''}</div>
         <button class="bienv-salir" onclick="App.salirBienv()" aria-label="Cerrar sesión">⏻ Cerrar sesión</button>
       </div>`;
-    el.classList.remove('oculto'); el.scrollTop = 0; document.body.classList.add('con-bienv');
+    el.classList.remove('oculto'); el.scrollTop = 0; document.body.classList.add('con-bienv'); pintarBienvEstado();
   }
-  function salirBienv() { if (!(S.cola && S.cola.length) && !confirm('¿Cerrar sesión en este dispositivo?')) return; salir(); }
+  function salirBienv() {
+    const sin = navigator.onLine === false || S.online === false;
+    if (sin && !confirm('⚠️ Estás sin señal: si cierras sesión no podrás volver a entrar hasta tener conexión. ¿Cerrar sesión de todos modos?')) return;
+    if (!sin && !(S.cola && S.cola.length) && !confirm('¿Cerrar sesión en este dispositivo?')) return;
+    salir();
+  }
   function bienvIr(id) { const el = $('#bienvenida'); if (el) el.classList.add('oculto'); document.body.classList.remove('con-bienv'); ir(id); }
   function botonBienvenida() {
     if ($('#btnBienv') || !esMovil()) return;
@@ -3705,7 +3819,7 @@ const App = (() => {
     const exist = sucsPermitidas().map(s => ({ s: s.nombre, q: existencia(id, s.id) })).filter(x => x.q);
     const cols = [{ t: 'Lista', h: x => x.l === marca ? `<b>${esc(x.l)}</b> <span class="etq ok">${c ? 'Lista del cliente' : 'Seleccionada'}</span>` : esc(x.l) },
       { t: 'Sin IVA', num: 1, h: x => x.v ? $$(x.v) : '—' }, { t: 'Con IVA', num: 1, h: x => x.v ? $$(x.v * (1 + (p.iva || 0))) : '—' }];
-    if (puede('ver_costos') && p.costo) cols.push({ t: 'Margen', num: 1, h: x => x.v ? ((x.v - p.costo) / x.v * 100).toFixed(1) + '%' : '—' });
+    if (puede('ver_utilidades') && p.costo) cols.push({ t: 'Margen', num: 1, h: x => x.v ? ((x.v - p.costo) / x.v * 100).toFixed(1) + '%' : '—' });
     modal(p.nombre, `${bloqueFoto(p)}<p class="muted">${esc(p.id)} · ${esc(p.unidad)} · ${esc(p.categoria || '')} · ${esc(p.lab || '')} · ${p.iva ? 'Con IVA' : 'Exento de IVA'}${p.especies ? ' · ' + esc(p.especies) : ''}</p>
       ${tabla(cols, filas)}<h4 style="margin:14px 0 8px">Existencias</h4>${tabla([{ t: 'Sucursal', k: 's' }, { t: 'Existencia', num: 1, h: x => nf(x.q) }], exist, { vacio: 'Sin existencia' })}
       ${puede('ventas') ? `<div class="acciones"><button class="btn primario" onclick="App.venderProducto('${esc(id)}')">🛒 Agregar a una venta</button></div>` : ''}`);
@@ -5363,9 +5477,17 @@ const App = (() => {
   window.addEventListener('afterprint', () => { const z = $('#zonaImpresion'); if (z) z.innerHTML = ''; });
 
   /* ---------------- arranque ---------------- */
-  function iniciar() {
+  async function iniciar() {
+    await cargarLocal();
     if (window.LOGO) { const l = $('#lgLogo'); if (l) l.innerHTML = `<img src="${window.LOGO}" alt="Interés Veterinario">`; const n = $('#lgNombre'); if (n) n.style.display = 'none'; }
-    window.addEventListener('online', () => { marcarRed(true); sincronizar(); });
+    window.addEventListener('online', () => { marcarRed(true); RED.fuerte = null; setTimeout(() => sincronizar(), 2500); });
+    try { if (navigator.connection) navigator.connection.addEventListener('change', () => { RED.fuerte = null; if (S.cola.length) sincronizar(); }); } catch (e) {}
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || !S.token) return;
+      pintarBienvEstado(); sincronizar();
+      if (S.datos && Date.now() - (S.datos._t || 0) > 30 * 60000) senalFuerte().then(ok => { if (ok) refrescarDatos(true).then(pintarBienvEstado).catch(() => {}); });
+    });
+    setInterval(() => { if (S.token && S.cola.length && navigator.onLine !== false) sincronizar(); }, 30000);
     window.addEventListener('offline', () => marcarRed(false));
     document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModal(); });
     try { iniciarBarraDoc(); iniciarBuscadorMovil(); } catch (e) {}
@@ -5373,7 +5495,7 @@ const App = (() => {
     window.addEventListener('online', () => { const el = $('#avisoCache'); if (el && !el.classList.contains('oculto')) el.querySelector('span').innerHTML = '🟢 <b>Ya hay conexión.</b> Toca “Actualizar” para ver la información al momento.'; setTimeout(precargar, 15000); });
     if (S.token && S.datos) {
       mostrarApp();
-      refrescarDatos(true).then(() => { pintarMenu(); sincronizar(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); }).catch(() => {});
+      refrescarDatos(true).then(() => { pintarMenu(); pintarBienvEstado(); sincronizar(); renovarSesion(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); }).catch(() => {});
     } else {
       $('#login').classList.remove('oculto');
     }
@@ -5392,7 +5514,7 @@ const App = (() => {
     logoTransparente,
     pdfCompra: id => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,
-    bienvenida, bienvIr, salirBienv,
+    bienvenida, bienvIr, salirBienv, prepararRuta,
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
     vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } },
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,

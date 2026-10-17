@@ -605,6 +605,11 @@ body.con-bienv { overflow: hidden; }
 .bienv-hola { margin-top: 22px; }
 .bienv-hola h2 { margin: 0; font-size: 22px; font-weight: 700; }
 .bienv-hola p { margin: 4px 0 0; color: rgba(255, 255, 255, .75); font-size: 13.5px; }
+.bienv-estado { margin-top: 14px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: rgba(255, 255, 255, .85); background: rgba(0, 0, 0, .18);
+  border: 1px solid rgba(255, 255, 255, .18); border-radius: 14px; padding: 10px 12px; }
+.bienv-estado:empty { display: none; }
+.bienv-estado b { color: #fff; }
+.bienv-estado button { align-self: flex-start; margin-top: 4px; font: inherit; font-size: 12.5px; font-weight: 700; color: #0b3a2a; background: #6fe3a1; border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
 .bienv-cta { margin-top: 16px; width: 100%; display: flex; align-items: center; gap: 14px; text-align: left; color: #0b3a2a; cursor: pointer;
   border: 0; border-radius: 18px; padding: 16px 18px; background: linear-gradient(120deg, #8ef0b5, #4fc98a); box-shadow: 0 12px 28px rgba(0, 0, 0, .25); font: inherit; }
 .bienv-cta > span { font-size: 28px; width: 50px; height: 50px; border-radius: 14px; background: rgba(255, 255, 255, .55); display: flex; align-items: center; justify-content: center; }
