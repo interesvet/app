@@ -633,6 +633,10 @@ body.con-bienv { overflow: hidden; }
 .port-ico { font-size: 22px; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--superficie); border: 1px solid var(--borde); }
 .port-info { flex: 1 1 200px; min-width: 0; } .port-info b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .port-info small { color: var(--texto-2); }
 .port-acc { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+.dep-card { border-left: 4px solid #b08400; }
+.dep-como { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--superficie-2); font-size: 13px; line-height: 1.5; color: var(--texto-2); }
+.dep-como b { color: var(--texto); }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

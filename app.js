@@ -259,7 +259,9 @@ const App = (() => {
         if (!CQ.guardable(accion)) return rej(e);
         return CQ.buscar(accion, params || {}).then(c => { if (!c) return rej(e); avisoCache(c); res(c.d); }).catch(() => rej(e));
       }
-      google.script.run
+      // un corte momentáneo (celular que cambia de red, app en segundo plano, servidor ocupado) no debe marcar "Sin conexión":
+      // se reintenta una vez antes de darlo por perdido
+      const intento = n => google.script.run
         .withSuccessHandler(txt => {
           marcarRed(true);
           const r = JSON.parse(txt);
@@ -268,12 +270,14 @@ const App = (() => {
           rej(new Error(r.error));
         })
         .withFailureHandler(err => {
+          if (n < 1 && navigator.onLine !== false && (CQ.guardable(accion) || /^(listar|detalle|ver|minis|reporte|historial|folio|version|bajar|portafolio|pdf|dashboard|datos|bootstrap|archivos|existencias|kardex|pedido)/i.test(accion))) return setTimeout(() => intento(n + 1), 1500 + Math.random() * 1000);
           const e = new Error('Sin conexión con el servidor'); e.red = true; e.original = err;
           marcarRed(false);
           if (!CQ.guardable(accion)) return rej(e);
           CQ.buscar(accion, params || {}).then(c => { if (!c) return rej(e); avisoCache(c); res(c.d); }).catch(() => rej(e));
         })
         .api(S.token, accion, params || {});
+      intento(0);
     });
   }
   async function pedir(accion, params, silencioso) {
@@ -542,7 +546,7 @@ const App = (() => {
     botonBienvenida(); if (esMovil()) bienvenida();
     revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => revisarVersion(), 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') revisarVersion(); }); }
     // logotipos de sucursal guardados con fondo blanco: el administrador los deja sin fondo (una vez, en segundo plano)
-    if (U().rol === 'Administrador') setTimeout(() => { try { repararMinisSuc(D().sucursales || []); } catch (e) {} }, 6000);
+    if (U().rol === 'Administrador' && LS.get('minisSucRev', '') !== hoyISO()) setTimeout(() => { try { LS.set('minisSucRev', hoyISO()); repararMinisSuc(D().sucursales || []); } catch (e) {} }, 30000);
   }
 
   /* ---------------- buscador con autocompletar ---------------- */
@@ -734,19 +738,36 @@ const App = (() => {
   /* ---------- Estado de resultados (solo el dueño) ---------- */
   /** Inicio (dueño): de las ventas a la UTILIDAD NETA del periodo, paso por paso. */
   function htmlUtilNeta(R) {
+    if (R.utilidadDespuesDepr === undefined && R.depreciacion) {   // servidor anterior: la depreciación venía restada; se regresa
+      R = Object.assign({}, R, { utilidadOperacion: R.utilidadOperacion + R.depreciacion, utilidadNeta: R.utilidadNeta + R.depreciacion, utilidadDespuesDepr: R.utilidadNeta }); }
     const pct = v => R.ventas ? (v / R.ventas * 100).toFixed(1) + '%' : '—';
     const paso = (t, v, cls, menos) => `<div class="un-paso ${cls || ''}"><small>${menos ? '− ' : ''}${t}</small><b>${menos ? $$(Math.abs(v)) : $$(v)}</b>${!menos ? `<span>${pct(v)} de ventas</span>` : ''}</div>`;
     const neta = R.utilidadNeta, est = neta < 0 ? 'mal' : (R.ventas && neta / R.ventas < 0.05 ? 'av' : 'ok');
     return `<div class="tarjeta un-card"><div class="un-cab"><div><h3 style="margin:0">💰 Utilidad neta del periodo</h3>
-        <p class="muted" style="margin:4px 0 0">Lo que realmente le queda a la empresa: ventas − costo de lo vendido − mermas − gastos de operación − depreciación − gastos financieros. Sin IVA.</p></div>
+        <p class="muted" style="margin:4px 0 0">Lo que realmente le queda a la empresa: ventas − costo de lo vendido − mermas − gastos de operación − gastos financieros. Sin IVA. La depreciación va aparte.</p></div>
         <div class="un-total ${est}"><small>Utilidad neta</small><b>${$$(neta)}</b><span>Margen neto ${pct(neta)}</span></div></div>
       <div class="un-flujo">
         ${paso('Ventas netas', R.ventas)}${paso('Costo de lo vendido', R.costo, 'resta', 1)}${paso('Utilidad bruta', R.utilidadBruta, 'sub')}
-        ${paso('Mermas', R.mermas, 'resta', 1)}${paso('Gastos de operación', R.gastosOperacion, 'resta', 1)}${R.depreciacion ? paso('Depreciación', R.depreciacion, 'resta', 1) : ''}
+        ${paso('Mermas', R.mermas, 'resta', 1)}${paso('Gastos de operación', R.gastosOperacion, 'resta', 1)}
         ${paso('Utilidad de operación', R.utilidadOperacion, 'sub')}${paso('Gastos financieros', R.financieros, 'resta', 1)}${paso('Utilidad neta', neta, 'fin ' + est)}
-      </div></div>`;
+      </div></div>` + htmlDepreciacion(R);
+  }
+  /** Depreciación de inversiones: cuadro aparte (informativo), con la explicación del cálculo. No se resta de la utilidad neta. */
+  function htmlDepreciacion(R) {
+    if (!R.depreciacion) return '';
+    const pct = v => R.ventas ? (v / R.ventas * 100).toFixed(1) + '%' : '—', l = R.deprActivos || [];
+    return `<div class="tarjeta dep-card"><div class="un-cab"><div><h3 style="margin:0">🏗️ Depreciación de inversiones (informativa)</h3>
+        <p class="muted" style="margin:4px 0 0">No se resta de tu utilidad neta: no es dinero que salga en este periodo, es el desgaste contable de lo que ya compraste (equipo, vehículos, mobiliario…).</p></div>
+        <div class="un-total"><small>Depreciación del periodo</small><b>${$$(R.depreciacion)}</b><span>${pct(R.depreciacion)} de ventas · ${nf(R.deprNumActivos || l.length)} inversiones</span></div></div>
+      <div class="dep-como"><b>¿Cómo se calcula?</b> En <b>línea recta</b>: por cada factura del grupo <b>Inversión</b>, su monto sin IVA × la tasa anual de depreciación ÷ 12 = lo que se deprecia cada mes.
+        Empieza el mes siguiente a la compra y sigue hasta depreciar el 100 % (por ejemplo, al 25 % anual dura 4 años). Del periodo se cuentan solo los meses ya transcurridos.
+        Las inversiones de "Prorrateo" se reparten según el % de ventas de la sucursal. La tasa de cada categoría se ajusta en Configuración › Grupos de gasto. Es un cálculo gerencial; los topes fiscales los aplica tu contador.</div>
+      ${l.length ? `<div class="tabla-cont" style="margin-top:10px">${tabla([{ t: 'Inversión', h: x => `<b>${esc(x.cat || 'Inversión')}</b><br><small class="muted">${esc(x.emisor || '')} · ${esc(x.fecha)}</small>` },
+        { t: 'Monto', num: 1, h: x => $$(x.monto) }, { t: 'Tasa anual', num: 1, h: x => (x.tasa || 0) + '%' }, { t: 'Por mes', num: 1, cls: 'ocultar-movil', h: x => $$(x.mensual) }, { t: 'En el periodo', num: 1, h: x => `<b>${$$(x.periodo)}</b>` }], l.slice(0, 8))}</div>` : ''}
+      <p class="muted" style="margin:8px 0 0">Si la restaras, la utilidad quedaría en <b>${$$(R.utilidadDespuesDepr !== undefined ? R.utilidadDespuesDepr : R.utilidadNeta - R.depreciacion)}</b> (utilidad contable después de depreciación).</p></div>`;
   }
   function htmlResultados(R) {
+    if (R.utilidadDespuesDepr === undefined && R.depreciacion) R = Object.assign({}, R, { utilidadOperacion: R.utilidadOperacion + R.depreciacion, utilidadNeta: R.utilidadNeta + R.depreciacion, utilidadDespuesDepr: R.utilidadNeta });
     if (R.error) return `<div class="tarjeta"><h3>🔒 Estado de resultados</h3><p class="error">No se pudieron leer los egresos: ${esc(R.error)}</p></div>`;
     S.resultados = R;
     const pct = v => R.ventas ? (v / R.ventas * 100).toFixed(1) + '%' : '—';
@@ -763,10 +784,10 @@ const App = (() => {
         ${fila('<b>Utilidad bruta</b>', R.utilidadBruta, { total: 1 })}
         ${fila('Mermas', R.mermas, { menos: 1, sangria: 1 })}
         ${fila('Gastos de operación', R.gastosOperacion, { menos: 1, sangria: 1 })}
-        ${R.depreciacion ? fila('Depreciación de inversiones (estimada)', R.depreciacion, { menos: 1, sangria: 1 }) : ''}
         ${fila('<b>Utilidad de operación</b>', R.utilidadOperacion, { total: 1 })}
         ${fila('Gastos financieros', R.financieros, { menos: 1, sangria: 1 })}
         ${fila('<b>Utilidad neta</b>', R.utilidadNeta, { total: 1 })}
+        ${R.depreciacion ? fila('Aparte: depreciación de inversiones (estimada, no se resta)', R.depreciacion, { sangria: 1 }) : ''}
         </tbody></table></div>
         <p class="muted" style="margin-top:8px">Aparte: inversión ${$$(R.inversion)} · excluidos ${$$(R.excluidos)}. Montos sin IVA.</p>
         <h4 style="margin-top:12px">IVA del periodo (estimado)</h4>
@@ -2256,8 +2277,9 @@ const App = (() => {
       ${kpi('Inventario', $$(x.inventario), nf(x.piezas) + ' pzs · ' + nf(x.productos) + ' productos')}${kpi('Días de inventario', x.diasInventario === null ? '—' : nf(x.diasInventario), 'GMROI ' + (x.gmroi === null ? '—' : x.gmroi))}
       ${kpi('Traspasos', $$(x.traspasosRecibidos), 'recibidos · enviados ' + $$(x.traspasosEnviados))}</div>
       <div class="rejilla-2"><div><h4>Estado de resultados</h4><div class="tabla-cont"><table class="estado-res"><tbody>
-      ${fila('Ventas netas', x.ventas)}${fila('Costo real de lo vendido', x.costo, 1)}${fila('<b>Utilidad bruta</b>', x.utilidadBruta, 0, 1)}${fila('Mermas', x.mermas, 1)}${fila('Gastos de operación', x.operacion, 1)}${fila('Depreciación', x.depreciacion, 1)}
+      ${fila('Ventas netas', x.ventas)}${fila('Costo real de lo vendido', x.costo, 1)}${fila('<b>Utilidad bruta</b>', x.utilidadBruta, 0, 1)}${fila('Mermas', x.mermas, 1)}${fila('Gastos de operación', x.operacion, 1)}
       ${fila('<b>Contribución</b>', x.contribucion, 0, 1)}${fila('Gastos financieros', x.financiero, 1)}${fila('<b>Utilidad neta</b>', x.utilidadNeta, 0, 1)}</tbody></table></div>
+      ${x.depreciacion ? `<p class="muted" style="margin-top:6px">Aparte (no se resta de la utilidad neta): depreciación estimada de sus inversiones ${$$(x.depreciacion)}.</p>` : ''}
       <p class="muted" style="margin-top:6px">Inventario por caducar ${$$(x.porCaducar)} · caducado ${$$(x.caducado)}.</p></div>
       <div><h4>Últimos 12 meses</h4><div class="grafica"><canvas id="sgMes"></canvas></div></div></div>
       <div class="acciones">${puede('ventas') ? `<button class="btn" onclick="App.ventasDeSucursal('${esc(x.suc)}')">🧾 Ver sus ventas</button>` : ''}${puede('traspasos') ? `<button class="btn primario" onclick="App.traspasosDeSucursal('${esc(x.suc)}')">🔁 Ver sus traspasos (histórico)</button>` : ''}</div>`);
@@ -4071,8 +4093,8 @@ const App = (() => {
     try {
       try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
       const loc = await PDFDB.todos(), ya = {}; loc.forEach(x => ya[x.id] = 1);
-      const faltan = LS.get('portafoliosSrv', []).filter(x => !ya[x.id] && (!x.tam || x.tam < 30 * 1048576)).slice(0, todos ? 200 : 20);
-      for (let i = 0; i < faltan.length; i++) { const e = $('#cpGuardEst'); if (e) e.textContent = 'Guardando en este equipo: ' + (i + 1) + ' de ' + faltan.length + '…'; await bajarPortafolio(faltan[i].id, true); }
+      const faltan = LS.get('portafoliosSrv', []).filter(x => !ya[x.id] && (!x.tam || x.tam < 30 * 1048576)).slice(0, todos ? 200 : 5);   // en automático solo los 5 más recientes
+      for (let i = 0; i < faltan.length; i++) { if (!S.online) break; const e = $('#cpGuardEst'); if (e) e.textContent = 'Guardando en este equipo: ' + (i + 1) + ' de ' + faltan.length + '…'; await bajarPortafolio(faltan[i].id, true); await new Promise(r => setTimeout(r, 800)); }
     } finally { S.bajandoPort = false; pintarPortafolios(); }
   }
   async function bajarPortafolio(id, callado) {
