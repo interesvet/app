@@ -492,9 +492,19 @@ tr.grupo small { color: var(--texto-2); font-weight: 500; }
 .aviso-cache.oculto { display: none; }
 .aviso-cache span { color: var(--texto); flex: 1 1 220px; }
 .doc-logos { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.doc-suc { height: 64px; width: auto; max-width: 140px; object-fit: cover; border-radius: 8px; border: 1px solid var(--borde); background: #fff; }
+.doc-suc { height: 64px; width: auto; max-width: 160px; object-fit: contain; }   /* logotipo sin fondo */
 .doc-suc:not([src]) { display: none; }
 .tr-emp .doc-suc { height: 56px; }
+.rq-cajas { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 12px; }
+.rq-caja { display: flex; align-items: center; gap: 14px; border: 1px solid var(--borde); border-radius: 12px; padding: 12px 14px; background: var(--superficie); }
+.rq-caja .rq-logo { flex: 0 0 auto; width: 110px; height: 64px; display: flex; align-items: center; justify-content: center; }
+.rq-caja .rq-logo img { max-width: 110px; max-height: 64px; object-fit: contain; }
+.rq-caja .rq-logo img.doc-suc { height: auto; }
+.rq-caja small { display: block; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--texto-2); }
+.rq-caja b { display: block; font-size: 18px; margin: 2px 0; }
+.rq-caja span { color: var(--texto-2); font-size: 13px; }
+.rq-caja.surte small { color: #b08400; } .rq-caja.solicita small { color: var(--primario, #1f6f4a); }
+.rq-liga { margin: 10px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--aviso-suave); }
 .avatar-logo img { object-fit: contain; padding: 2px; }
 .un-card { border-color: var(--marca, #1f6f4a); }
 .un-cab { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; align-items: flex-start; }

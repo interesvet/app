@@ -75,9 +75,10 @@ const App = (() => {
     const ims = Array.from(document.querySelectorAll('img[data-sucdoc]:not([src])')); if (!ims.length) return;
     S.minis = S.minis || {}; const m = S.minis.sucFoto = Object.assign(LS.get('minisSuc', {}), S.minis.sucFoto || {});
     Object.keys(m).forEach(k => { if (!m[k]) delete m[k]; });
+    if (Object.keys(m).some(k => /^data:image\/jpeg/.test(m[k]))) { await transparentarMinis(m); guardarMinisSuc(m); }
     const faltan = Array.from(new Set(ims.map(i => i.dataset.sucdoc).filter(id => !m[id])));
     if (faltan.length && navigator.onLine !== false) {
-      try { const r = await pedir('minisArchivo', { tipo: 'sucFoto', ids: faltan }, true); Object.keys(r).forEach(k => { if (r[k]) m[k] = r[k]; }); guardarMinisSuc(m); } catch (e) {}
+      try { const r = await transparentarMinis(await pedir('minisArchivo', { tipo: 'sucFoto', ids: faltan }, true)); Object.keys(r).forEach(k => { if (r[k]) m[k] = r[k]; }); guardarMinisSuc(m); } catch (e) {}
     }
     document.querySelectorAll('img[data-sucdoc]:not([src])').forEach(im => { if (m[im.dataset.sucdoc]) im.src = m[im.dataset.sucdoc]; });
   }
@@ -86,6 +87,36 @@ const App = (() => {
   const achicarUri = (uri, max) => new Promise((res, rej) => { const im = new Image(); im.onerror = rej; im.onload = () => {
     const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
     const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', .8)); }; im.src = uri; });
+  /** Logotipo sin fondo: lo transparente se respeta y el fondo liso (blanco) que toca los bordes se vuelve transparente;
+   *  se recorta al contenido y se entrega en PNG de "max" px. Si no se distingue un fondo liso, se deja igual (PNG). */
+  const logoTransparente = (uri, max) => new Promise(res => { const im = new Image(); im.onerror = () => res(uri); im.onload = () => {
+    try {
+      const k = Math.min(1, max / Math.max(im.width, im.height)), w = Math.max(1, Math.round(im.width * k)), h = Math.max(1, Math.round(im.height * k));
+      const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.drawImage(im, 0, 0, w, h);
+      const d = x.getImageData(0, 0, w, h), px = d.data, N = w * h, fuera = new Uint8Array(N), pila = [];
+      const claro = q => { const a = q * 4; return px[a + 3] < 30 || (px[a] > 232 && px[a + 1] > 232 && px[a + 2] > 232); };
+      const borde = []; for (let i = 0; i < w; i++) borde.push(i, (h - 1) * w + i); for (let j = 0; j < h; j++) borde.push(j * w, j * w + w - 1);
+      if (borde.filter(claro).length / borde.length >= 0.5) {
+        borde.forEach(q => { if (!fuera[q] && claro(q)) { fuera[q] = 1; pila.push(q); } });
+        while (pila.length) { const q = pila.pop(), qx = q % w;
+          for (const n of [qx > 0 ? q - 1 : -1, qx < w - 1 ? q + 1 : -1, q - w, q + w]) if (n >= 0 && n < N && !fuera[n] && claro(n)) { fuera[n] = 1; pila.push(n); } }
+        let x0 = w, y0 = h, x1 = -1, y1 = -1;
+        for (let q = 0; q < N; q++) { const a = q * 4;
+          if (fuera[q]) { px[a + 3] = 0; continue; }
+          const qx = q % w, qy = (q / w) | 0; if (qx < x0) x0 = qx; if (qx > x1) x1 = qx; if (qy < y0) y0 = qy; if (qy > y1) y1 = qy;
+          // orilla suave: los pixeles claros pegados al fondo se vuelven semitransparentes
+          let f = 0; if (qx > 0 && fuera[q - 1]) f++; if (qx < w - 1 && fuera[q + 1]) f++; if (q >= w && fuera[q - w]) f++; if (q + w < N && fuera[q + w]) f++;
+          if (f) { const luz = Math.min(px[a], px[a + 1], px[a + 2]) / 255; px[a + 3] = Math.round(px[a + 3] * Math.max(0.15, 1 - luz * 0.85)); } }
+        x.putImageData(d, 0, 0);
+        if (x1 >= x0 && (x1 - x0) * (y1 - y0) > N * 0.02) { const o = document.createElement('canvas'); o.width = x1 - x0 + 1; o.height = y1 - y0 + 1; o.getContext('2d').drawImage(c, x0, y0, o.width, o.height, 0, 0, o.width, o.height); return res(o.toDataURL('image/png')); }
+      }
+      res(c.toDataURL('image/png'));
+    } catch (e) { res(uri); } }; im.src = uri; });
+  /** Las miniaturas de sucursal que llegan en JPEG (con fondo blanco) se dejan sin fondo antes de mostrarse. */
+  async function transparentarMinis(m) {
+    for (const k of Object.keys(m || {})) if (/^data:image\/jpeg/.test(m[k] || '')) { try { m[k] = await logoTransparente(m[k], 360); } catch (e) {} }
+    return m;
+  }
   /** C.P., Régimen fiscal y Uso de CFDI del cliente (encabezado de notas, cotizaciones, comprobantes y estados de cuenta). */
   const fiscalHtml = (f, sinCp) => { if (!f) return ''; const l = [];
     if (f.cp && !sinCp) l.push('C.P. ' + esc(f.cp));
@@ -464,6 +495,8 @@ const App = (() => {
   function mostrarApp() {
     $('#login').classList.add('oculto'); $('#app').classList.remove('oculto');
     marcarRed(S.online); pintarCola(); ir(S.vista);
+    // logotipos de sucursal guardados con fondo blanco: el administrador los deja sin fondo (una vez, en segundo plano)
+    if (U().rol === 'Administrador') setTimeout(() => { try { repararMinisSuc(D().sucursales || []); } catch (e) {} }, 6000);
   }
 
   /* ---------------- buscador con autocompletar ---------------- */
@@ -1183,7 +1216,7 @@ const App = (() => {
     visor(`<h4 style="margin:0 0 8px;word-break:break-all">${esc(r.nombre)}</h4>${vista}<div class="acciones">${cerrar}<a class="btn" href="${url}" download="${esc(r.nombre)}">⬇️ Descargar</a><a class="btn" target="_blank" rel="noopener" href="${url}">Abrir aparte</a>${drive}</div>`);
   }
   async function leerArch(tipo, f) {
-    if (ARCH_FOTO[tipo] || ARCH_MULTIFOTO[tipo]) return reducirImagen(f, tipo === 'provLogo' ? 600 : 1000);
+    if (ARCH_FOTO[tipo] || ARCH_MULTIFOTO[tipo]) return reducirImagen(f, tipo === 'provLogo' ? 600 : tipo === 'sucFoto' ? 800 : 1000, (tipo === 'sucFoto' || tipo === 'provLogo') && /png|webp|gif/i.test(f.type || ''));
     if (tipo === 'ocFactura' && (/\.xml$/i.test(f.name || '') || /xml/i.test(f.type || ''))) return leerXml(f);
     const u = await leerComprobante(f);
     if ((tipo === 'prodFicha' || tipo === 'ocFactura') && !/^data:application\/pdf/.test(u)) throw new Error(tipo === 'prodFicha' ? 'La ficha técnica debe ser PDF' : 'La factura se adjunta en PDF o XML');
@@ -1201,7 +1234,7 @@ const App = (() => {
     const f = input.files && input.files[0]; if (!f) return;
     let uri; try { uri = await leerArch(tipo, f); } catch (e) { input.value = ''; return toast(e.message || 'No se pudo leer el archivo', true); }
     toast('Subiendo…');
-    let mini = ''; if (tipo === 'sucFoto') { try { mini = await achicarUri(uri, 360); } catch (e) {} }
+    let mini = ''; if (tipo === 'sucFoto') { try { mini = await logoTransparente(uri, 360); } catch (e) {} }
     try { await pedir('subirArchivo', { tipo: tipo, id: id, dataUri: uri, mini: mini }); toast('✔ Archivo guardado'); marcarArch(tipo, id); cargarArch(tipo, id); if (tipo === 'sucFoto') { pintarMenu(); cargarSucsCfg(); } }
     catch (e) { input.value = ''; if (e.red) toast('Sin conexión: vuelve a intentarlo al reconectar', true); }
   }
@@ -1241,7 +1274,7 @@ const App = (() => {
     for (const t of Object.keys(pend)) {
       const ids = Array.from(new Set(pend[t]));
       for (let i = 0; i < ids.length; i += 40) {
-        let r; try { r = await pedir('minisArchivo', { tipo: t, ids: ids.slice(i, i + 40) }, true); } catch (e) { break; }
+        let r; try { r = await pedir('minisArchivo', { tipo: t, ids: ids.slice(i, i + 40) }, true); if (t === 'sucFoto') r = await transparentarMinis(r); } catch (e) { break; }
         Object.assign(S.minis[t], r);
         cont.querySelectorAll(`img[data-avatar="${t}"]`).forEach(im => { const u = S.minis[t][im.dataset.aid]; if (u) { im.src = u; im.parentNode.classList.add('con-foto'); } });
       }
@@ -1293,7 +1326,10 @@ const App = (() => {
   /** Fotos de sucursal subidas antes de las miniaturas: se crea su miniatura una sola vez (solo el administrador). */
   async function repararMinisSuc(l) {
     if (S.reparandoMinis || navigator.onLine === false) return;
-    const m = (S.minis && S.minis.sucFoto) || {}, pend = l.filter(x => x.foto && !m[x.id]);
+    S.minis = S.minis || {}; const m = S.minis.sucFoto = S.minis.sucFoto || {};
+    // también las que el servidor tiene en JPEG (con fondo blanco): se rehacen sin fondo una sola vez
+    let srv = {}; try { srv = await pedir('minisArchivo', { tipo: 'sucFoto', ids: l.filter(x => x.foto).map(x => x.id) }, true); } catch (e) {}
+    const hechas = LS.get('minisSucPng', {}), pend = l.filter(x => x.foto && (!srv[x.id] || (/^data:image\/jpeg/.test(srv[x.id]) && !hechas[x.id])));
     if (!pend.length) return;
     S.reparandoMinis = true;
     try {
@@ -1303,8 +1339,9 @@ const App = (() => {
           if (!act) continue;
           const v = await pedir('verArchivo', { tipo: 'sucFoto', id: x.id, archivo: act.id }, true);
           if (!v.uri) continue;
-          const mini = await achicarUri(v.uri, 360);
+          const mini = await logoTransparente(v.uri, 360);
           await pedir('subirArchivo', { tipo: 'sucFoto', id: x.id, soloMini: 1, mini: mini }, true);
+          hechas[x.id] = 1; LS.set('minisSucPng', hechas);
           m[x.id] = mini; S.minis.sucFoto = m; guardarMinisSuc(m);
           document.querySelectorAll(`img[data-avatar="sucFoto"][data-aid="${CSS.escape(x.id)}"]`).forEach(im => { im.src = mini; im.parentNode.classList.add('con-foto'); });
         } catch (e) {}
@@ -2666,7 +2703,7 @@ const App = (() => {
     try {
       const r = await pedir('guardarTraspaso', { Sucursal_Origen: t.ori, Sucursal_Destino: t.des, Recibio: t.recibio, Comentarios: t.com,
         ID_Flete: t.paq, No_Guia: t.guia, Costo_flete: t.flete, ID_Requisicion: t.req ? t.req.id : '', lineas: t.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, lote: l.lote, Precio: l.precio !== undefined && l.precio !== '' ? l.precio : '' })) });
-      toast('✔ Traspaso ' + r.folio + ' registrado' + (r.requisicion ? ' · requisición ' + r.requisicion.folio + ': ' + r.requisicion.estado.toLowerCase() : '')); S.tr = null; refrescarStock(); S.tabTr = 'lista'; V.traspasos('lista');
+      toast('✔ Traspaso ' + r.folio + ' registrado' + (r.requisicion ? ' · requisición ' + r.requisicion.folio + ': ' + r.requisicion.estado.toLowerCase() + (r.requisicion.nueva ? '; lo pendiente (' + nf(r.requisicion.nueva.piezas) + ' pzs) pasó a la ' + r.requisicion.nueva.folio : '') : '')); S.tr = null; refrescarStock(); S.tabTr = 'lista'; V.traspasos('lista');
     } catch (e) {}
   }
   async function verTraspaso(folio) {
@@ -2719,8 +2756,10 @@ const App = (() => {
   function pdfTraspaso(folio) { generarPdf('pdfTraspaso', { folio: folio }, { asunto: 'Traspaso ' + folio, texto: 'Interés Veterinario — Traspaso ' + folio, volver: `App.verTraspaso('${folio}')` }); }
 
   /* ---------- REQUISICIONES DE TRASPASO (como una cotización, pero entre sucursales) ---------- */
-  const REQ_ETQ = { Abierta: 'av', Parcial: 'av', Surtida: 'ok', Cerrada: '', Cancelada: 'mal' };
+  const REQ_ETQ = { Abierta: 'av', Parcial: 'av', Surtida: 'ok', 'Surtida parcial': 'ok', Cerrada: '', Cancelada: 'mal' };
   const etqReq = e => `<span class="etq ${REQ_ETQ[e] || ''}">${esc(e)}</span>`;
+  /** Logotipo de la sucursal para su cuadro (Matriz = logotipo general), sin fondo. */
+  const logoSucCaja = id => esMatriz(id) || !((D().sucursales || []).find(o => o.id === id) || {}).foto ? (window.LOGO ? `<img src="${window.LOGO}" alt="">` : '') : fotoSucDoc(id);
   const reqMatriz = () => ((D().sucursales || []).find(s => esMatriz(s.id)) || {}).id || 'SUC_MAT_1';
   const reqNueva = () => { const sol = sucTrabajo(); let sur = reqMatriz(); if (sur === sol) sur = ((D().sucursales || []).find(s => s.id !== sol) || {}).id || '';
     return { sol: sol, sur: sur, com: '', req: '', lineas: [] }; };
@@ -2736,7 +2775,7 @@ const App = (() => {
     $('#vista').innerHTML = barra + `<div class="tarjeta no-imprimir"><div class="fila">
       <label>Desde<input type="date" id="rqDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="rqHasta" value="${f.hasta}"></label>
       ${U().todasSucursales ? `<label>Sucursal (solicita o surte)<select id="rqSuc">${opts(D().sucursales || [], f.sucursal || '', 'Todas')}</select></label>` : ''}
-      <label>Estado<select id="rqEst">${opts([['Abierta', 'Abiertas'], ['Parcial', 'Surtidas en parte'], ['Surtida', 'Surtidas'], ['Cerrada', 'Cerradas'], ['Cancelada', 'Canceladas']], f.estado, 'Todas')}</select></label>
+      <label>Estado<select id="rqEst">${opts([['Abierta', 'Abiertas'], ['Surtida', 'Surtidas'], ['Surtida parcial', 'Surtidas en parte (pendiente en otra)'], ['Cerrada', 'Cerradas'], ['Cancelada', 'Canceladas']], f.estado, 'Todas')}</select></label>
       <label>Buscar<input id="rqTxt" placeholder="Folio, producto o comentario" value="${esc(f.texto)}"></label>
       <button class="btn primario fijo" onclick="App.cargarReq()">Buscar</button></div></div><div class="espacio"></div><div id="lReq"><div class="vacio">Cargando…</div></div>`;
     $('#rqTxt').onkeydown = e => { if (e.key === 'Enter') cargarReq(); };
@@ -2830,19 +2869,21 @@ const App = (() => {
     const puedeTr = d.activa && puede('traspasos') && d.tot.aTraspasar > 0, puedeOc = d.activa && puede('compras') && d.tot.falta > 0;
     modal('Requisición ' + d.folio, `<div class="imprimible">
       <div class="fila" style="justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-        <div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.solicita)}</div><div class="muted" style="margin-top:4px">Pidió ${esc(d.solicito || '—')} · ${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</div></div>
+        <div><b style="font-size:17px">Interés Veterinario</b><div class="muted" style="margin-top:4px">Pidió ${esc(d.solicito || '—')} · ${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</div></div>
         <div style="text-align:right"><b>REQUISICIÓN DE TRASPASO</b><div style="font-size:18px">${esc(d.folio)}</div><div>${etqReq(d.estado)}</div>${d.requerida ? `<div class="fact-enc">Se requiere el ${esc(d.requerida)}</div>` : ''}</div></div>
-      <div class="kpis" style="margin-top:12px">
-        <div class="kpi"><small>Solicita</small><b style="font-size:17px">${esc(d.solicitaNombre)}</b><span>${nf(d.tot.piezas)} piezas · ${d.lineas.length} productos</span></div>
-        <div class="kpi"><small>Surte</small><b style="font-size:17px">${esc(d.surteNombre)}</b><span>surtido ${nf(d.tot.surtido)} · pendiente ${nf(d.tot.pend)}</span></div>
+      <div class="rq-cajas">
+        <div class="rq-caja solicita"><div class="rq-logo">${logoSucCaja(d.solicita)}</div><div><small>Solicita</small><b>${esc(d.solicitaNombre)}</b><span>${nf(d.tot.piezas)} piezas · ${d.lineas.length} productos</span></div></div>
+        <div class="rq-caja surte"><div class="rq-logo">${logoSucCaja(d.surte)}</div><div><small>Surte</small><b>${esc(d.surteNombre)}</b><span>surtido ${nf(d.tot.surtido)}${d.tot.pend ? ' · pendiente ' + nf(d.tot.pend) : ''}</span></div></div></div>
+      ${d.vieneDe || d.continuaEn ? `<div class="rq-liga">${d.vieneDe ? `Viene de la requisición <a href="#" onclick="App.verReq('${esc(d.vieneId)}');return false"><b>${esc(d.vieneDe)}</b></a> (lo que quedó pendiente). ` : ''}${d.continuaEn ? `✔ Cerrada con el traspaso. Lo pendiente pasó a la requisición <a href="#" onclick="App.verReq('${esc(d.continuaId)}');return false"><b>${esc(d.continuaEn)}</b></a>.` : ''}</div>` : ''}
+      ${d.activa ? `<div class="kpis" style="margin-top:12px">
         <div class="kpi"><small>Se puede traspasar</small><b>${nf(d.tot.aTraspasar)}</b><span>con la existencia de ${esc(d.surteNombre)}</span></div>
-        <div class="kpi"><small>Faltante (comprar)</small><b class="${d.tot.falta ? 'error' : ''}">${nf(d.tot.falta)}</b><span>${d.tot.falta ? 'piezas que no hay en ' + esc(d.surteNombre) : 'hay existencia de todo'}</span></div></div>
+        <div class="kpi"><small>Faltante (comprar)</small><b class="${d.tot.falta ? 'error' : ''}">${nf(d.tot.falta)}</b><span>${d.tot.falta ? 'piezas que no hay en ' + esc(d.surteNombre) : 'hay existencia de todo'}</span></div></div>` : ''}
       <div class="tabla-cont"><table><thead><tr><th>Producto</th><th class="num">Solicitado</th><th class="num">Surtido</th><th class="num">Pendiente</th><th class="num">Exist. ${esc(d.surteNombre)}</th><th class="num">Faltante</th><th class="ocultar-movil">Otras sucursales</th><th class="ocultar-movil">Proveedor sugerido</th></tr></thead><tbody>
-      ${d.lineas.map(l => `<tr><td><b>${esc(l.nombre)}</b><small>${esc([l.prod, l.lab].filter(Boolean).join(' · '))}${l.nota ? ' · ' + esc(l.nota) : ''}</small></td><td class="num"><b>${nf(l.cant)}</b></td><td class="num">${nf(l.surtido)}</td><td class="num">${l.pend ? nf(l.pend) : '—'}</td>
+      ${d.lineas.map(l => `<tr><td><b>${esc(l.nombre)}</b><br><small>${esc([l.prod, l.lab].filter(Boolean).join(' · '))}${l.nota ? ' · ' + esc(l.nota) : ''}</small></td><td class="num"><b>${nf(l.cant)}</b></td><td class="num">${nf(l.surtido)}</td><td class="num">${l.pend ? nf(l.pend) : '—'}</td>
         <td class="num">${nf(l.exOri)}</td><td class="num">${l.falta ? `<b class="error">${nf(l.falta)}</b>` : '—'}</td>
         <td class="ocultar-movil"><small>${esc(l.otras.map(o => sucNom(o.s) + ' ' + nf(o.q)).join(' · ')) || '—'}</small></td><td class="ocultar-movil"><small>${l.falta ? esc(l.prov ? l.prov.n : 'Sin proveedor registrado') : ''}</small></td></tr>`).join('')}
       </tbody></table></div>
-      ${d.comentarios ? `<p><small><b>Comentarios:</b> ${esc(d.comentarios)}</small></p>` : ''}${d.motivo ? `<p><small><b>${d.estado === 'Cancelada' ? 'Cancelación' : 'Cierre'}:</b> ${esc(d.motivo)}</small></p>` : ''}
+      ${d.comentarios ? `<p><small><b>Comentarios:</b> ${esc(d.comentarios)}</small></p>` : ''}${d.motivo && !d.continuaEn ? `<p><small><b>${d.estado === 'Cancelada' ? 'Cancelación' : 'Cierre'}:</b> ${esc(d.motivo)}</small></p>` : ''}
       ${d.traspasos.length || d.ocs.length ? `<p class="muted"><small>${d.traspasos.length ? 'Traspasos: <b>' + d.traspasos.map(esc).join(', ') + '</b>' : ''}${d.traspasos.length && d.ocs.length ? ' · ' : ''}${d.ocs.length ? 'Órdenes de compra: <b>' + d.ocs.map(esc).join(', ') + '</b>' : ''}</small></p>` : ''}</div>
       ${puedeOc ? `<div class="tarjeta no-imprimir" style="margin-top:10px"><h3>📦 Faltantes a orden de compra</h3><p class="muted" style="margin-top:0">Se arma la orden con lo que no hay en ${esc(d.surteNombre)}, por proveedor (el de su última compra).</p>
         <div class="acciones" style="justify-content:flex-start">${Object.keys(provs).map(k => `<button class="btn" onclick="App.reqAOrden('${esc(k)}')">📦 ${esc(provs[k].n)} · ${nf(provs[k].l.reduce((a, l) => a + l.falta, 0))} pzs</button>`).join('')}</div></div>` : ''}
@@ -2851,7 +2892,7 @@ const App = (() => {
         ${puedeTr ? `<button class="btn primario" onclick="App.reqATraspaso()">🚚 Armar traspaso (${nf(d.tot.aTraspasar)} pzs)</button>` : ''}
         ${d.editable ? `<button class="btn" onclick="App.editarReq()">✏️ Editar</button>` : ''}
         ${d.traspasos.length && puede('traspasos') ? d.traspasos.map(f => `<button class="btn" onclick="App.verTraspaso('${esc(f)}')">🚚 ${esc(f)}</button>`).join('') : ''}
-        ${d.estado === 'Cerrada' || d.estado === 'Cancelada' ? `<button class="btn" onclick="App.reabrirReq('${d.id}')">↩️ Reabrir</button>` : ''}
+        ${(d.estado === 'Cerrada' || d.estado === 'Cancelada') && !d.continuaEn ? `<button class="btn" onclick="App.reabrirReq('${d.id}')">↩️ Reabrir</button>` : ''}${d.continuaEn && d.continuaId ? `<button class="btn primario" onclick="App.verReq('${esc(d.continuaId)}')">📑 Ver ${esc(d.continuaEn)} (pendiente)</button>` : ''}
         ${d.activa ? `<button class="btn peligro" onclick="App.cancelarReq('${d.id}')">${d.tot.surtido ? 'Cerrar (ya no surtir lo pendiente)' : 'Cancelar'}</button>` : ''}
       </div>`);
   }
@@ -3505,10 +3546,11 @@ const App = (() => {
     try { const r = await pedir('fotoProducto', { id: id }, true); el.innerHTML = r.uri ? `<img src="${r.uri}" alt="">` : `<span class="muted">${r.falta ? 'No se encontró la imagen ' + esc(r.falta) : 'Sin foto'}</span>`; }
     catch (e) { el.innerHTML = S.fotos[id] ? `<img src="${S.fotos[id]}" alt="">` : '<span class="muted">Foto no disponible sin conexión</span>'; }
   }
-  function reducirImagen(file, max) {
+  function reducirImagen(file, max, conAlfa) {
     return new Promise((res, rej) => { const fr = new FileReader(); fr.onerror = rej; fr.onload = () => { const im = new Image(); im.onerror = rej; im.onload = () => {
       const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k);
-      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', .85)); }; im.src = fr.result; }; fr.readAsDataURL(file); });
+      const x = c.getContext('2d'); if (conAlfa) { x.drawImage(im, 0, 0, c.width, c.height); return res(c.toDataURL('image/png')); }   // logotipos PNG: se conserva lo transparente
+      x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', .85)); }; im.src = fr.result; }; fr.readAsDataURL(file); });
   }
   async function fotoNuevaPrev(input) {
     const f = input.files && input.files[0]; if (!f) return;
@@ -5053,6 +5095,7 @@ const App = (() => {
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
     vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
+    logoTransparente,
     vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } },
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
