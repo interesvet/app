@@ -378,8 +378,9 @@ const App = (() => {
     { id: 'recetas', t: 'Recetas', i: '💊', p: 'recetas', oculto: 1 },
     { id: 'compras', t: 'Compras', i: '📦', p: ['compras', 'traspasos'] },
     { id: 'gastos', t: 'Gastos', i: '🔒', p: 'dueno' },
-    { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'ajustes', 'mermas', 'inventario_fisico'] },
+    { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'requisiciones', 'ajustes', 'mermas', 'inventario_fisico'] },
     { id: 'traspasos', t: 'Traspasos', i: '🚚', p: 'traspasos', oculto: 1 },
+    { id: 'requisiciones', t: 'Requisiciones de traspaso', i: '📑', p: 'requisiciones', oculto: 1 },
     { id: 'ajustes', t: 'Ajustes y mermas', i: '⚖️', p: ['ajustes', 'mermas'], oculto: 1 },
     { id: 'inventario', t: 'Inventario', i: '🏷️', p: 'inventario', oculto: 1 },
     { id: 'conteo', t: 'Conteo físico', i: '📋', p: 'inventario_fisico', oculto: 1 },
@@ -410,7 +411,7 @@ const App = (() => {
   const GRUPOS = {
     sucursales: { t: 'Sucursales', tabs: [
       { v: 'sucursales', t: '🔒 Resumen', p: 'dueno' }, { v: 'inventario', t: '🏷️ Inventario', p: 'inventario' },
-      { v: 'traspasos', t: '🚚 Traspasos', p: 'traspasos' }, { v: 'ajustes', t: '⚖️ Ajustes y mermas', p: ['ajustes', 'mermas'] },
+      { v: 'traspasos', t: '🚚 Traspasos', p: 'traspasos' }, { v: 'requisiciones', t: '📑 Requisición de traspaso', p: 'requisiciones' }, { v: 'ajustes', t: '⚖️ Ajustes y mermas', p: ['ajustes', 'mermas'] },
       { v: 'conteo', t: '📋 Conteo físico', p: 'inventario_fisico' }] },
     seguimiento: { t: 'Seguimiento de clientes', tabs: [
       { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
@@ -2492,7 +2493,8 @@ const App = (() => {
   function nuevaCompra() {
     if (!S.oc) S.oc = { prov: '', suc: sucTrabajo(), factura: '', fecha: hoyISO(), dias: '', descEsp: 0, descPP: 0, flete: 0, recibido: true, actCosto: true, obs: '', lineas: [], pago: 0 };
     const o = S.oc, cat = D().catalogos;
-    $('#cCont').innerHTML = `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="ocFolio"></div></div><div class="rejilla">
+    $('#cCont').innerHTML = (o.req ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">📑 Faltantes de la <b>requisición ${esc(o.req.folio)}</b>: la orden queda ligada a ella.</div><button class="btn fijo chico" onclick="App.quitarReqOc()">Desligar</button></div></div>` : '') +
+      `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="ocFolio"></div></div><div class="rejilla">
       <label>Proveedor *<select id="ocProv">${opts((D().proveedores || []).filter(p => p.activo), o.prov, 'Selecciona…')}</select></label>
       <label>Sucursal destino<select id="ocSuc">${optsSuc(o.suc)}</select></label>
       <label>No. factura<input id="ocFac" value="${esc(o.factura)}"></label><label>Fecha<input type="date" id="ocFecha" value="${o.fecha}"></label>
@@ -2545,8 +2547,8 @@ const App = (() => {
       const r = await pedir('guardarCompra', { ID_O_Compra: uid(), ID_Proveedor: o.prov, Suc_Destino: o.suc, No_Factura: o.factura, Fecha: o.fecha, D_credito: o.dias,
         descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete, Recibido: o.recibido, actualizarCosto: o.actCosto, Observaciones: o.obs,
         lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: l.lote, F_Caducidad: l.cad })),
-        pago: o.pago > 0 ? { monto: o.pago, forma: $('#ocForma').value, banco: $('#ocBanco').value } : null });
-      toast('✔ Orden ' + r.folio + ' guardada'); S.oc = null; S.cacheTot = {}; refrescarStock(); if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista');
+        pago: o.pago > 0 ? { monto: o.pago, forma: $('#ocForma').value, banco: $('#ocBanco').value } : null, ID_Requisicion: o.req ? o.req.id : '' });
+      toast('✔ Orden ' + r.folio + ' guardada' + (o.req ? ' · ligada a la requisición ' + o.req.folio : '')); S.oc = null; S.cacheTot = {}; refrescarStock(); if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista');
     } catch (e) {}
   }
 
@@ -2575,7 +2577,8 @@ const App = (() => {
     }
     if (!S.tr) S.tr = { ori: sucTrabajo(), des: '', recibio: '', com: '', lineas: [], paq: '', guia: '', flete: '' };
     const t = S.tr;
-    $('#tCont').innerHTML = `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="trFolio"></div></div><div class="rejilla"><label>Origen<select id="trOri">${optsSuc(t.ori)}</select></label>
+    $('#tCont').innerHTML = (t.req ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">📑 Surtiendo la <b>requisición ${esc(t.req.folio)}</b>: al registrar el traspaso se marca lo surtido.</div><button class="btn fijo chico" onclick="App.quitarReqTr()">Desligar</button></div></div>` : '') +
+      `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="trFolio"></div></div><div class="rejilla"><label>Origen<select id="trOri">${optsSuc(t.ori)}</select></label>
       <label>Destino<select id="trDes">${opts((D().sucursales || []).filter(s => s.id !== t.ori), t.des, 'Selecciona…')}</select></label>
       <label>Recibe<input id="trRec" value="${esc(t.recibio)}"></label><label>Comentarios<input id="trCom" value="${esc(t.com)}"></label>
       <label>Método de envío *<select id="trPaq">${opts(paqueterias(), t.paq, 'Selecciona…')}</select></label>
@@ -2594,15 +2597,19 @@ const App = (() => {
     const t = S.tr, cont = $('#trLineas'), ep = puede('precio_editar') && verImpC();
     const listaDes = ((D().sucursales || []).find(s => s.id === t.des) || {}).lista;
     const pLista = id => { const p = prod(id) || { precios: {} }; return (listaDes && p.precios[listaDes]) || p.costo || 0; };
+    // IVA del renglón en pesos (precio de la lista de la tienda destino o el capturado × tasa del producto)
+    const verIva = verImpC(), ivaTr = l => { if (!verIva || !t.des) return ''; const pu = l.precio !== undefined && l.precio !== '' ? Number(l.precio) || 0 : pLista(l.id);
+      return $$(Math.round(Math.round((l.cant || 0) * pu * 100) / 100 * ((prod(l.id) || {}).iva || 0) * 100) / 100); };
     cont.innerHTML = !t.lineas.length ? '<div class="vacio">Agrega productos</div>' :
-      `<div class="linea cab"><div>Producto</div><div>Lote</div><div>Cant.</div><div>${ep ? 'Precio' : ''}</div><div></div><div class="num">Exist. origen</div><div></div></div>` +
+      `<div class="linea cab"><div>Producto</div><div>Lote</div><div>Cant.</div><div>${ep ? 'Precio' : ''}</div><div class="num">${verIva ? 'IVA $' : ''}</div><div class="num">Exist. origen</div><div></div></div>` +
       t.lineas.map((l, i) => { const p = prod(l.id) || {}; return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)}</small></div>
         <div><select data-f="lote"><option value="">Auto (caduca primero)</option>${lotes(l.id, t.ori).map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)} · ${nf(x.q)}</option>`).join('')}</select></div>
         <div><input type="number" data-f="cant" value="${l.cant}"></div>
-        <div>${ep ? `<input type="number" data-f="precio" step="0.01" value="${l.precio !== undefined && l.precio !== '' ? l.precio : ''}" placeholder="${t.des ? pLista(l.id) : 'Elige destino'}" inputmode="decimal"><span data-ref>${l.precio !== undefined && l.precio !== '' ? refPrecio(pLista(l.id), l.precio) : ''}</span>` : ''}</div><div></div>
+        <div>${ep ? `<input type="number" data-f="precio" step="0.01" value="${l.precio !== undefined && l.precio !== '' ? l.precio : ''}" placeholder="${t.des ? pLista(l.id) : 'Elige destino'}" inputmode="decimal"><span data-ref>${l.precio !== undefined && l.precio !== '' ? refPrecio(pLista(l.id), l.precio) : ''}</span>` : ''}</div><div class="num" data-iva title="IVA del renglón">${ivaTr(l)}</div>
         <div class="num">${nf(existencia(l.id, t.ori))}</div><div class="lin-btns">${ep ? '<button class="icono" data-regalo title="Sin cargo ($0.01)">🎁</button>' : ''}<button class="icono" data-del>✕</button></div></div>`; }).join('');
     cont.oninput = cont.onchange = e => { const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return; const l = t.lineas[+row.dataset.i];
-      if (f === 'lote') l.lote = e.target.value; else if (f === 'precio') { l.precio = e.target.value === '' ? '' : Number(e.target.value) || 0; row.querySelector('[data-ref]').innerHTML = l.precio === '' ? '' : refPrecio(pLista(l.id), l.precio); } else l[f] = Number(e.target.value) || 0; };
+      if (f === 'lote') l.lote = e.target.value; else if (f === 'precio') { l.precio = e.target.value === '' ? '' : Number(e.target.value) || 0; row.querySelector('[data-ref]').innerHTML = l.precio === '' ? '' : refPrecio(pLista(l.id), l.precio); } else l[f] = Number(e.target.value) || 0;
+      const ci = row.querySelector('[data-iva]'); if (ci) ci.textContent = ivaTr(l); };
     cont.onclick = e => { const row = e.target.closest('[data-i]'); if (!row) return;
       if (e.target.closest('[data-del]')) { t.lineas.splice(+row.dataset.i, 1); pintarLineasTr(); }
       else if (e.target.closest('[data-regalo]')) { t.lineas[+row.dataset.i].precio = 0.01; pintarLineasTr(); } };
@@ -2658,17 +2665,17 @@ const App = (() => {
     if (!t.paq) { toast('Indica el método de envío (o "Entrega física")', true); const s = $('#trPaq'); if (s) s.focus(); return; }
     try {
       const r = await pedir('guardarTraspaso', { Sucursal_Origen: t.ori, Sucursal_Destino: t.des, Recibio: t.recibio, Comentarios: t.com,
-        ID_Flete: t.paq, No_Guia: t.guia, Costo_flete: t.flete, lineas: t.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, lote: l.lote, Precio: l.precio !== undefined && l.precio !== '' ? l.precio : '' })) });
-      toast('✔ Traspaso ' + r.folio + ' registrado'); S.tr = null; refrescarStock(); S.tabTr = 'lista'; V.traspasos('lista');
+        ID_Flete: t.paq, No_Guia: t.guia, Costo_flete: t.flete, ID_Requisicion: t.req ? t.req.id : '', lineas: t.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, lote: l.lote, Precio: l.precio !== undefined && l.precio !== '' ? l.precio : '' })) });
+      toast('✔ Traspaso ' + r.folio + ' registrado' + (r.requisicion ? ' · requisición ' + r.requisicion.folio + ': ' + r.requisicion.estado.toLowerCase() : '')); S.tr = null; refrescarStock(); S.tabTr = 'lista'; V.traspasos('lista');
     } catch (e) {}
   }
   async function verTraspaso(folio) {
     try { const d = await pedir('detalleTraspaso', { folio: folio });
       const pzs = d.lineas.reduce((t, x) => t + x.cant, 0), imp = d.total !== null;
       let sub = 0, iva = 0;
-      const filas = d.lineas.map((l, i) => { const im = imp ? Math.round(l.cant * (l.precio || 0) * 100) / 100 : 0, iv = imp ? Math.round(im * (l.tasa || 0) * 100) / 100 : 0; sub += im; iva += iv;
+      const filas = d.lineas.map((l, i) => { const im = imp ? Math.round(l.cant * (l.precio || 0) * 100) / 100 : 0, iv = imp ? (l.iva !== null && l.iva !== undefined ? l.iva : Math.round(im * (l.tasa || 0) * 100) / 100) : 0; sub += im; iva += iv;
         return `<tr class="${i % 2 ? 'par' : ''}"><td class="num"><b>${nf(l.cant)}</b></td><td>${esc(l.nombre)}${l.lab ? `<small>${esc(l.lab)}</small>` : ''}</td><td class="nowrap">${esc(l.lote)}<small>${esc(l.cad)}</small></td>
-          ${imp ? `<td class="num">${$$(iv)}</td><td class="num">${$$(l.precio)}</td><td class="num"><b>${$$(im)}</b></td>` : ''}</tr>`; }).join('');
+          ${imp ? `<td class="num">${$$(l.precio)}</td><td class="num"><b>${$$(im)}</b></td><td class="num">${$$(iv)}</td>` : ''}</tr>`; }).join('');
       const flete = imp && d.flete !== null && d.flete !== undefined ? d.flete : 0, total = Math.round((sub + iva + flete) * 100) / 100;
       const sd = (D().sucursales || []).find(x => x.id === d.origen) || {};
       modal('Traspaso ' + d.folio, `<div class="imprimible"><div class="tr-doc">${window.LOGO ? `<img class="tr-marca" src="${window.LOGO}" alt="">` : ''}
@@ -2678,7 +2685,7 @@ const App = (() => {
           <div class="tr-punto"><i class="o"></i><small>ALMACÉN ORIGEN</small><b>${esc(String(d.origenNombre || '').toUpperCase())}</b><span>Sale ${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</span></div>
           <div class="tr-punto envio"><small>ENVÍO</small><b>${esc(d.envio || 'Sin indicar')}</b><span>${d.guia ? 'Guía ' + esc(d.guia) : ''}</span></div>
           <div class="tr-punto"><i class="d"></i><small>ALMACÉN DESTINO</small><b>${esc(String(d.destinoNombre || '').toUpperCase())}</b><span>${d.recibio ? 'Recibe ' + esc(d.recibio) : ''}</span></div></div>
-        <div class="tabla-cont"><table class="tr-tabla"><thead><tr><th class="num">Cant.</th><th>Producto</th><th>Lote / Cad.</th>${imp ? '<th class="num">IVA</th><th class="num">Precio</th><th class="num">Importe</th>' : ''}</tr></thead><tbody>${filas}</tbody></table></div>
+        <div class="tabla-cont"><table class="tr-tabla"><thead><tr><th class="num">Cant.</th><th>Producto</th><th>Lote / Cad.</th>${imp ? '<th class="num">Precio</th><th class="num">Importe</th><th class="num">IVA $</th>' : ''}</tr></thead><tbody>${filas}</tbody></table></div>
         <div class="tr-pie"><div class="muted"><b>${nf(pzs)} piezas</b> · ${d.lineas.length} productos${d.comentarios ? `<br><b>Comentarios:</b> ${esc(d.comentarios)}` : ''}</div>
           ${imp ? `<table class="tr-tot"><tr><td>Subtotal</td><td class="num">${$$(sub)}</td></tr><tr><td>IVA</td><td class="num">${$$(iva)}</td></tr><tr><td>Flete</td><td class="num">${$$(flete)}</td></tr><tr class="total"><td>TOTAL</td><td class="num">${$$(total)}</td></tr></table>` : ''}</div>
         <div class="tr-firmas"><div><span></span><b>Entregó</b><small>Almacén ${esc(d.origenNombre)}</small></div><div><span></span><b>Transportista</b><small>${esc([d.envio, d.guia].filter(Boolean).join(' · ') || '—')}</small></div><div><span></span><b>Recibió</b><small>${d.recibio ? esc(d.recibio) + ' · ' : ''}Almacén ${esc(d.destinoNombre)}</small></div></div>
@@ -2710,6 +2717,184 @@ const App = (() => {
     try { await pedir('editarTraspaso', prm); toast('✔ Traspaso ' + d.folio + ' actualizado'); verTraspaso(d.folio); if ($('#trRes')) cargarTraspasos(); } catch (e) {}
   }
   function pdfTraspaso(folio) { generarPdf('pdfTraspaso', { folio: folio }, { asunto: 'Traspaso ' + folio, texto: 'Interés Veterinario — Traspaso ' + folio, volver: `App.verTraspaso('${folio}')` }); }
+
+  /* ---------- REQUISICIONES DE TRASPASO (como una cotización, pero entre sucursales) ---------- */
+  const REQ_ETQ = { Abierta: 'av', Parcial: 'av', Surtida: 'ok', Cerrada: '', Cancelada: 'mal' };
+  const etqReq = e => `<span class="etq ${REQ_ETQ[e] || ''}">${esc(e)}</span>`;
+  const reqMatriz = () => ((D().sucursales || []).find(s => esMatriz(s.id)) || {}).id || 'SUC_MAT_1';
+  const reqNueva = () => { const sol = sucTrabajo(); let sur = reqMatriz(); if (sur === sol) sur = ((D().sucursales || []).find(s => s.id !== sol) || {}).id || '';
+    return { sol: sol, sur: sur, com: '', req: '', lineas: [] }; };
+  const guardarBorradorReq = () => LS.set('borrador_req', S.rq);
+  V.requisiciones = (tab) => {
+    tab = tab || S.tabReq || 'lista'; S.tabReq = tab;
+    const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaReq('${id}')">${n}</button>`;
+    const barra = `<div class="pestanas">${tb('lista', 'Requisiciones')}${tb('nueva', S.rq && S.rq.editId ? '✏️ Editando ' + esc(S.rq.editFolio) : '+ Nueva requisición')}</div>`;
+    if (tab === 'nueva') return editorReq(barra);
+    const h = hoyISO();
+    if (!S.freq) S.freq = { desde: h.slice(0, 5) + '01-01', hasta: h, hastaHoy: h, estado: '', texto: '', sucursal: '' };
+    const f = alDia(S.freq);
+    $('#vista').innerHTML = barra + `<div class="tarjeta no-imprimir"><div class="fila">
+      <label>Desde<input type="date" id="rqDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="rqHasta" value="${f.hasta}"></label>
+      ${U().todasSucursales ? `<label>Sucursal (solicita o surte)<select id="rqSuc">${opts(D().sucursales || [], f.sucursal || '', 'Todas')}</select></label>` : ''}
+      <label>Estado<select id="rqEst">${opts([['Abierta', 'Abiertas'], ['Parcial', 'Surtidas en parte'], ['Surtida', 'Surtidas'], ['Cerrada', 'Cerradas'], ['Cancelada', 'Canceladas']], f.estado, 'Todas')}</select></label>
+      <label>Buscar<input id="rqTxt" placeholder="Folio, producto o comentario" value="${esc(f.texto)}"></label>
+      <button class="btn primario fijo" onclick="App.cargarReq()">Buscar</button></div></div><div class="espacio"></div><div id="lReq"><div class="vacio">Cargando…</div></div>`;
+    $('#rqTxt').onkeydown = e => { if (e.key === 'Enter') cargarReq(); };
+    $('#rqEst').onchange = cargarReq; if ($('#rqSuc')) $('#rqSuc').onchange = cargarReq;
+    agregarMesAnio('rqDesde', 'rqHasta', cargarReq);
+    cargarReq();
+  };
+  async function cargarReq() {
+    S.freq = marcarHoy({ desde: $('#rqDesde').value, hasta: $('#rqHasta').value, estado: $('#rqEst').value, texto: $('#rqTxt').value.trim(), sucursal: $('#rqSuc') ? $('#rqSuc').value : '' });
+    let r; try { r = await pedir('listarRequisiciones', S.freq); } catch (e) { if ($('#lReq')) $('#lReq').innerHTML = '<div class="vacio">Consultar requisiciones requiere conexión.</div>'; return; }
+    if (!$('#lReq')) return;
+    S.lista = r.requisiciones; const k = r.kpi;
+    $('#lReq').innerHTML = `<div class="kpis">
+      <div class="kpi"><small>Requisiciones</small><b>${nf(k.total)}</b><span>${nf(k.surtidas)} surtidas</span></div>
+      <div class="kpi"><small>Por surtir</small><b>${nf(k.abiertas + k.parciales)}</b><span>${nf(k.abiertas)} abiertas · ${nf(k.parciales)} en parte</span></div>
+      <div class="kpi"><small>Piezas pendientes</small><b>${nf(k.pzsPendientes)}</b><span>de las requisiciones abiertas</span></div></div>` +
+      tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Solicita', h: x => esc(sucNom(x.solicita)) }, { t: 'Surte', h: x => esc(sucNom(x.surte)) },
+        { t: 'Productos', num: 1, cls: 'ocultar-movil', h: x => nf(x.renglones) }, { t: 'Piezas', num: 1, h: x => nf(x.piezas) },
+        { t: 'Pendiente', num: 1, h: x => x.pendiente ? `<b>${nf(x.pendiente)}</b>` : '—' }, { t: 'Estado', h: x => etqReq(x.estado) + (x.requerida && x.pendiente ? `<br><small class="muted">para el ${esc(x.requerida)}</small>` : '') },
+        { t: 'Traspasos / OC', cls: 'ocultar-movil', h: x => esc([x.traspasos, x.ocs].filter(Boolean).join(' · ')) || '—' }], r.requisiciones, { clic: 'App.abrirReq', vacio: 'Sin requisiciones en el periodo' });
+  }
+  function editorReq(barra) {
+    if (!S.rq) S.rq = LS.get('borrador_req', null) || reqNueva();
+    if ((D().permitidas || []).indexOf(S.rq.sol) < 0) S.rq = reqNueva();
+    const v = S.rq, ed = !!v.editId, sucs = D().sucursales || [];
+    $('#vista').innerHTML = barra + `
+      ${ed ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">✏️ <b>Editando la requisición ${esc(v.editFolio)}</b></div><button class="btn fijo" onclick="App.limpiarReq()">Salir sin guardar</button></div></div>` : ''}
+      <div class="tarjeta"><div class="folio-fila"><div class="folio" id="rqFolio">${ed ? `<span class="folio-et">Requisición · editando</span><b>${esc(v.editFolio)}</b><small>${esc(sucNom(v.sol))}</small>` : ''}</div></div>
+        <div class="rejilla">
+        <label>Sucursal que solicita<select id="rqSol" ${ed ? 'disabled' : ''}>${optsSuc(v.sol)}</select></label>
+        <label>Sucursal que surte *<select id="rqSur">${opts(sucs.filter(s => s.id !== v.sol), v.sur, 'Selecciona…')}</select></label>
+        <label>Se requiere para<input type="date" id="rqReq" value="${esc(v.req || '')}"></label>
+        <label>Comentarios<input id="rqCom" value="${esc(v.com)}" placeholder="Ej. surtir antes del sábado"></label></div></div>
+      <div class="tarjeta"><div class="buscador buscador-prod"><input id="rqProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
+        <div class="espacio"></div><div class="doc-lineas" id="rqLineas"></div><div class="muted" id="rqRes" style="margin-top:8px"></div>
+        <div class="acciones"><button class="btn peligro" onclick="App.limpiarReq()">${ed ? 'Salir sin guardar' : 'Descartar'}</button>
+        <button class="btn primario" id="rqGuardar" onclick="App.guardarReq()">${ed ? '💾 Guardar cambios' : '💾 Guardar requisición'}</button></div></div>`;
+    if (!ed) { $('#rqSol').onchange = e => { v.sol = e.target.value; if (v.sur === v.sol) v.sur = ''; guardarBorradorReq(); V.requisiciones('nueva'); }; mostrarFolio('rqFolio', v.sol, 'Requisicion'); }
+    $('#rqSur').onchange = e => { v.sur = e.target.value; guardarBorradorReq(); pintarLineasReq(); };
+    $('#rqReq').onchange = e => { v.req = e.target.value; guardarBorradorReq(); };
+    $('#rqCom').oninput = e => { v.com = e.target.value; guardarBorradorReq(); };
+    buscador($('#rqProd'), { fuente: q => fuenteProductos(v.sur || v.sol, null, false)(q), limpiar: true, alElegir: x => {
+      const ya = v.lineas.find(l => l.id === x.id); if (ya) ya.cant = (Number(ya.cant) || 0) + 1; else v.lineas.push({ id: x.id, cant: 1, nota: '' });
+      guardarBorradorReq(); pintarLineasReq();
+      setTimeout(() => { const ins = document.querySelectorAll('#rqLineas [data-f=cant]'); if (ins.length) ins[ins.length - 1].focus(); }, 30); } });
+    pintarLineasReq();
+  }
+  function pintarLineasReq() {
+    const v = S.rq, cont = $('#rqLineas'); if (!cont) return;
+    const eSur = id => v.sur ? existencia(id, v.sur) : 0;
+    cont.innerHTML = !v.lineas.length ? '<div class="vacio">Agrega los productos que necesitas</div>' :
+      `<div class="linea cab"><div>Producto</div><div>Nota</div><div>Cant.</div><div class="num">Exist. ${esc(v.sur ? sucNom(v.sur) : 'surte')}</div><div class="num">Faltante</div><div class="num">Exist. ${esc(sucNom(v.sol))}</div><div></div></div>` +
+      v.lineas.map((l, i) => { const p = prod(l.id) || { nombre: l.id }, ex = eSur(l.id), falta = Math.max(0, (Number(l.cant) || 0) - ex), otras = existOtras(l.id, v.sur);
+        return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)}${p.lab ? ' · ' + esc(p.lab) : ''}</small>${otras ? `<small class="muted">${esc(otras)}</small>` : ''}</div>
+          <div><input data-f="nota" value="${esc(l.nota || '')}" placeholder="Opcional"></div>
+          <div><input type="number" data-f="cant" min="0" step="any" value="${l.cant}" inputmode="decimal"></div>
+          <div class="num">${v.sur ? nf(ex) : '—'}</div><div class="num" data-falta>${falta ? `<b class="error">${nf(falta)}</b>` : '<span class="txt-ok">✔</span>'}</div>
+          <div class="num">${nf(existencia(l.id, v.sol))}</div><div class="lin-btns"><button class="icono" data-del title="Quitar">✕</button></div></div>`; }).join('');
+    const resumen = () => { const pz = v.lineas.reduce((a, l) => a + (Number(l.cant) || 0), 0), fal = v.lineas.reduce((a, l) => a + Math.max(0, (Number(l.cant) || 0) - eSur(l.id)), 0);
+      $('#rqRes').innerHTML = v.lineas.length ? `<b>${nf(pz)}</b> piezas · ${v.lineas.length} productos${v.sur ? ` · ${fal ? `<span class="txt-mal">faltan ${nf(fal)} piezas en ${esc(sucNom(v.sur))} (se pueden pasar a orden de compra)</span>` : `<span class="txt-ok">${esc(sucNom(v.sur))} tiene existencia de todo</span>`}` : ''}` : ''; };
+    cont.oninput = cont.onchange = e => { const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return; const l = v.lineas[+row.dataset.i];
+      if (f === 'nota') l.nota = e.target.value; else { l.cant = Number(e.target.value) || 0; const fa = Math.max(0, l.cant - eSur(l.id)); row.querySelector('[data-falta]').innerHTML = fa ? `<b class="error">${nf(fa)}</b>` : '<span class="txt-ok">✔</span>'; resumen(); }
+      guardarBorradorReq(); };
+    cont.onclick = e => { const row = e.target.closest('[data-i]'); if (!row || !e.target.closest('[data-del]')) return; v.lineas.splice(+row.dataset.i, 1); guardarBorradorReq(); pintarLineasReq(); };
+    resumen();
+  }
+  function limpiarReq() {
+    if (S.rq && S.rq.lineas.length && !confirm(S.rq.editId ? '¿Salir sin guardar los cambios?' : '¿Descartar la requisición en captura?')) return;
+    const eraEd = !!(S.rq && S.rq.editId);
+    S.rq = reqNueva(); guardarBorradorReq(); V.requisiciones(eraEd ? 'lista' : 'nueva');
+  }
+  async function guardarReq() {
+    const v = S.rq;
+    if (!v.sur) return toast('Selecciona la sucursal que surte', true);
+    if (!v.lineas.length) return toast('Agrega productos', true);
+    if (v.lineas.some(l => !(Number(l.cant) > 0))) return toast('Revisa las cantidades', true);
+    $('#rqGuardar').disabled = true;
+    try {
+      const r = await pedir('guardarRequisicion', { ID_Requisicion: v.editId || v.nuevoId || (v.nuevoId = uid()), nueva: !v.editId, Suc_Solicita: v.sol, Suc_Surte: v.sur,
+        Fecha_Requerida: v.req || '', Comentarios: v.com, lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Nota: l.nota || '' })) });
+      toast('✔ Requisición ' + r.folio + ' guardada · ' + nf(r.piezas) + ' piezas');
+      S.rq = reqNueva(); guardarBorradorReq(); S.tabReq = 'lista';
+      if (S.freq && S.freq.hasta && S.freq.hasta < hoyISO()) { S.freq.hasta = hoyISO(); S.freq.hastaHoy = S.freq.hasta; }
+      V.requisiciones('lista'); verReq(r.id);
+    } catch (e) { if (e.red) toast('Guardar la requisición requiere conexión (quedó en tu borrador)', true); if ($('#rqGuardar')) $('#rqGuardar').disabled = false; }
+  }
+  async function verReq(id) {
+    let d; try { d = await pedir('detalleRequisicion', { id: id }); } catch (e) { return; }
+    S.ultimaReq = d;
+    const provs = {}; d.lineas.filter(l => l.falta > 0).forEach(l => { const k = l.prov ? l.prov.id : ''; (provs[k] = provs[k] || { n: l.prov ? l.prov.n : 'Sin proveedor registrado', l: [] }).l.push(l); });
+    const puedeTr = d.activa && puede('traspasos') && d.tot.aTraspasar > 0, puedeOc = d.activa && puede('compras') && d.tot.falta > 0;
+    modal('Requisición ' + d.folio, `<div class="imprimible">
+      <div class="fila" style="justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.solicita)}</div><div class="muted" style="margin-top:4px">Pidió ${esc(d.solicito || '—')} · ${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</div></div>
+        <div style="text-align:right"><b>REQUISICIÓN DE TRASPASO</b><div style="font-size:18px">${esc(d.folio)}</div><div>${etqReq(d.estado)}</div>${d.requerida ? `<div class="fact-enc">Se requiere el ${esc(d.requerida)}</div>` : ''}</div></div>
+      <div class="kpis" style="margin-top:12px">
+        <div class="kpi"><small>Solicita</small><b style="font-size:17px">${esc(d.solicitaNombre)}</b><span>${nf(d.tot.piezas)} piezas · ${d.lineas.length} productos</span></div>
+        <div class="kpi"><small>Surte</small><b style="font-size:17px">${esc(d.surteNombre)}</b><span>surtido ${nf(d.tot.surtido)} · pendiente ${nf(d.tot.pend)}</span></div>
+        <div class="kpi"><small>Se puede traspasar</small><b>${nf(d.tot.aTraspasar)}</b><span>con la existencia de ${esc(d.surteNombre)}</span></div>
+        <div class="kpi"><small>Faltante (comprar)</small><b class="${d.tot.falta ? 'error' : ''}">${nf(d.tot.falta)}</b><span>${d.tot.falta ? 'piezas que no hay en ' + esc(d.surteNombre) : 'hay existencia de todo'}</span></div></div>
+      <div class="tabla-cont"><table><thead><tr><th>Producto</th><th class="num">Solicitado</th><th class="num">Surtido</th><th class="num">Pendiente</th><th class="num">Exist. ${esc(d.surteNombre)}</th><th class="num">Faltante</th><th class="ocultar-movil">Otras sucursales</th><th class="ocultar-movil">Proveedor sugerido</th></tr></thead><tbody>
+      ${d.lineas.map(l => `<tr><td><b>${esc(l.nombre)}</b><small>${esc([l.prod, l.lab].filter(Boolean).join(' · '))}${l.nota ? ' · ' + esc(l.nota) : ''}</small></td><td class="num"><b>${nf(l.cant)}</b></td><td class="num">${nf(l.surtido)}</td><td class="num">${l.pend ? nf(l.pend) : '—'}</td>
+        <td class="num">${nf(l.exOri)}</td><td class="num">${l.falta ? `<b class="error">${nf(l.falta)}</b>` : '—'}</td>
+        <td class="ocultar-movil"><small>${esc(l.otras.map(o => sucNom(o.s) + ' ' + nf(o.q)).join(' · ')) || '—'}</small></td><td class="ocultar-movil"><small>${l.falta ? esc(l.prov ? l.prov.n : 'Sin proveedor registrado') : ''}</small></td></tr>`).join('')}
+      </tbody></table></div>
+      ${d.comentarios ? `<p><small><b>Comentarios:</b> ${esc(d.comentarios)}</small></p>` : ''}${d.motivo ? `<p><small><b>${d.estado === 'Cancelada' ? 'Cancelación' : 'Cierre'}:</b> ${esc(d.motivo)}</small></p>` : ''}
+      ${d.traspasos.length || d.ocs.length ? `<p class="muted"><small>${d.traspasos.length ? 'Traspasos: <b>' + d.traspasos.map(esc).join(', ') + '</b>' : ''}${d.traspasos.length && d.ocs.length ? ' · ' : ''}${d.ocs.length ? 'Órdenes de compra: <b>' + d.ocs.map(esc).join(', ') + '</b>' : ''}</small></p>` : ''}</div>
+      ${puedeOc ? `<div class="tarjeta no-imprimir" style="margin-top:10px"><h3>📦 Faltantes a orden de compra</h3><p class="muted" style="margin-top:0">Se arma la orden con lo que no hay en ${esc(d.surteNombre)}, por proveedor (el de su última compra).</p>
+        <div class="acciones" style="justify-content:flex-start">${Object.keys(provs).map(k => `<button class="btn" onclick="App.reqAOrden('${esc(k)}')">📦 ${esc(provs[k].n)} · ${nf(provs[k].l.reduce((a, l) => a + l.falta, 0))} pzs</button>`).join('')}</div></div>` : ''}
+      <div class="acciones no-imprimir">
+        <button class="btn" onclick="App.pdfReq('${d.id}')">📄 PDF</button>
+        ${puedeTr ? `<button class="btn primario" onclick="App.reqATraspaso()">🚚 Armar traspaso (${nf(d.tot.aTraspasar)} pzs)</button>` : ''}
+        ${d.editable ? `<button class="btn" onclick="App.editarReq()">✏️ Editar</button>` : ''}
+        ${d.traspasos.length && puede('traspasos') ? d.traspasos.map(f => `<button class="btn" onclick="App.verTraspaso('${esc(f)}')">🚚 ${esc(f)}</button>`).join('') : ''}
+        ${d.estado === 'Cerrada' || d.estado === 'Cancelada' ? `<button class="btn" onclick="App.reabrirReq('${d.id}')">↩️ Reabrir</button>` : ''}
+        ${d.activa ? `<button class="btn peligro" onclick="App.cancelarReq('${d.id}')">${d.tot.surtido ? 'Cerrar (ya no surtir lo pendiente)' : 'Cancelar'}</button>` : ''}
+      </div>`);
+  }
+  function pdfReq(id) { const d = S.ultimaReq || {}; generarPdf('pdfRequisicion', { id: id }, { asunto: 'Requisición ' + (d.folio || ''), texto: 'Interés Veterinario — Requisición de traspaso ' + (d.folio || ''), volver: `App.verReq('${id}')` }); }
+  function editarReq() {
+    const d = S.ultimaReq; if (!d) return;
+    if (S.rq && S.rq.lineas.length && S.rq.editId !== d.id && !confirm('Tienes una requisición en captura que se va a descartar. ¿Continuar?')) return;
+    const iso = t => { const m = String(t || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? m[3] + '-' + m[2] + '-' + m[1] : ''; };
+    S.rq = { editId: d.id, editFolio: d.folio, sol: d.solicita, sur: d.surte, com: d.comentarios, req: iso(d.requerida), lineas: d.lineas.map(l => ({ id: l.prod, cant: l.cant, nota: l.nota })) };
+    guardarBorradorReq(); cerrarModal(); S.tabReq = 'nueva'; ir('requisiciones', true);
+  }
+  function reqATraspaso() {
+    const d = S.ultimaReq; if (!d) return;
+    if ((D().permitidas || []).indexOf(d.surte) < 0) return toast('El traspaso lo registra ' + d.surteNombre + ' (la sucursal que surte)', true);
+    const l = d.lineas.filter(x => x.aTraspasar > 0);
+    if (S.tr && S.tr.lineas && S.tr.lineas.length && !confirm('Ya tienes un traspaso en captura. ¿Reemplazarlo?')) return;
+    S.tr = { ori: d.surte, des: d.solicita, recibio: '', com: 'Requisición ' + d.folio + (d.comentarios ? ' · ' + d.comentarios : ''), lineas: l.map(x => ({ id: x.prod, cant: x.aTraspasar, lote: '' })),
+      paq: '', guia: '', flete: '', req: { id: d.id, folio: d.folio } };
+    cerrarModal(); S.tabTr = 'nuevo'; ir('traspasos', true);
+    toast('Traspaso armado con ' + l.length + ' productos de la requisición ' + d.folio + '. Revisa lotes y método de envío.');
+  }
+  function reqAOrden(prov) {
+    const d = S.ultimaReq; if (!d) return;
+    const l = d.lineas.filter(x => x.falta > 0 && (x.prov ? x.prov.id : '') === prov);
+    if (!l.length) return;
+    if (S.oc && S.oc.lineas && S.oc.lineas.length && !confirm('Ya tienes una orden de compra en captura. ¿Reemplazarla con los faltantes?')) return;
+    const pv = (D().proveedores || []).find(p => p.id === prov);
+    const suc = (D().permitidas || []).indexOf(d.surte) >= 0 ? d.surte : sucTrabajo();
+    S.oc = { prov: pv ? prov : '', suc: suc, factura: '', fecha: hoyISO(), dias: pv ? pv.credito : '', descEsp: 0, descPP: 0, flete: 0, recibido: false, actCosto: false,
+      obs: 'Faltantes de la requisición ' + d.folio, lineas: l.map(x => { const p = prod(x.prod) || {}; return { id: x.prod, cant: x.falta, precio: p.costo || 0, desc: 0, lote: '', cad: '' }; }), pago: 0,
+      req: { id: d.id, folio: d.folio } };
+    cerrarModal(); ir('compras', true); V.compras('nueva');
+    toast('Orden armada con ' + l.length + ' faltantes' + (pv ? '' : ' (elige el proveedor)') + '. Revísala y guárdala (queda pendiente de recibir).');
+  }
+  async function cancelarReq(id) {
+    const d = S.ultimaReq || {}, cerrar = d.tot && d.tot.surtido > 0;
+    const motivo = prompt(cerrar ? 'Motivo para cerrar (lo pendiente ya no se surtirá):' : 'Motivo de la cancelación:'); if (motivo === null) return;
+    try { const r = await pedir('cancelarRequisicion', { id: id, motivo: motivo }); toast('Requisición ' + (r.estado === 'Cerrada' ? 'cerrada' : 'cancelada')); verReq(id); if ($('#lReq')) cargarReq(); } catch (e) {}
+  }
+  async function reabrirReq(id) {
+    if (!confirm('¿Reabrir la requisición?')) return;
+    try { await pedir('reabrirRequisicion', { id: id }); toast('Requisición reabierta'); verReq(id); if ($('#lReq')) cargarReq(); } catch (e) {}
+  }
 
   /* ---------- AJUSTES Y MERMAS ---------- */
   V.ajustes = (tab) => {
@@ -4868,6 +5053,7 @@ const App = (() => {
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
     vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
+    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } },
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes,

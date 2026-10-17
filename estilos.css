@@ -130,6 +130,7 @@ textarea { min-height: 70px; resize: vertical; }
 .kpi-clic:hover { background: var(--marca-suave); }
 .kpi-clic small::after { content: ' ›'; }
 .txt-mal, .kpi .txt-mal { color: var(--peligro); font-weight: 600; display: inline; font-size: inherit; margin: 0; letter-spacing: 0; }
+.txt-ok { color: var(--ok); font-weight: 600; }
 .grafica { position: relative; height: 280px; }
 
 /* Tablas */
