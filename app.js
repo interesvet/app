@@ -3802,7 +3802,7 @@ const App = (() => {
       filtrosProd(`<label class="check fijo"><input type="checkbox" id="pfFicha"> Solo con ficha técnica</label><label class="check fijo"><input type="checkbox" id="pfElegidos"> Solo elegidos</label>
         <button class="btn chico fijo" id="pfMarcar">☑️ Elegir los visibles</button>`) + '<div id="pRes"></div>';
     const enPdf = () => { const ids = Object.keys(C.ids).filter(k => C.ids[k]), filtro = C.labs.length || C.cats.length;
-      return ps.filter(p => C.ids[p.id] || (p.activo && (filtro || !ids.length) && (!C.labs.length || C.labs.indexOf(p.lab) >= 0) && (!C.cats.length || C.cats.indexOf(p.categoria) >= 0))); };
+      return ps.filter(p => p.activo && (C.ids[p.id] || ((filtro || !ids.length) && (!C.labs.length || C.labs.indexOf(p.lab) >= 0) && (!C.cats.length || C.cats.indexOf(p.categoria) >= 0)))); };
     S.portEnPdf = enPdf;
     const cuenta = () => { const l = enPdf(), nG = agruparPortafolio(l).length, nP = Object.keys(C.ids).filter(k => C.ids[k]).length;
       $('#cpCuenta').innerHTML = `El PDF llevará <b>${nG}</b> ${nG === 1 ? 'producto' : 'productos'}${l.length > nG ? ' <span class="muted">(' + l.length + ' presentaciones juntas)</span>' : ''}${nG > PORT_LOTE ? ' <span class="muted">· se arma por partes; puede tardar unos minutos</span>' : ''}` +
@@ -3924,20 +3924,38 @@ const App = (() => {
     try {
       await prepararSinFondo(lista.reps.filter(id => fotoDe[id]), (n, tot) => prog('Quitando el fondo de las imágenes: ' + n + ' de ' + tot + ' (solo la primera vez)…', 3 + 27 * n / Math.max(1, tot)));
     } catch (e) { if (e.red) return; }
-    const n = lista.grupos.length;
-    if (n <= PORT_LOTE) { prog('Armando el PDF… puede tardar unos segundos.', 90); return generarPdf('pdfCatalogo', sel, info); }
-    // ---- portafolio grande: por partes (cada producto con todas sus presentaciones va en la misma parte)
-    const partes = Math.ceil(n / PORT_LOTE), pdfs = [];
+    const n = lista.grupos.length, SEC = lista.secciones || [];
+    // ---- por partes: portada (+ "Acerca de…"), índice y cada categoría en hoja nueva; luego se numeran las hojas
+    const comun = { parte: true, todosLabs: lista.todosLabs, todosCats: lista.todosCats, total: n, titulo: lista.titulo };
+    const trozos = []; SEC.forEach((s, si) => { for (let i = 0; i < s.grupos.length; i += PORT_LOTE) trozos.push({ si: si, orden: [].concat.apply([], s.grupos.slice(i, i + PORT_LOTE)), nCat: s.n }); });
     try {
-      for (let k = 0; k < partes; k++) {
-        prog('Armando el PDF: parte ' + (k + 1) + ' de ' + partes + '…', 30 + 50 * k / partes);
-        const ini = k * PORT_LOTE, r = await pedir('pdfCatalogo', { orden: [].concat.apply([], lista.grupos.slice(ini, ini + PORT_LOTE)), parte: true, portada: k === 0, pie: k === partes - 1,
-          labPrevio: ini ? lista.labs[ini - 1] : '', todosLabs: lista.labs, total: n, titulo: lista.titulo });
-        pdfs.push(r.b64);
+      const PL = await cargarPdfLib(), cargar = async b => PL.PDFDocument.load(b64aBytes(b));
+      prog('Armando la portada…', 31);
+      const portada = await cargar((await pedir('pdfCatalogo', Object.assign({ tipo: 'portada', labs: C.labs, cats: C.cats, ids: ids }, comun))).b64);
+      const cuerpos = new Array(trozos.length); let hechos = 0;
+      for (let k = 0; k < trozos.length; k += 3) {          // de 3 en 3 al mismo tiempo
+        await Promise.all(trozos.slice(k, k + 3).map(async (t, q) => {
+          const r = await pedir('pdfCatalogo', Object.assign({ tipo: 'cuerpo', orden: t.orden, nCat: t.nCat, pie: k + q === trozos.length - 1 }, comun));
+          cuerpos[k + q] = await cargar(r.b64); hechos++; prog('Armando el PDF: ' + hechos + ' de ' + trozos.length + ' partes…', 33 + 45 * hechos / trozos.length);
+        }));
       }
-      prog('Uniendo las ' + partes + ' partes…', 82);
-      const PL = await cargarPdfLib(), doc = await PL.PDFDocument.create();
-      for (const b of pdfs) { const src = await PL.PDFDocument.load(b64aBytes(b)); (await doc.copyPages(src, src.getPageIndices())).forEach(pg => doc.addPage(pg)); }
+      // páginas de cada categoría → índice (si el índice ocupa más de una hoja, se recalcula)
+      const pagSec = SEC.map(() => 0); trozos.forEach((t, k) => pagSec[t.si] += cuerpos[k].getPageCount());
+      let nIdx = 1, idx = null;
+      for (let vuelta = 0; vuelta < 3; vuelta++) {
+        let pag = portada.getPageCount() + nIdx + 1;
+        const items = SEC.map((s, si) => { const x = { lab: s.lab, cat: s.cat, n: s.n, pag: pag }; pag += pagSec[si]; return x; });
+        prog('Armando el índice…', 80);
+        idx = await cargar((await pedir('pdfCatalogo', Object.assign({ tipo: 'indice', indice: items }, comun))).b64);
+        if (idx.getPageCount() === nIdx) break; nIdx = idx.getPageCount();
+      }
+      prog('Uniendo las partes…', 84);
+      const doc = await PL.PDFDocument.create();
+      for (const src of [portada, idx].concat(cuerpos)) (await doc.copyPages(src, src.getPageIndices())).forEach(pg => doc.addPage(pg));
+      // número de página (menos en la portada)
+      const fuente = await doc.embedFont(PL.StandardFonts.Helvetica), gris = PL.rgb(0.42, 0.45, 0.4);
+      doc.getPages().forEach((pg, i) => { if (!i) return; const t = String(i + 1), w = fuente.widthOfTextAtSize(t, 9);
+        pg.drawText(t, { x: pg.getWidth() - 34 - w, y: 20, size: 9, font: fuente, color: gris }); });
       doc.setTitle('Portafolio de productos — Interés Veterinario'); doc.setAuthor('Interés Veterinario');
       const bytes = await doc.save(), nombre = (/^Portafolio/.test(lista.titulo) ? '' : 'Portafolio ') + String(lista.titulo).slice(0, 60) + ' ' + hoyISO();
       const local = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
