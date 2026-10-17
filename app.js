@@ -299,7 +299,7 @@ const App = (() => {
   }
   function salir(msg) {
     if (S.cola.length && !confirm('Tienes ' + S.cola.length + ' operaciones sin sincronizar. Se conservarán en este dispositivo. ¿Salir?')) return;
-    S.token = null; LS.del('token'); CQ.borrar(); quitarAvisoCache();
+    S.token = null; LS.del('token'); CQ.borrar(); quitarAvisoCache(); { const bv = $('#bienvenida'); if (bv) bv.classList.add('oculto'); document.body.classList.remove('con-bienv'); }
     $('#app').classList.add('oculto'); $('#login').classList.remove('oculto');
     if (msg) $('#lgErr').textContent = msg;
   }
@@ -492,9 +492,55 @@ const App = (() => {
     (V[m.id] || V.inicio)();
     window.scrollTo(0, 0);
   }
+  /* ---------- BIENVENIDA (solo celulares y tabletas: iPhone, iPad, Android) ---------- */
+  const esMovil = () => { try { return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) || window.innerWidth <= 820; } catch (e) { return window.innerWidth <= 820; } };
+  const SUB_MENU = { inicio: 'Resultados y resumen del día', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
+    seguimiento: 'Clientes por atender y visitas', compras: 'Órdenes de compra y pedido sugerido', gastos: 'Gastos del negocio', sucursales: 'Inventario, traspasos y requisiciones',
+    productos: 'Catálogo, portafolio y precios', clientes: 'Cartera de clientes', proveedores: 'Laboratorios y distribuidores', config: 'Folios, permisos y ajustes' };
+  function saludo() { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; }
+  function bienvenida() {
+    let el = $('#bienvenida');
+    if (!el) { el = document.createElement('section'); el.id = 'bienvenida'; el.className = 'bienv'; document.body.appendChild(el); }
+    const u = U(), items = MENU.filter(m => !m.oculto && puede(m.p) && m.id !== 'venta').map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null; return { id: m.id, e: solo || m }; });
+    const fecha = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+    const nombre = String(u.apodo || u.nombre || '').trim().split(/\s+/).slice(0, 2).map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
+    el.innerHTML = `<div class="bienv-fondo" aria-hidden="true"></div>
+      <div class="bienv-cont">
+        <div class="bienv-top"><span class="bienv-pill"><i class="${S.online ? 'ok' : ''}"></i>${S.online ? 'En línea' : 'Sin conexión'}</span>
+          <span class="bienv-pill">🏬 ${esc(sucNom(sucTrabajo()))}</span></div>
+        <div class="bienv-marca">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : '<b>Interés Veterinario</b>'}</div>
+        <div class="bienv-tit"><b>CRM &amp; Ventas</b><span>Inteligencia y Gestión Comercial</span></div>
+        <div class="bienv-hola"><h2>${saludo()}${nombre ? ', ' + esc(nombre) : ''}</h2><p>${esc(fecha.charAt(0).toUpperCase() + fecha.slice(1))} · ${esc(u.rolNombre || u.rol || '')}</p></div>
+        ${puede('ventas') ? `<button class="bienv-cta" onclick="App.bienvIr('venta')"><span>🛒</span><div><b>Nueva venta</b><small>Captura una nota en segundos</small></div><em>›</em></button>` : ''}
+        <div class="bienv-grid">${items.map(x => `<button class="bienv-item" onclick="App.bienvIr('${x.id}')"><span class="bienv-ico">${x.e.i}</span><b>${esc(x.e.t)}</b><small>${esc(SUB_MENU[x.id] || '')}</small></button>`).join('')}</div>
+        <div class="bienv-pie">Interés Veterinario · ${new Date().getFullYear()}${S.cola && S.cola.length ? ` · <b>${S.cola.length} por sincronizar</b>` : ''}</div>
+      </div>`;
+    el.classList.remove('oculto'); el.scrollTop = 0; document.body.classList.add('con-bienv');
+  }
+  function bienvIr(id) { const el = $('#bienvenida'); if (el) el.classList.add('oculto'); document.body.classList.remove('con-bienv'); ir(id); }
+  function botonBienvenida() {
+    if ($('#btnBienv') || !esMovil()) return;
+    const t = $('#titulo'); if (!t) return;
+    const b = document.createElement('button'); b.id = 'btnBienv'; b.className = 'icono btn-bienv'; b.setAttribute('aria-label', 'Menú principal'); b.innerHTML = '<span></span><span></span><span></span><span></span>';
+    b.onclick = bienvenida; t.parentNode.insertBefore(b, t);
+  }
+  /* ---------- versión nueva de la app (web de Google): avisa para recargar y no usar una versión vieja ---------- */
+  async function revisarVersion(forzar) {
+    if (window.IV_API || !S.token) return false;                       // la app instalable tiene su propio aviso
+    let r; try { r = await pedir('versionCliente', {}, true); } catch (e) { return false; }
+    if (!r || !r.v) return false;
+    if (!S.verCli) { S.verCli = r.v; return false; }
+    if (r.v === S.verCli) return false;
+    if (!$('#avisoVersion')) { const b = document.createElement('div'); b.id = 'avisoVersion'; b.className = 'aviso-version';
+      b.innerHTML = `<span>✨ Hay una versión nueva de la app</span><a class="btn primario chico" href="${esc(r.url || '#')}" target="_top" onclick="${r.url ? '' : 'location.reload();return false'}">Actualizar</a>`; document.body.appendChild(b); }
+    if (forzar) toast('Hay una versión nueva de la app: toca “Actualizar” antes de continuar', true);
+    return true;
+  }
   function mostrarApp() {
     $('#login').classList.add('oculto'); $('#app').classList.remove('oculto');
     marcarRed(S.online); pintarCola(); ir(S.vista);
+    botonBienvenida(); if (esMovil()) bienvenida();
+    revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => revisarVersion(), 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') revisarVersion(); }); }
     // logotipos de sucursal guardados con fondo blanco: el administrador los deja sin fondo (una vez, en segundo plano)
     if (U().rol === 'Administrador') setTimeout(() => { try { repararMinisSuc(D().sucursales || []); } catch (e) {} }, 6000);
   }
@@ -3911,6 +3957,7 @@ const App = (() => {
   async function pdfCatalogo() {
     const C = S.catPdf || { labs: [], cats: [], ids: {} }, l = S.portEnPdf ? S.portEnPdf() : [];
     if (!l.length) return toast('No hay productos en la selección', true);
+    if (await revisarVersion(true)) return;
     const ids = Object.keys(C.ids || {}).filter(k => C.ids[k]), sel = { labs: C.labs, cats: C.cats, ids: ids };
     const nT = agruparPortafolio(l).length;
     const t = [C.labs.join(', '), C.cats.join(', ')].filter(Boolean).join(' · ') || (ids.length ? 'Selección de productos' : 'Portafolio completo');
@@ -5114,6 +5161,7 @@ const App = (() => {
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
     vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
+    bienvenida, bienvIr,
     vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } },
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
