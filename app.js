@@ -537,7 +537,7 @@ const App = (() => {
     { id: 'visitas', t: 'Visitas', i: '📅', p: 'seguimiento', oculto: 1 },
     { id: 'recetas', t: 'Recetas', i: '💊', p: 'recetas', oculto: 1 },
     { id: 'compras', t: 'Compras', i: '📦', p: ['compras', 'traspasos'] },
-    { id: 'gastos', t: 'Gastos', i: '🔒', p: 'dueno' },
+    { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos'] },
     { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'requisiciones', 'ajustes', 'mermas', 'inventario_fisico'] },
     { id: 'traspasos', t: 'Traspasos', i: '🚚', p: 'traspasos', oculto: 1 },
     { id: 'requisiciones', t: 'Requisiciones de traspaso', i: '📑', p: 'requisiciones', oculto: 1 },
@@ -2390,10 +2390,12 @@ const App = (() => {
   const GRUPOS_G = ['Operación', 'Financiero', 'Inversión', 'Excluir'];
   const NOMBRE_G = { 'Operación': 'Gastos de operación', 'Financiero': 'Gastos financieros', 'Inversión': 'Inversiones (activo fijo)', 'Excluir': 'Excluidos (personales)' };
   V.gastos = (tab) => {
+    if (!puede('dueno')) return vistaPorClasificar(false);   // contador: solo la pestaña de facturas por clasificar
     tab = tab || S.tabGas || 'resumen'; S.tabGas = tab;
+    if (tab === 'clasificar') return vistaPorClasificar(true);
     const h = hoyISO(), f = alDia(S.fgas || (S.fgas = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, grupo: '', categoria: '', texto: '' }));
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
-    $('#vista').innerHTML = `<div class="pestanas">${tb('resumen', 'Estado de gastos')}${tb('mes', 'Por mes')}${tb('facturas', 'Facturas')}${tb('inversion', 'Inversiones')}${tb('emisores', 'Proveedores')}</div>
+    $('#vista').innerHTML = `<div class="pestanas">${tb('resumen', 'Estado de gastos')}${tb('mes', 'Por mes')}${tb('facturas', 'Facturas')}${tb('inversion', 'Inversiones')}${tb('emisores', 'Proveedores')}${tb('clasificar', '🏷️ Por clasificar')}</div>
       <div class="tarjeta no-imprimir"><div class="fila">
         <label>Desde<input type="date" id="gDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="gHasta" value="${f.hasta}"></label>
         <label>Sucursal<select id="gSuc">${opts(D().sucursales || [], f.sucursal || '', 'Todas')}</select></label>
@@ -2484,7 +2486,7 @@ const App = (() => {
         { t: 'Categorías', k: 'cats', cls: 'ocultar-movil' }, { t: 'Grupo', k: 'grupo' }, { t: 'Facturas', num: 1, h: x => nf(x.n) }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }], r.emisores) + '</div>';
     }
     $('#gRes').innerHTML = html;
-    if ($('#gAviso')) $('#gAviso').innerHTML = r.porClasificar ? `<div class="tarjeta aviso-cl" style="border-left:4px solid var(--aviso);margin-top:8px">🏷️ Hay <b>${nf(r.porClasificar)}</b> factura(s) <b>POR CLASIFICAR</b> (llegaron de un proveedor nuevo). <button class="btn chico" onclick="App.filtrarCatGasto('POR CLASIFICAR')">Clasificar</button></div>` : '';
+    if ($('#gAviso')) $('#gAviso').innerHTML = r.porClasificar ? `<div class="tarjeta aviso-cl" style="border-left:4px solid var(--aviso);margin-top:8px">🏷️ Hay <b>${nf(r.porClasificar)}</b> factura(s) <b>POR CLASIFICAR</b> (llegaron de un proveedor nuevo). <button class="btn chico" onclick="App.vistaGastos('clasificar')">Clasificar</button></div>` : '';
     if (tab === 'resumen') {
       barras('gcOp', r.resumen.filter(x => x.grupo === 'Operación').map(x => ({ nombre: x.cat, valor: x.monto })), css('--aviso'), true);
       barras('gcGrupo', [{ nombre: 'Operación', valor: t.operacion }, { nombre: 'Depreciación', valor: t.depreciacion }, { nombre: 'Financieros', valor: t.financiero }, { nombre: 'Inversiones', valor: t.inversion }, { nombre: 'Excluidos', valor: t.excluir }], css('--s1'), true);
@@ -2504,6 +2506,50 @@ const App = (() => {
     if (!uuid && !confirm('¿Asignar ' + uuids.length + ' facturas a ' + (suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(suc)) + '?')) return;
     try { const r = await pedir('asignarSucursalGasto', { uuids: uuids, ID_Sucursal: suc }, !!uuid); toast('✔ ' + r.asignadas + ' factura(s) → ' + (suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(suc))); if (!uuid) cargarGastos(); else S.datGasKey = ''; } catch (e) { if (uuid) toast(e.message, true); }
   }
+  /* ---------- Facturas por clasificar (dueño y contador / permiso clasificar_gastos) ---------- */
+  async function vistaPorClasificar(conPestanas) {
+    S.tabGas = 'clasificar';
+    const tb = (id, n) => `<button class="${id === 'clasificar' ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
+    $('#vista').innerHTML = (conPestanas ? `<div class="pestanas">${tb('resumen', 'Estado de gastos')}${tb('mes', 'Por mes')}${tb('facturas', 'Facturas')}${tb('inversion', 'Inversiones')}${tb('emisores', 'Proveedores')}${tb('clasificar', '🏷️ Por clasificar')}</div>` : '') +
+      `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>🏷️ Facturas de gastos por clasificar</b><br><small class="muted">Llegaron de proveedores nuevos (por correo o subidas) y no se les pudo poner categoría. Elige la categoría de cada una; si marcas "todas del proveedor", también se usa para las que lleguen después de ese mismo RFC. Las que no tienen categoría no cuentan en los gastos.</small></div>
+        <label>Buscar<input id="pcTxt" placeholder="Proveedor o RFC"></label></div></div><div class="espacio"></div><div id="pcRes"><div class="vacio">Cargando…</div></div>`;
+    let r; try { r = S.porClasif = await pedir('gastosPorClasificar', {}); } catch (e) { if ($('#pcRes')) $('#pcRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    S.catsGas = S.catsGas && S.catsGas.length ? S.catsGas : r.categorias.map(c => c.cat);
+    $('#pcTxt').oninput = () => pintarPorClasificar();
+    pintarPorClasificar();
+  }
+  function pintarPorClasificar() {
+    const r = S.porClasif, el = $('#pcRes'); if (!r || !el) return;
+    const q = ($('#pcTxt') ? $('#pcTxt').value : '').trim().toLowerCase();
+    const l = r.facturas.filter(x => !q || (x.emisor + ' ' + x.rfc).toLowerCase().indexOf(q) >= 0);
+    const grupo = {}; r.categorias.forEach(c => grupo[c.cat] = c.grupo);
+    const optCats = sug => `<option value="">Elige categoría…</option>` + ['Operación', 'Financiero', 'Inversión', 'Excluir'].map(g => { const cs = r.categorias.filter(c => c.grupo === g); return cs.length ? `<optgroup label="${esc(g === 'Excluir' ? 'Excluir (personal / no es del negocio)' : g)}">${cs.map(c => `<option ${c.cat === sug ? 'selected' : ''}>${esc(c.cat)}</option>`).join('')}</optgroup>` : ''; }).join('') + `<option value="__nueva">+ Otra categoría…</option>`;
+    el.innerHTML = !r.facturas.length ? '<div class="vacio">✔ No hay facturas por clasificar</div>' :
+      `<p class="muted">${nf(r.total)} factura(s) por clasificar${l.length !== r.facturas.length ? ' · mostrando ' + nf(l.length) : ''}</p>` +
+      l.map(x => `<div class="tarjeta" data-pc="${esc(x.uuid)}"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="flex:3 1 240px"><b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)} · ${esc(x.fecha)}${x.metodo ? ' · ' + esc(x.metodo) : ''}</small>${x.concepto && x.concepto.trim() ? `<br><small>🧾 ${esc(x.concepto)}</small>` : ''}</div>
+        <div style="text-align:right"><b>${$$(x.total)}</b><br><small class="muted">${$$(x.subtotal)} + IVA ${$$(x.iva)}</small></div></div>
+        <div class="fila" style="margin-top:8px"><label style="flex:3 1 240px">Categoría${x.sugerida ? ' <small class="muted">(sugerida por el historial del proveedor)</small>' : ''}<select data-cat>${optCats(x.sugerida)}</select></label>
+          <label class="check fijo"><input type="checkbox" data-todas checked> Todas de este proveedor</label>
+          <button class="btn primario fijo" onclick="App.guardarClasif('${esc(x.uuid)}')">✔ Guardar</button>
+          <button class="btn fijo" ${x.pdf || x.xml ? '' : 'disabled title="Sin archivos"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄 PDF</button></div></div>`).join('');
+  }
+  async function guardarClasif(uuid) {
+    const card = document.querySelector(`[data-pc="${CSS.escape(uuid)}"]`); if (!card) return;
+    let cat = card.querySelector('[data-cat]').value, todas = card.querySelector('[data-todas]').checked;
+    if (!cat) return toast('Elige la categoría', true);
+    if (cat === '__nueva') { cat = (prompt('Nombre de la nueva categoría:') || '').trim().toUpperCase(); if (!cat) return; }
+    try {
+      const r = await pedir('clasificarGasto', { uuid: uuid, categoria: cat, todasDelProveedor: todas });
+      toast('✔ ' + r.cambiadas + ' factura(s) → ' + cat);
+      const x = S.porClasif.facturas.find(f => f.uuid === uuid), rfc = x ? x.rfc : '';
+      S.porClasif.facturas = S.porClasif.facturas.filter(f => f.uuid !== uuid && !(todas && f.rfc === rfc));
+      S.porClasif.total = S.porClasif.facturas.length;
+      if (!S.porClasif.categorias.some(c => c.cat === cat)) S.porClasif.categorias.push({ cat: cat, grupo: 'Operación' });
+      S.datGasKey = ''; pintarPorClasificar();
+    } catch (e) {}
+  }
+
   /* ---------- Facturas de gastos: subir, correo, ver PDF, clasificar ---------- */
   const selCatGasto = x => `<select class="chico" style="border-color:var(--aviso)" onchange="App.clasificarGasto('${esc(x.uuid)}', this.value, '${esc(x.emisor).replace(/'/g, "\\'")}')"><option value="">🏷️ Por clasificar…</option>${(S.catsGas || []).filter(c => c !== 'POR CLASIFICAR').map(c => `<option>${esc(c)}</option>`).join('')}<option value="__nueva">+ Otra categoría…</option></select>`;
   async function clasificarGasto(uuid, cat, emisor) {
@@ -6251,7 +6297,7 @@ const App = (() => {
   /* ---------------- API pública (para onclick) ---------------- */
   return {
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, asignarSucGastos, cargarSucursales, verSucursal,
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, asignarSucGastos, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
