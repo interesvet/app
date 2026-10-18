@@ -6229,11 +6229,13 @@ const App = (() => {
   }
   function pintarGrupos() {
     const g = S.grupos;
-    $('#cfGrupos').innerHTML = `<div class="tabla-cont"><table><thead><tr><th>Tipo</th><th>Emisor contiene / Categoría</th><th>Grupo</th><th>Depreciación % anual</th><th>Nota</th><th></th></tr></thead><tbody>
+    $('#cfGrupos').innerHTML = `<div class="tabla-cont"><table><thead><tr><th>Tipo</th><th>Emisor contiene / Categoría</th><th>Grupo</th><th>Depreciación % anual</th><th title="Pagos que cubren varios meses (seguro anual): se reparten en partes iguales">Repartir en meses</th><th>Nota</th><th></th></tr></thead><tbody>
       ${g.filas.map((f, i) => `<tr data-i="${i}"><td><select data-f="tipo">${opts([['Emisor', 'Emisor'], ['Categoria', 'Categoría']], f.tipo)}</select></td>
         <td><input data-f="valor" value="${esc(f.valor)}"></td><td><select data-f="grupo">${opts(g.grupos.map(x => [x, x]), f.grupo)}</select></td>
         <td>${f.grupo === 'Inversión' ? `<input type="number" data-f="tasa" style="width:80px" placeholder="auto" value="${f.tasa === '' || f.tasa === undefined ? '' : f.tasa}">` : '<small class="muted">—</small>'}</td>
+        <td>${f.grupo !== 'Inversión' && f.grupo !== 'Excluir' ? `<input type="number" data-f="meses" style="width:70px" min="0" max="60" placeholder="—" value="${f.meses || ''}">` : '<small class="muted">—</small>'}</td>
         <td><input data-f="nota" value="${esc(f.nota || '')}"></td><td><button class="icono" data-del>✕</button></td></tr>`).join('')}</tbody></table></div>
+      <p class="muted" style="margin-top:6px">"Repartir en meses": para pagos que cubren varios meses (p. ej. un seguro anual = 12): el gasto se reparte en partes iguales desde el mes de la factura, en lugar de cargarse completo en un solo mes.</p>
       <div class="acciones"><button class="btn" onclick="App.agregarGrupo()">+ Agregar regla</button><button class="btn primario" onclick="App.guardarGrupos()">Guardar</button></div>`;
     const t = $('#cfGrupos');
     t.oninput = e => { const r = e.target.closest('[data-i]'), f = e.target.dataset.f; if (r && f) S.grupos.filas[+r.dataset.i][f] = e.target.value; };
