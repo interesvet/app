@@ -2511,10 +2511,11 @@ const App = (() => {
     S.tabGas = 'clasificar';
     const tb = (id, n) => `<button class="${id === 'clasificar' ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
     $('#vista').innerHTML = (conPestanas ? `<div class="pestanas">${tb('resumen', 'Estado de gastos')}${tb('mes', 'Por mes')}${tb('facturas', 'Facturas')}${tb('inversion', 'Inversiones')}${tb('emisores', 'Proveedores')}${tb('clasificar', '🏷️ Por clasificar')}</div>` : '') +
-      `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>🏷️ Facturas de gastos por clasificar</b><br><small class="muted">Llegaron de proveedores nuevos (por correo o subidas) y no se les pudo poner categoría. Elige la categoría de cada una; si marcas "todas del proveedor", también se usa para las que lleguen después de ese mismo RFC. Las que no tienen categoría no cuentan en los gastos.</small></div>
+      `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>🏷️ Facturas de gastos por clasificar</b><br><small class="muted">Llegaron de proveedores nuevos (por correo o subidas) y no se les pudo poner categoría. Elige la categoría de cada una; si marcas "todas del proveedor", también se usa para las que lleguen después de ese mismo RFC. Mientras no tengan categoría cuentan como gastos de operación. Si es una <b>compra</b> a un proveedor (mercancía), toca "🧾 Es compra": se pasa a Compras y deja de contar como gasto.</small></div>
         <label>Buscar<input id="pcTxt" placeholder="Proveedor o RFC"></label></div></div><div class="espacio"></div><div id="pcRes"><div class="vacio">Cargando…</div></div>`;
     let r; try { r = S.porClasif = await pedir('gastosPorClasificar', {}); } catch (e) { if ($('#pcRes')) $('#pcRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     S.catsGas = S.catsGas && S.catsGas.length ? S.catsGas : r.categorias.map(c => c.cat);
+    if (r.movidas && r.movidas.length) toast('🧾 ' + r.movidas.length + ' factura(s) de proveedores del catálogo se pasaron a Compras');
     $('#pcTxt').oninput = () => pintarPorClasificar();
     pintarPorClasificar();
   }
@@ -2532,7 +2533,15 @@ const App = (() => {
         <div class="fila" style="margin-top:8px"><label style="flex:3 1 240px">Categoría${x.sugerida ? ' <small class="muted">(sugerida por el historial del proveedor)</small>' : ''}<select data-cat>${optCats(x.sugerida)}</select></label>
           <label class="check fijo"><input type="checkbox" data-todas checked> Todas de este proveedor</label>
           <button class="btn primario fijo" onclick="App.guardarClasif('${esc(x.uuid)}')">✔ Guardar</button>
-          <button class="btn fijo" ${x.pdf || x.xml ? '' : 'disabled title="Sin archivos"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄 PDF</button></div></div>`).join('');
+          <button class="btn fijo" ${x.pdf || x.xml ? '' : 'disabled title="Sin archivos"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄 PDF</button>
+          ${x.xml ? `<button class="btn fijo" onclick="App.gastoACompra('${esc(x.uuid)}')">🧾 Es compra</button>` : ''}</div></div>`).join('');
+  }
+  async function gastoACompra(uuid) {
+    const x = S.porClasif.facturas.find(f => f.uuid === uuid); if (!x) return;
+    if (!confirm('¿Pasar la factura de ' + x.emisor + ' (' + $$(x.total) + ') a Compras? Dejará de contar como gasto.')) return;
+    try { const r = await pedir('moverGastoACompras', { uuid: uuid });
+      toast('🧾 Pasada a Compras' + (r.accion ? ' · ' + r.accion : ''));
+      S.porClasif.facturas = S.porClasif.facturas.filter(f => f.uuid !== uuid); S.porClasif.total = S.porClasif.facturas.length; S.datGasKey = ''; pintarPorClasificar(); } catch (e) {}
   }
   async function guardarClasif(uuid) {
     const card = document.querySelector(`[data-pc="${CSS.escape(uuid)}"]`); if (!card) return;
@@ -6297,7 +6306,7 @@ const App = (() => {
   /* ---------------- API pública (para onclick) ---------------- */
   return {
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, asignarSucGastos, cargarSucursales, verSucursal,
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, gastoACompra, asignarSucGastos, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
