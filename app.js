@@ -3094,6 +3094,15 @@ const App = (() => {
       if (adjs.length) { try { for (const u of adjs) await pedir('subirAdjuntoPago', { id: r.id || idPago, dataUri: u }); msg += adjs.length > 1 ? ' · foto y PDF adjuntos' : ' · comprobante adjunto'; } catch (e) { msg += ' · un comprobante no se pudo subir: agrégalo desde Pagos a proveedores'; } }
       toast(msg); cerrarModal(); if ($('#lOC')) buscarCompras(); if ($('#lPP')) buscarPagosProv(); } catch (e) {}
   }
+  /** Precio para la orden de compra: el de la compra más reciente (con ese proveedor si ya se le compró; si no, con cualquiera);
+      si nunca se ha comprado, el costo de lista. */
+  function costoCompra(id, prov) {
+    const p = prod(id) || {}; let u = null, otro = false;
+    if (prov && p.uc && p.uc[4] === prov) u = p.uc; else if (prov && p.ucp && p.ucp[prov]) u = p.ucp[prov]; else { u = p.uc; otro = !!(prov && u); }
+    if (u && u[0] > 0) return { precio: u[0], desc: u[1] || 0, ref: { f: u[2] || '', oc: u[3] || '', otro: otro } };
+    return { precio: p.costo || 0, desc: 0, ref: null };
+  }
+  function lineaCompra(id, cant, prov) { const c = costoCompra(id, prov); return { id: id, cant: cant, precio: c.precio, desc: c.desc, lote: '', cad: '', auto: true, ref: c.ref }; }
   function nuevaCompra() {
     if (!S.oc) S.oc = { prov: '', suc: sucTrabajo(), factura: '', fecha: hoyISO(), dias: '', descEsp: 0, descPP: 0, flete: 0, recibido: true, actCosto: true, obs: '', lineas: [], pago: 0 };
     const o = S.oc, cat = D().catalogos;
@@ -3118,7 +3127,9 @@ const App = (() => {
     $('#ocSuc').addEventListener('change', () => mostrarFolio('ocFolio', o.suc, 'Orden de Compra'));
     mostrarFolio('ocFolio', o.suc, 'Orden de Compra');
     bind('#ocFlete', 'flete', 'n'); bind('#ocRec', 'recibido', 'c'); bind('#ocCosto', 'actCosto', 'c'); bind('#ocObs', 'obs'); bind('#ocPago', 'pago', 'n');
-    buscador($('#ocProd'), { fuente: fuenteProductos(o.suc, null, false), limpiar: true, alElegir: x => { const p = prod(x.id); o.lineas.push({ id: x.id, cant: 1, precio: p.costo || 0, desc: 0, lote: '', cad: '' }); pintarLineasCompra(); } });
+    buscador($('#ocProd'), { fuente: fuenteProductos(o.suc, null, false), limpiar: true, alElegir: x => { o.lineas.push(lineaCompra(x.id, 1, o.prov)); pintarLineasCompra(); } });
+    // al cambiar de proveedor, los precios que puso la app se toman de la última compra con ese proveedor
+    $('#ocProv').addEventListener('change', () => { let n = 0; o.lineas.forEach(l => { if (!l.auto) return; const c = costoCompra(l.id, o.prov); if (c.precio !== l.precio || c.desc !== l.desc) n++; Object.assign(l, { precio: c.precio, desc: c.desc, ref: c.ref }); }); if (n) { pintarLineasCompra(); toast(n + ' precio(s) tomados de la última compra con este proveedor'); } });
     pintarLineasCompra();
   }
   function pintarLineasCompra() {
@@ -3127,9 +3138,9 @@ const App = (() => {
       `<div class="linea cab"><div>Producto</div><div>Lote y caducidad</div><div>Cant.</div><div>Costo</div><div>Desc %</div><div class="num">Importe</div><div></div></div>` +
       o.lineas.map((l, i) => { const p = prod(l.id) || {}; return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)}</small></div>
         <div style="display:flex;gap:4px">${p.usaLote === false ? '<small class="muted">Sin lote</small>' : `<input data-f="lote" placeholder="Lote" value="${esc(l.lote)}"><input type="date" data-f="cad" value="${esc(l.cad)}">`}</div>
-        <div><input type="number" data-f="cant" value="${l.cant}"></div><div><input type="number" data-f="precio" step="0.01" value="${l.precio}"></div><div><input type="number" data-f="desc" value="${l.desc}"></div>
+        <div><input type="number" data-f="cant" value="${l.cant}"></div><div><input type="number" data-f="precio" step="0.01" value="${l.precio}">${l.auto && l.ref ? `<small class="muted" data-ult style="display:block;white-space:nowrap" title="Precio de la compra más reciente${l.ref.oc ? ' (' + esc(l.ref.oc) + ')' : ''}${l.ref.otro ? ', con otro proveedor' : ''}">últ. ${esc(l.ref.f)}${l.ref.otro ? ' · otro prov.' : ''}</small>` : ''}</div><div><input type="number" data-f="desc" value="${l.desc}"></div>
         <div class="num" data-imp></div><div><button class="icono" data-del>✕</button></div></div>`; }).join('');
-    cont.oninput = cont.onchange = e => { const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return; const l = o.lineas[+row.dataset.i]; l[f] = (f === 'lote' || f === 'cad') ? e.target.value : Number(e.target.value) || 0; totalesCompra(); };
+    cont.oninput = cont.onchange = e => { const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return; const l = o.lineas[+row.dataset.i]; l[f] = (f === 'lote' || f === 'cad') ? e.target.value : Number(e.target.value) || 0; if ((f === 'precio' || f === 'desc') && l.auto) { l.auto = false; const h = row.querySelector('[data-ult]'); if (h) h.remove(); } totalesCompra(); };
     cont.onclick = e => { if (e.target.closest('[data-del]')) { o.lineas.splice(+e.target.closest('[data-i]').dataset.i, 1); pintarLineasCompra(); } };
     totalesCompra();
   }
@@ -3493,7 +3504,7 @@ const App = (() => {
     const pv = (D().proveedores || []).find(p => p.id === prov);
     const suc = (D().permitidas || []).indexOf(d.surte) >= 0 ? d.surte : sucTrabajo();
     S.oc = { prov: pv ? prov : '', suc: suc, factura: '', fecha: hoyISO(), dias: pv ? pv.credito : '', descEsp: 0, descPP: 0, flete: 0, recibido: false, actCosto: false,
-      obs: 'Faltantes de la requisición ' + d.folio, lineas: l.map(x => { const p = prod(x.prod) || {}; return { id: x.prod, cant: x.falta, precio: p.costo || 0, desc: 0, lote: '', cad: '' }; }), pago: 0,
+      obs: 'Faltantes de la requisición ' + d.folio, lineas: l.map(x => lineaCompra(x.prod, x.falta, pv ? prov : '')), pago: 0,
       req: { id: d.id, folio: d.folio } };
     cerrarModal(); ir('compras', true); V.compras('nueva');
     toast('Orden armada con ' + l.length + ' faltantes' + (pv ? '' : ' (elige el proveedor)') + '. Revísala y guárdala (queda pendiente de recibir).');
@@ -6066,7 +6077,7 @@ const App = (() => {
     if (S.oc && S.oc.lineas && S.oc.lineas.length && !confirm('Ya tienes una orden de compra en captura. ¿Reemplazarla con este pedido?')) return;
     const pv = (D().proveedores || []).find(p => p.id === prov);
     S.oc = { prov: prov, suc: 'SUC_MAT_1', factura: '', fecha: hoyISO(), dias: pv ? pv.credito : '', descEsp: 0, descPP: 0, flete: 0, recibido: false, actCosto: false,
-      obs: 'Pedido sugerido ' + r.fecha, lineas: l.map(x => { const p = prod(x.g.p) || {}; return { id: x.g.p, cant: x.q, precio: p.costo || x.g.cu || 0, desc: 0, lote: '', cad: '' }; }), pago: 0 };
+      obs: 'Pedido sugerido ' + r.fecha, lineas: l.map(x => lineaCompra(x.g.p, x.q, prov)), pago: 0 };
     ir('compras', true); V.compras('nueva');
     toast('Orden armada con ' + l.length + ' productos. Revísala y guárdala (queda como pendiente de recibir).');
   }
