@@ -4028,7 +4028,7 @@ const App = (() => {
     const ids = [...new Set(colaFotos)].filter(id => S.fotos[id] === undefined).slice(0, 40); colaFotos = colaFotos.filter(id => ids.indexOf(id) < 0 && S.fotos[id] === undefined);
     if (!ids.length) return;
     ids.forEach(id => S.fotos[id] = null);
-    pedir('fotosMini', { ids: ids }, true).then(r => { Object.keys(r).forEach(id => { S.fotos[id] = r[id] || ''; pintarMini(id); }); guardarFotosLocal(); })
+    pedir('fotosMini', { ids: ids }, true).then(r => { recibirMinis(r); guardarFotosLocal(); })
       .catch(() => ids.forEach(id => delete S.fotos[id])).finally(() => { if (colaFotos.length) timerFotos = setTimeout(pedirMinis, 50); });
   }
   function pintarMini(id) {
@@ -4043,6 +4043,34 @@ const App = (() => {
   /* Miniaturas guardadas en el equipo (IndexedDB): se descargan todas en segundo plano al entrar y con "Actualizar para ruta",
      así aparecen al momento (y sin señal). Cualquier miniatura que se dibuje en pantalla se llena sola (MutationObserver). */
   const FOTOS_DIAS = 7;
+  /** Respuesta de fotosMini. '#grande' = la miniatura de Drive pesa mucho: se baja una vez, se reduce aquí y se guarda en el servidor para los demás equipos. */
+  let colaGrandes = [], bajandoGrandes = false;
+  function recibirMinis(r) {
+    let n = 0;
+    Object.keys(r).forEach(id => { if (r[id] === '#grande') { if (colaGrandes.indexOf(id) < 0) colaGrandes.push(id); return; } S.fotos[id] = r[id] || ''; pintarMini(id); n++; });
+    if (colaGrandes.length) procesarGrandes();
+    return n;
+  }
+  function reducirUri(uri, max) {
+    return new Promise((res, rej) => { const im = new Image(); im.onerror = () => rej(new Error('img')); im.onload = () => {
+      const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k));
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', .82)); }; im.src = uri; });
+  }
+  async function procesarGrandes() {
+    if (bajandoGrandes) return; bajandoGrandes = true;
+    try {
+      while (colaGrandes.length && S.token && navigator.onLine !== false) {
+        const id = colaGrandes.shift();
+        try {
+          const r = await pedir('miniGrande', { id: id }, true);
+          if (!r.uri) { S.fotos[id] = ''; pintarMini(id); continue; }
+          const mini = /^data:/.test(r.uri) ? await reducirUri(r.uri, 200) : r.uri;
+          S.fotos[id] = mini; pintarMini(id); guardarFotosLocal();
+          if (/^data:image\/jpeg/.test(mini)) pedir('guardarMiniProducto', { id: id, dataUri: mini }, true).catch(() => {});
+        } catch (e) { if (navigator.onLine === false) { colaGrandes.unshift(id); break; } }
+      }
+    } finally { bajandoGrandes = false; }
+  }
   async function cargarFotosLocal() {
     try { const f = await KV.get('fotos'); if (f && f.m) { Object.keys(f.m).forEach(id => { if (S.fotos[id] == null && f.m[id] != null) S.fotos[id] = f.m[id]; }); S.fotosT = f.t || 0; pintarTodasMinis(); } } catch (e) {}
   }
@@ -4059,12 +4087,12 @@ const App = (() => {
     S.bajandoFotos = true; let n = 0;
     try {
       const prods = (D().productos || []).filter(p => p.foto);
-      const ids = prods.map(p => p.id).filter(id => renovar || typeof S.fotos[id] !== 'string');
+      const ids = prods.map(p => p.id).filter(id => renovar || !S.fotos[id]);   // '' = antes no se pudo: se vuelve a intentar
       for (let i = 0; i < ids.length; i += 40) {
         if (navigator.onLine === false || !S.token) break;
         if (avance) avance(i, ids.length);
         const lote = ids.slice(i, i + 40);
-        try { const r = await pedir('fotosMini', { ids: lote }, true); Object.keys(r).forEach(id => { S.fotos[id] = r[id] || ''; pintarMini(id); n++; }); guardarFotosLocal(); }
+        try { const r = await pedir('fotosMini', { ids: lote }, true); n += recibirMinis(r); guardarFotosLocal(); }
         catch (e) { break; }
       }
       if (renovar && n) { S.fotosT = Date.now(); guardarFotosLocal(); }
