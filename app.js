@@ -5992,13 +5992,16 @@ const App = (() => {
         <b>Venta diaria</b> = piezas vendidas en el periodo ÷ días (sin notas canceladas). ·
         <b>Existencia útil</b> = existencia − caducado − lo que <u>no se alcanzará a vender</u> antes de caducar (surtiendo primero lo que caduca antes). ·
         <b>Objetivo</b> (stock máximo) = venta diaria × (entrega + días a cubrir + seguridad). ·
-        <b>Sugerido</b> = objetivo − existencia útil − lo que ya viene en camino. ·
+        <b>Comprometido</b> (al 100 %) = lo pendiente de surtir de las requisiciones abiertas o parciales (en la sucursal que pide) + las piezas de las cotizaciones abiertas y vigentes. ·
+        <b>Sugerido</b> = objetivo + comprometido − existencia útil − lo que ya viene en camino. ·
         Antes de comprar se proponen <b>traspasos</b> de las sucursales con sobrante a las que les falta; la <b>compra global</b> es lo que sigue faltando.
         <b>ABC</b>: A = productos que hacen el 80 % de la venta (cuídalos, que nunca falten), B = siguiente 15 %, C = resto (compra justo lo necesario).
         <b>80/20</b>: sucursales y clientes que concentran el 80 % de lo vendido de ese producto en los últimos 12 meses.</div></details></div>
       <div id="pdRes"><div class="vacio">Presiona Calcular.</div></div>`;
     if (S.ped) pintarPedido(); else calcularPedido();
   };
+  /** Piezas comprometidas: requisiciones pendientes + cotizaciones abiertas (con sus folios). */
+  const compTxt = g => !(g.req || g.cot) ? '—' : `<b>${nf((g.req || 0) + (g.cot || 0))}</b><br><small class="muted">${g.req ? nf(g.req) + ' req.' : ''}${g.req && g.cot ? ' · ' : ''}${g.cot ? nf(g.cot) + ' cot.' : ''}</small>${g.docs && g.docs.length ? `<br><small class="muted" title="${esc(g.docs.join(', '))}">${esc(g.docs.slice(0, 2).join(', '))}${g.docs.length > 2 ? '…' : ''}</small>` : ''}`;
   async function calcularPedido() {
     const p = { dias: +$('#pdDias').value, entrega: +$('#pdEnt').value, cobertura: +$('#pdCob').value, seguridad: +$('#pdSeg').value, horizonte: +$('#pdHor').value };
     LS.set('pedidoParams', p);
@@ -6048,6 +6051,7 @@ const App = (() => {
           tabla([{ t: 'Producto', h: g => `<b>${esc(pdNom(g.p))}</b> ${etqAbc(g.abc)}<br><small class="muted">${esc(g.p)} · ${esc(pdLab(g.p))}</small>` },
             { t: 'Venta / día', num: 1, h: g => nf(g.dd) + ' ' + tendTxt(g.tend) }, { t: 'Útil', num: 1, h: g => nf(g.util) + (g.rz || g.cad ? `<br><small class="error">${nf(g.rz + g.cad)} no se venden</small>` : '') },
             { t: 'En camino', num: 1, cls: 'ocultar-movil', h: g => g.tr ? nf(g.tr) : '—' }, { t: 'Objetivo', num: 1, cls: 'ocultar-movil', h: g => nf(g.obj) },
+            { t: 'Comprometido', num: 1, h: g => compTxt(g) },
             { t: 'Traspasos', num: 1, cls: 'ocultar-movil', h: g => g.traspaso ? nf(g.traspaso) : '—' },
             { t: 'Comprar', num: 1, h: g => `<input type="number" min="0" class="pd-cant" data-p="${esc(g.p)}" value="${cant(g)}">` },
             ...(r.verCostos ? [{ t: 'Costo', num: 1, h: g => $$(cant(g) * (g.cu || 0)) }] : [])], G.l.sort((a, b) => (b.costo || 0) - (a.costo || 0) || a.abc.localeCompare(b.abc))) + '</div>';
@@ -6077,7 +6081,7 @@ const App = (() => {
         { t: `Vendido ${r.params.dias} d`, num: 1, h: x => nf(x.vd) }, { t: 'Venta / día', num: 1, h: x => nf(x.dd) },
         { t: 'Existencia', num: 1, h: x => nf(x.ex) + (x.cad ? `<br><small class="error">${nf(x.cad)} caducado</small>` : '') + (x.rz ? `<br><small class="error">${nf(x.rz)} no se alcanza a vender</small>` : '') },
         { t: 'En camino', num: 1, cls: 'ocultar-movil', h: x => x.tr ? nf(x.tr) : '—' }, { t: 'Le alcanza', num: 1, h: x => x.dias === null ? '—' : `<span class="etq ${x.dias < 7 ? 'mal' : x.dias < 20 ? 'av' : 'ok'}">${nf(x.dias)} días</span>` },
-        { t: 'Objetivo', num: 1, cls: 'ocultar-movil', h: x => nf(x.obj) }, { t: 'Surtir', num: 1, h: x => x.sug ? `<b>${nf(x.sug)}</b>` : '—' },
+        { t: 'Objetivo', num: 1, cls: 'ocultar-movil', h: x => nf(x.obj) }, { t: 'Comprometido', num: 1, h: x => compTxt(x) }, { t: 'Surtir', num: 1, h: x => x.sug ? `<b>${nf(x.sug)}</b>` : '—' },
         { t: 'Últ. venta', cls: 'ocultar-movil', k: 'ult' }], f, { vacio: 'Sin movimientos en esta sucursal' });
     $('#pdSucSel').onchange = e => { S.pdSuc = e.target.value; pdPorSuc(); };
   }
