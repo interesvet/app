@@ -2747,6 +2747,26 @@ const App = (() => {
     $('#oDesde').value = ''; $('#oHasta').value = ''; $('#oPend').checked = true; S.soloSaldoOC = true;
     buscarCompras();
   }
+  /** Encabezado de la orden de compra: datos completos del proveedor y entrega / condiciones (como en la nota de venta). */
+  function lineasProv(pv, d) {
+    pv = pv || {};
+    const et = (c, t) => !t ? c : String(t).indexOf(c) === 0 ? t : c + ' – ' + t;
+    const dom = [pv.calle, pv.colonia, pv.localidad && pv.localidad !== pv.municipio ? pv.localidad : '', pv.municipio, pv.estado].filter(Boolean).join(', ');
+    return { nombre: pv.razon || pv.nombre || d.proveedor || '', comercial: pv.nombre && pv.razon && pv.nombre !== pv.razon ? pv.nombre : '', rfc: pv.rfc || d.rfc || '',
+      regimen: pv.regimen ? et(pv.regimen, pv.regimenTxt) : '', dom: dom, cp: pv.cp || '',
+      tels: [pv.tel ? 'Tel. ' + pv.tel : '', pv.cel && pv.cel !== pv.tel ? 'Cel. ' + pv.cel : ''].filter(Boolean).join(' · '), email: pv.email || '', web: pv.web || '',
+      contacto: [pv.contacto, pv.celContacto ? 'Cel. ' + pv.celContacto : '', pv.emailContacto].filter(Boolean).join(' · '),
+      cred: (d.dias || pv.credito) ? 'Crédito ' + (d.dias || pv.credito) + ' días' : 'Contado' };
+  }
+  function htmlProvOC(d) {
+    const p = lineasProv(d.prov, d), s = sucDe(d.suc);
+    return `<div class="oc-cajas"><div class="oc-caja"><div class="oc-banda">PROVEEDOR</div><div class="oc-cuerpo">
+        <b class="oc-nom">${esc(p.nombre)}</b>${p.comercial ? '<br>' + esc(p.comercial) : ''}${p.rfc ? `<br>RFC <b>${esc(p.rfc)}</b>` : ''}${p.regimen ? '<br>Régimen fiscal: ' + esc(p.regimen) : ''}
+        ${p.dom ? '<br>' + esc(p.dom) : ''}${p.cp ? '<br>C.P. ' + esc(p.cp) : ''}${p.tels ? '<br>' + esc(p.tels) : ''}${p.email ? '<br>' + esc(p.email) : ''}${p.web ? '<br>' + esc(p.web) : ''}
+        ${p.contacto ? `<br><span class="muted">Contacto de ventas:</span> ${esc(p.contacto)}` : ''}</div></div>
+      <div class="oc-caja"><div class="oc-banda">ENTREGAR EN</div><div class="oc-cuerpo"><b class="oc-nom">${esc(s.nombre || '')}</b>${s.direccion ? '<br>' + esc(s.direccion) : ''}${s.tel ? '<br>Tel. ' + esc(s.tel) : ''}
+        <div class="oc-cond"><span class="muted">Condiciones:</span> ${esc(p.cred)}${d.venc ? '<br><span class="muted">Vence:</span> ' + esc(d.venc) : ''}<br><span class="muted">Estado:</span> ${String(d.recibido).toUpperCase() === 'SI' ? 'Recibida' : 'Pendiente de recibir'}</div></div></div></div>`;
+  }
   async function verCompra(id) {
     let d; try { d = await pedir('detalleCompra', { ID_O_Compra: id }); } catch (e) { return; }
     S.ultimaCompra = d;
@@ -2754,7 +2774,7 @@ const App = (() => {
     modal('Orden ' + d.folio, `<div class="imprimible"><div class="nota">
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.suc)}</div><div>Destino: ${esc(sucNom(d.suc))}</div></div><div style="text-align:right"><b>ORDEN DE COMPRA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div>
         <div style="margin-top:4px">Factura: <b>${d.factura ? esc(d.factura) : '<span style="color:#b97300">sin capturar</span>'}</b></div>${d.uuid ? `<div style="font-size:10px;color:#666">Folio fiscal: ${esc(d.uuid)}</div>` : ''}</div></div>
-      <p><b>${esc(d.proveedor)}</b> ${esc(d.rfc || '')}</p>
+      ${htmlProvOC(d)}
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', k: 'lote' }, { t: 'Cad.', k: 'cad' }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$((x.sub || x.cant * x.precio) - (x.desc || 0)) }, { t: 'IVA $', num: 1, h: x => $$(x.iva || 0) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], d.lineas)}
       <div class="totales" style="margin-top:10px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div>${d.descEsp ? `<div><span>Descuento especial</span><span>−${$$(d.descEsp)}</span></div>` : ''}${d.descPP ? `<div><span>Descuento pronto pago</span><span>−${$$(d.descPP)}</span></div>` : ''}<div><span>IVA</span><span>${$$(d.iva)}</span></div>${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}
       <div class="gran"><span>Total</span><span>${$$(d.total)}</span></div><div><span>Pagado</span><span>${$$(d.pagado)}</span></div><div><b>Saldo</b><b>${$$(d.saldo)}</b></div></div>
@@ -4437,7 +4457,9 @@ const App = (() => {
       const ls = d.lineas.map(l => ({ cant: l.cant, nombre: l.nombre, lote: l.lote, cad: l.cad, precio: l.precio, desc: l.desc, importe: r2c((l.sub || l.cant * l.precio) - (l.desc || 0)), iva: l.iva || 0, total: l.total }));
       const t = lineasImp(ls, ls.some(l => l.lote || l.cad), ls.some(l => l.desc));
       return Object.assign(t, { titulo: 'ORDEN DE COMPRA', folio: d.folio, fecha: d.fecha, extra: [d.factura ? 'Factura ' + d.factura : '', d.uuid ? 'Folio fiscal: ' + d.uuid : ''], suc: sucDe(d.suc),
-        izq: [d.proveedor, d.rfc ? 'RFC ' + d.rfc : ''], der: ['Destino: ' + sucNom(d.suc), d.recibido ? 'Recibido: ' + d.recibido : ''],
+        izq: (p => ['Proveedor: ' + p.nombre, p.comercial, p.rfc ? 'RFC ' + p.rfc : '', p.regimen ? 'Régimen fiscal: ' + p.regimen : '', [p.dom, p.cp ? 'C.P. ' + p.cp : ''].filter(Boolean).join(' · '),
+          [p.tels, p.email].filter(Boolean).join(' · '), p.contacto ? 'Contacto de ventas: ' + p.contacto : ''])(lineasProv(d.prov, d)),
+        der: ['Entregar en: ' + sucNom(d.suc), sucDe(d.suc).direccion || '', lineasProv(d.prov, d).cred + (d.venc ? ' · Vence ' + d.venc : ''), String(d.recibido).toUpperCase() === 'SI' ? 'Recibida' : 'Pendiente de recibir'],
         totales: [['Subtotal', d.sub], d.descEsp ? ['Descuento especial', '-' + $$(d.descEsp)] : null, d.descPP ? ['Descuento pronto pago', '-' + $$(d.descPP)] : null, ['IVA (suma de los productos)', d.iva],
           d.flete ? ['Flete', d.flete] : null, ['Total', d.total, true], ['Pagado', d.pagado || 0], ['Saldo', d.saldo || 0]], letras: d.letras, notas: [d.obs], firmas: ['Elaboró', 'Recibió'], archivo: 'Orden de compra ' + d.folio }); } },
     pdfDevolucion: { det: p => ['detalleDevolucion', { id: p.id }], ult: 'ultimaDev', key: p => p.id, map: d => {
