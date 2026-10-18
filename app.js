@@ -211,7 +211,7 @@ const App = (() => {
       'detalleVenta listarCobros cuentasPorCobrar adjuntosCobro estadosCuenta estadoCuentaCliente listarPagosProv detallePagoProv listarCompras ' +
       'detalleCompra listarTraspasos detalleTraspaso reporteTraspasos listarConteos detalleConteo historialAjustes selListaPrecios historialPrecios ' +
       'listarMovimientos listarProveedores detalleCobro dashboard costosReales listarCotizaciones detalleCotizacion facturas detalleFactura facturasNota ' +
-      'detalleRequisicion detalleDevolucion porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto').split(' ');
+      'listarRequisiciones detalleRequisicion detalleDevolucion porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto').split(' ');
     const MAX = 300, MAX_TXT = 3e6;
     let dbp = null;
     const db = () => dbp || (dbp = new Promise((res, rej) => {
@@ -271,7 +271,7 @@ const App = (() => {
   }
   function quitarAvisoCache() { const el = $('#avisoCache'); if (el) { el.classList.add('oculto'); el.dataset.t = ''; el.dataset.exacto = ''; } }
   /** Precarga silenciosa de las consultas principales (cada 3 h, solo con internet) para tenerlas a la mano sin señal. */
-  async function precargar(forzar) {
+  async function precargar(forzar, avance) {
     if (!S.token || !navigator.onLine || S.precargando) return;
     const ult = LS.get('precarga_' + (U().id || ''), 0);
     if (!forzar && Date.now() - ult < 3 * 3600e3) return;
@@ -285,13 +285,28 @@ const App = (() => {
       ['cobranza', 'estadosCuenta', { texto: '', tramo: '' }],
       ['cobranza', 'listarCobros', { desde: dia(-30), hasta: h, sucursal: '', forma: '', texto: '' }],
       ['cotizaciones', 'listarCotizaciones', { sucursal: '', desde: dia(-60), hasta: h, estado: '', texto: '' }],
-      ['recetas', 'listarRecetas', { desde: dia(-90), hasta: h }]
+      ['recetas', 'listarRecetas', { desde: dia(-90), hasta: h }],
+      ['requisiciones', 'listarRequisiciones', { desde: dia(-60), hasta: h, estado: '', texto: '', sucursal: '' }]
     ];
+    // detalle de las más recientes (para abrirlas, ver su PDF y compartirlas sin señal)
+    const DETALLES = { listarCotizaciones: ['cotizaciones', 'detalleCotizacion', 60, 'id'], listarRequisiciones: ['requisiciones', 'detalleRequisicion', 40, 'id'], listarVentas: [null, 'detalleVenta', 40, 'ID_Venta'] };
     let ok = 0;
     try {
       for (const [perm, a, p] of lista) {
         if (!puede(perm) || !navigator.onLine || !S.token) continue;
-        try { await call(a, p); ok++; } catch (e) { if (e.red) break; }
+        let r;
+        try { r = await call(a, p); ok++; } catch (e) { if (e.red) break; continue; }
+        const det = DETALLES[a];
+        if (det && r) {
+          const ids = ((det[0] ? r[det[0]] : r) || []).filter(x => !/cancel/i.test(x.estado || '')).slice(0, det[2]).map(x => x.id).filter(Boolean);
+          for (let i = 0; i < ids.length; i++) {
+            if (!navigator.onLine || !S.token) break;
+            if (avance) avance(det[0] || 'notas de venta', i, ids.length);
+            const prm = { [det[3]]: ids[i] };
+            try { const c = await CQ.buscar(det[1], prm); if (c && c.exacto && Date.now() - c.t < 3 * 3600e3 && !forzar) continue; } catch (e) {}
+            try { await call(det[1], prm); } catch (e) { if (e.red) break; }
+          }
+        }
       }
       if (ok) { LS.set('precarga_' + (U().id || ''), Date.now()); guardarLibs(); }
     } finally { S.precargando = false; }
@@ -439,7 +454,8 @@ const App = (() => {
     cargando(true);
     try {
       if (S.cola.length) await sincronizar(true);
-      await refrescarDatos(true); await precargar(true); await renovarSesion(); await guardarLibs();
+      for (let i = 0; S.precargando && i < 240; i++) await new Promise(r => setTimeout(r, 500));   // si ya corría la precarga automática, se espera y se hace completa
+      await refrescarDatos(true); await precargar(true, (que, i, t) => toast('Guardando ' + que + ' en el equipo… ' + (i + 1) + ' de ' + t)); await renovarSesion(); await guardarLibs();
       await descargarFotos(!S.fotosT || Date.now() - S.fotosT > FOTOS_DIAS * 86400e3, (i, t) => toast('Descargando fotos de productos… ' + Math.round(i / t * 100) + '%'));
       toast('✔ Listo para ruta: la información quedó guardada en este equipo');
     } catch (e) { toast('No se pudo completar con esta señal; intenta de nuevo', true); }
