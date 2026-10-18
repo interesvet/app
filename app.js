@@ -2383,7 +2383,9 @@ const App = (() => {
         <label>Grupo<select id="gGrupo">${opts(GRUPOS_G.map(g => [g, NOMBRE_G[g]]), f.grupo, 'Todos')}</select></label>
         <label>Categoría<select id="gCat"><option value="">Todas</option>${(S.catsGas || []).map(c => `<option ${c === f.categoria ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
         <label>Buscar<input id="gTxt" placeholder="Proveedor, RFC o UUID" value="${esc(f.texto)}"></label>
-        <button class="btn primario fijo" onclick="App.cargarGastos()">Buscar</button><button class="btn fijo" onclick="App.pdfGastos()">📄 PDF</button></div></div>
+        <button class="btn primario fijo" onclick="App.cargarGastos()">Buscar</button><button class="btn fijo" onclick="App.pdfGastos()">📄 PDF</button>
+        <button class="btn fijo" onclick="App.formFacturasGasto()">📥 Subir facturas</button><button class="btn fijo" onclick="App.correoGastos()">✉️ Correo</button></div></div>
+      <div id="gAviso"></div>
       <div class="espacio"></div><div id="gRes"><div class="vacio">Cargando…</div></div>`;
     agregarMesAnio('gDesde', 'gHasta', cargarGastos);
     ['#gGrupo', '#gCat', '#gSuc'].forEach(x => $(x).onchange = cargarGastos);
@@ -2447,9 +2449,10 @@ const App = (() => {
       html += `<div class="tarjeta"><div class="fila no-imprimir" style="margin-bottom:8px"><label>Asignar las ${nf(r.facturas.length)} facturas mostradas a<select id="gAsigTodas"><option value="">Elige sucursal…</option>${optSucG('')}</select></label>
         <button class="btn fijo" onclick="App.asignarSucGastos(null)">Aplicar</button></div>
         <p class="muted">${nf(r.facturas.length)} facturas · ${$$(r.facturas.reduce((a, x) => a + x.monto, 0))} sin IVA · ${$$(r.facturas.reduce((a, x) => a + x.total, 0))} con IVA${r.sucursal ? ' · montos ponderados para ' + esc(sucNom(r.sucursal)) : ''}</p>` +
-        tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Categoría', h: x => esc(x.cat) + `<br><small class="muted">${esc(x.grupo)}</small>` },
+        tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Categoría', h: x => x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + `<br><small class="muted">${esc(x.grupo)}</small>` },
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
           { t: 'Sucursal', h: (x) => `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
+          { t: 'PDF', h: x => `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>` },
           { t: 'UUID', cls: 'ocultar-movil', h: x => `<small class="muted">${esc(String(x.uuid).slice(0, 8))}…</small>` }], r.facturas, { vacio: 'Sin facturas' }) + '</div>';
     } else if (tab === 'inversion') {
       const tl = r.activos.reduce((a, x) => a + x.libros, 0), tm = r.activos.reduce((a, x) => a + x.monto, 0), ta = r.activos.reduce((a, x) => a + x.acumulada, 0);
@@ -2464,6 +2467,7 @@ const App = (() => {
         { t: 'Categorías', k: 'cats', cls: 'ocultar-movil' }, { t: 'Grupo', k: 'grupo' }, { t: 'Facturas', num: 1, h: x => nf(x.n) }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }], r.emisores) + '</div>';
     }
     $('#gRes').innerHTML = html;
+    if ($('#gAviso')) $('#gAviso').innerHTML = r.porClasificar ? `<div class="tarjeta aviso-cl" style="border-left:4px solid var(--aviso);margin-top:8px">🏷️ Hay <b>${nf(r.porClasificar)}</b> factura(s) <b>POR CLASIFICAR</b> (llegaron de un proveedor nuevo). <button class="btn chico" onclick="App.filtrarCatGasto('POR CLASIFICAR')">Clasificar</button></div>` : '';
     if (tab === 'resumen') {
       barras('gcOp', r.resumen.filter(x => x.grupo === 'Operación').map(x => ({ nombre: x.cat, valor: x.monto })), css('--aviso'), true);
       barras('gcGrupo', [{ nombre: 'Operación', valor: t.operacion }, { nombre: 'Depreciación', valor: t.depreciacion }, { nombre: 'Financieros', valor: t.financiero }, { nombre: 'Inversiones', valor: t.inversion }, { nombre: 'Excluidos', valor: t.excluir }], css('--s1'), true);
@@ -2482,6 +2486,73 @@ const App = (() => {
     if (!suc) return toast('Elige la sucursal', true);
     if (!uuid && !confirm('¿Asignar ' + uuids.length + ' facturas a ' + (suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(suc)) + '?')) return;
     try { const r = await pedir('asignarSucursalGasto', { uuids: uuids, ID_Sucursal: suc }, !!uuid); toast('✔ ' + r.asignadas + ' factura(s) → ' + (suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(suc))); if (!uuid) cargarGastos(); else S.datGasKey = ''; } catch (e) { if (uuid) toast(e.message, true); }
+  }
+  /* ---------- Facturas de gastos: subir, correo, ver PDF, clasificar ---------- */
+  const selCatGasto = x => `<select class="chico" style="border-color:var(--aviso)" onchange="App.clasificarGasto('${esc(x.uuid)}', this.value, '${esc(x.emisor).replace(/'/g, "\\'")}')"><option value="">🏷️ Por clasificar…</option>${(S.catsGas || []).filter(c => c !== 'POR CLASIFICAR').map(c => `<option>${esc(c)}</option>`).join('')}<option value="__nueva">+ Otra categoría…</option></select>`;
+  async function clasificarGasto(uuid, cat, emisor) {
+    if (!cat) return;
+    if (cat === '__nueva') { cat = (prompt('Nombre de la nueva categoría:') || '').trim().toUpperCase(); if (!cat) return; }
+    const todas = confirm('¿Usar "' + cat + '" también para las demás facturas de ' + emisor + ' que estén por clasificar (y las que lleguen después)?');
+    try { const r = await pedir('clasificarGasto', { uuid: uuid, categoria: cat, todasDelProveedor: todas }); toast('✔ ' + (r.cambiadas || 1) + ' factura(s) → ' + cat); S.datGasKey = ''; cargarGastos(); } catch (e) {}
+  }
+  async function verPdfGasto(uuid) {
+    toast('Abriendo PDF…');
+    try { const r = await pedir('verPdfGasto', { uuid: uuid }); verPdf(b64aBytes(r.b64), r.nombre, { url: r.url }); if (r.generado) toast('No llegó PDF: se armó uno con los datos del XML'); } catch (e) {}
+  }
+  function formFacturasGasto() {
+    modal('Subir facturas de gastos', `<p>Elige los <b>XML</b> (y sus <b>PDF</b>) de tus facturas de gastos; también puedes subir archivos <b>.zip</b>. Puedes elegir muchos a la vez.</p>
+      <label>Archivos<input type="file" id="fgArch" multiple accept=".xml,.pdf,.zip,text/xml,application/pdf,application/zip"></label>
+      <p class="muted">Se registran en Egresos CFDI con su categoría (según el proveedor), los archivos se guardan en Drive › Facturas de gastos y no se duplican si ya estaban. Solo se aceptan facturas a tu RFC.</p>
+      <div id="fgProg"></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="fgBtn" onclick="App.subirFacturasGasto()">Subir</button></div>`);
+  }
+  async function subirFacturasGasto() {
+    const fs = [...($('#fgArch').files || [])]; if (!fs.length) return toast('Elige los archivos', true);
+    const grande = fs.find(f => f.size > 15e6); if (grande) return toast(grande.name + ' pesa más de 15 MB', true);
+    // lotes de ~8 MB, sin separar un XML de su PDF (mismo nombre base)
+    const base = n => n.replace(/\.[^.]+$/, '').toLowerCase(), grupos = {};
+    fs.forEach(f => (grupos[base(f.name)] = grupos[base(f.name)] || []).push(f));
+    const lotes = [[]]; let peso = 0;
+    Object.values(grupos).forEach(g => { const t = g.reduce((a, f) => a + f.size, 0); if (peso + t > 8e6 && lotes[lotes.length - 1].length) { lotes.push([]); peso = 0; } lotes[lotes.length - 1].push(...g); peso += t; });
+    $('#fgBtn').disabled = true;
+    const tot = { nuevas: 0, duplicadas: 0, omitidas: 0, porClasificar: 0, detalle: [] };
+    try {
+      for (let i = 0; i < lotes.length; i++) {
+        $('#fgProg').innerHTML = `<p class="muted">Subiendo ${i + 1} de ${lotes.length}…</p>`;
+        const archivos = []; for (const f of lotes[i]) archivos.push({ nombre: f.name, dataUri: await leerArchivo(f) });
+        const r = await pedir('subirFacturasGasto', { archivos: archivos });
+        ['nuevas', 'duplicadas', 'omitidas', 'porClasificar'].forEach(k => tot[k] += r[k] || 0); tot.detalle.push(...r.detalle);
+      }
+    } catch (e) { $('#fgBtn').disabled = false; $('#fgProg').innerHTML = ''; if (!tot.detalle.length) return; }
+    resultadoFacturasGasto('Facturas subidas', tot); S.datGasKey = ''; cargarGastos();
+  }
+  function resultadoFacturasGasto(tit, r, extra) {
+    const ic = { nueva: '✔', duplicada: '=', omitida: '✕' };
+    modal(tit, `<div class="kpis">${[['Nuevas', r.nuevas], ['Ya estaban', r.duplicadas], ['Omitidas', r.omitidas], ['Por clasificar', r.porClasificar || r.detalle.filter(x => x.categoria === 'POR CLASIFICAR').length]].map(k => `<div class="kpi"><small>${k[0]}</small><b>${nf(k[1])}</b></div>`).join('')}</div>` +
+      (r.detalle.length ? tabla([{ t: '', h: x => ic[x.estado] || '' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor || x.archivo || '')}</b>${x.de ? `<br><small class="muted">${esc(x.de)}</small>` : ''}` },
+        { t: 'Total', num: 1, h: x => x.total ? $$(x.total) : '' }, { t: 'Resultado', h: x => esc(x.estado === 'nueva' ? x.categoria : x.motivo || '') }], r.detalle) : '<p class="muted">No había facturas nuevas.</p>') +
+      (extra || '') + `<div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Listo</button></div>`);
+  }
+  async function correoGastos() {
+    modal('Facturas por correo', '<div class="vacio">Cargando…</div>');
+    let e; try { e = await pedir('estadoCorreoGastos', {}); } catch (x) { $('#modalCuerpo').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    const fh = s => s ? new Date(s).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca';
+    $('#modalCuerpo').innerHTML = `<p>${e.activo ? '🟢 <b>Revisión automática activa</b> (cada hora)' : '⚪ <b>Revisión automática apagada</b> — se activa desde el editor de Apps Script (función <code>activarCorreoGastos</code>).'}</p>
+      <p class="muted">Correo que se revisa: <b>${esc(e.correo)}</b> · facturas desde ${esc(e.desde || 'el día 1 del mes')} · última revisión: ${esc(fh(e.ultima))}</p>
+      ${e.gmail ? '' : '<p class="error">Falta habilitar el servicio Gmail en el proyecto.</p>'}
+      <details style="margin:8px 0"><summary><b>Cómo mandar aquí las facturas de otro correo</b> (p. ej. manolocaaf@gmail.com)</summary><ol class="peq" style="margin:6px 0 0 18px;line-height:1.5">
+        <li>Entra a Gmail con la cuenta que recibe las facturas › ⚙️ <b>Ver todos los ajustes</b> › <b>Reenvío y correo POP/IMAP</b> › <b>Añadir una dirección de reenvío</b> › escribe <b>${esc(e.correo)}</b>.</li>
+        <li>Google manda un código a ${esc(e.correo)}: ábrelo y confirma.</li>
+        <li>En la búsqueda de Gmail escribe <code>has:attachment filename:xml</code> › ícono de filtros › <b>Crear filtro</b> › marca <b>Reenviarlo a</b> ${esc(e.correo)} › <b>Crear filtro</b>.</li>
+        <li>Listo: cada factura que llegue se reenvía y la app la registra sola (con su PDF) en la siguiente revisión.</li></ol></details>
+      <h4 style="margin:10px 0 4px">Últimos correos revisados</h4>` +
+      tabla([{ t: 'Revisado', k: 'fecha' }, { t: 'De / asunto', h: x => `<b>${esc(x.de)}</b><br><small class="muted">${esc(x.asunto)}</small>` }, { t: 'Nuevas', num: 1, h: x => nf(x.facturas) }, { t: 'Resultado', h: x => `<small>${esc(x.resultado)}</small>` }], e.ultimos, { vacio: 'Todavía no se revisa ningún correo' }) +
+      `<div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button><button class="btn primario" id="cgBtn" onclick="App.revisarCorreoGastos()">✉️ Revisar ahora</button></div>`;
+  }
+  async function revisarCorreoGastos() {
+    $('#cgBtn').disabled = true; $('#cgBtn').textContent = 'Revisando…';
+    try { const r = await pedir('revisarCorreoGastos', {}); resultadoFacturasGasto('Revisión de correo · ' + nf(r.revisados) + ' correo(s)', r, r.pendientes ? `<p class="muted">Quedan ${nf(r.pendientes)} correos por revisar: vuelve a tocar "Revisar ahora" o espera la revisión automática.</p>` : ''); S.datGasKey = ''; cargarGastos(); }
+    catch (x) { if ($('#cgBtn')) { $('#cgBtn').disabled = false; $('#cgBtn').textContent = '✉️ Revisar ahora'; } }
   }
   function filtrarCatGasto(cat) { S.fgas.categoria = cat; S.tabGas = 'facturas'; V.gastos('facturas'); $('#gCat').value = cat; cargarGastos(); }
   function pdfGastos() { const f = leerFiltrosGas(); generarPdf('pdfGastos', f, { asunto: 'Estado de gastos', texto: 'Interés Veterinario — Estado de gastos ' + f.desde + ' a ' + f.hasta, volver: 'App.cerrarModal()' }); }
@@ -6027,7 +6098,7 @@ const App = (() => {
   /* ---------------- API pública (para onclick) ---------------- */
   return {
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, asignarSucGastos, cargarSucursales, verSucursal,
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, asignarSucGastos, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
