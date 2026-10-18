@@ -2502,29 +2502,38 @@ const App = (() => {
   function formFacturasGasto(dest) {
     S.subirDest = dest === 'compra' ? 'compra' : 'gasto';
     modal(S.subirDest === 'compra' ? 'Subir facturas de proveedores' : 'Subir facturas de gastos', `<p>Elige los <b>XML</b> (y sus <b>PDF</b>) de tus facturas${S.subirDest === 'compra' ? ' y notas de crédito de proveedores' : ' de gastos'}; también puedes subir archivos <b>.zip</b>. Puedes elegir muchos a la vez.</p>
-      <label>Archivos<input type="file" id="fgArch" multiple accept=".xml,.pdf,.zip,text/xml,application/pdf,application/zip"></label>
+      <div class="fila"><label>Archivos<input type="file" id="fgArch" multiple accept=".xml,.pdf,.zip,text/xml,application/pdf,application/zip"></label>
+        ${'webkitdirectory' in document.createElement('input') && !/iPhone|iPad|iPod/.test(navigator.userAgent) ? `<label>…o una carpeta completa<input type="file" id="fgCarp" webkitdirectory multiple></label>` : ''}</div>
       <p class="muted">${S.subirDest === 'compra' ? 'Se reconocen por el RFC del catálogo de proveedores: se ligan a su orden de compra (o quedan aquí para que elijas) y las notas de crédito se aplican a la orden de su factura.' : 'Se registran en Egresos CFDI con su categoría (según el proveedor), los archivos se guardan en Drive › Facturas de gastos y no se duplican si ya estaban. Las de proveedores del catálogo se van a Compras.'} Solo se aceptan facturas a tu RFC.</p>
       <div id="fgProg"></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="fgBtn" onclick="App.subirFacturasGasto()">Subir</button></div>`);
   }
   async function subirFacturasGasto() {
-    const fs = [...($('#fgArch').files || [])]; if (!fs.length) return toast('Elige los archivos', true);
-    const grande = fs.find(f => f.size > 15e6); if (grande) return toast(grande.name + ' pesa más de 15 MB', true);
+    const fs = [...($('#fgArch').files || []), ...(($('#fgCarp') || {}).files || [])].filter(f => /\.(xml|pdf|zip)$/i.test(f.name) && !/^\./.test(f.name));
+    if (!fs.length) return toast('Elige los archivos (XML, PDF o ZIP)', true);
+    const grandes = fs.filter(f => f.size > 15e6); if (grandes.length) toast(grandes.length + ' archivo(s) de más de 15 MB se omiten', true);
+    const fsOk = fs.filter(f => f.size <= 15e6), estricto = fsOk.length > 2;
+    if (fsOk.length > 40 && !confirm('Se subirán ' + fsOk.length + ' archivos en grupos pequeños. Puede tardar varios minutos: deja esta pantalla abierta hasta que termine. ¿Continuar?')) return;
     // lotes de ~8 MB, sin separar un XML de su PDF (mismo nombre base)
     const base = n => n.replace(/\.[^.]+$/, '').toLowerCase(), grupos = {};
-    fs.forEach(f => (grupos[base(f.name)] = grupos[base(f.name)] || []).push(f));
-    const lotes = [[]]; let peso = 0;
-    Object.values(grupos).forEach(g => { const t = g.reduce((a, f) => a + f.size, 0); if (peso + t > 8e6 && lotes[lotes.length - 1].length) { lotes.push([]); peso = 0; } lotes[lotes.length - 1].push(...g); peso += t; });
+    fsOk.forEach(f => (grupos[base(f.name)] = grupos[base(f.name)] || []).push(f));
+    const lotes = [[]]; let peso = 0;   // grupos pequeños (≤ 12 archivos, ≤ 8 MB) para que cada envío termine a tiempo
+    Object.values(grupos).forEach(g => { const t = g.reduce((a, f) => a + f.size, 0), l = lotes[lotes.length - 1]; if ((peso + t > 8e6 || l.length + g.length > 12) && l.length) { lotes.push([]); peso = 0; } lotes[lotes.length - 1].push(...g); peso += t; });
     $('#fgBtn').disabled = true;
-    const tot = { nuevas: 0, duplicadas: 0, omitidas: 0, porClasificar: 0, detalle: [] };
-    try {
-      for (let i = 0; i < lotes.length; i++) {
-        $('#fgProg').innerHTML = `<p class="muted">Subiendo ${i + 1} de ${lotes.length}…</p>`;
-        const archivos = []; for (const f of lotes[i]) archivos.push({ nombre: f.name, dataUri: await leerArchivo(f) });
-        const r = await pedir(S.subirDest === 'compra' ? 'subirFacturasCompra' : 'subirFacturasGasto', { archivos: archivos });
-        ['nuevas', 'duplicadas', 'omitidas', 'porClasificar'].forEach(k => tot[k] += r[k] || 0); tot.detalle.push(...r.detalle);
+    const tot = { nuevas: 0, duplicadas: 0, omitidas: 0, porClasificar: 0, detalle: [] }, fallidos = [];
+    for (let i = 0; i < lotes.length; i++) {
+      if (!$('#fgProg')) break;   // se cerró la ventana
+      $('#fgProg').innerHTML = `<p class="muted">Subiendo grupo ${i + 1} de ${lotes.length} · ✔ ${nf(tot.nuevas)} nuevas · = ${nf(tot.duplicadas)} ya estaban · ✕ ${nf(tot.omitidas)} omitidas${fallidos.length ? ' · ⚠️ ' + fallidos.length + ' grupo(s) con error' : ''}</p>
+        <div style="height:6px;background:var(--borde);border-radius:3px"><div style="height:6px;width:${Math.round(i / lotes.length * 100)}%;background:var(--marca);border-radius:3px"></div></div>`;
+      let r = null;
+      for (let intento = 0; intento < 2 && !r; intento++) {
+        try { const archivos = []; for (const f of lotes[i]) archivos.push({ nombre: f.name, dataUri: await leerArchivo(f) });
+          r = await pedir(S.subirDest === 'compra' ? 'subirFacturasCompra' : 'subirFacturasGasto', { archivos: archivos, estricto: estricto }, true); } catch (e) { if (intento) fallidos.push(lotes[i].map(f => f.name).join(', ')); }
       }
-    } catch (e) { $('#fgBtn').disabled = false; $('#fgProg').innerHTML = ''; if (!tot.detalle.length) return; }
+      if (r) { ['nuevas', 'duplicadas', 'omitidas', 'porClasificar'].forEach(k => tot[k] += r[k] || 0); tot.detalle.push(...r.detalle); }
+    }
+    if (fallidos.length) fallidos.forEach(n => tot.detalle.push({ estado: 'omitida', archivo: n.slice(0, 120), motivo: 'No se pudo subir (vuelve a subir estos; los que ya entraron no se duplican)' }));
+    if (fallidos.length) tot.omitidas += fallidos.length;
     resultadoFacturasGasto('Facturas subidas', tot); if (S.subirDest === 'compra') { if ($('#cCont')) bandejaCfdi(); } else { S.datGasKey = ''; cargarGastos(); }
   }
   function resultadoFacturasGasto(tit, r, extra) {
