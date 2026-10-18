@@ -2499,10 +2499,11 @@ const App = (() => {
     toast('Abriendo PDF…');
     try { const r = await pedir('verPdfGasto', { uuid: uuid }); verPdf(b64aBytes(r.b64), r.nombre, { url: r.url }); if (r.generado) toast('No llegó PDF: se armó uno con los datos del XML'); } catch (e) {}
   }
-  function formFacturasGasto() {
-    modal('Subir facturas de gastos', `<p>Elige los <b>XML</b> (y sus <b>PDF</b>) de tus facturas de gastos; también puedes subir archivos <b>.zip</b>. Puedes elegir muchos a la vez.</p>
+  function formFacturasGasto(dest) {
+    S.subirDest = dest === 'compra' ? 'compra' : 'gasto';
+    modal(S.subirDest === 'compra' ? 'Subir facturas de proveedores' : 'Subir facturas de gastos', `<p>Elige los <b>XML</b> (y sus <b>PDF</b>) de tus facturas${S.subirDest === 'compra' ? ' y notas de crédito de proveedores' : ' de gastos'}; también puedes subir archivos <b>.zip</b>. Puedes elegir muchos a la vez.</p>
       <label>Archivos<input type="file" id="fgArch" multiple accept=".xml,.pdf,.zip,text/xml,application/pdf,application/zip"></label>
-      <p class="muted">Se registran en Egresos CFDI con su categoría (según el proveedor), los archivos se guardan en Drive › Facturas de gastos y no se duplican si ya estaban. Solo se aceptan facturas a tu RFC.</p>
+      <p class="muted">${S.subirDest === 'compra' ? 'Se reconocen por el RFC del catálogo de proveedores: se ligan a su orden de compra (o quedan aquí para que elijas) y las notas de crédito se aplican a la orden de su factura.' : 'Se registran en Egresos CFDI con su categoría (según el proveedor), los archivos se guardan en Drive › Facturas de gastos y no se duplican si ya estaban. Las de proveedores del catálogo se van a Compras.'} Solo se aceptan facturas a tu RFC.</p>
       <div id="fgProg"></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="fgBtn" onclick="App.subirFacturasGasto()">Subir</button></div>`);
   }
@@ -2520,17 +2521,17 @@ const App = (() => {
       for (let i = 0; i < lotes.length; i++) {
         $('#fgProg').innerHTML = `<p class="muted">Subiendo ${i + 1} de ${lotes.length}…</p>`;
         const archivos = []; for (const f of lotes[i]) archivos.push({ nombre: f.name, dataUri: await leerArchivo(f) });
-        const r = await pedir('subirFacturasGasto', { archivos: archivos });
+        const r = await pedir(S.subirDest === 'compra' ? 'subirFacturasCompra' : 'subirFacturasGasto', { archivos: archivos });
         ['nuevas', 'duplicadas', 'omitidas', 'porClasificar'].forEach(k => tot[k] += r[k] || 0); tot.detalle.push(...r.detalle);
       }
     } catch (e) { $('#fgBtn').disabled = false; $('#fgProg').innerHTML = ''; if (!tot.detalle.length) return; }
-    resultadoFacturasGasto('Facturas subidas', tot); S.datGasKey = ''; cargarGastos();
+    resultadoFacturasGasto('Facturas subidas', tot); if (S.subirDest === 'compra') { if ($('#cCont')) bandejaCfdi(); } else { S.datGasKey = ''; cargarGastos(); }
   }
   function resultadoFacturasGasto(tit, r, extra) {
     const ic = { nueva: '✔', duplicada: '=', omitida: '✕' };
     modal(tit, `<div class="kpis">${[['Nuevas', r.nuevas], ['Ya estaban', r.duplicadas], ['Omitidas', r.omitidas], ['Por clasificar', r.porClasificar || r.detalle.filter(x => x.categoria === 'POR CLASIFICAR').length]].map(k => `<div class="kpi"><small>${k[0]}</small><b>${nf(k[1])}</b></div>`).join('')}</div>` +
       (r.detalle.length ? tabla([{ t: '', h: x => ic[x.estado] || '' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor || x.archivo || '')}</b>${x.de ? `<br><small class="muted">${esc(x.de)}</small>` : ''}` },
-        { t: 'Total', num: 1, h: x => x.total ? $$(x.total) : '' }, { t: 'Resultado', h: x => esc(x.estado === 'nueva' ? x.categoria : x.motivo || '') }], r.detalle) : '<p class="muted">No había facturas nuevas.</p>') +
+        { t: 'Total', num: 1, h: x => x.total ? $$(x.total) : '' }, { t: 'Resultado', h: x => x.compra && x.estado === 'nueva' ? `🧾 Compra · ${esc(x.accion || '')}${x.motivo ? '<br><small class="muted">' + esc(x.motivo) + '</small>' : ''}` : esc(x.estado === 'nueva' ? x.categoria : x.motivo || '') }], r.detalle) : '<p class="muted">No había facturas nuevas.</p>') +
       (extra || '') + `<div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Listo</button></div>`);
   }
   async function correoGastos() {
@@ -2551,7 +2552,7 @@ const App = (() => {
   }
   async function revisarCorreoGastos() {
     $('#cgBtn').disabled = true; $('#cgBtn').textContent = 'Revisando…';
-    try { const r = await pedir('revisarCorreoGastos', {}); resultadoFacturasGasto('Revisión de correo · ' + nf(r.revisados) + ' correo(s)', r, r.pendientes ? `<p class="muted">Quedan ${nf(r.pendientes)} correos por revisar: vuelve a tocar "Revisar ahora" o espera la revisión automática.</p>` : ''); S.datGasKey = ''; cargarGastos(); }
+    try { const r = await pedir('revisarCorreoGastos', {}); S.cfdiCompras = null; resultadoFacturasGasto('Revisión de correo · ' + nf(r.revisados) + ' correo(s)', r, r.pendientes ? `<p class="muted">Quedan ${nf(r.pendientes)} correos por revisar: vuelve a tocar "Revisar ahora" o espera la revisión automática.</p>` : ''); S.datGasKey = ''; cargarGastos(); }
     catch (x) { if ($('#cgBtn')) { $('#cgBtn').disabled = false; $('#cgBtn').textContent = '✉️ Revisar ahora'; } }
   }
   function filtrarCatGasto(cat) { S.fgas.categoria = cat; S.tabGas = 'facturas'; V.gastos('facturas'); $('#gCat').value = cat; cargarGastos(); }
@@ -2703,9 +2704,64 @@ const App = (() => {
     if (tab === 'pagos' && !puede('pagos_proveedor')) tab = 'lista';
     $('#vista').innerHTML = `<div class="pestanas"><button class="${tab === 'lista' ? 'activo' : ''}" onclick="App.vistaCompras('lista')">Órdenes de compra</button>
       ${puede('pagos_proveedor') ? `<button class="${tab === 'pagos' ? 'activo' : ''}" onclick="App.vistaCompras('pagos')">💳 Pagos a proveedores</button>` : ''}
+      ${verBandejaCfdi() ? `<button class="${tab === 'cfdi' ? 'activo' : ''}" onclick="App.vistaCompras('cfdi')">🧾 Facturas de proveedores<span id="cfdiN"></span></button>` : ''}
       <button class="${tab === 'nueva' ? 'activo' : ''}" onclick="App.vistaCompras('nueva')">+ Nueva orden</button></div><div id="cCont"></div>`;
-    tab === 'lista' ? listaCompras() : tab === 'pagos' ? listaPagosProv() : nuevaCompra();
+    tab === 'lista' ? listaCompras() : tab === 'pagos' ? listaPagosProv() : tab === 'cfdi' && verBandejaCfdi() ? bandejaCfdi() : nuevaCompra();
+    if (tab !== 'cfdi' && verBandejaCfdi()) contarCfdi();
   };
+
+  /* ---------- FACTURAS Y NOTAS DE CRÉDITO DE PROVEEDORES (CFDI por correo o subidos) ---------- */
+  const verBandejaCfdi = () => puede('compras') && !!U().todasSucursales;
+  async function contarCfdi() {
+    try { const r = await pedir('comprasCfdi', {}); S.cfdiCompras = r; const el = $('#cfdiN'); if (el) el.innerHTML = r.pendientes.length ? ` <span class="etq" style="background:var(--aviso);color:#fff">${r.pendientes.length}</span>` : ''; } catch (e) {}
+  }
+  async function bandejaCfdi() {
+    $('#cCont').innerHTML = '<div class="vacio">Cargando…</div>';
+    let r; try { r = S.cfdiCompras = await pedir('comprasCfdi', {}); } catch (e) { if ($('#cCont')) $('#cCont').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    if (!$('#cCont')) return;
+    const el = $('#cfdiN'); if (el) el.innerHTML = r.pendientes.length ? ` <span class="etq" style="background:var(--aviso);color:#fff">${r.pendientes.length}</span>` : '';
+    const optsSug = x => x.sugeridas.map(o => `<option value="${esc(o.id)}">${o.igual ? '✓ ' : ''}${esc(o.folio)} · ${esc(o.fecha)} · ${$$(o.total)}${o.saldo !== undefined ? ' · saldo ' + $$(o.saldo) : ''}${o.factura ? ' · fact. ' + esc(o.factura) : ''}</option>`).join('');
+    const tarjeta = (x, i) => `<div class="tarjeta" style="border-left:4px solid ${x.tipo === 'Factura' ? 'var(--marca)' : 'var(--aviso)'}">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><span class="etq">${esc(x.tipo)}</span> <b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)} · ${esc(x.folio)} · ${esc(x.fecha)}${x.origen ? ' · ' + esc(x.origen) : ''}</small></div>
+      <div style="text-align:right"><b style="font-size:18px">${$$(Math.abs(x.total))}</b><br><small class="muted">IVA ${$$(Math.abs(x.iva))}</small></div></div>
+      ${x.nota ? `<p class="peq" style="margin:6px 0;color:var(--aviso)">⚠️ ${esc(x.nota)}</p>` : ''}
+      <div class="fila" style="margin-top:6px">${x.sugeridas.length ? `<label style="flex:3 1 260px">${x.tipo === 'Factura' ? 'Ligar a la orden' : 'Aplicar a la orden'}<select id="cfdiOC${i}">${optsSug(x)}</select></label>
+        <button class="btn primario fijo" onclick="App.ligarCfdi(${i})">${x.tipo === 'Factura' ? '🔗 Ligar' : '✔ Aplicar'}</button>` : `<span class="muted peq" style="flex:3 1 260px">${x.tipo === 'Factura' ? 'No hay órdenes de este proveedor sin factura.' : 'No hay órdenes de este proveedor con saldo suficiente.'}</span>`}
+        <button class="btn fijo" onclick="App.verPdfCfdi('${esc(x.uuid)}')">📄 PDF</button>
+        ${x.tipo === 'Factura' ? `<button class="btn fijo" onclick="App.ocDesdeCfdi('${esc(x.uuid)}')">➕ Crear orden</button>` : ''}
+        <button class="btn fijo" onclick="App.descartarCfdi('${esc(x.uuid)}')">Descartar</button></div></div>`;
+    $('#cCont').innerHTML = `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>Facturas y notas de crédito de proveedores</b><br><small class="muted">Se reconocen por el RFC del catálogo de proveedores. Las claras se ligan solas a su orden (mismo proveedor y mismo total) y las notas de crédito con factura relacionada se aplican solas. Aquí quedan las que necesitan que elijas.${U().rol === 'Administrador' || puede('dueno') ? ' Las que llegan por correo se revisan cada hora (Gastos › ✉️ Correo).' : ''}</small></div>
+      <button class="btn fijo" onclick="App.formFacturasGasto('compra')">📥 Subir facturas</button></div></div>
+      <h3 style="margin:12px 0 6px">Por ligar (${r.pendientes.length})</h3>${r.pendientes.length ? r.pendientes.map(tarjeta).join('') : '<div class="vacio">✔ No hay facturas pendientes</div>'}
+      <div class="tarjeta"><h3>Últimas ligadas o aplicadas</h3>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Tipo', h: x => `<span class="etq">${esc(x.tipo)}</span>` }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.folio)}</small>` },
+        { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Estado', h: x => esc(x.estado) + (x.nota ? `<br><small class="muted">${esc(x.nota)}</small>` : '') }, { t: 'Orden', h: x => x.idOC ? `<a href="#" onclick="App.abrirCompraId('${esc(x.idOC)}');return false">${esc(x.orden)}</a>` : '' },
+        { t: 'PDF', h: x => `<button class="btn chico" onclick="App.verPdfCfdi('${esc(x.uuid)}')">📄</button>` }], r.recientes, { vacio: 'Todavía no hay' }) + '</div>';
+  }
+  async function ligarCfdi(i) {
+    const x = S.cfdiCompras.pendientes[i], id = $('#cfdiOC' + i).value, o = x.sugeridas.find(y => y.id === id);
+    if (!o) return;
+    if (x.tipo === 'Factura' && !o.igual && !confirm('El total de la orden (' + $$(o.total) + ') no es igual al de la factura (' + $$(x.total) + '). ¿Ligar de todos modos?')) return;
+    if (x.tipo !== 'Factura' && !confirm('¿Aplicar la nota de crédito ' + x.folio + ' por ' + $$(Math.abs(x.total)) + ' a la orden ' + o.folio + '? Baja su saldo.')) return;
+    try { const r = await pedir('ligarFacturaCompra', { uuid: x.uuid, ID_O_Compra: id }); toast('✔ ' + (x.tipo === 'Factura' ? 'Factura ligada a ' : 'Nota aplicada a ') + r.orden); bandejaCfdi(); } catch (e) {}
+  }
+  async function descartarCfdi(uuid) {
+    const m = prompt('¿Por qué la descartas? (ej. cancelada, duplicada, no es compra)'); if (m === null) return;
+    try { await pedir('descartarFacturaCompra', { uuid: uuid, motivo: m }); toast('Descartada'); bandejaCfdi(); } catch (e) {}
+  }
+  async function verPdfCfdi(uuid) {
+    toast('Abriendo PDF…');
+    try { const r = await pedir('verPdfCompra', { uuid: uuid }); verPdf(b64aBytes(r.b64), r.nombre, { url: r.url }); if (r.generado) toast('No llegó PDF: se armó uno con los datos del XML'); } catch (e) {}
+  }
+  async function ocDesdeCfdi(uuid) {
+    let d; try { d = await pedir('ocDesdeFactura', { uuid: uuid }); } catch (e) { return; }
+    if (S.oc && S.oc.lineas && S.oc.lineas.length && !confirm('Ya tienes una orden de compra en captura. ¿Reemplazarla con esta factura?')) return;
+    const ok = d.lineas.filter(l => l.id && prod(l.id)), sin = d.lineas.filter(l => !l.id || !prod(l.id));
+    S.oc = { prov: d.prov, suc: sucTrabajo(), factura: d.factura, fecha: d.fecha, dias: d.dias || '', descEsp: 0, descPP: 0, flete: 0, recibido: false, actCosto: false,
+      obs: 'Factura ' + d.factura, lineas: ok.map(l => ({ id: l.id, cant: l.cant, precio: l.precio, desc: 0, lote: '', cad: '' })), pago: 0,
+      cfdi: { uuid: d.uuid, factura: d.factura, total: d.total, sin: sin } };
+    V.compras('nueva');
+    toast('Orden armada con la factura ' + d.factura + (sin.length ? ' · ' + sin.length + ' producto(s) por emparejar' : ''));
+  }
 
   /* ---------- PAGOS A PROVEEDORES (hoja Pago_Proveedor) ---------- */
   function listaPagosProv() {
@@ -2960,7 +3016,9 @@ const App = (() => {
   function nuevaCompra() {
     if (!S.oc) S.oc = { prov: '', suc: sucTrabajo(), factura: '', fecha: hoyISO(), dias: '', descEsp: 0, descPP: 0, flete: 0, recibido: true, actCosto: true, obs: '', lineas: [], pago: 0 };
     const o = S.oc, cat = D().catalogos;
-    $('#cCont').innerHTML = (o.req ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">📑 Faltantes de la <b>requisición ${esc(o.req.folio)}</b>: la orden queda ligada a ella.</div><button class="btn fijo chico" onclick="App.quitarReqOc()">Desligar</button></div></div>` : '') +
+    $('#cCont').innerHTML = (o.cfdi ? `<div class="tarjeta" style="border-color:var(--marca)"><div class="fila"><div style="flex:3 1 260px">🧾 Orden desde la <b>factura ${esc(o.cfdi.factura)}</b> (total ${$$(o.cfdi.total)}). Al guardarla queda ligada con su XML y PDF.
+      ${o.cfdi.sin.length ? `<br><b style="color:var(--aviso)">Agrega con el buscador estos productos que no reconocí:</b><ul class="peq" style="margin:4px 0 0 18px">${o.cfdi.sin.map(l => `<li>${esc(l.desc)}${l.noId ? ' <small class="muted">(' + esc(l.noId) + ')</small>' : ''} · ${nf(l.cant)} × ${$$(l.precio)}</li>`).join('')}</ul>` : ''}</div>
+      <button class="btn fijo chico" onclick="App.quitarCfdiOc()">Desligar</button></div></div>` : '') + (o.req ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">📑 Faltantes de la <b>requisición ${esc(o.req.folio)}</b>: la orden queda ligada a ella.</div><button class="btn fijo chico" onclick="App.quitarReqOc()">Desligar</button></div></div>` : '') +
       `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="ocFolio"></div></div><div class="rejilla">
       <label>Proveedor *<select id="ocProv">${opts((D().proveedores || []).filter(p => p.activo), o.prov, 'Selecciona…')}</select></label>
       <label>Sucursal destino<select id="ocSuc">${optsSuc(o.suc)}</select></label>
@@ -3013,7 +3071,7 @@ const App = (() => {
     try {
       const r = await pedir('guardarCompra', { ID_O_Compra: uid(), ID_Proveedor: o.prov, Suc_Destino: o.suc, No_Factura: o.factura, Fecha: o.fecha, D_credito: o.dias,
         descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete, Recibido: o.recibido, actualizarCosto: o.actCosto, Observaciones: o.obs,
-        lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: l.lote, F_Caducidad: l.cad })),
+        lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: l.lote, F_Caducidad: l.cad })), cfdiUuid: o.cfdi ? o.cfdi.uuid : '',
         pago: o.pago > 0 ? { monto: o.pago, forma: $('#ocForma').value, banco: $('#ocBanco').value } : null, ID_Requisicion: o.req ? o.req.id : '' });
       toast('✔ Orden ' + r.folio + ' guardada' + (o.req ? ' · ligada a la requisición ' + o.req.folio : '')); S.oc = null; S.cacheTot = {}; refrescarStock(); if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista');
     } catch (e) {}
@@ -6110,7 +6168,7 @@ const App = (() => {
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
-    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } },
+    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, ligarCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes,
