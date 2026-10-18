@@ -364,7 +364,7 @@ const App = (() => {
       const r = JSON.parse(txt);
       if (!r.ok) { $('#lgErr').textContent = r.error; return; }
       S.token = r.token; LS.set('token', r.token);
-      try { await refrescarDatos(); mostrarApp(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); }
+      try { await refrescarDatos(); mostrarApp(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); setTimeout(fotosAlEntrar, 4000); }
       catch (e) { $('#lgErr').textContent = e.message; }
     }).withFailureHandler(e => { btn.disabled = false; $('#lgErr').textContent = 'Sin conexión: ' + e.message; })
       .login($('#lgUser').value, $('#lgPass').value);
@@ -440,6 +440,7 @@ const App = (() => {
     try {
       if (S.cola.length) await sincronizar(true);
       await refrescarDatos(true); await precargar(true); await renovarSesion(); await guardarLibs();
+      await descargarFotos(!S.fotosT || Date.now() - S.fotosT > FOTOS_DIAS * 86400e3, (i, t) => toast('Descargando fotos de productos… ' + Math.round(i / t * 100) + '%'));
       toast('✔ Listo para ruta: la información quedó guardada en este equipo');
     } catch (e) { toast('No se pudo completar con esta señal; intenta de nuevo', true); }
     finally { cargando(false); pintarBienvEstado(); }
@@ -4027,7 +4028,7 @@ const App = (() => {
     const ids = [...new Set(colaFotos)].filter(id => S.fotos[id] === undefined).slice(0, 40); colaFotos = colaFotos.filter(id => ids.indexOf(id) < 0 && S.fotos[id] === undefined);
     if (!ids.length) return;
     ids.forEach(id => S.fotos[id] = null);
-    pedir('fotosMini', { ids: ids }, true).then(r => { Object.keys(r).forEach(id => { S.fotos[id] = r[id] || ''; pintarMini(id); }); })
+    pedir('fotosMini', { ids: ids }, true).then(r => { Object.keys(r).forEach(id => { S.fotos[id] = r[id] || ''; pintarMini(id); }); guardarFotosLocal(); })
       .catch(() => ids.forEach(id => delete S.fotos[id])).finally(() => { if (colaFotos.length) timerFotos = setTimeout(pedirMinis, 50); });
   }
   function pintarMini(id) {
@@ -4039,6 +4040,47 @@ const App = (() => {
       if (S.fotos[id]) e.target.src = S.fotos[id]; else if (S.fotos[id] === undefined) { colaFotos.push(id); clearTimeout(timerFotos); timerFotos = setTimeout(pedirMinis, 120); } }), { rootMargin: '200px' });
     cont.querySelectorAll('img[data-mini]').forEach(im => { if (S.fotos[im.dataset.mini]) im.src = S.fotos[im.dataset.mini]; else obsFotos.observe(im); });
   }
+  /* Miniaturas guardadas en el equipo (IndexedDB): se descargan todas en segundo plano al entrar y con "Actualizar para ruta",
+     así aparecen al momento (y sin señal). Cualquier miniatura que se dibuje en pantalla se llena sola (MutationObserver). */
+  const FOTOS_DIAS = 7;
+  async function cargarFotosLocal() {
+    try { const f = await KV.get('fotos'); if (f && f.m) { Object.keys(f.m).forEach(id => { if (S.fotos[id] == null && f.m[id] != null) S.fotos[id] = f.m[id]; }); S.fotosT = f.t || 0; pintarTodasMinis(); } } catch (e) {}
+  }
+  function guardarFotosLocal() {
+    const m = {}; Object.keys(S.fotos).forEach(id => { if (typeof S.fotos[id] === 'string') m[id] = S.fotos[id]; });
+    KV.set('fotos', { t: S.fotosT || Date.now(), m: m });
+  }
+  function pintarTodasMinis(raiz) {
+    (raiz || document).querySelectorAll('img[data-mini]').forEach(im => { const id = im.dataset.mini; if (S.fotos[id]) { if (im.src !== S.fotos[id]) im.src = S.fotos[id]; } else if (S.fotos[id] === '') pintarMini(id); });
+  }
+  /** Descarga (40 por envío) las miniaturas que faltan; con `renovar` vuelve a bajar todas (cambios de foto). */
+  async function descargarFotos(renovar, avance) {
+    if (S.bajandoFotos || !S.token || navigator.onLine === false) return 0;
+    S.bajandoFotos = true; let n = 0;
+    try {
+      const prods = (D().productos || []).filter(p => p.foto);
+      const ids = prods.map(p => p.id).filter(id => renovar || typeof S.fotos[id] !== 'string');
+      for (let i = 0; i < ids.length; i += 40) {
+        if (navigator.onLine === false || !S.token) break;
+        if (avance) avance(i, ids.length);
+        const lote = ids.slice(i, i + 40);
+        try { const r = await pedir('fotosMini', { ids: lote }, true); Object.keys(r).forEach(id => { S.fotos[id] = r[id] || ''; pintarMini(id); n++; }); guardarFotosLocal(); }
+        catch (e) { break; }
+      }
+      if (renovar && n) { S.fotosT = Date.now(); guardarFotosLocal(); }
+    } finally { S.bajandoFotos = false; }
+    return n;
+  }
+  function fotosAlEntrar() {
+    const viejas = !S.fotosT || Date.now() - S.fotosT > FOTOS_DIAS * 86400e3;
+    senalFuerte().then(ok => { if (ok) descargarFotos(viejas && Object.keys(S.fotos).length > 0); }).catch(() => {});
+  }
+  try {
+    new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) { if (n.nodeType !== 1) continue;
+      const ims = n.matches && n.matches('img[data-mini]') ? [n] : (n.querySelectorAll ? [...n.querySelectorAll('img[data-mini]')] : []);
+      ims.forEach(im => { const id = im.dataset.mini; if (S.fotos[id]) im.src = S.fotos[id]; else if (S.fotos[id] === undefined) { colaFotos.push(id); clearTimeout(timerFotos); timerFotos = setTimeout(pedirMinis, 150); } }); } })
+      .observe(document.body, { childList: true, subtree: true });
+  } catch (e) {}
   const bloqueFoto = p => p && p.foto ? `<div class="foto-prod" data-grande="${esc(p.id)}"><span class="muted">Cargando foto…</span></div>` : '';
   async function cargarFotoGrande(id) {
     const el = document.querySelector(`[data-grande="${CSS.escape(id)}"]`); if (!el) return;
@@ -4060,7 +4102,7 @@ const App = (() => {
     try {
       const uri = await reducirImagen(f, 1000);
       await pedir('subirFotoProducto', { id: id, dataUri: uri });
-      toast('✔ Foto guardada'); delete S.fotos[id]; const p = prod(id); if (p) p.foto = 1;
+      toast('✔ Foto guardada'); delete S.fotos[id]; guardarFotosLocal(); const p = prod(id); if (p) p.foto = 1;
       const el = document.querySelector(`[data-grande="${CSS.escape(id)}"]`) || document.querySelector('#fotoEdit');
       if (el) el.innerHTML = `<img src="${uri}" alt="">`;
     } catch (e) { if (!e.message) toast('No se pudo leer la imagen', true); }
@@ -6138,7 +6180,7 @@ const App = (() => {
 
   /* ---------------- arranque ---------------- */
   async function iniciar() {
-    await cargarLocal();
+    await cargarLocal(); await cargarFotosLocal();
     if (window.LOGO) { const l = $('#lgLogo'); if (l) l.innerHTML = `<img src="${window.LOGO}" alt="Interés Veterinario">`; const n = $('#lgNombre'); if (n) n.style.display = 'none'; }
     window.addEventListener('online', () => { marcarRed(true); RED.fuerte = null; setTimeout(() => sincronizar(), 2500); });
     try { if (navigator.connection) navigator.connection.addEventListener('change', () => { RED.fuerte = null; if (S.cola.length) sincronizar(); }); } catch (e) {}
@@ -6155,7 +6197,7 @@ const App = (() => {
     window.addEventListener('online', () => { const el = $('#avisoCache'); if (el && !el.classList.contains('oculto')) el.querySelector('span').innerHTML = '🟢 <b>Ya hay conexión.</b> Toca “Actualizar” para ver la información al momento.'; setTimeout(precargar, 15000); });
     if (S.token && S.datos) {
       mostrarApp();
-      refrescarDatos(true).then(() => { pintarMenu(); pintarBienvEstado(); sincronizar(); renovarSesion(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); }).catch(() => {});
+      refrescarDatos(true).then(() => { pintarMenu(); pintarBienvEstado(); sincronizar(); renovarSesion(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); setTimeout(fotosAlEntrar, 4000); }).catch(() => {});
     } else {
       $('#login').classList.remove('oculto');
     }
