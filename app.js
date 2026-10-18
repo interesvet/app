@@ -2992,7 +2992,7 @@ const App = (() => {
           <label>Lote<input data-k="Lote" value="${esc(l.lote === 'SIN LOTE' ? '' : l.lote)}"></label><label>Caducidad<input type="date" data-k="F_Caducidad" value="${isoDe(l.cad)}"></label></div>`).join('')}
         <div class="acciones"><button class="btn primario" onclick="App.recibirCompra('${d.id}')">✔ Recibir en inventario</button></div></div>` : ''}
       ${bloqueArch('ocFactura', d.id)}${bloqueArch('ocGuia', d.id)}${bloqueArch('ocFirma', d.id)}
-      <div class="acciones no-imprimir"><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button><button class="btn" onclick="App.pdfCompra('${d.id}')">📄 PDF</button>
+      <div class="acciones no-imprimir"><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button><button class="btn" onclick="App.pdfCompra('${d.id}')" title="Solo cantidad, producto y categoría: sin costos">📄 PDF para proveedor</button>${puede('ver_costos') ? `<button class="btn" onclick="App.pdfCompra('${d.id}', true)" title="Con costos, descuentos, IVA y totales (no se manda al proveedor)">📄 PDF interno</button>` : ''}
       ${puede('compras') ? `<button class="btn" onclick="App.formFacturaCompra('${d.id}')">🧾 ${d.factura ? 'Editar' : 'Capturar'} factura</button>` : ''}
       ${d.saldo > 0.009 && puede('pagos_proveedor') ? `<button class="btn" onclick="App.formNotaCredito('${d.id}',${d.saldo})">🧾 Nota de crédito</button><button class="btn primario" onclick="App.formPagoProv('${d.id}',${d.saldo})">Registrar pago</button>` : ''}</div>`);
   }
@@ -4732,7 +4732,16 @@ const App = (() => {
         izq: ['Solicita: ' + (d.solicitaNombre || ''), 'Surte: ' + (d.surteNombre || ''), d.solicito ? 'Pidió: ' + d.solicito : ''],
         totales: imp ? [['Subtotal', d.importes.sub], ['IVA (suma de los productos)', d.importes.iva], ['Valor de la requisición', d.importes.total, true]] : [],
         notas: [d.comentarios], firmas: ['Solicita', 'Surte'], archivo: 'Requisicion ' + d.folio }); } },
-    pdfCompra: { det: p => ['detalleCompra', { ID_O_Compra: p.ID_O_Compra }], ult: 'ultimaCompra', key: p => p.ID_O_Compra, map: d => {
+    pdfCompra: { det: p => ['detalleCompra', { ID_O_Compra: p.ID_O_Compra }], ult: 'ultimaCompra', key: p => p.ID_O_Compra, map: (d, prm) => {
+      if (!prm.conCostos) {   // versión para el proveedor: sin costos
+        const pz = d.lineas.reduce((a, l) => a + l.cant, 0);
+        return { titulo: 'ORDEN DE COMPRA', folio: d.folio, fecha: d.fecha, extra: [d.factura ? 'Factura ' + d.factura : ''], suc: sucDe(d.suc),
+          izq: (p => ['Proveedor: ' + p.nombre, p.comercial, p.rfc ? 'RFC ' + p.rfc : '', [p.dom, p.cp ? 'C.P. ' + p.cp : ''].filter(Boolean).join(' · '), [p.tels, p.email].filter(Boolean).join(' · '), p.contacto ? 'Contacto de ventas: ' + p.contacto : ''])(lineasProv(d.prov, d)),
+          der: ['Entregar en: ' + sucNom(d.suc), sucDe(d.suc).direccion || '', lineasProv(d.prov, d).cred],
+          cols: [{ t: 'Cantidad', w: 0.9, num: 1 }, { t: 'Clave', w: 1.1 }, { t: 'Producto', w: 4 }, { t: 'Categoría', w: 1.6 }],
+          filas: d.lineas.map(l => [nn(l.cant), l.prod || '', l.nombre, l.cat || ((prod(l.prod) || {}).categoria || '')]),
+          suma: [nf(pz), '', 'Total de piezas · ' + d.lineas.length + ' producto(s)', ''], totales: [], notas: [d.obs], firmas: ['Elaboró', 'Recibió (proveedor)'], archivo: 'Orden de compra ' + d.folio };
+      }
       const ls = d.lineas.map(l => ({ cant: l.cant, nombre: l.nombre, lote: l.lote, cad: l.cad, precio: l.precio, desc: l.desc, importe: r2c((l.sub || l.cant * l.precio) - (l.desc || 0)), iva: l.iva || 0, total: l.total }));
       const t = lineasImp(ls, ls.some(l => l.lote || l.cad), ls.some(l => l.desc));
       return Object.assign(t, { titulo: 'ORDEN DE COMPRA', folio: d.folio, fecha: d.fecha, extra: [d.factura ? 'Factura ' + d.factura : '', d.uuid ? 'Folio fiscal: ' + d.uuid : ''], suc: sucDe(d.suc),
@@ -4763,7 +4772,7 @@ const App = (() => {
       const k = L.key(params), u = S[L.ult];
       let d = u && k && (u.id === k || u.folio === k) ? u : null;
       if (!d) { const [a, p] = L.det(params); d = await call(a, p); }
-      const sp = L.map(d); sp.pie = aviso === false ? '' : 'Generado en el equipo';
+      const sp = L.map(d, params || {}); sp.pie = aviso === false ? '' : 'Generado en el equipo';
       const bytes = await pdfLocal(sp);
       verPdf(bytes, sp.archivo, { texto: info && info.texto, cel: info && info.cel });
       if (aviso !== false) toast('📄 PDF hecho en el equipo, sin conexión. Compártelo con 📤');
@@ -6315,7 +6324,7 @@ const App = (() => {
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
     vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
-    pdfCompra: id => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
+    pdfCompra: (id, conCostos) => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', conCostos ? { ID_O_Compra: id, conCostos: true } : { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
