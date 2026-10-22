@@ -825,7 +825,7 @@ const App = (() => {
       ${c ? kpi(U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)') : ''}
       ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%') : ''}
       ${kpi('Cobrado en el periodo', $$(k.cobrado), 'Ventas con IVA ' + $$(k.ventasConIva))}
-      ${k.compras !== null && k.compras !== undefined ? kpi('Compras', $$(k.compras), k.ordenes + ' órdenes') : ''}
+      ${k.compras !== null && k.compras !== undefined ? kpi('Compras del periodo', $$(k.compras), k.ordenes + (k.ordenes === 1 ? ' orden con factura' : ' órdenes con factura') + (k.porRecibir ? ' · ' + k.porRecibir + ' por recibir' : '') + (k.sinFactura ? '<br>' + k.sinFactura + ' sin factura (' + $$(k.sinFacturaTotal) + ') no se cuentan' : '')) : ''}
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
         'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
       ${kpi('Mermas', $$(k.mermas), c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
