@@ -5205,7 +5205,7 @@ const App = (() => {
     else if (!CR) { S.costosRealesT = Date.now(); try { CR = S.costosReales = await pedir('costosReales', {}); } catch (e) { CR = null; } }
     if (!CR) $('#pfBase').value = 'lista', $('#pfBase').disabled = true;
     $('#pNota').innerHTML = CR
-      ? `<p><b>Costo real</b> = lo pagado en compras (con descuentos) ÷ todas las piezas recibidas, incluidas las bonificadas, + ${(CR.flete * 100).toFixed(0)}% de flete. Promedio de los últimos ${CR.meses} meses, sin IVA.
+      ? `<p><b>Costo real</b> = lo pagado en compras (con descuentos) ÷ todas las piezas recibidas, incluidas las bonificadas (a $0, $0.01 … $0.10), + ${(CR.flete * 100).toFixed(0)}% de flete. Promedio de los últimos ${CR.meses} meses, sin IVA.
          <b>Colchón</b> = cuánto está tu costo de lista arriba del costo real. Margen = (precio − costo) / precio. <span class="etq mal">rojo</span> &lt; 10% · <span class="etq av">ámbar</span> &lt; 20%.</p>`
       : (U().costoLista ? '<p>Margen calculado con el precio costo de la lista de precios.</p>' : '<p>Sin conexión: se muestra el margen con el costo de lista.</p>');
     const cr = p => CR && CR.productos[p.id] ? CR.productos[p.id] : null;
