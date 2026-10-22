@@ -2812,8 +2812,13 @@ const App = (() => {
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><span class="etq">${esc(x.tipo)}</span> <b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)} · ${esc(x.folio)} · ${esc(x.fecha)}${x.origen ? ' · ' + esc(x.origen) : ''}</small></div>
       <div style="text-align:right"><b style="font-size:18px">${$$(Math.abs(x.total))}</b><br><small class="muted">IVA ${$$(Math.abs(x.iva))}</small></div></div>
       ${x.nota ? `<p class="peq" style="margin:6px 0;color:var(--aviso)">⚠️ ${esc(x.nota)}</p>` : ''}
-      <div class="fila" style="margin-top:6px">${x.sugeridas.length ? `<label style="flex:3 1 260px">${x.tipo === 'Factura' ? 'Ligar a la orden' : 'Aplicar a la orden'}<select id="cfdiOC${i}">${optsSug(x)}</select></label>
-        <button class="btn primario fijo" onclick="App.ligarCfdi(${i})">${x.tipo === 'Factura' ? '🔗 Ligar' : '✔ Aplicar'}</button>` : `<span class="muted peq" style="flex:3 1 260px">${x.tipo === 'Factura' ? 'No hay órdenes de este proveedor sin factura.' : 'No hay órdenes de este proveedor con saldo suficiente.'}</span>`}
+      ${x.tipo === 'Factura' && x.sugeridas.length ? `<div style="margin-top:8px"><small class="muted">Palomea la orden u órdenes que cubre esta factura (puede juntar varias, aunque ya estén recibidas):</small>
+        <div class="cfdi-ocs" data-i="${i}" style="display:grid;gap:4px;margin-top:6px;max-height:240px;overflow:auto">${x.sugeridas.map(o => `<label class="check" style="align-items:flex-start"><input type="checkbox" value="${esc(o.id)}" data-t="${o.total}" ${o.sel ? 'checked' : ''} onchange="App.sumaCfdi(${i})">
+          <span><b>${esc(o.folio)}</b> · ${esc(o.fecha)} · ${$$(o.total)}${o.recibida ? ' · recibida' : ' · por recibir'}${o.factura ? ` · <span class="${o.conUuid ? 'txt-mal' : 'muted'}">fact. ${esc(o.factura)}</span>` : ''}${o.rel ? ' · <b>esta factura la sustituye</b>' : ''}</span></label>`).join('')}</div>
+        <div id="cfdiSum${i}" class="peq" style="margin-top:6px"></div></div>` : ''}
+      <div class="fila" style="margin-top:6px">${x.tipo === 'Factura' ? (x.sugeridas.length ? `<span style="flex:3 1 260px"></span><button class="btn primario fijo" onclick="App.ligarCfdi(${i})">🔗 Ligar</button>` : '<span class="muted peq" style="flex:3 1 260px">No hay órdenes de este proveedor en los últimos 12 meses.</span>')
+        : x.sugeridas.length ? `<label style="flex:3 1 260px">Aplicar a la orden<select id="cfdiOC${i}">${optsSug(x)}</select></label>
+        <button class="btn primario fijo" onclick="App.ligarCfdi(${i})">✔ Aplicar</button>` : `<span class="muted peq" style="flex:3 1 260px">No hay órdenes de este proveedor con saldo suficiente.</span>`}
         <button class="btn fijo" onclick="App.verPdfCfdi('${esc(x.uuid)}')">📄 PDF</button>
         ${x.tipo === 'Factura' ? `<button class="btn fijo" onclick="App.ocDesdeCfdi('${esc(x.uuid)}')">➕ Crear orden</button>` : ''}
         <button class="btn fijo" onclick="App.descartarCfdi('${esc(x.uuid)}')">Descartar</button></div></div>`;
@@ -2821,11 +2826,30 @@ const App = (() => {
       <button class="btn fijo" onclick="App.formFacturasGasto('compra')">📥 Subir facturas</button></div></div>
       <h3 style="margin:12px 0 6px">Por ligar (${r.pendientes.length})</h3>${r.pendientes.length ? r.pendientes.map(tarjeta).join('') : '<div class="vacio">✔ No hay facturas pendientes</div>'}
       <div class="tarjeta"><h3>Últimas ligadas o aplicadas</h3>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Tipo', h: x => `<span class="etq">${esc(x.tipo)}</span>` }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.folio)}</small>` },
-        { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Estado', h: x => esc(x.estado) + (x.nota ? `<br><small class="muted">${esc(x.nota)}</small>` : '') }, { t: 'Orden', h: x => x.idOC ? `<a href="#" onclick="App.abrirCompraId('${esc(x.idOC)}');return false">${esc(x.orden)}</a>` : '' },
+        { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Estado', h: x => esc(x.estado) + (x.nota ? `<br><small class="muted">${esc(x.nota)}</small>` : '') }, { t: 'Orden', h: x => { const ids = String(x.idOC || '').split(/\s*,\s*/).filter(String), fs = String(x.orden || '').split(/\s*,\s*/); return ids.map((id, k) => `<a href="#" onclick="App.abrirCompraId('${esc(id)}');return false">${esc(fs[k] || id)}</a>`).join('<br>'); } },
         { t: 'PDF', h: x => `<button class="btn chico" onclick="App.verPdfCfdi('${esc(x.uuid)}')">📄</button>` }], r.recientes, { vacio: 'Todavía no hay' }) + '</div>';
+    r.pendientes.forEach((x, i) => { if (x.tipo === 'Factura') sumaCfdi(i); });
+  }
+  /** Suma de las órdenes palomeadas contra el total de la factura. */
+  function sumaCfdi(i) {
+    const x = S.cfdiCompras.pendientes[i], el = $('#cfdiSum' + i); if (!el) return;
+    const ch = [...document.querySelectorAll('.cfdi-ocs[data-i="' + i + '"] input:checked')], suma = ch.reduce((a, c) => a + Number(c.dataset.t || 0), 0), dif = Math.round((suma - x.total) * 100) / 100;
+    el.innerHTML = !ch.length ? '<span class="muted">Ninguna orden seleccionada</span>' : `${ch.length} ${ch.length === 1 ? 'orden' : 'órdenes'}: <b>${$$(suma)}</b> · factura ${$$(x.total)} · ` +
+      (Math.abs(dif) <= 1 ? '<b style="color:var(--marca)">✓ cuadra</b>' : `<b class="txt-mal">diferencia ${$$(dif)}</b>`);
   }
   async function ligarCfdi(i) {
-    const x = S.cfdiCompras.pendientes[i], id = $('#cfdiOC' + i).value, o = x.sugeridas.find(y => y.id === id);
+    const x = S.cfdiCompras.pendientes[i];
+    if (x.tipo === 'Factura') {
+      const ids = [...document.querySelectorAll('.cfdi-ocs[data-i="' + i + '"] input:checked')].map(c => c.value), sel = x.sugeridas.filter(o => ids.indexOf(o.id) >= 0);
+      if (!sel.length) return toast('Palomea la orden u órdenes de esta factura', true);
+      const suma = sel.reduce((a, o) => a + o.total, 0);
+      if (Math.abs(suma - x.total) > 1 && !confirm('La suma de ' + (sel.length > 1 ? 'las órdenes' : 'la orden') + ' (' + $$(suma) + ') no es igual al total de la factura (' + $$(x.total) + '). ¿Ligar de todos modos?')) return;
+      const conOtra = sel.filter(o => o.conUuid);
+      if (conOtra.length && !confirm('Esta factura SUSTITUYE la que ya tenían: ' + conOtra.map(o => o.folio + ' (fact. ' + o.factura + ')').join(', ') + '. La anterior queda como "Sustituida" (sus archivos no se borran). ¿Continuar?')) return;
+      try { const r = await pedir('ligarFacturaCompra', { uuid: x.uuid, ids: ids, reemplazar: conOtra.length > 0 }); toast('✔ Factura ligada a ' + r.orden); bandejaCfdi(); } catch (e) {}
+      return;
+    }
+    const id = $('#cfdiOC' + i).value, o = x.sugeridas.find(y => y.id === id);
     if (!o) return;
     if (x.tipo === 'Factura' && !o.igual && !confirm('El total de la orden (' + $$(o.total) + ') no es igual al de la factura (' + $$(x.total) + '). ¿Ligar de todos modos?')) return;
     if (x.tipo !== 'Factura' && !confirm('¿Aplicar la nota de crédito ' + x.folio + ' por ' + $$(Math.abs(x.total)) + ' a la orden ' + o.folio + '? Baja su saldo.')) return;
@@ -6388,7 +6412,7 @@ const App = (() => {
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
-    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, ligarCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
+    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, ligarCfdi, sumaCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes,
