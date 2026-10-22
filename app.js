@@ -820,17 +820,23 @@ const App = (() => {
     try { r = await pedir('dashboard', p); } catch (e) { $('#dash').innerHTML = '<div class="vacio">El tablero requiere conexión.</div>'; return; }
     const k = r.kpi, c = k.utilidad !== undefined;
     const kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
-    $('#dash').innerHTML = `${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}<div class="kpis">
+    // Resumen de compras (igual que en Compras › Órdenes de compra): solo órdenes con factura o nota del proveedor
+    const vc = k.compras !== null && k.compras !== undefined;
+    const htmlCompras = !vc ? '' : `<div class="tarjeta"><h3 style="margin-top:0">📦 Compras y cuentas por pagar <small class="muted" style="font-weight:400">· solo órdenes con factura o nota del proveedor</small></h3><div class="kpis" style="margin:0">
+      <div class="kpi kpi-clic" onclick="App.ir('compras')"><small>Compras del periodo</small><b>${$$(k.compras)}</b><span>${k.ordenes} ${k.ordenes === 1 ? 'orden con factura' : 'órdenes con factura'}${k.porRecibir ? ' · ' + k.porRecibir + ' por recibir' : ''}${k.sinFactura ? '<br>' + k.sinFactura + ' sin factura (' + $$(k.sinFacturaTotal) + ') no se cuentan' : ''}</span></div>
+      <div class="kpi"><small>Pagado de esas compras</small><b>${$$(k.comprasPagado || 0)}</b><span>${k.compras > 0 ? Math.round((k.comprasPagado || 0) / k.compras * 100) + ' % del total' : '—'}</span></div>
+      <div class="kpi"><small>Por pagar del periodo</small><b>${$$(k.comprasSaldo || 0)}</b><span>${k.comprasConSaldo || 0} ${k.comprasConSaldo === 1 ? 'orden' : 'órdenes'} con saldo</span></div>
+      <div class="kpi kpi-clic" onclick="App.ir('compras')"><small>Cuentas por pagar (total)</small><b>${$$(k.cxp)}</b><span>${k.cxpOrdenes || 0} ${k.cxpOrdenes === 1 ? 'orden' : 'órdenes'}${k.cxpVencido > 0.009 ? ` · <b class="txt-mal">vencido ${$$(k.cxpVencido)}</b>` : ' · nada vencido'}</span></div>
+      </div></div>`;
+    $('#dash').innerHTML = `${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}${htmlCompras}<div class="kpis">
       ${kpi('Ventas netas (sin IVA)', $$(k.ventas), k.notas + ' notas · ticket ' + $$(k.ticket))}
       ${c ? kpi(U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)') : ''}
       ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%') : ''}
       ${kpi('Cobrado en el periodo', $$(k.cobrado), 'Ventas con IVA ' + $$(k.ventasConIva))}
-      ${k.compras !== null && k.compras !== undefined ? kpi('Compras del periodo', $$(k.compras), k.ordenes + (k.ordenes === 1 ? ' orden con factura' : ' órdenes con factura') + (k.porRecibir ? ' · ' + k.porRecibir + ' por recibir' : '') + (k.sinFactura ? '<br>' + k.sinFactura + ' sin factura (' + $$(k.sinFacturaTotal) + ') no se cuentan' : '')) : ''}
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
         'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
       ${kpi('Mermas', $$(k.mermas), c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
       ${kpi('Por cobrar', $$(k.cxc), 'Vencido ' + $$(k.cxcVencida))}
-      ${k.cxp !== null && k.cxp !== undefined ? kpi('Por pagar a proveedores', $$(k.cxp), '') : ''}
       ${c ? kpi('Inventario valorizado', $$(k.valorInventario), nf(k.piezas) + ' piezas') : kpi('Piezas en inventario', nf(k.piezas), '')}
       ${kpi('Lotes por caducar', k.porCaducar, k.caducados + ' lotes ya caducados con existencia')}
       </div>
