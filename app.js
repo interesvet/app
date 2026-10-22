@@ -2786,7 +2786,7 @@ const App = (() => {
     $('#vista').innerHTML = `<div class="pestanas"><button class="${tab === 'lista' ? 'activo' : ''}" onclick="App.vistaCompras('lista')">Órdenes de compra</button>
       ${puede('pagos_proveedor') ? `<button class="${tab === 'pagos' ? 'activo' : ''}" onclick="App.vistaCompras('pagos')">💳 Pagos a proveedores</button>` : ''}
       ${verBandejaCfdi() ? `<button class="${tab === 'cfdi' ? 'activo' : ''}" onclick="App.vistaCompras('cfdi')">🧾 Facturas de proveedores<span id="cfdiN"></span></button>` : ''}
-      <button class="${tab === 'nueva' ? 'activo' : ''}" onclick="App.vistaCompras('nueva')">+ Nueva orden</button></div><div id="cCont"></div>`;
+      <button class="${tab === 'nueva' ? 'activo' : ''}" onclick="App.vistaCompras('nueva')">${S.oc && S.oc.editId ? '✏️ Editando ' + esc(S.oc.folio) : '+ Nueva orden'}</button></div><div id="cCont"></div>`;
     tab === 'lista' ? listaCompras() : tab === 'pagos' ? listaPagosProv() : tab === 'cfdi' && verBandejaCfdi() ? bandejaCfdi() : nuevaCompra();
     if (tab !== 'cfdi' && verBandejaCfdi()) contarCfdi();
   };
@@ -2924,7 +2924,7 @@ const App = (() => {
       if (S.soloSaldoOC) { l = l.filter(x => x.saldo > 0.009); S.soloSaldoOC = false; }
       S.lista = l;
       const tot = l.reduce((a, x) => a + x.total, 0), pag = l.reduce((a, x) => a + x.pagado, 0), sal = l.reduce((a, x) => a + Math.max(0, x.saldo), 0);
-      const conSal = l.filter(x => x.saldo > 0.009).length, sinRec = l.filter(x => String(x.recibido).toUpperCase() !== 'SI').length;
+      const conSal = l.filter(x => x.saldo > 0.009).length, sinRec = l.filter(x => !/^(SI|CANCELADA)$/i.test(String(x.recibido))).length;
       $('#lOC').innerHTML = `<div class="kpis">
         <div class="kpi"><small>Compras del periodo</small><b>${$$(tot)}</b><span>${l.length} ${l.length === 1 ? 'orden' : 'órdenes'}${sinRec ? ' · ' + sinRec + ' sin recibir' : ''}</span></div>
         <div class="kpi"><small>Pagado de esas compras</small><b>${$$(pag)}</b><span>${tot > 0 ? Math.round(pag / tot * 100) + ' % del total' : '—'}</span></div>
@@ -2932,7 +2932,7 @@ const App = (() => {
         <div class="kpi kpi-clic" id="kCxP" onclick="App.verCxP()" title="Ver todas las órdenes con saldo"><small>Cuentas por pagar (total)</small><b>…</b><span>calculando</span></div>
       </div>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Proveedor', k: 'proveedor' }, { t: 'Factura', k: 'factura' },
         { t: 'Destino', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Saldo', num: 1, h: x => x.saldo > 0.009 ? `<b>${$$(x.saldo)}</b>` : '—' },
-        { t: 'Recibida', h: x => `<span class="etq ${String(x.recibido).toUpperCase() === 'SI' ? 'ok' : 'av'}">${esc(x.recibido || 'NO')}</span>` }], l, { clic: 'App.abrirCompra' });
+        { t: 'Recibida', h: x => `<span class="etq ${String(x.recibido).toUpperCase() === 'SI' ? 'ok' : /CANCELADA/i.test(x.recibido) ? 'mal' : 'av'}">${esc(x.recibido || 'NO')}</span>` }], l, { clic: 'App.abrirCompra' });
       totalCxP();
     } catch (e) { if (nq === S.qCompras && $('#lOC')) $('#lOC').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : 'No se pudo consultar: ' + esc(e.message || '')}</div>`; }
   }
@@ -2973,7 +2973,7 @@ const App = (() => {
         ${p.dom ? '<br>' + esc(p.dom) : ''}${p.cp ? '<br>C.P. ' + esc(p.cp) : ''}${p.tels ? '<br>' + esc(p.tels) : ''}${p.email ? '<br>' + esc(p.email) : ''}${p.web ? '<br>' + esc(p.web) : ''}
         ${p.contacto ? `<br><span class="muted">Contacto de ventas:</span> ${esc(p.contacto)}` : ''}</div></div>
       <div class="oc-caja"><div class="oc-banda">ENTREGAR EN</div><div class="oc-cuerpo"><b class="oc-nom">${esc(s.nombre || '')}</b>${s.direccion ? '<br>' + esc(s.direccion) : ''}${s.tel ? '<br>Tel. ' + esc(s.tel) : ''}
-        <div class="oc-cond"><span class="muted">Condiciones:</span> ${esc(p.cred)}${d.venc ? '<br><span class="muted">Vence:</span> ' + esc(d.venc) : ''}<br><span class="muted">Estado:</span> ${String(d.recibido).toUpperCase() === 'SI' ? 'Recibida' : 'Pendiente de recibir'}</div></div></div></div>`;
+        <div class="oc-cond"><span class="muted">Condiciones:</span> ${esc(p.cred)}${d.venc ? '<br><span class="muted">Vence:</span> ' + esc(d.venc) : ''}<br><span class="muted">Estado:</span> ${String(d.recibido).toUpperCase() === 'SI' ? 'Recibida' : /CANCELADA/i.test(d.recibido) ? '<b class="txt-mal">CANCELADA</b>' : 'Pendiente de recibir'}</div></div></div></div>`;
   }
   async function verCompra(id) {
     let d; try { d = await pedir('detalleCompra', { ID_O_Compra: id }); } catch (e) { return; }
@@ -2983,18 +2983,35 @@ const App = (() => {
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.suc)}</div><div>Destino: ${esc(sucNom(d.suc))}</div></div><div style="text-align:right"><b>ORDEN DE COMPRA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div>
         <div style="margin-top:4px">Factura: <b>${d.factura ? esc(d.factura) : '<span style="color:#b97300">sin capturar</span>'}</b></div>${d.uuid ? `<div style="font-size:10px;color:#666">Folio fiscal: ${esc(d.uuid)}</div>` : ''}</div></div>
       ${htmlProvOC(d)}
-      ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', k: 'lote' }, { t: 'Cad.', k: 'cad' }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$((x.sub || x.cant * x.precio) - (x.desc || 0)) }, { t: 'IVA $', num: 1, h: x => $$(x.iva || 0) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], d.lineas)}
+      ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', h: x => x.registrado ? esc(x.lote) : '<span class="muted">al recibir</span>' }, { t: 'Cad.', h: x => x.registrado ? esc(x.cad) : '' }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$((x.sub || x.cant * x.precio) - (x.desc || 0)) }, { t: 'IVA $', num: 1, h: x => $$(x.iva || 0) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], d.lineas)}
       <div class="totales" style="margin-top:10px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div>${d.descEsp ? `<div><span>Descuento especial</span><span>−${$$(d.descEsp)}</span></div>` : ''}${d.descPP ? `<div><span>Descuento pronto pago</span><span>−${$$(d.descPP)}</span></div>` : ''}<div><span>IVA</span><span>${$$(d.iva)}</span></div>${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}
       <div class="gran"><span>Total</span><span>${$$(d.total)}</span></div><div><span>Pagado</span><span>${$$(d.pagado)}</span></div><div><b>Saldo</b><b>${$$(d.saldo)}</b></div></div>
       ${tablaPagosOC(d)}</div></div>
-      ${pend.length && puede('compras') ? `<div class="tarjeta no-imprimir" style="margin-top:12px"><h3>Recibir mercancía en ${esc(sucNom(d.suc))}</h3>
+      ${d.cancelada ? `<div class="tarjeta" style="margin-top:12px;border-color:var(--mal)"><b class="txt-mal">🚫 Orden cancelada.</b> <span class="muted">${esc(d.obs || '')}</span></div>` : ''}
+      ${pend.length && !d.cancelada && puede('compras') ? `<div class="tarjeta no-imprimir" style="margin-top:12px"><h3>Recibir mercancía en ${esc(sucNom(d.suc))}</h3><p class="muted peq" style="margin:0 0 8px">Captura el lote y la caducidad de cada producto, como vienen en la factura del proveedor.</p>
         ${pend.map(l => `<div class="fila" data-det="${esc(l.idDet)}" style="margin-bottom:6px"><div style="flex:2 1 200px"><b>${esc(l.nombre)}</b> × ${nf(l.cant)}</div>
-          <label>Lote<input data-k="Lote" value="${esc(l.lote === 'SIN LOTE' ? '' : l.lote)}"></label><label>Caducidad<input type="date" data-k="F_Caducidad" value="${isoDe(l.cad)}"></label></div>`).join('')}
+          ${(prod(l.prod) || {}).usaLote === false ? '<small class="muted">Sin lote</small>' : `<label>Lote *<input data-k="Lote" value="${esc(l.lote === 'SIN LOTE' ? '' : l.lote)}"></label><label>Caducidad${(prod(l.prod) || {}).usaCad === false ? '' : ' *'}<input type="date" data-k="F_Caducidad" value="${isoDe(l.cad)}"></label>`}</div>`).join('')}
         <div class="acciones"><button class="btn primario" onclick="App.recibirCompra('${d.id}')">✔ Recibir en inventario</button></div></div>` : ''}
       ${bloqueArch('ocFactura', d.id)}${bloqueArch('ocGuia', d.id)}${bloqueArch('ocFirma', d.id)}
       <div class="acciones no-imprimir"><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button><button class="btn" onclick="App.pdfCompra('${d.id}')" title="Solo cantidad, producto y categoría: sin costos">📄 PDF para proveedor</button>${puede('ver_costos') ? `<button class="btn" onclick="App.pdfCompra('${d.id}', true)" title="Con costos, descuentos, IVA y totales (no se manda al proveedor)">📄 PDF interno</button>` : ''}
-      ${puede('compras') ? `<button class="btn" onclick="App.formFacturaCompra('${d.id}')">🧾 ${d.factura ? 'Editar' : 'Capturar'} factura</button>` : ''}
+      ${puede('compras') && !d.cancelada ? `<button class="btn" onclick="App.formFacturaCompra('${d.id}')">🧾 ${d.factura ? 'Editar' : 'Capturar'} factura</button>` : ''}
+      ${puede('compras') && d.editable ? `<button class="btn" onclick="App.editarCompra()">✏️ Editar orden</button><button class="btn peligro" onclick="App.cancelarCompra('${d.id}')">🚫 Cancelar orden</button>` : ''}
       ${d.saldo > 0.009 && puede('pagos_proveedor') ? `<button class="btn" onclick="App.formNotaCredito('${d.id}',${d.saldo})">🧾 Nota de crédito</button><button class="btn primario" onclick="App.formPagoProv('${d.id}',${d.saldo})">Registrar pago</button>` : ''}</div>`);
+  }
+  /** Carga la orden (sin recibir) en el formulario para editarla. */
+  function editarCompra() {
+    const d = S.ultimaCompra; if (!d || !d.editable) return;
+    if (S.oc && S.oc.lineas && S.oc.lineas.length && S.oc.editId !== d.id && !confirm('Tienes otra orden en captura. ¿Dejarla y editar la ' + d.folio + '?')) return;
+    S.oc = { editId: d.id, folio: d.folio, prov: d.idProv, suc: d.suc, factura: d.factura, fecha: d.fechaISO || hoyISO(), dias: d.dias, descEsp: d.descEspPct || 0, descPP: d.descPPPct || 0,
+      flete: d.flete || 0, recibido: false, actCosto: false, obs: d.obs || '', pago: 0,
+      lineas: d.lineas.filter(l => l.prod).map(l => ({ id: l.prod, cant: l.cant, precio: l.precio, desc: l.descPct || 0, lote: '', cad: '' })) };
+    cerrarModal(); ir('compras', true); V.compras('nueva');
+  }
+  async function cancelarCompra(id) {
+    const d = S.ultimaCompra || {};
+    const m = prompt('¿Por qué cancelas la orden ' + (d.folio || '') + '? (ej. el proveedor no surtió, se pidió por error)'); if (m === null) return;
+    if (!m.trim()) return toast('Escribe el motivo', true);
+    try { const r = await pedir('cancelarCompra', { ID_O_Compra: id, motivo: m.trim() }); toast('✔ Orden ' + r.folio + ' cancelada'); S.cacheTot = {}; if (S.oc && S.oc.editId === id) S.oc = null; verCompra(id); if ($('#lOC')) buscarCompras(); } catch (e) {}
   }
   /** Pagos y notas de crédito de la orden, separados y con totales. */
   function tablaPagosOC(d) {
@@ -3071,7 +3088,11 @@ const App = (() => {
     try { await pedir('editarFacturaCompra', { ID_O_Compra: id, No_Factura: $('#fcFac').value, Folio_Fiscal: $('#fcUuid').value }); toast('✔ Factura guardada'); verCompra(id); if ($('#lOC')) buscarCompras(); } catch (e) {}
   }
   async function recibirCompra(id) {
-    const lineas = Array.from(document.querySelectorAll('[data-det]')).map(r => ({ ID_Detalle_O_Compra: r.dataset.det, Lote: r.querySelector('[data-k=Lote]').value, F_Caducidad: r.querySelector('[data-k=F_Caducidad]').value }));
+    const v = (r, k) => { const el = r.querySelector('[data-k=' + k + ']'); return el ? el.value.trim() : ''; };
+    const lineas = Array.from(document.querySelectorAll('[data-det]')).map(r => ({ ID_Detalle_O_Compra: r.dataset.det, Lote: v(r, 'Lote'), F_Caducidad: v(r, 'F_Caducidad'), _r: r }));
+    const falta = lineas.find(l => (l._r.querySelector('[data-k=Lote]') && !l.Lote) || (l._r.querySelector('[data-k=F_Caducidad]') && /\*/.test(l._r.querySelector('[data-k=F_Caducidad]').parentNode.textContent) && !l.F_Caducidad));
+    if (falta) { const el = !falta.Lote ? falta._r.querySelector('[data-k=Lote]') : falta._r.querySelector('[data-k=F_Caducidad]'); el.focus(); return toast('Captura el lote y la caducidad de ' + falta._r.querySelector('b').textContent, true); }
+    lineas.forEach(l => delete l._r);
     try { const r = await pedir('recibirCompra', { ID_O_Compra: id, lineas: lineas }); toast(r.renglones ? '✔ ' + r.renglones + ' productos ingresados al inventario' + (r.yaRegistrados ? ' (' + r.yaRegistrados + ' ya estaban)' : '') : '✔ Esos productos ya estaban en el inventario: no se duplicó nada'); refrescarStock(); buscarCompras();
       const f = await capturarFirma({ titulo: 'Firma de quien recibió la mercancía', verbo: 'recibe', nombreObl: false, opcional: true, omitirTxt: 'Omitir firma' });
       if (f && f.png && await subirFirma('ocFirma', id, f)) toast('✔ Firma guardada');
@@ -3104,29 +3125,30 @@ const App = (() => {
   }
   function lineaCompra(id, cant, prov) { const c = costoCompra(id, prov); return { id: id, cant: cant, precio: c.precio, desc: c.desc, lote: '', cad: '', auto: true, ref: c.ref }; }
   function nuevaCompra() {
-    if (!S.oc) S.oc = { prov: '', suc: sucTrabajo(), factura: '', fecha: hoyISO(), dias: '', descEsp: 0, descPP: 0, flete: 0, recibido: true, actCosto: true, obs: '', lineas: [], pago: 0 };
-    const o = S.oc, cat = D().catalogos;
-    $('#cCont').innerHTML = (o.cfdi ? `<div class="tarjeta" style="border-color:var(--marca)"><div class="fila"><div style="flex:3 1 260px">🧾 Orden desde la <b>factura ${esc(o.cfdi.factura)}</b> (total ${$$(o.cfdi.total)}). Al guardarla queda ligada con su XML y PDF.
+    if (!S.oc) S.oc = { prov: '', suc: sucTrabajo(), factura: '', fecha: hoyISO(), dias: '', descEsp: 0, descPP: 0, flete: 0, recibido: false, actCosto: true, obs: '', lineas: [], pago: 0 };
+    const o = S.oc, cat = D().catalogos, ed = !!o.editId;
+    $('#cCont').innerHTML = (ed ? `<div class="tarjeta" style="border-color:var(--marca);background:var(--marca-suave, #eef7f1)"><div class="fila"><div style="flex:3 1 260px">✏️ Editando la orden <b>${esc(o.folio)}</b> (aún no recibida). Folio, sucursal, factura y pagos se conservan.</div><button class="btn fijo chico" onclick="App.salirEdicionCompra()">Salir sin guardar</button></div></div>` : '') + (o.cfdi ? `<div class="tarjeta" style="border-color:var(--marca)"><div class="fila"><div style="flex:3 1 260px">🧾 Orden desde la <b>factura ${esc(o.cfdi.factura)}</b> (total ${$$(o.cfdi.total)}). Al guardarla queda ligada con su XML y PDF.
       ${o.cfdi.sin.length ? `<br><b style="color:var(--aviso)">Agrega con el buscador estos productos que no reconocí:</b><ul class="peq" style="margin:4px 0 0 18px">${o.cfdi.sin.map(l => `<li>${esc(l.desc)}${l.noId ? ' <small class="muted">(' + esc(l.noId) + ')</small>' : ''} · ${nf(l.cant)} × ${$$(l.precio)}</li>`).join('')}</ul>` : ''}</div>
       <button class="btn fijo chico" onclick="App.quitarCfdiOc()">Desligar</button></div></div>` : '') + (o.req ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">📑 Faltantes de la <b>requisición ${esc(o.req.folio)}</b>: la orden queda ligada a ella.</div><button class="btn fijo chico" onclick="App.quitarReqOc()">Desligar</button></div></div>` : '') +
       `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="ocFolio"></div></div><div class="rejilla">
       <label>Proveedor *<select id="ocProv">${opts((D().proveedores || []).filter(p => p.activo), o.prov, 'Selecciona…')}</select></label>
-      <label>Sucursal destino<select id="ocSuc">${optsSuc(o.suc)}</select></label>
-      <label>No. factura<input id="ocFac" value="${esc(o.factura)}"></label><label>Fecha<input type="date" id="ocFecha" value="${o.fecha}"></label>
+      <label>Sucursal destino<select id="ocSuc" ${ed ? 'disabled' : ''}>${optsSuc(o.suc)}</select></label>
+      <label>No. factura<input id="ocFac" value="${esc(o.factura)}" ${ed ? 'disabled title="Se edita con 🧾 Editar factura en la orden"' : ''}></label><label>Fecha<input type="date" id="ocFecha" value="${o.fecha}"></label>
       <label>Días de crédito<input type="number" id="ocDias" value="${o.dias}" placeholder="Del proveedor"></label>
       <label>Desc. especial %<input type="number" id="ocDE" value="${o.descEsp}"></label><label>Desc. pronto pago %<input type="number" id="ocPP" value="${o.descPP}"></label>
       <label>Flete $<input type="number" id="ocFlete" value="${o.flete}"></label>
-      <label class="check"><input type="checkbox" id="ocRec" ${o.recibido ? 'checked' : ''}> Mercancía ya recibida (entra al inventario)</label>
+      ${ed ? '' : `<label class="check"><input type="checkbox" id="ocRec" ${o.recibido ? 'checked' : ''}> Mercancía ya recibida (entra al inventario y pide lote y caducidad)</label>`}
       <label class="check"><input type="checkbox" id="ocCosto" ${o.actCosto ? 'checked' : ''}> Actualizar costo del producto</label>
       <label style="grid-column:1/-1">Observaciones<input id="ocObs" value="${esc(o.obs)}"></label></div></div>
       <div class="tarjeta"><div class="buscador buscador-prod"><input id="ocProd" enterkeyhint="search" placeholder="🔍 Agregar producto…" autocomplete="off"></div><div class="espacio"></div><div class="doc-lineas" id="ocLineas"></div></div>
-      <div class="tarjeta"><div class="fila"><label>Pagar ahora $<input type="number" id="ocPago" value="${o.pago}"></label><label>Forma<select id="ocForma">${opts(cat.formasPago, '3')}</select></label><label>Cuenta<select id="ocBanco">${opts(cat.bancos, '')}</select></label></div>
-      <div class="totales" id="ocTot" style="margin-top:12px"></div><div class="acciones"><button class="btn peligro" onclick="App.limpiarCompra()">Descartar</button><button class="btn primario" id="ocGuardar" onclick="App.guardarCompra()">💾 Guardar orden</button></div></div>`;
+      <div class="tarjeta">${ed ? '' : `<div class="fila"><label>Pagar ahora $<input type="number" id="ocPago" value="${o.pago}"></label><label>Forma<select id="ocForma">${opts(cat.formasPago, '3')}</select></label><label>Cuenta<select id="ocBanco">${opts(cat.bancos, '')}</select></label></div>`}
+      <div class="totales" id="ocTot" style="margin-top:12px"></div><div class="acciones">${ed ? '<button class="btn" onclick="App.salirEdicionCompra()">Salir sin guardar</button>' : '<button class="btn peligro" onclick="App.limpiarCompra()">Descartar</button>'}<button class="btn primario" id="ocGuardar" onclick="App.guardarCompra()">💾 ${ed ? 'Guardar cambios' : 'Guardar orden'}</button></div></div>`;
     const bind = (id, k, tipo) => { const el = $(id); el.oninput = el.onchange = e => { o[k] = tipo === 'c' ? e.target.checked : tipo === 'n' ? Number(e.target.value) || 0 : e.target.value; totalesCompra(); }; };
     bind('#ocProv', 'prov'); bind('#ocSuc', 'suc'); bind('#ocFac', 'factura'); bind('#ocFecha', 'fecha'); bind('#ocDias', 'dias'); bind('#ocDE', 'descEsp', 'n'); bind('#ocPP', 'descPP', 'n');
-    $('#ocSuc').addEventListener('change', () => mostrarFolio('ocFolio', o.suc, 'Orden de Compra'));
-    mostrarFolio('ocFolio', o.suc, 'Orden de Compra');
-    bind('#ocFlete', 'flete', 'n'); bind('#ocRec', 'recibido', 'c'); bind('#ocCosto', 'actCosto', 'c'); bind('#ocObs', 'obs'); bind('#ocPago', 'pago', 'n');
+    if (ed) $('#ocFolio').innerHTML = `<span class="folio-et">Orden de Compra · serie y folio</span><b>${esc(o.folio)}</b><small>editando (el folio no cambia)</small>`;
+    else { $('#ocSuc').addEventListener('change', () => mostrarFolio('ocFolio', o.suc, 'Orden de Compra')); mostrarFolio('ocFolio', o.suc, 'Orden de Compra'); }
+    bind('#ocFlete', 'flete', 'n'); bind('#ocCosto', 'actCosto', 'c'); bind('#ocObs', 'obs');
+    if (!ed) { bind('#ocPago', 'pago', 'n'); $('#ocRec').onchange = e => { o.recibido = e.target.checked; pintarLineasCompra(); }; }
     buscador($('#ocProd'), { fuente: fuenteProductos(o.suc, null, false), limpiar: true, alElegir: x => { o.lineas.push(lineaCompra(x.id, 1, o.prov)); pintarLineasCompra(); } });
     // al cambiar de proveedor, los precios que puso la app se toman de la última compra con ese proveedor
     $('#ocProv').addEventListener('change', () => { let n = 0; o.lineas.forEach(l => { if (!l.auto) return; const c = costoCompra(l.id, o.prov); if (c.precio !== l.precio || c.desc !== l.desc) n++; Object.assign(l, { precio: c.precio, desc: c.desc, ref: c.ref }); }); if (n) { pintarLineasCompra(); toast(n + ' precio(s) tomados de la última compra con este proveedor'); } });
@@ -3135,9 +3157,9 @@ const App = (() => {
   function pintarLineasCompra() {
     const o = S.oc, cont = $('#ocLineas');
     cont.innerHTML = !o.lineas.length ? '<div class="vacio">Agrega productos</div>' :
-      `<div class="linea cab"><div>Producto</div><div>Lote y caducidad</div><div>Cant.</div><div>Costo</div><div>Desc %</div><div class="num">Importe</div><div></div></div>` +
+      `<div class="linea cab"><div>Producto</div><div>${o.recibido ? 'Lote y caducidad *' : ''}</div><div>Cant.</div><div>Costo</div><div>Desc %</div><div class="num">Importe</div><div></div></div>` +
       o.lineas.map((l, i) => { const p = prod(l.id) || {}; return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)}</small></div>
-        <div style="display:flex;gap:4px">${p.usaLote === false ? '<small class="muted">Sin lote</small>' : `<input data-f="lote" placeholder="Lote" value="${esc(l.lote)}"><input type="date" data-f="cad" value="${esc(l.cad)}">`}</div>
+        <div style="display:flex;gap:4px">${!o.recibido ? '<small class="muted" title="El lote y la caducidad se capturan al recibir la mercancía">al recibir</small>' : p.usaLote === false ? '<small class="muted">Sin lote</small>' : `<input data-f="lote" placeholder="Lote" value="${esc(l.lote)}"><input type="date" data-f="cad" value="${esc(l.cad)}">`}</div>
         <div><input type="number" data-f="cant" value="${l.cant}"></div><div><input type="number" data-f="precio" step="0.01" value="${l.precio}">${l.auto && l.ref ? `<small class="muted" data-ult style="display:block;white-space:nowrap" title="Precio de la compra más reciente${l.ref.oc ? ' (' + esc(l.ref.oc) + ')' : ''}${l.ref.otro ? ', con otro proveedor' : ''}">últ. ${esc(l.ref.f)}${l.ref.otro ? ' · otro prov.' : ''}</small>` : ''}</div><div><input type="number" data-f="desc" value="${l.desc}"></div>
         <div class="num" data-imp></div><div><button class="icono" data-del>✕</button></div></div>`; }).join('');
     cont.oninput = cont.onchange = e => { const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return; const l = o.lineas[+row.dataset.i]; l[f] = (f === 'lote' || f === 'cad') ? e.target.value : Number(e.target.value) || 0; if ((f === 'precio' || f === 'desc') && l.auto) { l.auto = false; const h = row.querySelector('[data-ult]'); if (h) h.remove(); } totalesCompra(); };
@@ -3156,14 +3178,27 @@ const App = (() => {
     $('#ocTot').innerHTML = `<div><span>Subtotal</span><span>${$$(sub)}</span></div>${dE ? `<div><span>Desc. especial</span><span>−${$$(dE)}</span></div>` : ''}${dP ? `<div><span>Pronto pago</span><span>−${$$(dP)}</span></div>` : ''}<div><span>IVA</span><span>${$$(iva)}</span></div><div class="gran"><span>Total</span><span>${$$(tot)}</span></div>`;
   }
   function limpiarCompra() { if (confirm('¿Descartar la orden?')) { S.oc = null; nuevaCompra(); } }
+  function salirEdicionCompra() { const id = S.oc && S.oc.editId; if (S.oc && !confirm('¿Salir sin guardar los cambios?')) return; S.oc = null; V.compras('lista'); if (id) verCompra(id); }
   async function guardarCompra() {
     const o = S.oc;
     if (!o.prov) return toast('Selecciona el proveedor', true);
     if (!o.lineas.length) return toast('Agrega productos', true);
+    if (o.recibido && !o.editId) {
+      const f = o.lineas.find(l => { const p = prod(l.id) || {}; return p.usaLote !== false && (!String(l.lote || '').trim() || (p.usaCad !== false && !l.cad)); });
+      if (f) return toast('Captura el lote y la caducidad de ' + ((prod(f.id) || {}).nombre || f.id) + ' (o desmarca "Mercancía ya recibida" y recíbela después)', true);
+    }
+    if (o.editId) {
+      try {
+        const r = await pedir('editarCompra', { ID_O_Compra: o.editId, ID_Proveedor: o.prov, Fecha: o.fecha, D_credito: o.dias, descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete,
+          actualizarCosto: o.actCosto, Observaciones: o.obs, lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc })) });
+        toast('✔ Orden ' + r.folio + ' actualizada'); S.oc = null; S.cacheTot = {}; if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista'); verCompra(r.ID_O_Compra);
+      } catch (e) {}
+      return;
+    }
     try {
       const r = await pedir('guardarCompra', { ID_O_Compra: uid(), ID_Proveedor: o.prov, Suc_Destino: o.suc, No_Factura: o.factura, Fecha: o.fecha, D_credito: o.dias,
         descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete, Recibido: o.recibido, actualizarCosto: o.actCosto, Observaciones: o.obs,
-        lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: l.lote, F_Caducidad: l.cad })), cfdiUuid: o.cfdi ? o.cfdi.uuid : '',
+        lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: o.recibido ? l.lote : '', F_Caducidad: o.recibido ? l.cad : '' })), cfdiUuid: o.cfdi ? o.cfdi.uuid : '',
         pago: o.pago > 0 ? { monto: o.pago, forma: $('#ocForma').value, banco: $('#ocBanco').value } : null, ID_Requisicion: o.req ? o.req.id : '' });
       toast('✔ Orden ' + r.folio + ' guardada' + (o.req ? ' · ligada a la requisición ' + o.req.folio : '')); S.oc = null; S.cacheTot = {}; refrescarStock(); if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista');
     } catch (e) {}
@@ -6337,7 +6372,7 @@ const App = (() => {
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
-    vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
+    vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
     pdfCompra: (id, conCostos) => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', conCostos ? { ID_O_Compra: id, conCostos: true } : { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,
