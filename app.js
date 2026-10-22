@@ -2921,15 +2921,18 @@ const App = (() => {
     try {
       let l = await pedir('listarCompras', { desde: $('#oDesde').value, hasta: $('#oHasta').value, texto: $('#oTxt').value, pendientes: $('#oPend').checked, idProveedor: S.comprasProv ? S.comprasProv.id : '' });
       if (nq !== S.qCompras || !$('#lOC')) return;
-      if (S.soloSaldoOC) { l = l.filter(x => x.saldo > 0.009); S.soloSaldoOC = false; }
+      if (S.soloSaldoOC) { l = l.filter(x => x.saldo > 0.009 && (x.conFactura !== undefined ? x.conFactura : !!String(x.factura || '').trim())); S.soloSaldoOC = false; }
       S.lista = l;
-      const tot = l.reduce((a, x) => a + x.total, 0), pag = l.reduce((a, x) => a + x.pagado, 0), sal = l.reduce((a, x) => a + Math.max(0, x.saldo), 0);
-      const conSal = l.filter(x => x.saldo > 0.009).length, sinRec = l.filter(x => !/^(SI|CANCELADA)$/i.test(String(x.recibido))).length;
+      // solo cuentan como compra las órdenes con factura o nota del proveedor
+      const conF = x => x.conFactura !== undefined ? x.conFactura : !!String(x.factura || '').trim();
+      const lf = l.filter(conF), sinF = l.filter(x => !conF(x) && !/CANCELADA/i.test(String(x.recibido)));
+      const tot = lf.reduce((a, x) => a + x.total, 0), pag = lf.reduce((a, x) => a + x.pagado, 0), sal = lf.reduce((a, x) => a + Math.max(0, x.saldo), 0);
+      const conSal = lf.filter(x => x.saldo > 0.009).length, porRec = l.filter(x => !/^(SI|CANCELADA)$/i.test(String(x.recibido))).length, totSinF = sinF.reduce((a, x) => a + x.total, 0);
       $('#lOC').innerHTML = `<div class="kpis">
-        <div class="kpi"><small>Compras del periodo</small><b>${$$(tot)}</b><span>${l.length} ${l.length === 1 ? 'orden' : 'órdenes'}${sinRec ? ' · ' + sinRec + ' sin recibir' : ''}</span></div>
+        <div class="kpi" title="Solo órdenes con factura o nota del proveedor"><small>Compras del periodo</small><b>${$$(tot)}</b><span>${lf.length} ${lf.length === 1 ? 'orden con factura' : 'órdenes con factura'}${porRec ? ' · ' + porRec + ' por recibir' : ''}${sinF.length ? `<br>${sinF.length} sin factura (${$$(totSinF)}) no se cuentan` : ''}</span></div>
         <div class="kpi"><small>Pagado de esas compras</small><b>${$$(pag)}</b><span>${tot > 0 ? Math.round(pag / tot * 100) + ' % del total' : '—'}</span></div>
         <div class="kpi"><small>Por pagar del periodo</small><b>${$$(sal)}</b><span>${conSal} ${conSal === 1 ? 'orden' : 'órdenes'} con saldo</span></div>
-        <div class="kpi kpi-clic" id="kCxP" onclick="App.verCxP()" title="Ver todas las órdenes con saldo"><small>Cuentas por pagar (total)</small><b>…</b><span>calculando</span></div>
+        <div class="kpi kpi-clic" id="kCxP" onclick="App.verCxP()" title="Saldo de las órdenes con factura o nota del proveedor (todas las fechas)"><small>Cuentas por pagar (total)</small><b>…</b><span>calculando</span></div>
       </div>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Proveedor', k: 'proveedor' }, { t: 'Factura', k: 'factura' },
         { t: 'Destino', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Saldo', num: 1, h: x => x.saldo > 0.009 ? `<b>${$$(x.saldo)}</b>` : '—' },
         { t: 'Recibida', h: x => `<span class="etq ${String(x.recibido).toUpperCase() === 'SI' ? 'ok' : /CANCELADA/i.test(x.recibido) ? 'mal' : 'av'}">${esc(x.recibido || 'NO')}</span>` }], l, { clic: 'App.abrirCompra' });
@@ -2941,7 +2944,7 @@ const App = (() => {
     let r = S.cacheTot && S.cacheTot.cxp && Date.now() - S.cacheTot.cxp.t < 120000 ? S.cacheTot.cxp.r : null;
     if (!r) {
       try {
-        const l = (await pedir('listarCompras', { pendientes: true }, true)).filter(x => x.saldo > 0.009), hoy = hoyISO();
+        const l = (await pedir('listarCompras', { pendientes: true }, true)).filter(x => x.saldo > 0.009 && (x.conFactura !== undefined ? x.conFactura : !!String(x.factura || '').trim())), hoy = hoyISO();
         const venc = l.filter(x => x.venc && isoDe(x.venc) && isoDe(x.venc) < hoy);
         r = { total: l.reduce((a, x) => a + x.saldo, 0), n: l.length, vencido: venc.reduce((a, x) => a + x.saldo, 0) };
         S.cacheTot = S.cacheTot || {}; S.cacheTot.cxp = { t: Date.now(), r: r };
