@@ -2921,14 +2921,14 @@ const App = (() => {
       if (Math.abs(suma - x.total) > 1 && !confirm('La suma de ' + (sel.length > 1 ? 'las órdenes' : 'la orden') + ' (' + $$(suma) + ') no es igual al total de la factura (' + $$(x.total) + '). ¿Ligar de todos modos?')) return;
       const conOtra = sel.filter(o => o.conUuid);
       if (conOtra.length && !confirm('Esta factura SUSTITUYE la que ya tenían: ' + conOtra.map(o => o.folio + ' (fact. ' + o.factura + ')').join(', ') + '. La anterior queda como "Sustituida" (sus archivos no se borran). ¿Continuar?')) return;
-      try { const r = await pedir('ligarFacturaCompra', { uuid: x.uuid, ids: ids, reemplazar: conOtra.length > 0 }); toast('✔ Factura ligada a ' + r.orden); bandejaCfdi(); } catch (e) {}
+      try { const r = await pedir('ligarFacturaCompra', { uuid: x.uuid, ids: ids, reemplazar: conOtra.length > 0 }); toast('✔ Factura ligada a ' + r.orden + (r.notas && r.notas.length ? ' · también se aplicó: ' + r.notas.join(', ') : '')); bandejaCfdi(); } catch (e) {}
       return;
     }
     const id = $('#cfdiOC' + i).value, o = x.sugeridas.find(y => y.id === id);
     if (!o) return;
     if (x.tipo === 'Factura' && !o.igual && !confirm('El total de la orden (' + $$(o.total) + ') no es igual al de la factura (' + $$(x.total) + '). ¿Ligar de todos modos?')) return;
     if (x.tipo !== 'Factura' && !confirm('¿Aplicar la nota de crédito ' + x.folio + ' por ' + $$(Math.abs(x.total)) + ' a la orden ' + o.folio + '? Baja su saldo.')) return;
-    try { const r = await pedir('ligarFacturaCompra', { uuid: x.uuid, ID_O_Compra: id }); toast('✔ ' + (x.tipo === 'Factura' ? 'Factura ligada a ' : 'Nota aplicada a ') + r.orden); bandejaCfdi(); } catch (e) {}
+    try { const r = await pedir('ligarFacturaCompra', { uuid: x.uuid, ID_O_Compra: id }); toast('✔ ' + (x.tipo === 'Factura' ? 'Factura ligada a ' : 'Nota aplicada a ') + r.orden + (r.notas && r.notas.length ? ' · también se aplicó: ' + r.notas.join(', ') : '')); bandejaCfdi(); } catch (e) {}
   }
   async function descartarCfdi(uuid) {
     const m = prompt('¿Por qué la descartas? (ej. cancelada, duplicada, no es compra)'); if (m === null) return;
