@@ -6163,7 +6163,7 @@ const App = (() => {
       <div class="fc-cab"><div><h3>℞ ${esc(d.folio)} · ${esc(d.propietario)}</h3><div class="fc-etqs"><span class="etq ${d.vigente ? 'ok' : ''}">${d.vigente ? 'Vigente hasta ' : 'Venció el '}${esc(d.validez)}</span><span class="etq">${esc(d.fecha)}</span>${d.elaboro ? `<span class="etq">Elaboró ${esc(d.elaboro)}</span>` : ''}</div></div></div>
       <div class="fc-sec"><h4>🐄 Paciente</h4><div class="fc-rejilla">${dato('Especie', d.especie)}${dato('Nombre / ID', d.animal)}${dato('Raza / cruza', d.raza)}${dato('Edad', d.edad)}${dato('Sexo', d.sexo)}${dato('Peso', d.peso)}${dato('Color', d.color)}${dato('Celular', d.cel)}</div></div>
       ${d.motivo || d.diagnostico ? `<div class="fc-sec"><h4>🩺 Consulta</h4><div class="fc-rejilla">${dato('Motivo', d.motivo)}${dato('Diagnóstico', d.diagnostico)}</div></div>` : ''}
-      <div class="fc-sec"><h4>💊 Tratamiento</h4><ol class="rx-lista">${d.tratamientos.map(t => `<li>${esc(t.texto)}</li>`).join('')}</ol>${d.obs ? `<p class="muted">${esc(d.obs)}</p>` : ''}</div>
+      <div class="fc-sec"><h4>💊 Tratamiento</h4><ol class="rx-lista">${d.tratamientos.map(t => `<li>${t.conNombre ? `<b>${esc(t.nombre)}</b><br>` : ''}${esc(t.texto)}</li>`).join('')}</ol>${d.obs ? `<p class="muted">${esc(d.obs)}</p>` : ''}</div>
       ${!d.idCliente ? `<div class="aviso-cand">🌱 <b>Sin cliente.</b> ${d.puedeAlta ? 'Da de alta al propietario como cliente para venderle y llevar su historia clínica.' : 'Pide al administrador que dé de alta al propietario como cliente.'}
         ${d.puedeAlta ? `<div class="acciones izq"><button class="btn primario chico" onclick="App.formAltaProspecto('receta')">➕ Dar de alta como cliente</button></div>` : ''}</div>` : ''}
       ${segIntegra('receta', d)}
