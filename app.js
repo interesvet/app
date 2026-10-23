@@ -3011,7 +3011,8 @@ const App = (() => {
         <div class="kpi kpi-clic" id="kCxP" onclick="App.verCxP()" title="Saldo de las órdenes con factura o nota del proveedor (todas las fechas)"><small>Cuentas por pagar (total)</small><b>…</b><span>calculando</span></div>
       </div>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Proveedor', k: 'proveedor' }, { t: 'Factura / nota', h: x => x.factura ? esc(x.factura) + (x.nota ? `<br><small class="muted">nota ${esc(x.nota)}</small>` : '') : x.nota ? `<span class="muted">nota</span> ${esc(x.nota)}` : '' },
         { t: 'Destino', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Saldo', num: 1, h: x => x.saldo > 0.009 ? `<b>${$$(x.saldo)}</b>` : '—' },
-        { t: 'Recibida', h: x => `<span class="etq ${String(x.recibido).toUpperCase() === 'SI' ? 'ok' : /CANCELADA/i.test(x.recibido) ? 'mal' : 'av'}">${esc(x.recibido || 'NO')}</span>` }], l, { clic: 'App.abrirCompra' });
+        { t: 'Recibida', h: x => `<span style="white-space:nowrap"><span class="etq ${String(x.recibido).toUpperCase() === 'SI' ? 'ok' : /CANCELADA/i.test(x.recibido) ? 'mal' : 'av'}">${esc(x.recibido || 'NO')}</span>` +
+          (puede('compras') && !/^(SI|CANCELADA)$/i.test(String(x.recibido)) ? ` <button class="btn chico no-imprimir" title="Editar productos, cantidades, precios, lote y caducidad" onclick="event.stopPropagation();App.editarCompraId('${esc(x.id)}')">✏️ Editar</button>` : '') + '</span>' }], l, { clic: 'App.abrirCompra' });
       totalCxP();
     } catch (e) { if (nq === S.qCompras && $('#lOC')) $('#lOC').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : 'No se pudo consultar: ' + esc(e.message || '')}</div>`; }
   }
@@ -3085,6 +3086,13 @@ const App = (() => {
       flete: d.flete || 0, recibido: false, actCosto: false, obs: d.obs || '', pago: 0,
       lineas: d.lineas.filter(l => l.prod).map(l => ({ id: l.prod, cant: l.cant, precio: l.precio, desc: l.descPct || 0, lote: l.lote && l.lote !== 'SIN LOTE' ? l.lote : '', cad: l.cad ? isoDe(l.cad) : '' })) };
     cerrarModal(); ir('compras', true); V.compras('nueva');
+  }
+  /** Desde el listado: trae la orden y la abre en el formulario de edición. */
+  async function editarCompraId(id) {
+    let d; try { d = await pedir('detalleCompra', { ID_O_Compra: id }); } catch (e) { return; }
+    S.ultimaCompra = d;
+    if (!d.editable) return toast(d.porQueNo || 'Esta orden ya no se puede editar', true);
+    editarCompra();
   }
   async function cancelarCompra(id) {
     const d = S.ultimaCompra || {};
@@ -6578,7 +6586,7 @@ const App = (() => {
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
-    vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
+    vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
     pdfCompra: (id, conCostos) => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', conCostos ? { ID_O_Compra: id, conCostos: true } : { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,
