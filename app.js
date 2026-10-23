@@ -2808,7 +2808,19 @@ const App = (() => {
     if (!$('#cCont')) return;
     const el = $('#cfdiN'); if (el) el.innerHTML = r.pendientes.length ? ` <span class="etq" style="background:var(--aviso);color:#fff">${r.pendientes.length}</span>` : '';
     const optsSug = x => x.sugeridas.map(o => `<option value="${esc(o.id)}">${o.igual ? '✓ ' : ''}${esc(o.folio)} · ${esc(o.fecha)} · ${$$(o.total)}${o.saldo !== undefined ? ' · saldo ' + $$(o.saldo) : ''}${o.factura ? ' · fact. ' + esc(o.factura) : ''}</option>`).join('');
-    const tarjeta = (x, i) => `<div class="tarjeta" style="border-left:4px solid ${x.tipo === 'Factura' ? 'var(--marca)' : 'var(--aviso)'}">
+    const EST_REP = { ligado: ['ok', '✔ ligado al pago'], 'sin pago': ['av', 'pago sin capturar'], 'sin orden': ['mal', 'la factura no está en ninguna orden'], excede: ['mal', 'mayor que el saldo de la orden'] };
+    const tarjetaRep = (x, i) => `<div class="tarjeta" style="border-left:4px solid var(--s2, #3b82f6)">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><span class="etq">💳 Complemento de pago</span> <b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)} · ${esc(x.folio)} · ${esc(x.fecha)}${x.origen ? ' · ' + esc(x.origen) : ''}</small></div>
+      <div style="text-align:right"><b style="font-size:18px">${$$(Math.abs(x.total))}</b><br><small class="muted">pagado en ${(x.detalle || []).length} factura(s)</small></div></div>
+      <div class="tabla-cont" style="margin-top:8px"><table><thead><tr><th>Factura</th><th>Orden</th><th>Fecha de pago</th><th class="num">Pagado</th><th>Estado</th></tr></thead><tbody>
+      ${(x.detalle || []).map(d => `<tr><td><b>${esc(d.folio)}</b>${d.parc ? ' <small class="muted">parc. ' + esc(d.parc) + '</small>' : ''}</td><td>${d.idOC ? `<a href="#" onclick="App.abrirCompraId('${esc(d.idOC)}');return false">${esc(d.folioOC)}</a>` : '—'}</td><td>${esc(String(d.fecha || '').split('-').reverse().join('/'))}</td><td class="num">${$$(d.imp)}</td>
+        <td><span class="etq ${(EST_REP[d.estado] || ['', ''])[0]}">${esc((EST_REP[d.estado] || ['', d.estado])[1])}</span>${d.estado === 'excede' ? ' <small class="muted">saldo ' + $$(d.saldo) + '</small>' : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No se pudieron leer las facturas del complemento</td></tr>'}</tbody></table></div>
+      <div class="fila" style="margin-top:6px"><span class="muted peq" style="flex:3 1 260px">${(x.detalle || []).some(d => d.estado === 'sin pago') ? 'Si ya pagaste y no lo capturaste, regístralo con los datos del complemento (monto, fecha y forma de pago).' : (x.detalle || []).some(d => d.estado === 'sin orden') ? 'Liga primero la factura a su orden de compra y luego da Reintentar.' : ''}</span>
+        ${(x.detalle || []).some(d => d.estado === 'sin pago') && puede('pagos_proveedor') ? `<button class="btn primario fijo" onclick="App.aplicarRep('${esc(x.uuid)}', true)">💳 Registrar pago(s)</button>` : ''}
+        <button class="btn fijo" onclick="App.aplicarRep('${esc(x.uuid)}', false)">↻ Reintentar</button>
+        <button class="btn fijo" onclick="App.verPdfCfdi('${esc(x.uuid)}')">📄 PDF</button>
+        <button class="btn fijo" onclick="App.descartarCfdi('${esc(x.uuid)}')">Descartar</button></div></div>`;
+    const tarjeta = (x, i) => x.tipo === 'Complemento de pago' ? tarjetaRep(x, i) : `<div class="tarjeta" style="border-left:4px solid ${x.tipo === 'Factura' ? 'var(--marca)' : 'var(--aviso)'}">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><span class="etq">${esc(x.tipo)}</span> <b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)} · ${esc(x.folio)} · ${esc(x.fecha)}${x.origen ? ' · ' + esc(x.origen) : ''}</small></div>
       <div style="text-align:right"><b style="font-size:18px">${$$(Math.abs(x.total))}</b><br><small class="muted">IVA ${$$(Math.abs(x.iva))}</small></div></div>
       ${x.nota ? `<p class="peq" style="margin:6px 0;color:var(--aviso)">⚠️ ${esc(x.nota)}</p>` : ''}
@@ -2822,13 +2834,19 @@ const App = (() => {
         <button class="btn fijo" onclick="App.verPdfCfdi('${esc(x.uuid)}')">📄 PDF</button>
         ${x.tipo === 'Factura' ? `<button class="btn fijo" onclick="App.ocDesdeCfdi('${esc(x.uuid)}')">➕ Crear orden</button>` : ''}
         <button class="btn fijo" onclick="App.descartarCfdi('${esc(x.uuid)}')">Descartar</button></div></div>`;
-    $('#cCont').innerHTML = `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>Facturas y notas de crédito de proveedores</b><br><small class="muted">Se reconocen por el RFC del catálogo de proveedores. Las claras se ligan solas a su orden (mismo proveedor y mismo total) y las notas de crédito con factura relacionada se aplican solas. Aquí quedan las que necesitan que elijas.${U().rol === 'Administrador' || puede('dueno') ? ' Las que llegan por correo se revisan cada hora (Gastos › ✉️ Correo).' : ''}</small></div>
+    $('#cCont').innerHTML = `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>Facturas, notas de crédito y complementos de pago de proveedores</b><br><small class="muted">Se reconocen por el RFC del catálogo de proveedores. Las claras se ligan solas a su orden (mismo proveedor y mismo total), las notas de crédito con factura relacionada se aplican solas y los complementos de pago (REP) se ligan al pago capturado del mismo monto. Aquí quedan las que necesitan que elijas.${U().rol === 'Administrador' || puede('dueno') ? ' Las que llegan por correo se revisan cada hora (Gastos › ✉️ Correo).' : ''}</small></div>
       <button class="btn fijo" onclick="App.formFacturasGasto('compra')">📥 Subir facturas</button></div></div>
       <h3 style="margin:12px 0 6px">Por ligar (${r.pendientes.length})</h3>${r.pendientes.length ? r.pendientes.map(tarjeta).join('') : '<div class="vacio">✔ No hay facturas pendientes</div>'}
       <div class="tarjeta"><h3>Últimas ligadas o aplicadas</h3>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Tipo', h: x => `<span class="etq">${esc(x.tipo)}</span>` }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.folio)}</small>` },
         { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Estado', h: x => esc(x.estado) + (x.nota ? `<br><small class="muted">${esc(x.nota)}</small>` : '') }, { t: 'Orden', h: x => { const ids = String(x.idOC || '').split(/\s*,\s*/).filter(String), fs = String(x.orden || '').split(/\s*,\s*/); return ids.map((id, k) => `<a href="#" onclick="App.abrirCompraId('${esc(id)}');return false">${esc(fs[k] || id)}</a>`).join('<br>'); } },
         { t: 'PDF', h: x => `<button class="btn chico" onclick="App.verPdfCfdi('${esc(x.uuid)}')">📄</button>` + (x.tipo === 'Factura' && x.estado === 'Ligada' ? ` <button class="btn chico" title="Corregir a qué órdenes está ligada" onclick="App.cambiarOrdenesCfdi('${esc(x.uuid)}')">✏️ Cambiar órdenes</button>` : '') }], r.recientes, { vacio: 'Todavía no hay' }) + '</div>';
     r.pendientes.forEach((x, i) => { if (x.tipo === 'Factura') sumaCfdi(i); });
+  }
+  async function aplicarRep(uuid, registrar) {
+    const x = (S.cfdiCompras.pendientes || []).find(y => y.uuid === uuid) || {};
+    const falt = (x.detalle || []).filter(d => d.estado === 'sin pago');
+    if (registrar && !confirm('Se registran ' + falt.length + ' pago(s) con los datos del complemento ' + (x.folio || '') + ':\n' + falt.map(d => '· ' + d.folioOC + ' (fact. ' + d.folio + '): ' + $$(d.imp) + ' del ' + d.fecha).join('\n') + '\n¿Continuar?')) return;
+    try { const r = await pedir('aplicarRepCompra', { uuid: uuid, registrar: !!registrar }); toast(r.todos ? '✔ Complemento ligado a ' + r.ligados + ' pago(s)' : 'Ligados ' + r.ligados + ' de ' + r.detalle.length); S.cacheTot = {}; bandejaCfdi(); } catch (e) {}
   }
   /** Corregir las órdenes de una factura ya ligada. */
   async function cambiarOrdenesCfdi(uuid) {
@@ -2928,11 +2946,13 @@ const App = (() => {
         <div class="kpi"><small>Pagado en el periodo</small><b>${$$(tot)}</b><span>${pagos.length} ${pagos.length === 1 ? 'pago' : 'pagos'}</span></div>
         ${ncs.length ? `<div class="kpi"><small>Notas de crédito aplicadas</small><b>${$$(totNC)}</b><span>${ncs.length} ${ncs.length === 1 ? 'nota' : 'notas'}</span></div>` : ''}
         ${top.map(k => `<div class="kpi"><small>${esc(k)}</small><b>${$$(prov[k])}</b><span>${tot > 0 ? Math.round(prov[k] / tot * 100) + ' % de lo pagado' : ''}</span></div>`).join('')}
+        ${pagos.some(x => x.ppd && !x.rep) ? `<div class="kpi"><small>Falta complemento (REP)</small><b>${pagos.filter(x => x.ppd && !x.rep).length}</b><span>pagos de facturas PPD sin su REP</span></div>` : ''}
         <div class="kpi${sinAdj ? ' kpi-clic' : ''}" ${sinAdj ? 'onclick="App.pagosSinAdj()"' : ''}><small>Sin comprobante</small><b>${sinAdj}</b><span>${sinAdj ? 'pagos sin foto ni PDF' : 'todos tienen comprobante'}</span></div>
       </div>` + tabla([
         { t: 'Fecha', k: 'fecha' }, { t: 'Orden', h: x => `<b>${esc(x.folioOC)}</b>` }, { t: 'Proveedor', k: 'proveedor' }, { t: 'Factura', cls: 'ocultar-movil', k: 'factura' },
         { t: 'Forma de pago', cls: 'ocultar-movil', h: x => x.nc || x.esNC ? `<span class="etq">Nota de crédito ${esc(x.nc || '')}</span>` : esc(x.forma) }, { t: 'Cuenta', cls: 'ocultar-movil', k: 'banco' },
         { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }, { t: '📎', h: x => x.adj ? `<span title="${x.adj} archivo(s)">📎${x.adj > 1 ? x.adj : ''}</span>` : '<span class="muted" title="Sin comprobante">—</span>' },
+        { t: 'REP', h: x => x.esNC || x.nc ? '' : x.rep ? '<span class="etq ok" title="Complemento de pago ligado">✔ REP</span>' : x.ppd ? '<span class="etq av" title="La factura es PPD: pide al proveedor el complemento de pago">Falta REP</span>' : '' },
         { t: 'Comentarios', cls: 'ocultar-movil', k: 'comentarios' }
       ], l, { clic: 'App.abrirPagoProv', vacio: 'No hay pagos en ese periodo' });
     } catch (e) { if ($('#lPP')) $('#lPP').innerHTML = '<div class="vacio">Consultar pagos requiere conexión.</div>'; }
@@ -2952,6 +2972,7 @@ const App = (() => {
         <tr><td>Sucursal</td><td>${esc(sucNom(d.suc))}</td></tr>
         ${d.comentarios ? `<tr><td>Comentarios</td><td>${esc(d.comentarios)}</td></tr>` : ''}
         ${d.oc ? `<tr><td>Saldo de la orden</td><td>${$$(d.oc.saldo)} <span class="muted">de ${$$(d.oc.total)}</span></td></tr>` : ''}
+        ${!d.nc && !d.esNC && (d.rep || d.ppd) ? `<tr><td>Complemento de pago</td><td>${d.rep ? '<span class="etq ok">✔ ligado</span> <small class="muted">' + esc(d.rep) + '</small>' : '<span class="etq av">Falta REP</span> <small class="muted">la factura es PPD</small>'}</td></tr>` : ''}
       </tbody></table></div></div>
       ${htmlAdj('pago', d.id, d.adjuntos, d.esNC || !!d.nc)}
       <div class="acciones no-imprimir">${d.oc ? `<button class="btn" onclick="App.abrirCompraId('${d.oc.id}')">📦 Ver orden ${esc(d.oc.folio)}</button>` : ''}</div>`);
@@ -6436,7 +6457,7 @@ const App = (() => {
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
-    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, ligarCfdi, sumaCfdi, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
+    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes,
