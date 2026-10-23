@@ -689,6 +689,18 @@ body.con-visor { overflow: hidden; }
 .hc-fecha { margin-left: auto; color: var(--texto-2); font-size: 12.5px; }
 .hc-ligas { font-size: 12.5px; color: var(--texto-2); margin-top: 2px; }
 .hc-ligas:empty { display: none; }
+/* tema oscuro: el documento de traspaso no debe tener renglones claros con letra clara */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tr-tabla tr.par td { background: #263a2e; }
+  :root:not([data-theme="light"]) .tr-punto b, :root:not([data-theme="light"]) .tr-folio b { color: var(--texto); }
+  :root:not([data-theme="light"]) .tr-punto span, :root:not([data-theme="light"]) .tr-tabla td small { color: var(--texto-2); }
+  :root:not([data-theme="light"]) .tr-enc { background: #1f3027; }
+  :root:not([data-theme="light"]) .tr-emp b { color: var(--texto); } :root:not([data-theme="light"]) .tr-emp small, :root:not([data-theme="light"]) .tr-folio span { color: var(--texto-2); }
+}
+@media print {
+  #zonaImpresion .tr-tabla tr.par td { background: #f5f8f6 !important; } #zonaImpresion .tr-enc { background: #f2f7f3 !important; }
+  #zonaImpresion .tr-punto b, #zonaImpresion .tr-folio b, #zonaImpresion .tr-emp b { color: #1b1d18 !important; }
+}
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

@@ -3525,16 +3525,14 @@ const App = (() => {
   function pintarLineasTr() {
     const t = S.tr, cont = $('#trLineas'), ep = puede('precio_editar') && verImpC();
     const listaDes = ((D().sucursales || []).find(s => s.id === t.des) || {}).lista;
-    // de una sucursal a Matriz: el costo con el que entró cada producto a la sucursal (lo calcula el servidor por lote al guardar)
+    // de una sucursal a Matriz: la lista de precios que le corresponde a la sucursal que regresa el producto
     const aMatriz = !!t.des && esMatriz(t.des) && !esMatriz(t.ori);
-    if (aMatriz && t.pEntSuc !== t.ori) { t.pEnt = {}; t.pEntSuc = t.ori; }
-    const faltan = aMatriz ? t.lineas.map(l => l.id).filter(id => t.pEnt[id] === undefined) : [];
-    if (faltan.length && verImpC() && !t.pidiendoEnt) { t.pidiendoEnt = true; pedir('preciosEntrada', { suc: t.ori, ids: faltan }, true).then(r => { faltan.forEach(id => t.pEnt[id] = (r.precios || {})[id] || 0); t.pidiendoEnt = false; if (S.tr === t && $('#trLineas')) pintarLineasTr(); }).catch(() => { t.pidiendoEnt = false; }); }
-    const pLista = id => { const p = prod(id) || { precios: {} }; if (aMatriz && t.pEnt && t.pEnt[id]) return t.pEnt[id]; return (listaDes && p.precios[listaDes]) || p.costo || 0; };
+    const listaOri = ((D().sucursales || []).find(s => s.id === t.ori) || {}).lista;
+    const pLista = id => { const p = prod(id) || { precios: {} }; const l = aMatriz ? listaOri : listaDes; return (l && p.precios[l]) || p.costo || 0; };
     // IVA del renglón en pesos (precio de la lista de la tienda destino o el capturado × tasa del producto)
     const verIva = verImpC(), ivaTr = l => { if (!verIva || !t.des) return ''; const pu = l.precio !== undefined && l.precio !== '' ? Number(l.precio) || 0 : pLista(l.id);
       return $$(Math.round(Math.round((l.cant || 0) * pu * 100) / 100 * ((prod(l.id) || {}).iva || 0) * 100) / 100); };
-    cont.innerHTML = (aMatriz && t.lineas.length ? '<p class="muted" style="font-size:13px;margin:0 0 6px">↩️ <b>A Matriz:</b> cada lote se regresa al costo con el que entró a esta sucursal (su traspaso de entrada o su compra).</p>' : '') + (!t.lineas.length ? '<div class="vacio">Agrega productos</div>' :
+    cont.innerHTML = (aMatriz && t.lineas.length ? `<p class="muted" style="font-size:13px;margin:0 0 6px">↩️ <b>A Matriz:</b> el producto regresa con la lista de precios de ${esc(sucNom(t.ori))}${listaOri ? ' (' + esc(listaOri) + ')' : ''}.</p>` : '') + (!t.lineas.length ? '<div class="vacio">Agrega productos</div>' :
       `<div class="linea cab"><div>Producto</div><div>Lote</div><div>Cant.</div><div>${ep ? 'Precio' : ''}</div><div class="num">${verIva ? 'IVA $' : ''}</div><div class="num">Exist. origen</div><div></div></div>` +
       t.lineas.map((l, i) => { const p = prod(l.id) || {}; return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)}</small></div>
         <div><select data-f="lote"><option value="">Auto (caduca primero)</option>${lotes(l.id, t.ori).map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)} · ${nf(x.q)}</option>`).join('')}</select></div>
