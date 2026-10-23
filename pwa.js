@@ -1,6 +1,14 @@
 /* App instalable: service worker (abrir sin señal) y aviso de versión nueva. */
 (function () {
   if (!('serviceWorker' in navigator)) return;
+  // Salida de emergencia: app.interesveterinario.com/?reiniciar quita la copia guardada de la app (archivos)
+  // y la vuelve a bajar. NO borra la sesión ni las ventas pendientes de enviar.
+  if (/[?&]reiniciar/.test(location.search)) {
+    navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+      .then(function () { return window.caches ? caches.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return k.indexOf('iv-app-') === 0; }).map(function (k) { return caches.delete(k); })); }) : 0; })
+      .catch(function () {}).then(function () { location.replace(location.pathname); });
+    return;
+  }
   var recargando = false;
   var cargada = Date.now();
   // versión nueva activa: recién abierta se recarga sola; si ya estás trabajando, solo se avisa (para no perder lo capturado)

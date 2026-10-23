@@ -19,21 +19,10 @@ self.addEventListener('fetch', e => {
   if (r.method !== 'GET') return;                                   // las llamadas al servidor (POST) nunca se guardan
   const url = new URL(r.url);
   if (url.origin === location.origin) {
-    // la app: con señal se baja lo más nuevo (máx. 4 s) y se guarda; sin señal, red lenta o cualquier error, lo guardado
-    e.respondWith(caches.open(CACHE).then(c => {
-      const guardado = () => c.match(r, { ignoreSearch: true }).then(m => m || caches.match(r, { ignoreSearch: true }))
-        .then(m => m || (r.mode === 'navigate' ? c.match('./').then(x => x || caches.match('./')) : undefined)).catch(() => undefined);
-      const limpia = resp => !resp.redirected ? resp : resp.blob().then(b => new Response(b, { status: resp.status, statusText: resp.statusText, headers: resp.headers }));
-      let red;
-      try { red = (r.mode === 'navigate' ? fetch(r) : fetch(r.url, { cache: 'no-cache', credentials: 'same-origin' })).then(limpia); }
-      catch (err) { red = Promise.reject(err); }
-      return new Promise(ok => {
-        let listo = false; const dar = x => { if (!listo && x) { listo = true; ok(x); } };
-        const t = setTimeout(() => guardado().then(m => m ? dar(m) : red.then(dar, () => dar(Response.error()))), 4000);
-        red.then(resp => { clearTimeout(t); if (resp.ok) { c.put(r, resp.clone()).catch(() => {}); dar(resp); } else guardado().then(m => dar(m || resp)); },
-          () => { clearTimeout(t); guardado().then(m => dar(m || Response.error())); });
-      });
-    }).catch(() => fetch(r)));
+    if (url.searchParams.has('reiniciar')) return;                   // salida de emergencia: va directo a internet (ver pwa.js)
+    // la app: primero lo guardado (abre al instante y sin señal). La versión nueva se instala sola al abrir
+    // (skipWaiting) y la página se recarga una vez con ella (pwa.js).
+    e.respondWith(caches.match(r, { ignoreSearch: true }).then(m => m || fetch(r).catch(() => r.mode === 'navigate' ? caches.match('./') : undefined)));
     return;
   }
   if (EXTERNOS.test(r.url)) {
