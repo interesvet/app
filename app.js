@@ -3062,7 +3062,7 @@ const App = (() => {
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.suc)}</div><div>Destino: ${esc(sucNom(d.suc))}</div></div><div style="text-align:right"><b>ORDEN DE COMPRA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div>
         <div style="margin-top:4px">Factura: <b>${d.factura ? esc(d.factura) : '<span style="color:#b97300">sin capturar</span>'}</b></div>${d.nota ? `<div>Nota del proveedor: <b>${esc(d.nota)}</b></div>` : ''}${d.uuid ? `<div style="font-size:10px;color:#666">Folio fiscal: ${esc(d.uuid)}</div>` : ''}</div></div>
       ${htmlProvOC(d)}
-      ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', h: x => x.registrado ? esc(x.lote) : '<span class="muted">al recibir</span>' }, { t: 'Cad.', h: x => x.registrado ? esc(x.cad) : '' }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$((x.sub || x.cant * x.precio) - (x.desc || 0)) }, { t: 'IVA $', num: 1, h: x => $$(x.iva || 0) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], d.lineas)}
+      ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', h: x => x.registrado ? esc(x.lote) : x.lote && x.lote !== 'SIN LOTE' ? esc(x.lote) + ' <small class="muted">(por confirmar)</small>' : '<span class="muted">al recibir</span>' }, { t: 'Cad.', h: x => esc(x.cad || '') }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$((x.sub || x.cant * x.precio) - (x.desc || 0)) }, { t: 'IVA $', num: 1, h: x => $$(x.iva || 0) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], d.lineas)}
       <div class="totales" style="margin-top:10px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div>${d.descEsp ? `<div><span>Descuento especial</span><span>−${$$(d.descEsp)}</span></div>` : ''}${d.descPP ? `<div><span>Descuento pronto pago</span><span>−${$$(d.descPP)}</span></div>` : ''}<div><span>IVA</span><span>${$$(d.iva)}</span></div>${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}
       <div class="gran"><span>Total</span><span>${$$(d.total)}</span></div><div><span>Pagado</span><span>${$$(d.pagado)}</span></div><div><b>Saldo</b><b>${$$(d.saldo)}</b></div></div>
       ${tablaPagosOC(d)}</div></div>
@@ -3083,7 +3083,7 @@ const App = (() => {
     if (S.oc && S.oc.lineas && S.oc.lineas.length && S.oc.editId !== d.id && !confirm('Tienes otra orden en captura. ¿Dejarla y editar la ' + d.folio + '?')) return;
     S.oc = { editId: d.id, folio: d.folio, prov: d.idProv, suc: d.suc, factura: d.factura, nota: d.nota || '', fecha: d.fechaISO || hoyISO(), dias: d.dias, descEsp: d.descEspPct || 0, descPP: d.descPPPct || 0,
       flete: d.flete || 0, recibido: false, actCosto: false, obs: d.obs || '', pago: 0,
-      lineas: d.lineas.filter(l => l.prod).map(l => ({ id: l.prod, cant: l.cant, precio: l.precio, desc: l.descPct || 0, lote: '', cad: '' })) };
+      lineas: d.lineas.filter(l => l.prod).map(l => ({ id: l.prod, cant: l.cant, precio: l.precio, desc: l.descPct || 0, lote: l.lote && l.lote !== 'SIN LOTE' ? l.lote : '', cad: l.cad ? isoDe(l.cad) : '' })) };
     cerrarModal(); ir('compras', true); V.compras('nueva');
   }
   async function cancelarCompra(id) {
@@ -3208,7 +3208,7 @@ const App = (() => {
   function nuevaCompra() {
     if (!S.oc) S.oc = { prov: '', suc: sucTrabajo(), factura: '', fecha: hoyISO(), dias: '', descEsp: 0, descPP: 0, flete: 0, recibido: false, actCosto: true, obs: '', lineas: [], pago: 0 };
     const o = S.oc, cat = D().catalogos, ed = !!o.editId;
-    $('#cCont').innerHTML = (ed ? `<div class="tarjeta" style="border-color:var(--marca);background:var(--marca-suave, #eef7f1)"><div class="fila"><div style="flex:3 1 260px">✏️ Editando la orden <b>${esc(o.folio)}</b> (aún no recibida). Folio, sucursal, factura y pagos se conservan.</div><button class="btn fijo chico" onclick="App.salirEdicionCompra()">Salir sin guardar</button></div></div>` : '') + (o.cfdi ? `<div class="tarjeta" style="border-color:var(--marca)"><div class="fila"><div style="flex:3 1 260px">🧾 Orden desde la <b>factura ${esc(o.cfdi.factura)}</b> (total ${$$(o.cfdi.total)}). Al guardarla queda ligada con su XML y PDF.
+    $('#cCont').innerHTML = (ed ? `<div class="tarjeta" style="border-color:var(--marca);background:var(--marca-suave, #eef7f1)"><div class="fila"><div style="flex:3 1 260px">✏️ Editando la orden <b>${esc(o.folio)}</b> (aún no recibida): cantidades, precios, descuentos y, si ya los tienes por la nota o cotización del proveedor, lote y caducidad. Folio, sucursal, factura y pagos se conservan.</div><button class="btn fijo chico" onclick="App.salirEdicionCompra()">Salir sin guardar</button></div></div>` : '') + (o.cfdi ? `<div class="tarjeta" style="border-color:var(--marca)"><div class="fila"><div style="flex:3 1 260px">🧾 Orden desde la <b>factura ${esc(o.cfdi.factura)}</b> (total ${$$(o.cfdi.total)}). Al guardarla queda ligada con su XML y PDF.
       ${o.cfdi.sin.length ? `<br><b style="color:var(--aviso)">Agrega con el buscador estos productos que no reconocí:</b><ul class="peq" style="margin:4px 0 0 18px">${o.cfdi.sin.map(l => `<li>${esc(l.desc)}${l.noId ? ' <small class="muted">(' + esc(l.noId) + ')</small>' : ''} · ${nf(l.cant)} × ${$$(l.precio)}</li>`).join('')}</ul>` : ''}</div>
       <button class="btn fijo chico" onclick="App.quitarCfdiOc()">Desligar</button></div></div>` : '') + (o.req ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">📑 Faltantes de la <b>requisición ${esc(o.req.folio)}</b>: la orden queda ligada a ella.</div><button class="btn fijo chico" onclick="App.quitarReqOc()">Desligar</button></div></div>` : '') +
       `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="ocFolio"></div></div><div class="rejilla">
@@ -3239,9 +3239,9 @@ const App = (() => {
   function pintarLineasCompra() {
     const o = S.oc, cont = $('#ocLineas');
     cont.innerHTML = !o.lineas.length ? '<div class="vacio">Agrega productos</div>' :
-      `<div class="linea cab"><div>Producto</div><div>${o.recibido ? 'Lote y caducidad *' : ''}</div><div>Cant.</div><div>Costo</div><div>Desc %</div><div class="num">Importe</div><div></div></div>` +
+      `<div class="linea cab"><div>Producto</div><div>${o.recibido ? 'Lote y caducidad *' : 'Lote y caducidad (opcional)'}</div><div>Cant.</div><div>Costo</div><div>Desc %</div><div class="num">Importe</div><div></div></div>` +
       o.lineas.map((l, i) => { const p = prod(l.id) || {}; return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)}</small></div>
-        <div style="display:flex;gap:4px">${!o.recibido ? '<small class="muted" title="El lote y la caducidad se capturan al recibir la mercancía">al recibir</small>' : p.usaLote === false ? '<small class="muted">Sin lote</small>' : `<input data-f="lote" placeholder="Lote" value="${esc(l.lote)}"><input type="date" data-f="cad" value="${esc(l.cad)}">`}</div>
+        <div style="display:flex;gap:4px">${p.usaLote === false ? '<small class="muted">Sin lote</small>' : `<input data-f="lote" placeholder="${o.recibido ? 'Lote' : 'Lote (si ya lo sabes)'}" title="${o.recibido ? '' : 'Opcional: si la nota o cotización del proveedor ya trae lote y caducidad. Se confirman al recibir.'}" value="${esc(l.lote || '')}"><input type="date" data-f="cad" value="${esc(l.cad || '')}">`}</div>
         <div><input type="number" data-f="cant" value="${l.cant}"></div><div><input type="number" data-f="precio" step="0.01" value="${l.precio}">${l.auto && l.ref ? `<small class="muted" data-ult style="display:block;white-space:nowrap" title="Precio de la compra más reciente${l.ref.oc ? ' (' + esc(l.ref.oc) + ')' : ''}${l.ref.otro ? ', con otro proveedor' : ''}">últ. ${esc(l.ref.f)}${l.ref.otro ? ' · otro prov.' : ''}</small>` : ''}</div><div><input type="number" data-f="desc" value="${l.desc}"></div>
         <div class="num" data-imp></div><div><button class="icono" data-del>✕</button></div></div>`; }).join('');
     cont.oninput = cont.onchange = e => { const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return; const l = o.lineas[+row.dataset.i]; l[f] = (f === 'lote' || f === 'cad') ? e.target.value : Number(e.target.value) || 0; if ((f === 'precio' || f === 'desc') && l.auto) { l.auto = false; const h = row.querySelector('[data-ult]'); if (h) h.remove(); } totalesCompra(); };
@@ -3272,7 +3272,7 @@ const App = (() => {
     if (o.editId) {
       try {
         const r = await pedir('editarCompra', { ID_O_Compra: o.editId, ID_Proveedor: o.prov, Fecha: o.fecha, D_credito: o.dias, descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete,
-          actualizarCosto: o.actCosto, Observaciones: o.obs, No_Nota: o.nota || '', lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc })) });
+          actualizarCosto: o.actCosto, Observaciones: o.obs, No_Nota: o.nota || '', lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: l.lote || '', F_Caducidad: l.cad || '' })) });
         toast('✔ Orden ' + r.folio + ' actualizada'); S.oc = null; S.cacheTot = {}; if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista'); verCompra(r.ID_O_Compra);
       } catch (e) {}
       return;
@@ -3280,7 +3280,7 @@ const App = (() => {
     try {
       const r = await pedir('guardarCompra', { ID_O_Compra: uid(), ID_Proveedor: o.prov, Suc_Destino: o.suc, No_Factura: o.factura, No_Nota: o.nota || '', Fecha: o.fecha, D_credito: o.dias,
         descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete, Recibido: o.recibido, actualizarCosto: o.actCosto, Observaciones: o.obs,
-        lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: o.recibido ? l.lote : '', F_Caducidad: o.recibido ? l.cad : '' })), cfdiUuid: o.cfdi ? o.cfdi.uuid : '',
+        lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: l.lote || '', F_Caducidad: l.cad || '' })), cfdiUuid: o.cfdi ? o.cfdi.uuid : '',
         pago: o.pago > 0 ? { monto: o.pago, forma: $('#ocForma').value, banco: $('#ocBanco').value } : null, ID_Requisicion: o.req ? o.req.id : '' });
       toast('✔ Orden ' + r.folio + ' guardada' + (o.req ? ' · ligada a la requisición ' + o.req.folio : '')); S.oc = null; S.cacheTot = {}; refrescarStock(); if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista');
     } catch (e) {}
