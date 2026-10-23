@@ -387,7 +387,7 @@ const App = (() => {
   function salir(msg) {
     if (S.cola.length && !confirm('Tienes ' + S.cola.length + ' operaciones sin sincronizar. Se conservarán en este dispositivo. ¿Salir?')) return;
     S.token = null; LS.del('token'); CQ.borrar(); quitarAvisoCache(); { const bv = $('#bienvenida'); if (bv) bv.classList.add('oculto'); document.body.classList.remove('con-bienv'); }
-    $('#app').classList.add('oculto'); $('#login').classList.remove('oculto'); avisarNativoLogin();
+    $('#app').classList.add('oculto'); $('#login').classList.remove('oculto'); avisarNativoLogin(); revisarVersionApp();
     if (msg) $('#lgErr').textContent = msg;
   }
   async function refrescarDatos(silencioso) {
@@ -559,8 +559,8 @@ const App = (() => {
       <nav>${MENU.filter(m => !m.oculto && puede(m.p)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
         return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(e.t)}</button>`; }).join('')}</nav>
       <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
-      <button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div>`;
-    cargarAvatares($('#menu'));
+      <button class="btn chico" onclick="App.salir()">Cerrar sesión</button><div class="ver-app"></div></div>`;
+    cargarAvatares($('#menu')); pintarVersion();
   }
   const esMatriz = id => { const x = (D().sucursales || []).find(o => o.id === id); return id === 'SUC_MAT_1' || !!(x && /^matriz$/i.test(String(x.tipo || ''))); };
   const avatarSuc = id => { const x = (D().sucursales || []).find(o => o.id === id) || {};
@@ -644,10 +644,10 @@ const App = (() => {
         <div class="bienv-estado" id="bienvEstado"></div>
         ${puede('ventas') ? `<button class="bienv-cta" onclick="App.bienvIr('venta')"><span>🛒</span><div><b>Nueva venta</b><small>Captura una nota en segundos</small></div><em>›</em></button>` : ''}
         <div class="bienv-grid">${items.map(x => `<button class="bienv-item" onclick="App.bienvIr('${x.id}')"><span class="bienv-ico">${x.e.i}</span><b>${esc(x.e.t)}</b><small>${esc(SUB_MENU[x.id] || '')}</small></button>`).join('')}</div>
-        <div class="bienv-pie">Interés Veterinario · ${new Date().getFullYear()}${S.cola && S.cola.length ? ` · <b>${S.cola.length} por sincronizar</b>` : ''}</div>
+        <div class="bienv-pie">Interés Veterinario · ${new Date().getFullYear()}${S.cola && S.cola.length ? ` · <b>${S.cola.length} por sincronizar</b>` : ''}<div class="ver-app"></div></div>
         <button class="bienv-salir" onclick="App.salirBienv()" aria-label="Cerrar sesión">⏻ Cerrar sesión</button>
       </div>`;
-    el.classList.remove('oculto'); el.scrollTop = 0; document.body.classList.add('con-bienv'); pintarBienvEstado();
+    el.classList.remove('oculto'); el.scrollTop = 0; document.body.classList.add('con-bienv'); pintarBienvEstado(); pintarVersion();
   }
   function salirBienv() {
     const sin = navigator.onLine === false || S.online === false;
@@ -674,11 +674,43 @@ const App = (() => {
     if (forzar) toast('Hay una versión nueva de la app: toca “Actualizar” antes de continuar', true);
     return true;
   }
+  /* ---------- versión de la app instalable: cuál está trabajando en este equipo y si hay una más nueva ---------- */
+  function textoVersion(v) {
+    const m = /^(\d{4})(\d{2})(\d{2})(?:-(\d{2})(\d{2}))?-/.exec(String(v || '')); if (!m) return v ? String(v) : '';
+    const mes = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][Number(m[2]) - 1];
+    let t = Number(m[3]) + ' ' + mes + ' ' + m[1];
+    if (m[4]) { const h = Number(m[4]); t += ' · ' + (h % 12 || 12) + ':' + m[5] + (h < 12 ? ' a. m.' : ' p. m.'); }
+    return t;
+  }
+  async function versionActiva() {
+    const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
+    if (sw) { try { const v = await new Promise((ok, no) => { const c = new MessageChannel(); c.port1.onmessage = e => ok(e.data); sw.postMessage('version', [c.port2]); setTimeout(() => no(), 1500); }); if (v) return v; } catch (e) {} }
+    try { const k = (await caches.keys()).filter(x => x.indexOf('iv-app-') === 0).sort(); if (k.length) return k[k.length - 1].slice(7); } catch (e) {}
+    return '';
+  }
+  async function revisarVersionApp() {
+    if (!window.IV_API) return;
+    const act = await versionActiva(); let nueva = '';
+    if (navigator.onLine !== false) { try { const t = await (await fetch('sw.js?v=' + Date.now(), { cache: 'no-store' })).text(); nueva = (/const VERSION = '([^']+)'/.exec(t) || [])[1] || ''; } catch (e) {} }
+    S.ver = { act: act, nueva: nueva }; pintarVersion();
+  }
+  function pintarVersion() {
+    const v = S.ver; if (!v || !v.act) return;
+    const vieja = v.nueva && v.nueva !== v.act;
+    const html = `<span title="${esc(v.act)}">📱 Versión <b>${esc(textoVersion(v.act))}</b></span> ` + (vieja ? `<a href="#" class="ver-nueva" onclick="App.actualizarApp();return false">✨ Hay una nueva (${esc(textoVersion(v.nueva))}): actualizar</a>`
+      : v.nueva ? '<span class="ver-ok">✔ al día</span>' : '<span class="muted">· sin conexión para revisar</span>');
+    document.querySelectorAll('.ver-app').forEach(el => { el.innerHTML = html; el.classList.toggle('vieja', !!vieja); });
+  }
+  /** Baja de nuevo los archivos de la app (no toca la sesión ni lo pendiente de enviar). */
+  function actualizarApp() {
+    if (navigator.onLine === false) return toast('Necesitas señal para actualizar la app', true);
+    location.href = location.pathname + '?reiniciar';
+  }
   function mostrarApp() {
     $('#login').classList.add('oculto'); $('#app').classList.remove('oculto');
     marcarRed(S.online); pintarCola(); ir(S.vista);
     botonBienvenida(); if (esMovil()) bienvenida();
-    revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => revisarVersion(), 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') revisarVersion(); }); }
+    revisarVersionApp(); revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => { revisarVersion(); revisarVersionApp(); }, 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { revisarVersion(); revisarVersionApp(); } }); }
     // logotipos de sucursal guardados con fondo blanco: el administrador los deja sin fondo (una vez, en segundo plano)
     if (U().rol === 'Administrador' && LS.get('minisSucRev', '') !== hoyISO()) setTimeout(() => { try { LS.set('minisSucRev', hoyISO()); repararMinisSuc(D().sucursales || []); } catch (e) {} }, 30000);
   }
@@ -2976,7 +3008,28 @@ const App = (() => {
         ${!d.nc && !d.esNC && (d.rep || d.ppd) ? `<tr><td>Complemento de pago</td><td>${d.rep ? '<span class="etq ok">✔ ligado</span> <small class="muted">' + esc(d.rep) + '</small>' : '<span class="etq av">Falta REP</span> <small class="muted">la factura es PPD</small>'}</td></tr>` : ''}
       </tbody></table></div></div>
       ${htmlAdj('pago', d.id, d.adjuntos, d.esNC || !!d.nc)}
-      <div class="acciones no-imprimir">${d.oc ? `<button class="btn" onclick="App.abrirCompraId('${d.oc.id}')">📦 Ver orden ${esc(d.oc.folio)}</button>` : ''}</div>`);
+      <div class="acciones no-imprimir">${d.oc ? `<button class="btn" onclick="App.abrirCompraId('${d.oc.id}')">📦 Ver orden ${esc(d.oc.folio)}</button>` : ''}${d.puedeEditar ? `<button class="btn" onclick="App.formEditarPago()">✏️ Editar</button>` : ''}</div>`);
+  }
+  /** Propietario / administrador: corrige folio de N/C, motivo y comentarios (el importe no cambia). */
+  function formEditarPago() {
+    const d = S.ultimoPago; if (!d || !d.puedeEditar) return;
+    const esNC = !!(d.nc || d.esNC);
+    modal('✏️ Editar ' + (esNC ? 'nota de crédito' : 'pago') + ' · ' + d.fecha, `<p class="muted" style="margin-top:0">${esc(d.proveedor)} · orden <b>${esc(d.folioOC)}</b> · importe <b>${$$(d.monto)}</b>. El importe, la fecha y la orden no cambian.</p>
+      <div class="rejilla"><label>Folio de la nota de crédito<input id="epFolio" value="${esc(d.nc)}" placeholder="Ej. NC 1234"></label>
+        <label>Motivo de la N/C<input id="epMotivo" list="epMotivos" value="${esc(d.motivoNC)}" placeholder="Ej. Pronto pago"><datalist id="epMotivos">${MOTIVOS_NC.filter(m => m !== 'Otro').map(m => `<option value="${m}">`).join('')}</datalist></label>
+        <label style="grid-column:1/-1">Comentarios / observaciones<textarea id="epCom" rows="3" maxlength="500">${esc(d.comentarios)}</textarea></label></div>
+      ${esNC ? '' : '<p class="muted peq">Si capturas un folio de nota de crédito, este movimiento se mostrará como nota de crédito (no como pago).</p>'}
+      <div class="acciones"><button class="btn" onclick="App.verPagoProv('${d.id}')">Volver</button><button class="btn primario" id="epGuardar" onclick="App.guardarEdicionPago()">Guardar cambios</button></div>`);
+  }
+  async function guardarEdicionPago() {
+    const d = S.ultimoPago; if (!d) return;
+    const folio = $('#epFolio').value.trim(), motivo = $('#epMotivo').value.trim(), com = $('#epCom').value.trim();
+    if (folio && !motivo) return toast('Indica el motivo de la nota de crédito', true);
+    $('#epGuardar').disabled = true;
+    try {
+      await pedir('editarPagoProv', { id: d.id, folioNC: folio, motivoNC: motivo, comentarios: com });
+      toast('✔ Cambios guardados'); verPagoProv(d.id); if ($('#lPP')) buscarPagosProv();
+    } catch (e) { if ($('#epGuardar')) $('#epGuardar').disabled = false; }
   }
   function pagosSinAdj() { $('#ppSinAdj').checked = true; buscarPagosProv(); }
   function listaCompras() {
@@ -6568,7 +6621,7 @@ const App = (() => {
       mostrarApp();
       refrescarDatos(true).then(() => { pintarMenu(); pintarBienvEstado(); sincronizar(); renovarSesion(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); setTimeout(fotosAlEntrar, 4000); }).catch(() => {});
     } else {
-      $('#login').classList.remove('oculto'); avisarNativoLogin();
+      $('#login').classList.remove('oculto'); avisarNativoLogin(); revisarVersionApp();
     }
   }
   /* Puente con la app nativa (Xcode / WKWebView). La app nativa puede pedir la contraseña guardada en Contraseñas de Apple
@@ -6586,7 +6639,7 @@ const App = (() => {
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
-    vistaCompras: t => V.compras(t), buscarCompras, buscarPagosProv, verPagoProv, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
+    vistaCompras: t => V.compras(t), buscarCompras, actualizarApp, buscarPagosProv, verPagoProv, formEditarPago, guardarEdicionPago, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
     pdfCompra: (id, conCostos) => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', conCostos ? { ID_O_Compra: id, conCostos: true } : { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,

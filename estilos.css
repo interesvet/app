@@ -666,6 +666,14 @@ body.con-visor { overflow: hidden; }
 .dep-card { border-left: 4px solid #b08400; }
 .dep-como { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--superficie-2); font-size: 13px; line-height: 1.5; color: var(--texto-2); }
 .dep-como b { color: var(--texto); }
+.ver-app { font-size: 11.5px; color: var(--texto-2); margin-top: 6px; line-height: 1.5; text-align: center; }
+.ver-app:empty { display: none; }
+.ver-app .ver-ok { color: var(--ok); }
+.ver-app .ver-nueva { color: var(--aviso); font-weight: 600; }
+.menu .pie .ver-app { text-align: left; }
+.bienv-pie .ver-app { color: rgba(255, 255, 255, .75); font-size: 12px; }
+.bienv-pie .ver-app .ver-ok { color: #9be7b0; }
+.bienv-pie .ver-app .ver-nueva { color: #ffd479; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

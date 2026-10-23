@@ -1,5 +1,5 @@
-/* Service worker de la app instalable. Versión: 20261023-d6415cdf (la pone tools/construir.py) */
-const VERSION = '20261023-d6415cdfx';
+/* Service worker de la app instalable. Versión: 20261023-0606-6b981246 (la pone tools/construir.py) */
+const VERSION = '20261023-0606-6b981246';
 const CACHE = 'iv-app-' + VERSION, CACHE_EXT = 'iv-ext-v1';
 const ARCHIVOS = ["./", "index.html", "estilos.css", "app.js", "config.js", "shim.js", "pwa.js", "manifest.webmanifest", "logo.png", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon.png"];
 const EXTERNOS = /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com)\//;
@@ -12,7 +12,10 @@ self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('iv-app-') && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
-self.addEventListener('message', e => { if (e.data === 'actualizar') self.skipWaiting(); });
+self.addEventListener('message', e => {
+  if (e.data === 'actualizar') self.skipWaiting();
+  if (e.data === 'version' && e.ports && e.ports[0]) e.ports[0].postMessage(VERSION);   // la app muestra qué versión está trabajando
+});
 
 self.addEventListener('fetch', e => {
   const r = e.request;

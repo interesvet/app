@@ -12,7 +12,10 @@ self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('iv-app-') && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
-self.addEventListener('message', e => { if (e.data === 'actualizar') self.skipWaiting(); });
+self.addEventListener('message', e => {
+  if (e.data === 'actualizar') self.skipWaiting();
+  if (e.data === 'version' && e.ports && e.ports[0]) e.ports[0].postMessage(VERSION);   // la app muestra qué versión está trabajando
+});
 
 self.addEventListener('fetch', e => {
   const r = e.request;
