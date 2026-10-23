@@ -3001,6 +3001,7 @@ const App = (() => {
         <tr><td>Orden de compra</td><td><b>${esc(d.folioOC)}</b></td></tr>
         ${d.factura ? `<tr><td>Factura</td><td>${esc(d.factura)}</td></tr>` : ''}
         <tr><td>${d.nc ? 'Motivo' : 'Forma de pago'}</td><td>${esc(d.nc ? d.motivoNC : d.forma)}</td></tr>
+        ${d.nc || d.esNC ? `<tr><td>Folio fiscal (UUID)</td><td>${d.uuidNC ? `<span style="font-family:monospace;font-size:12px;word-break:break-all">${esc(d.uuidNC)}</span>` : '<span class="muted">sin capturar</span>'}</td></tr>` : ''}
         ${!d.nc ? `<tr><td>Cuenta</td><td>${esc(d.banco)}</td></tr>` : ''}
         <tr><td>Sucursal</td><td>${esc(sucNom(d.suc))}</td></tr>
         ${d.comentarios ? `<tr><td>Comentarios</td><td>${esc(d.comentarios)}</td></tr>` : ''}
@@ -3017,17 +3018,19 @@ const App = (() => {
     modal('✏️ Editar ' + (esNC ? 'nota de crédito' : 'pago') + ' · ' + d.fecha, `<p class="muted" style="margin-top:0">${esc(d.proveedor)} · orden <b>${esc(d.folioOC)}</b> · importe <b>${$$(d.monto)}</b>. El importe, la fecha y la orden no cambian.</p>
       <div class="rejilla"><label>Folio de la nota de crédito<input id="epFolio" value="${esc(d.nc)}" placeholder="Ej. NC 1234"></label>
         <label>Motivo de la N/C<input id="epMotivo" list="epMotivos" value="${esc(d.motivoNC)}" placeholder="Ej. Pronto pago"><datalist id="epMotivos">${MOTIVOS_NC.filter(m => m !== 'Otro').map(m => `<option value="${m}">`).join('')}</datalist></label>
+        <label style="grid-column:1/-1">Folio fiscal (UUID) de la nota de crédito<input id="epUuid" value="${esc(d.uuidNC || '')}" placeholder="Ej. 4CC99ABF-D34F-48F1-AE75-094110C692BC" style="font-family:monospace" autocapitalize="characters" spellcheck="false"></label>
         <label style="grid-column:1/-1">Comentarios / observaciones<textarea id="epCom" rows="3" maxlength="500">${esc(d.comentarios)}</textarea></label></div>
       ${esNC ? '' : '<p class="muted peq">Si capturas un folio de nota de crédito, este movimiento se mostrará como nota de crédito (no como pago).</p>'}
       <div class="acciones"><button class="btn" onclick="App.verPagoProv('${d.id}')">Volver</button><button class="btn primario" id="epGuardar" onclick="App.guardarEdicionPago()">Guardar cambios</button></div>`);
   }
   async function guardarEdicionPago() {
     const d = S.ultimoPago; if (!d) return;
-    const folio = $('#epFolio').value.trim(), motivo = $('#epMotivo').value.trim(), com = $('#epCom').value.trim();
+    const folio = $('#epFolio').value.trim(), motivo = $('#epMotivo').value.trim(), com = $('#epCom').value.trim(), uuid = $('#epUuid').value.replace(/\s+/g, '').toUpperCase();
     if (folio && !motivo) return toast('Indica el motivo de la nota de crédito', true);
+    if (uuid && !/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/.test(uuid)) return toast('El folio fiscal debe tener 36 caracteres, como viene en la nota de crédito (8-4-4-4-12)', true);
     $('#epGuardar').disabled = true;
     try {
-      await pedir('editarPagoProv', { id: d.id, folioNC: folio, motivoNC: motivo, comentarios: com });
+      await pedir('editarPagoProv', { id: d.id, folioNC: folio, motivoNC: motivo, uuidNC: uuid, comentarios: com });
       toast('✔ Cambios guardados'); verPagoProv(d.id); if ($('#lPP')) buscarPagosProv();
     } catch (e) { if ($('#epGuardar')) $('#epGuardar').disabled = false; }
   }
@@ -3162,7 +3165,7 @@ const App = (() => {
       ${a.map(x => `<tr><td>${esc(x.fecha)}${lnk(x)}</td>${cols[1](x)}<td class="num">${$$(x.monto)}</td></tr>`).join('')}
       <tr><td colspan="${cols[2]}"><b>Total</b></td><td class="num"><b>${$$(sum(a))}</b></td></tr></tbody></table></div></div>` : '';
     return t('Pagos realizados', pg, ['<th>Comentarios</th>', x => `<td>${esc(x.comentarios || '')}</td>`, 2]) +
-      t('Notas de crédito', nc, ['<th>Folio N/C</th><th>Motivo</th>', x => `<td><b>${esc(x.nc || '—')}</b></td><td>${esc(x.motivoNC || x.comentarios || '')}</td>`, 3]);
+      t('Notas de crédito', nc, ['<th>Folio N/C</th><th>Motivo</th>', x => `<td><b>${esc(x.nc || '—')}</b>${x.uuidNC ? `<br><small class="muted" style="font-size:10px">${esc(x.uuidNC)}</small>` : ''}</td><td>${esc(x.motivoNC || x.comentarios || '')}</td>`, 3]);
   }
   const MOTIVOS_NC = ['Pronto pago', 'Devolución', 'Bonificación', 'Descuento comercial', 'Producto dañado o caducado', 'Otro'];
   function formNotaCredito(id, saldo) {
