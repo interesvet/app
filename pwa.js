@@ -2,7 +2,17 @@
 (function () {
   if (!('serviceWorker' in navigator)) return;
   var recargando = false;
-  navigator.serviceWorker.addEventListener('controllerchange', function () { if (recargando) return; recargando = true; location.reload(); });
+  var cargada = Date.now();
+  // versión nueva activa: recién abierta se recarga sola; si ya estás trabajando, solo se avisa (para no perder lo capturado)
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (recargando) return;
+    if (Date.now() - cargada < 20000) { recargando = true; location.reload(); return; }
+    if (document.getElementById('pwaNueva')) return;
+    var b = document.createElement('div'); b.id = 'pwaNueva'; b.className = 'pwa-nueva';
+    b.innerHTML = '<span>✨ Hay una versión nueva de la app</span><button class="btn primario chico">Recargar</button>';
+    b.querySelector('button').onclick = function () { recargando = true; location.reload(); };
+    document.body.appendChild(b);
+  });
   function avisar(sw) {
     if (document.getElementById('pwaNueva')) return;
     var b = document.createElement('div');
@@ -12,7 +22,7 @@
     document.body.appendChild(b);
   }
   // Recién abierta la app (primeros 20 s, sin trabajo en pantalla) la versión nueva se aplica sola; después se avisa con un botón.
-  function nueva(sw) { if (performance.now() < 20000) sw.postMessage('actualizar'); else avisar(sw); }
+  function nueva(sw) { sw.postMessage('actualizar'); }
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
       if (reg.waiting && navigator.serviceWorker.controller) nueva(reg.waiting);

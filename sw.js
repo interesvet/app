@@ -1,11 +1,12 @@
-/* Service worker de la app instalable. Versión: 20261023-2a41c733 (la pone tools/construir.py) */
-const VERSION = '20261023-2a41c733';
+/* Service worker de la app instalable. Versión: 20261023-713b78b3 (la pone tools/construir.py) */
+const VERSION = '20261023-713b78b3';
 const CACHE = 'iv-app-' + VERSION, CACHE_EXT = 'iv-ext-v1';
 const ARCHIVOS = ["./", "index.html", "estilos.css", "app.js", "config.js", "shim.js", "pwa.js", "manifest.webmanifest", "logo.png", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon.png"];
 const EXTERNOS = /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com)\//;
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARCHIVOS.map(u => new Request(u, { cache: 'reload' })))));
+  // la versión nueva se activa de inmediato (no espera a que se cierren todas las ventanas)
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARCHIVOS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('iv-app-') && k !== CACHE).map(k => caches.delete(k))))
@@ -18,8 +19,17 @@ self.addEventListener('fetch', e => {
   if (r.method !== 'GET') return;                                   // las llamadas al servidor (POST) nunca se guardan
   const url = new URL(r.url);
   if (url.origin === location.origin) {
-    // la app: primero lo guardado (abre al instante y sin señal); las versiones nuevas llegan por el aviso "Actualizar"
-    e.respondWith(caches.match(r, { ignoreSearch: true }).then(m => m || fetch(r).catch(() => r.mode === 'navigate' ? caches.match('./') : undefined)));
+    // la app: con señal se baja lo más nuevo (máx. 4 s) y se guarda; sin señal o red lenta, lo guardado
+    e.respondWith(caches.open(CACHE).then(c => {
+      const guardado = () => c.match(r, { ignoreSearch: true }).then(m => m || caches.match(r, { ignoreSearch: true })).then(m => m || (r.mode === 'navigate' ? c.match('./') : undefined));
+      const red = fetch(new Request(r, { cache: 'no-cache' })).then(resp => { if (resp && resp.ok) c.put(r, resp.clone()); return resp; });
+      return new Promise(ok => {
+        let listo = false; const dar = x => { if (!listo && x) { listo = true; ok(x); } };
+        const t = setTimeout(() => guardado().then(m => m ? dar(m) : red.then(dar, () => {})), 4000);
+        red.then(resp => { clearTimeout(t); resp.ok ? dar(resp) : guardado().then(m => dar(m || resp)); },
+          () => { clearTimeout(t); guardado().then(m => dar(m || Response.error())); });
+      });
+    }));
     return;
   }
   if (EXTERNOS.test(r.url)) {
