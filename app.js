@@ -1374,7 +1374,7 @@ const App = (() => {
   /* ---------- FOTOS Y DOCUMENTOS: clientes, ventas, compras, vendedores, proveedores ---------- */
   const ARCH_TIT = { cliFoto: '📷 Foto del cliente', cliCsf: '🧾 Constancia de situación fiscal', ventaGuia: '📦 Guía de envío', ocGuia: '📦 Guía de envío', trGuia: '📦 Guía de envío', vendFoto: '📷 Foto del vendedor', provLogo: '🏷️ Logotipo del proveedor',
     visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)', sucFoto: '🏬 Foto de la sucursal',
-    ocFactura: '🧾 Factura del proveedor (PDF y XML)', prodFicha: '📑 Ficha técnica (PDF)', ventaFirma: '✍️ Firma de recibido', ocFirma: '✍️ Firma de recepción', trFirma: '✍️ Firma de recibido', devDoc: '🧾 Documento fiscal de cancelación (XML y PDF)' };
+    ocFactura: '🧾 Factura del proveedor (PDF y XML)', ocNota: '📝 Nota de venta / cotización del proveedor (foto o PDF)', prodFicha: '📑 Ficha técnica (PDF)', ventaFirma: '✍️ Firma de recibido', ocFirma: '✍️ Firma de recepción', trFirma: '✍️ Firma de recibido', devDoc: '🧾 Documento fiscal de cancelación (XML y PDF)' };
   const ARCH_ACEPTA = { devDoc: 'application/pdf,.xml,text/xml,application/xml', ocFactura: 'application/pdf,.xml,text/xml,application/xml', prodFicha: 'application/pdf' };
   const ARCH_BTN = { devDoc: '➕ Agregar XML o PDF', ocFactura: '➕ Adjuntar PDF o XML', prodFicha: '📑 Subir ficha técnica (PDF)' };
   const ARCH_FIRMA = { ventaFirma: 1, ocFirma: 1, trFirma: 1 };
@@ -3008,7 +3008,7 @@ const App = (() => {
         <div class="kpi"><small>Pagado de esas compras</small><b>${$$(pag)}</b><span>${tot > 0 ? Math.round(pag / tot * 100) + ' % del total' : '—'}</span></div>
         <div class="kpi"><small>Por pagar del periodo</small><b>${$$(sal)}</b><span>${conSal} ${conSal === 1 ? 'orden' : 'órdenes'} con saldo</span></div>
         <div class="kpi kpi-clic" id="kCxP" onclick="App.verCxP()" title="Saldo de las órdenes con factura o nota del proveedor (todas las fechas)"><small>Cuentas por pagar (total)</small><b>…</b><span>calculando</span></div>
-      </div>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Proveedor', k: 'proveedor' }, { t: 'Factura', k: 'factura' },
+      </div>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Proveedor', k: 'proveedor' }, { t: 'Factura / nota', h: x => x.factura ? esc(x.factura) + (x.nota ? `<br><small class="muted">nota ${esc(x.nota)}</small>` : '') : x.nota ? `<span class="muted">nota</span> ${esc(x.nota)}` : '' },
         { t: 'Destino', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Saldo', num: 1, h: x => x.saldo > 0.009 ? `<b>${$$(x.saldo)}</b>` : '—' },
         { t: 'Recibida', h: x => `<span class="etq ${String(x.recibido).toUpperCase() === 'SI' ? 'ok' : /CANCELADA/i.test(x.recibido) ? 'mal' : 'av'}">${esc(x.recibido || 'NO')}</span>` }], l, { clic: 'App.abrirCompra' });
       totalCxP();
@@ -3059,7 +3059,7 @@ const App = (() => {
     const pend = d.lineas.filter(l => !l.registrado);
     modal('Orden ' + d.folio, `<div class="imprimible"><div class="nota">
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.suc)}</div><div>Destino: ${esc(sucNom(d.suc))}</div></div><div style="text-align:right"><b>ORDEN DE COMPRA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div>
-        <div style="margin-top:4px">Factura: <b>${d.factura ? esc(d.factura) : '<span style="color:#b97300">sin capturar</span>'}</b></div>${d.uuid ? `<div style="font-size:10px;color:#666">Folio fiscal: ${esc(d.uuid)}</div>` : ''}</div></div>
+        <div style="margin-top:4px">Factura: <b>${d.factura ? esc(d.factura) : '<span style="color:#b97300">sin capturar</span>'}</b></div>${d.nota ? `<div>Nota del proveedor: <b>${esc(d.nota)}</b></div>` : ''}${d.uuid ? `<div style="font-size:10px;color:#666">Folio fiscal: ${esc(d.uuid)}</div>` : ''}</div></div>
       ${htmlProvOC(d)}
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', h: x => x.registrado ? esc(x.lote) : '<span class="muted">al recibir</span>' }, { t: 'Cad.', h: x => x.registrado ? esc(x.cad) : '' }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$((x.sub || x.cant * x.precio) - (x.desc || 0)) }, { t: 'IVA $', num: 1, h: x => $$(x.iva || 0) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], d.lineas)}
       <div class="totales" style="margin-top:10px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div>${d.descEsp ? `<div><span>Descuento especial</span><span>−${$$(d.descEsp)}</span></div>` : ''}${d.descPP ? `<div><span>Descuento pronto pago</span><span>−${$$(d.descPP)}</span></div>` : ''}<div><span>IVA</span><span>${$$(d.iva)}</span></div>${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}
@@ -3070,9 +3070,9 @@ const App = (() => {
         ${pend.map(l => `<div class="fila" data-det="${esc(l.idDet)}" style="margin-bottom:6px"><div style="flex:2 1 200px"><b>${esc(l.nombre)}</b> × ${nf(l.cant)}</div>
           ${(prod(l.prod) || {}).usaLote === false ? '<small class="muted">Sin lote</small>' : `<label>Lote *<input data-k="Lote" value="${esc(l.lote === 'SIN LOTE' ? '' : l.lote)}"></label><label>Caducidad${(prod(l.prod) || {}).usaCad === false ? '' : ' *'}<input type="date" data-k="F_Caducidad" value="${isoDe(l.cad)}"></label>`}</div>`).join('')}
         <div class="acciones"><button class="btn primario" onclick="App.recibirCompra('${d.id}')">✔ Recibir en inventario</button></div></div>` : ''}
-      ${bloqueArch('ocFactura', d.id)}${bloqueArch('ocGuia', d.id)}${bloqueArch('ocFirma', d.id)}
+      ${bloqueArch('ocNota', d.id)}${bloqueArch('ocFactura', d.id)}${bloqueArch('ocGuia', d.id)}${bloqueArch('ocFirma', d.id)}
       <div class="acciones no-imprimir"><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button><button class="btn" onclick="App.pdfCompra('${d.id}')" title="Solo cantidad, producto y categoría: sin costos">📄 PDF para proveedor</button>${puede('ver_costos') ? `<button class="btn" onclick="App.pdfCompra('${d.id}', true)" title="Con costos, descuentos, IVA y totales (no se manda al proveedor)">📄 PDF interno</button>` : ''}
-      ${puede('compras') && !d.cancelada ? `<button class="btn" onclick="App.formFacturaCompra('${d.id}')">🧾 ${d.factura ? 'Editar' : 'Capturar'} factura</button>` : ''}
+      ${puede('compras') && !d.cancelada ? `<button class="btn" onclick="App.formFacturaCompra('${d.id}')">🧾 ${d.factura || d.nota ? 'Editar' : 'Capturar'} factura / nota</button>` : ''}
       ${puede('compras') && d.editable ? `<button class="btn" onclick="App.editarCompra()">✏️ Editar orden</button><button class="btn peligro" onclick="App.cancelarCompra('${d.id}')">🚫 Cancelar orden</button>` : ''}
       ${d.saldo > 0.009 && puede('pagos_proveedor') ? `<button class="btn" onclick="App.formNotaCredito('${d.id}',${d.saldo})">🧾 Nota de crédito</button><button class="btn primario" onclick="App.formPagoProv('${d.id}',${d.saldo})">Registrar pago</button>` : ''}</div>`);
   }
@@ -3080,7 +3080,7 @@ const App = (() => {
   function editarCompra() {
     const d = S.ultimaCompra; if (!d || !d.editable) return;
     if (S.oc && S.oc.lineas && S.oc.lineas.length && S.oc.editId !== d.id && !confirm('Tienes otra orden en captura. ¿Dejarla y editar la ' + d.folio + '?')) return;
-    S.oc = { editId: d.id, folio: d.folio, prov: d.idProv, suc: d.suc, factura: d.factura, fecha: d.fechaISO || hoyISO(), dias: d.dias, descEsp: d.descEspPct || 0, descPP: d.descPPPct || 0,
+    S.oc = { editId: d.id, folio: d.folio, prov: d.idProv, suc: d.suc, factura: d.factura, nota: d.nota || '', fecha: d.fechaISO || hoyISO(), dias: d.dias, descEsp: d.descEspPct || 0, descPP: d.descPPPct || 0,
       flete: d.flete || 0, recibido: false, actCosto: false, obs: d.obs || '', pago: 0,
       lineas: d.lineas.filter(l => l.prod).map(l => ({ id: l.prod, cant: l.cant, precio: l.precio, desc: l.descPct || 0, lote: '', cad: '' })) };
     cerrarModal(); ir('compras', true); V.compras('nueva');
@@ -3158,12 +3158,14 @@ const App = (() => {
   }
   function formFacturaCompra(id) {
     const d = S.ultimaCompra || {};
-    modal('Factura de la orden ' + (d.folio || ''), `<div class="rejilla"><label>Serie y folio de la factura<input id="fcFac" value="${esc(d.factura || '')}" placeholder="Ej. B 1558"></label>
+    modal('Factura y nota del proveedor · ' + (d.folio || ''), `<p class="muted" style="margin-top:0">La nota de venta o remisión del proveedor se puede capturar antes de que llegue la factura fiscal; con cualquiera de las dos la orden ya cuenta como compra. La foto o PDF de la nota se adjunta abajo, en la orden.</p>
+      <div class="rejilla"><label>Serie y folio de la nota de venta / remisión<input id="fcNota" value="${esc(d.nota || '')}" placeholder="Ej. REM-10636"></label>
+      <label>Serie y folio de la factura<input id="fcFac" value="${esc(d.factura || '')}" placeholder="Ej. B 1558"></label>
       <label>Folio fiscal (UUID, opcional)<input id="fcUuid" value="${esc(d.uuid || '')}" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"></label></div>
       <div class="acciones"><button class="btn" onclick="App.abrirCompraId('${id}')">Volver</button><button class="btn primario" onclick="App.guardarFacturaCompra('${id}')">Guardar</button></div>`);
   }
   async function guardarFacturaCompra(id) {
-    try { await pedir('editarFacturaCompra', { ID_O_Compra: id, No_Factura: $('#fcFac').value, Folio_Fiscal: $('#fcUuid').value }); toast('✔ Factura guardada'); verCompra(id); if ($('#lOC')) buscarCompras(); } catch (e) {}
+    try { await pedir('editarFacturaCompra', { ID_O_Compra: id, No_Factura: $('#fcFac').value, Folio_Fiscal: $('#fcUuid').value, No_Nota: $('#fcNota').value }); toast('✔ Guardado'); S.cacheTot = {}; verCompra(id); if ($('#lOC')) buscarCompras(); } catch (e) {}
   }
   async function recibirCompra(id) {
     const v = (r, k) => { const el = r.querySelector('[data-k=' + k + ']'); return el ? el.value.trim() : ''; };
@@ -3211,6 +3213,7 @@ const App = (() => {
       `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="ocFolio"></div></div><div class="rejilla">
       <label>Proveedor *<select id="ocProv">${opts((D().proveedores || []).filter(p => p.activo), o.prov, 'Selecciona…')}</select></label>
       <label>Sucursal destino<select id="ocSuc" ${ed ? 'disabled' : ''}>${optsSuc(o.suc)}</select></label>
+      <label>Nota / remisión del proveedor<input id="ocNota" value="${esc(o.nota || '')}" placeholder="Serie y folio"></label>
       <label>No. factura<input id="ocFac" value="${esc(o.factura)}" ${ed ? 'disabled title="Se edita con 🧾 Editar factura en la orden"' : ''}></label><label>Fecha<input type="date" id="ocFecha" value="${o.fecha}"></label>
       <label>Días de crédito<input type="number" id="ocDias" value="${o.dias}" placeholder="Del proveedor"></label>
       <label>Desc. especial %<input type="number" id="ocDE" value="${o.descEsp}"></label><label>Desc. pronto pago %<input type="number" id="ocPP" value="${o.descPP}"></label>
@@ -3222,7 +3225,7 @@ const App = (() => {
       <div class="tarjeta">${ed ? '' : `<div class="fila"><label>Pagar ahora $<input type="number" id="ocPago" value="${o.pago}"></label><label>Forma<select id="ocForma">${opts(cat.formasPago, '3')}</select></label><label>Cuenta<select id="ocBanco">${opts(cat.bancos, '')}</select></label></div>`}
       <div class="totales" id="ocTot" style="margin-top:12px"></div><div class="acciones">${ed ? '<button class="btn" onclick="App.salirEdicionCompra()">Salir sin guardar</button>' : '<button class="btn peligro" onclick="App.limpiarCompra()">Descartar</button>'}<button class="btn primario" id="ocGuardar" onclick="App.guardarCompra()">💾 ${ed ? 'Guardar cambios' : 'Guardar orden'}</button></div></div>`;
     const bind = (id, k, tipo) => { const el = $(id); el.oninput = el.onchange = e => { o[k] = tipo === 'c' ? e.target.checked : tipo === 'n' ? Number(e.target.value) || 0 : e.target.value; totalesCompra(); }; };
-    bind('#ocProv', 'prov'); bind('#ocSuc', 'suc'); bind('#ocFac', 'factura'); bind('#ocFecha', 'fecha'); bind('#ocDias', 'dias'); bind('#ocDE', 'descEsp', 'n'); bind('#ocPP', 'descPP', 'n');
+    bind('#ocProv', 'prov'); bind('#ocSuc', 'suc'); bind('#ocFac', 'factura'); bind('#ocNota', 'nota'); bind('#ocFecha', 'fecha'); bind('#ocDias', 'dias'); bind('#ocDE', 'descEsp', 'n'); bind('#ocPP', 'descPP', 'n');
     if (ed) $('#ocFolio').innerHTML = `<span class="folio-et">Orden de Compra · serie y folio</span><b>${esc(o.folio)}</b><small>editando (el folio no cambia)</small>`;
     else { $('#ocSuc').addEventListener('change', () => mostrarFolio('ocFolio', o.suc, 'Orden de Compra')); mostrarFolio('ocFolio', o.suc, 'Orden de Compra'); }
     bind('#ocFlete', 'flete', 'n'); bind('#ocCosto', 'actCosto', 'c'); bind('#ocObs', 'obs');
@@ -3268,13 +3271,13 @@ const App = (() => {
     if (o.editId) {
       try {
         const r = await pedir('editarCompra', { ID_O_Compra: o.editId, ID_Proveedor: o.prov, Fecha: o.fecha, D_credito: o.dias, descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete,
-          actualizarCosto: o.actCosto, Observaciones: o.obs, lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc })) });
+          actualizarCosto: o.actCosto, Observaciones: o.obs, No_Nota: o.nota || '', lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc })) });
         toast('✔ Orden ' + r.folio + ' actualizada'); S.oc = null; S.cacheTot = {}; if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista'); verCompra(r.ID_O_Compra);
       } catch (e) {}
       return;
     }
     try {
-      const r = await pedir('guardarCompra', { ID_O_Compra: uid(), ID_Proveedor: o.prov, Suc_Destino: o.suc, No_Factura: o.factura, Fecha: o.fecha, D_credito: o.dias,
+      const r = await pedir('guardarCompra', { ID_O_Compra: uid(), ID_Proveedor: o.prov, Suc_Destino: o.suc, No_Factura: o.factura, No_Nota: o.nota || '', Fecha: o.fecha, D_credito: o.dias,
         descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete, Recibido: o.recibido, actualizarCosto: o.actCosto, Observaciones: o.obs,
         lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: o.recibido ? l.lote : '', F_Caducidad: o.recibido ? l.cad : '' })), cfdiUuid: o.cfdi ? o.cfdi.uuid : '',
         pago: o.pago > 0 ? { monto: o.pago, forma: $('#ocForma').value, banco: $('#ocBanco').value } : null, ID_Requisicion: o.req ? o.req.id : '' });
