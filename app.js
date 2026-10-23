@@ -387,7 +387,7 @@ const App = (() => {
   function salir(msg) {
     if (S.cola.length && !confirm('Tienes ' + S.cola.length + ' operaciones sin sincronizar. Se conservarán en este dispositivo. ¿Salir?')) return;
     S.token = null; LS.del('token'); CQ.borrar(); quitarAvisoCache(); { const bv = $('#bienvenida'); if (bv) bv.classList.add('oculto'); document.body.classList.remove('con-bienv'); }
-    $('#app').classList.add('oculto'); $('#login').classList.remove('oculto');
+    $('#app').classList.add('oculto'); $('#login').classList.remove('oculto'); avisarNativoLogin();
     if (msg) $('#lgErr').textContent = msg;
   }
   async function refrescarDatos(silencioso) {
@@ -6560,9 +6560,14 @@ const App = (() => {
       mostrarApp();
       refrescarDatos(true).then(() => { pintarMenu(); pintarBienvEstado(); sincronizar(); renovarSesion(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); setTimeout(fotosAlEntrar, 4000); }).catch(() => {});
     } else {
-      $('#login').classList.remove('oculto');
+      $('#login').classList.remove('oculto'); avisarNativoLogin();
     }
   }
+  /* Puente con la app nativa (Xcode / WKWebView). La app nativa puede pedir la contraseña guardada en Contraseñas de Apple
+     (ASAuthorizationPasswordProvider) y entregarla con window.IVNativo.login(usuario, contraseña). Cuando aparece la
+     pantalla de entrada se le avisa con el mensaje { tipo: 'login' } al handler "iv" (window.webkit.messageHandlers.iv). */
+  function avisarNativoLogin() { try { const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iv; if (h) h.postMessage({ tipo: 'login' }); } catch (e) {} }
+  window.IVNativo = { version: 1, login: (u, p) => { const a = $('#lgUser'), b = $('#lgPass'); if (!a || !b) return false; a.value = u || ''; b.value = p || ''; if (u && p) entrar({ preventDefault() {} }); return true; } };
   document.addEventListener('DOMContentLoaded', iniciar);
 
   /* ---------------- API pública (para onclick) ---------------- */
