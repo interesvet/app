@@ -1262,22 +1262,29 @@ const App = (() => {
   async function generarPdf(accion, params, info) {
     if (DOC_LOCAL[accion] && (navigator.onLine === false || S.online === false)) return pdfSinConexion(accion, params, info);
     let w = null;
-    try { w = window.open('', '_blank'); if (w) w.document.write('<p style="font-family:-apple-system,sans-serif;padding:24px;font-size:18px">Generando PDF…</p>'); } catch (e) { w = null; }
+    // En la app instalada (iPhone / iPad / Mac) una ventana abierta así puede quedarse encima de la app sin botón para regresar:
+    // ahí no se abre nada solo; el PDF se abre con el botón "Abrir PDF" (con "Listo" para volver).
+    const instalada = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    if (!instalada) try { w = window.open('', '_blank'); if (w) w.document.write('<p style="font-family:-apple-system,sans-serif;padding:24px;font-size:18px">Generando PDF…</p>'); } catch (e) { w = null; }
     try {
       const r = await pedir(accion, params);
       if (w && !w.closed) { try { w.location.href = r.url; } catch (e) {} }
       const msg = info.texto + '\n' + r.url;
+      S.pdfListo = { titulo: r.nombre, texto: info.texto, url: r.url };
       const tel = String(info.cel || '').replace(/\D/g, '').slice(-10);
       modal('PDF listo', `<p>📄 <b>${esc(r.nombre)}</b></p>
         <p class="muted">Quedó guardado en tu Drive, carpeta “Interés Veterinario - PDF”. Ábrelo y usa el botón <b>Compartir</b> de tu iPhone, iPad o Mac para mandar el archivo por WhatsApp o correo, o envía directamente el enlace:</p>
         <div class="acciones" style="justify-content:flex-start">
-          <a class="btn primario" href="${esc(r.url)}" target="_blank">📄 Abrir PDF</a>
+          <a class="btn primario" href="${esc(r.url)}" target="_blank" rel="noopener">📄 Abrir PDF</a>
           <a class="btn" href="${esc(r.descarga)}" target="_blank">⬇️ Descargar</a>
+          ${navigator.share ? `<button class="btn" onclick="App.compartirPdf()">📤 Compartir</button>` : ''}
           <a class="btn" target="_blank" href="${WA_BASE}${tel ? '52' + tel : ''}?text=${encodeURIComponent(msg)}">💬 WhatsApp</a>
           <a class="btn" target="_blank" href="mailto:${encodeURIComponent(info.correo || '')}?subject=${encodeURIComponent(info.asunto)}&body=${encodeURIComponent(msg)}">✉️ Correo${info.correo ? ' a ' + esc(info.correo) : ''}</a>
           <button class="btn" onclick="${info.volver}">Volver</button></div>`);
     } catch (e) { if (w) { try { w.close(); } catch (x) {} } if (e.red && DOC_LOCAL[accion]) pdfSinConexion(accion, params, info); }
   }
+  /** Hoja de compartir del iPhone / iPad / Mac con el enlace del PDF (WhatsApp, Mensajes, correo…). */
+  function compartirPdf() { const p = S.pdfListo; if (!p || !navigator.share) return; navigator.share({ title: p.titulo, text: p.texto, url: p.url }).catch(() => {}); }
   function pdfNota(id) {
     const d = S.ultimaVenta || {};
     generarPdf('pdfNota', { ID_Venta: id }, { cel: d.cel, asunto: 'Nota de venta ' + (d.folio || ''),
@@ -6799,6 +6806,7 @@ const App = (() => {
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
     abrirVisita: i => verVisita(S.visAg[i].id), abrirVisitaR: i => verVisita(S.visHechas[i].id),
+    compartirPdf,
     rxDesdeVisita, formLigarVenta, guardarLigaVenta, venderDesdeVisita, formAltaProspecto, guardarAltaProspecto, historiaCliente, filtroHC,
     formReceta, verReceta, pdfReceta, rxACotizacion, rxAVenta, rxMas, rxLimpiarFirma, guardarReceta, recetasDeCliente, formRecetaCli, guardarCfgReceta, abrirReceta: i => verReceta(S.rxVis[i].id)
   };
