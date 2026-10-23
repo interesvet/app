@@ -105,7 +105,7 @@ const App = (() => {
   const sucFiltro = () => puede('dueno') ? '' : sucTrabajo();
   const sucTrabajo = () => (S.suc && (D().permitidas || []).indexOf(S.suc) >= 0) ? S.suc : U().sucursal;
   const opts = (lista, sel, vacio) => (vacio !== undefined ? `<option value="">${esc(vacio)}</option>` : '') +
-    lista.map(o => { const v = Array.isArray(o) ? o[0] : o.id, t = Array.isArray(o) ? o[1] : (o.nombre || o.id); return `<option value="${esc(v)}" ${String(v) === String(sel) ? 'selected' : ''}>${esc(t)}</option>`; }).join('');
+    lista.map(o => { const obj = o && typeof o === 'object', v = Array.isArray(o) ? o[0] : obj ? o.id : o, t = Array.isArray(o) ? o[1] : obj ? (o.nombre || o.id) : o; return `<option value="${esc(v)}" ${String(v) === String(sel) ? 'selected' : ''}>${esc(t)}</option>`; }).join('');
   const optsSuc = (sel, todas, vacio) => opts((todas ? (D().sucursales || []) : sucsPermitidas()), sel, vacio);
 
   function lotes(idProd, suc) {
@@ -1152,6 +1152,7 @@ const App = (() => {
       ID_Venta: uid(), ID_Sucursal: v.suc, ID_Cliente: v.cli, Lista_de_Precios: v.lista, Dias_de_credito: v.dias,
       Metodo_de_pago: v.metodo, descPC: v.descPC, Costo_Flete: v.flete, Comentarios: v.comentarios, fecha: hoyISO(), ID_Cotizacion: v.desdeCot ? v.desdeCot.id : '',
       Estatus: v.estatus || 'Pendiente', ID_Flete: v.idFlete || ENVIO_DEFAULT, No_Guia: v.guia || '',
+      ID_Visita: (v.ligar && v.ligar.visita) || '', ID_Receta: (v.ligar && v.ligar.receta) || '',
       lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, lote: l.lote })),
       pago: cobro > 0 ? { monto: cobro, forma: v.cobro.forma, banco: v.cobro.banco } : null
     };
@@ -5657,6 +5658,7 @@ const App = (() => {
         ${puede('recetas') ? `<button class="btn chico" onclick="App.recetasDeCliente('${esc(c.id)}')">💊 Sus recetas</button>` : ''}</div></div>` : puede('recetas') ? `<div class="acciones izq"><button class="btn chico" onclick="App.recetasDeCliente('${esc(c.id)}')">💊 Sus recetas</button></div>` : ''}
       ${!admin ? '<p class="muted" style="margin-top:10px">🔒 Solo el administrador puede editar o eliminar clientes. Si algún dato está mal, solicita autorización.</p>' : ''}
       <div class="acciones">
+        ${puede('seguimiento') || puede('recetas') || puede('ventas') ? `<button class="btn primario" onclick="App.historiaCliente('${esc(c.id)}')">📖 Historia clínica</button>` : ''}
         ${puede('ventas') ? `<button class="btn" onclick="App.ventasDeCliente('${esc(c.id)}','${esc(String(x.Razon_social || x.Nombre_cliente || '').replace(/'/g, ''))}')">🧾 Ver sus ventas</button><button class="btn" onclick="App.venderA('${esc(c.id)}')">🛒 Venderle</button>` : ''}
         ${puede('cobranza') ? `<button class="btn" onclick="App.verEdoCta('${esc(c.id)}')">📊 Estado de cuenta</button>` : ''}
         ${dueno ? `<button class="btn peligro" onclick="App.eliminarCliente('${esc(c.id)}')">🗑️ Eliminar</button>` : ''}
@@ -5936,6 +5938,7 @@ const App = (() => {
   }
   async function verVisita(id) {
     let d; try { d = await pedir('detalleVisita', { id: id }); } catch (e) { return; }
+    S.ultimaVis = d;
     const dato = (t, v) => v ? `<div class="fc-dato"><small>${t}</small><span>${v}</span></div>` : '';
     const wa = telWa(d.cel), q = esc(d.id);
     modal('Visita ' + d.fecha, `<div class="ficha-cli">
@@ -5950,10 +5953,13 @@ const App = (() => {
       ${d.cotizacion ? `<div class="fc-sec"><h4>📝 Cotización a entregar</h4><div class="fila" style="align-items:center"><div style="flex:1 1 200px"><b>${esc(d.cotizacion.folio)}</b> · ${esc(d.cotizacion.fecha)}${puede('ver_importes') ? ' · ' + $$(d.cotizacion.total) : ''} <span class="etq ${d.cotizacion.estado === 'Vendida' ? 'ok' : d.cotizacion.estado === 'Abierta' ? 'av' : ''}">${esc(d.cotizacion.estado)}</span></div>
         ${puede('cotizaciones') ? `<button class="btn chico fijo" onclick="App.verCot('${esc(d.cotizacion.id)}')">Ver cotización${d.cotizacion.estado === 'Abierta' ? ' / convertir en venta' : ''}</button>` : ''}</div></div>` : ''}
       ${d.resultado ? `<div class="fc-sec"><h4>📝 Qué pasó</h4><p style="white-space:pre-wrap;margin:0">${esc(d.resultado)}</p></div>` : ''}
+      ${!d.idCliente && !d.cancelada ? `<div class="aviso-cand">🌱 <b>Prospecto.</b> ${d.puedeAlta ? 'Dalo de alta como cliente para venderle y llevar su historia clínica; se le ligan sus visitas y recetas.' : 'Pide al administrador que lo dé de alta como cliente para venderle.'}
+        ${d.puedeAlta ? `<div class="acciones izq"><button class="btn primario chico" onclick="App.formAltaProspecto('visita')">➕ Dar de alta como cliente</button></div>` : ''}</div>` : ''}
+      ${!d.cancelada ? segIntegra('visita', d) : ''}
       ${d.realizada ? `<div class="arch-par">${bloqueArch('visFoto', d.id)}</div>` : ''}
       <div class="acciones">
         ${wa ? `<a class="btn" target="_blank" rel="noopener" href="${WA_BASE}${wa}">💬 WhatsApp</a>` : ''}
-        ${d.idCliente ? `<button class="btn" onclick="App.fichaCliente('${esc(d.idCliente)}')">👤 Ficha del cliente</button>` : ''}
+        ${d.idCliente ? `<button class="btn" onclick="App.fichaCliente('${esc(d.idCliente)}')">👤 Ficha del cliente</button><button class="btn" onclick="App.historiaCliente('${esc(d.idCliente)}')">📖 Historia clínica</button>` : ''}
         ${!d.realizada && !d.cancelada ? `<button class="btn" onclick="App.icsVisita('${q}')">📲 Agregar a mi calendario</button>` : ''}
         ${d.puedeEditar && !d.realizada && !d.cancelada ? `<button class="btn peligro" onclick="App.cancelarVisita('${q}')">Cancelar visita</button><button class="btn" onclick="App.formVisita({id:'${q}'})">📅 Cambiar fecha</button><button class="btn primario" onclick="App.formVisita({id:'${q}', realizada:1})">✅ Registrar resultado</button>` : ''}
         ${d.puedeEditar && d.realizada ? `<button class="btn" onclick="App.formVisita({id:'${q}'})">✏️ Editar</button>` : ''}
@@ -6002,23 +6008,134 @@ const App = (() => {
       `<div class="acciones"><button class="btn" onclick="App.fichaCliente('${esc(id)}')">← Ficha</button><button class="btn primario" onclick="App.formVisita({idCliente:'${esc(id)}'})">📅 Programar visita</button></div>`);
   }
 
+  /* ----- Integración: visita ↔ receta ↔ venta · alta de prospectos · historia clínica ----- */
+  /** Bloque dentro de la visita o la receta: recetas de la visita, venta relacionada y accesos directos. */
+  function segIntegra(tipo, d) {
+    const esVis = tipo === 'visita', q = esc(d.id), cli = d.idCliente;
+    let h = '';
+    if (esVis && puede('recetas')) h += `<div class="fc-sec"><h4>💊 Recetas de esta visita</h4>${d.recetas && d.recetas.length ? `<div class="int-lista">${d.recetas.map(r => `<a href="#" class="int-item" onclick="App.verReceta('${esc(r.id)}');return false">℞ <b>${esc(r.folio)}</b> ${esc([r.especie, r.animal].filter(Boolean).join(' · '))}${r.diagnostico ? ` <span class="muted">— ${esc(r.diagnostico)}</span>` : ''}</a>`).join('')}</div>` : '<p class="muted" style="margin:0">Aún no hay recetas de esta visita.</p>'}
+      <div class="acciones izq"><button class="btn chico" onclick="App.rxDesdeVisita()">💊 Hacer receta</button></div></div>`;
+    if (!esVis) h += `<div class="fc-sec"><h4>🔗 Relacionado</h4><div class="fc-rejilla">
+      <div class="fc-dato"><small>Surtir en</small><span>${d.sucCompra ? '🏬 ' + esc(sucNom(d.sucCompra)) : '<span class="muted">Sin indicar</span>'}</span></div>
+      ${d.visita ? `<div class="fc-dato"><small>Visita</small><span><a href="#" onclick="App.verVisita('${esc(d.visita.id)}');return false">📅 ${esc(d.visita.fecha)}${d.visita.motivo ? ' · ' + esc(d.visita.motivo) : ''}</a></span></div>` : ''}</div></div>`;
+    const v = d.venta;
+    if (esVis && !d.realizada && !v) return h;
+    h += `<div class="fc-sec"><h4>🧾 Venta relacionada</h4>${v ? `<p style="margin:0"><a href="#" onclick="App.verVentaId('${esc(v.id)}');return false"><b>🧾 ${esc(v.folio)}</b></a>${v.fecha ? ' · ' + esc(v.fecha) : ''}${puede('ver_importes') && v.total !== null && v.total !== undefined ? ' · ' + $$(v.total) : ''}</p>` : `<p class="muted" style="margin:0">${cli ? 'Sin venta relacionada.' : 'Da de alta al cliente para poder relacionar su venta.'}</p>`}
+      ${cli ? `<div class="acciones izq">${(esVis ? d.puedeEditar : true) ? `<button class="btn chico" onclick="App.formLigarVenta('${tipo}')">🔗 ${v ? 'Cambiar venta' : 'Relacionar una venta'}</button>` : ''}${!v && puede('ventas') ? `<button class="btn chico" onclick="App.${esVis ? 'venderDesdeVisita()' : `rxAVenta('${q}')`}">🛒 Hacer la venta</button>` : ''}</div>` : ''}</div>`;
+    return h;
+  }
+  /** Elegir la venta del cliente que corresponde a la visita / receta (las más cercanas a su fecha primero). */
+  async function formLigarVenta(tipo) {
+    const d = tipo === 'visita' ? S.ultimaVis : S.ultimaRx; if (!d || !d.idCliente) return;
+    let r; try { r = await pedir('ventasParaLigar', { idCliente: d.idCliente, fecha: isoDe(d.fecha) }); } catch (e) { return; }
+    const actual = d.venta ? d.venta.id : '';
+    S.ligar = { tipo: tipo, id: d.id };
+    const volver = tipo === 'visita' ? `App.verVisita('${esc(d.id)}')` : `App.verReceta('${esc(d.id)}')`;
+    modal('🔗 Relacionar venta', `<p class="muted" style="margin-top:0">Ventas de <b>${esc((cliente(d.idCliente) || {}).razon || d.cliente || d.propietario || '')}</b> cercanas al ${esc(d.fecha)}.</p>
+      ${r.ventas.length ? `<div class="vs-cots">${[{ id: '', folio: 'Sin venta relacionada' }].concat(r.ventas).map(x => `<label class="vs-cot ${x.id === actual ? 'on' : ''}"><input type="radio" name="lgVta" value="${esc(x.id)}" ${x.id === actual ? 'checked' : ''}>
+        <span><b>${esc(x.folio)}</b>${x.id ? ` · ${esc(x.fecha)}${x.total !== null ? ' · ' + $$(x.total) : ''}<br><small class="muted">${esc(sucNom(x.suc))}${x.dif === 0 ? ' · mismo día' : ' · ' + x.dif + (x.dif === 1 ? ' día' : ' días') + ' de diferencia'}</small>` : ''}</span></label>`).join('')}</div>` : '<div class="vacio">Este cliente no tiene ventas cerca de esa fecha.</div>'}
+      <div class="acciones"><button class="btn" onclick="${volver}">Volver</button>${r.ventas.length ? '<button class="btn primario" id="lgGuardar" onclick="App.guardarLigaVenta()">💾 Guardar</button>' : ''}</div>`);
+    document.querySelectorAll('input[name=lgVta]').forEach(i => i.onchange = () => document.querySelectorAll('.vs-cot').forEach(x => x.classList.toggle('on', x.querySelector('input').checked)));
+  }
+  async function guardarLigaVenta() {
+    const L = S.ligar, i = document.querySelector('input[name=lgVta]:checked'); if (!L || !i) return toast('Elige una venta', true);
+    $('#lgGuardar').disabled = true;
+    try { await pedir('ligarVenta', { tipo: L.tipo, id: L.id, idVenta: i.value }); toast(i.value ? '✔ Venta relacionada' : '✔ Se quitó la venta'); if (S.vista === 'visitas') cargarVisitas(); L.tipo === 'visita' ? verVisita(L.id) : verReceta(L.id); }
+    catch (e) { if ($('#lgGuardar')) $('#lgGuardar').disabled = false; }
+  }
+  /** Venta que sale de la visita: al guardarla queda relacionada con la visita. */
+  function venderDesdeVisita() {
+    const d = S.ultimaVis; if (!d || !d.idCliente) return;
+    if (S.venta && S.venta.lineas && S.venta.lineas.length && !confirm('Tienes una venta en captura que se va a reemplazar. ¿Continuar?')) return;
+    S.venta = ventaNueva(); S.venta.ligar = { visita: d.id }; S.venta.comentarios = 'Visita ' + d.fecha;
+    cerrarModal(); ir('venta'); elegirClienteVenta(d.idCliente); guardarBorrador();
+    toast('🔗 Al guardarla, la venta quedará relacionada con la visita del ' + d.fecha);
+  }
+  /** Alta de un prospecto como cliente desde su visita o su receta (se le ligan sus visitas y recetas). */
+  function formAltaProspecto(tipo) {
+    const d = tipo === 'visita' ? S.ultimaVis : S.ultimaRx; if (!d) return;
+    const nom = tipo === 'visita' ? d.cliente : d.propietario;
+    S.alta = { tipo: tipo, id: d.id, nombre: nom };
+    const volver = tipo === 'visita' ? `App.verVisita('${esc(d.id)}')` : `App.verReceta('${esc(d.id)}')`;
+    modal('➕ Dar de alta como cliente', `<p class="muted" style="margin-top:0">Se crea el cliente y se le ligan <b>sus visitas y recetas</b> registradas como prospecto con el nombre “${esc(nom)}”. Los datos fiscales, la lista de precios y el crédito los completa el administrador después.</p>
+      <div id="fAlta"><div class="fila"><label style="flex:2 1 220px">Nombre del cliente *<input id="alNom" value="${esc(nom || '')}"></label><label style="flex:2 1 200px">Nombre del rancho<input id="alRancho"></label></div>
+      <div class="fila"><label>Celular<input id="alCel" inputmode="tel" value="${esc(d.cel || '')}"></label><label>Correo<input id="alMail" type="email"></label>
+        <label>Tipo<select id="alTipo">${opts(['Productor', 'Farmacia', 'Clínica', 'MVZ', 'Distribuidor', 'Público'], 'Productor')}</select></label></div>
+      <div class="fila"><label>Localidad<input id="alLoc"></label><label>Municipio<input id="alMun"></label><label>Estado<input id="alEdo" value="Chiapas"></label></div>
+      <div class="fila"><label>Sucursal<select id="alSuc" ${U().todasSucursales ? '' : 'disabled'}>${optsSuc(sucTrabajo(), true)}</select></label></div></div>
+      <div class="acciones"><button class="btn" onclick="${volver}">Cancelar</button><button class="btn primario" id="alGuardar" onclick="App.guardarAltaProspecto()">✔ Dar de alta</button></div>`);
+  }
+  async function guardarAltaProspecto() {
+    const A = S.alta, g = s => $(s).value.trim(); if (!A) return;
+    if (!g('#alNom')) return toast('Escribe el nombre del cliente', true);
+    const idc = uid();
+    const datos = { ID_Cliente: idc, Nombre_cliente: g('#alNom'), Razon_social: g('#alNom'), Nombre_Rancho: g('#alRancho'), Celular: g('#alCel'), 'e-mail': g('#alMail'), Tipo: $('#alTipo').value,
+      Localidad: g('#alLoc'), 'Municipio/Delegación': g('#alMun'), Estado: g('#alEdo'), ID_Sucursal: $('#alSuc').value || sucTrabajo(), Lista_de_Precios: 'Publico', D_Credito: 0, Status: 'Activo', Vendedor: U().id };
+    const p = { cliente: datos, nombreProspecto: A.nombre, idVisita: A.tipo === 'visita' ? A.id : '', idReceta: A.tipo === 'receta' ? A.id : '' };
+    const local = { id: idc, nombre: datos.Nombre_cliente, razon: datos.Razon_social, rancho: datos.Nombre_Rancho, cel: datos.Celular, lista: 'Publico', credito: 0, status: 'Activo', suc: datos.ID_Sucursal,
+      localidad: datos.Localidad, municipio: datos['Municipio/Delegación'], estado: datos.Estado, rfc: '' };
+    const aplicarLocal = () => { const arr = D().clientes = D().clientes || []; if (!arr.some(x => x.id === idc)) arr.push(local); LS.set('datos', S.datos); };
+    $('#alGuardar').disabled = true;
+    try {
+      const r = await pedir('altaProspecto', p); aplicarLocal();
+      toast('✔ ' + datos.Nombre_cliente + ' dado de alta como cliente' + (r.visitas || r.recetas ? ' · se ligaron ' + r.visitas + ' visita(s) y ' + r.recetas + ' receta(s)' : ''));
+      if (S.seg) S.seg._t = 0; if (S.vista === 'visitas') cargarVisitas(); if (S.vista === 'recetas') cargarRecetas();
+      A.tipo === 'visita' ? verVisita(A.id) : verReceta(A.id);
+    } catch (e) {
+      if (!e.red) { if ($('#alGuardar')) $('#alGuardar').disabled = false; return; }
+      encolar('altaProspecto', p, 'Alta de cliente ' + datos.Nombre_cliente); aplicarLocal();
+      toast('📴 Cliente guardado en el dispositivo; sus visitas y recetas se ligan al volver la conexión'); cerrarModal();
+    }
+  }
+  /** Historia clínica: visitas, recetas (pacientes y diagnósticos), ventas y cotizaciones del cliente en una sola línea de tiempo. */
+  const HC_ICO = { visita: ['📅', 'Visita'], receta: ['💊', 'Receta'], venta: ['🧾', 'Venta'], cotizacion: ['📝', 'Cotización'] };
+  async function historiaCliente(id) {
+    let r; try { r = await pedir('historialCliente', { id: id }, true); } catch (e) { if (e.red) toast('La historia clínica se consulta con conexión', true); return; }
+    S.hc = r; S.hcFiltro = '';
+    const c = r.cliente, R = r.resumen, kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
+    modal('📖 Historia clínica · ' + (c.razon || c.nombre), `<div class="imprimible"><div class="hc-cab"><h3 style="margin:0">${esc(c.razon || c.nombre)}</h3>${c.razon && c.nombre && c.razon !== c.nombre ? `<div>${esc(c.nombre)}</div>` : ''}${c.rancho ? `<div class="muted">🐄 ${esc(c.rancho)}</div>` : ''}</div>
+      <div class="kpis">${kpi('📅 Visitas', nf(R.visitas), R.ultVisita ? 'última ' + esc(R.ultVisita) : '')}${kpi('💊 Recetas', nf(R.recetas), R.ultReceta ? 'última ' + esc(R.ultReceta) : '')}${kpi('🧾 Ventas', nf(R.ventas), R.ultCompra ? 'última ' + esc(R.ultCompra) : '')}${R.cotizaciones ? kpi('📝 Cotizaciones', nf(R.cotizaciones), '') : ''}</div>
+      ${r.pacientes.length ? `<div class="fc-sec"><h4>🐄 Pacientes</h4>${tabla([{ t: 'Paciente', h: x => `<b>${esc([x.especie, x.animal].filter(Boolean).join(' · ') || 'Sin identificar')}</b>${x.raza ? `<br><small class="muted">${esc(x.raza)}</small>` : ''}` },
+        { t: 'Recetas', num: 1, h: x => nf(x.recetas) }, { t: 'Última', k: 'ult' }, { t: 'Diagnósticos', h: x => esc(x.diagnosticos.join(' · ') || x.ultDx) }], r.pacientes)}</div>` : ''}
+      <div class="pestanas no-imprimir" id="hcFil">${[['', 'Todo'], ['visita', '📅 Visitas'], ['receta', '💊 Recetas'], ['venta', '🧾 Ventas'], ['cotizacion', '📝 Cotizaciones']].map(x => `<button class="${x[0] === '' ? 'activo' : ''}" onclick="App.filtroHC('${x[0]}')">${x[1]}</button>`).join('')}</div>
+      <div id="hcEv"></div></div>
+      <div class="acciones no-imprimir"><button class="btn" onclick="App.fichaCliente('${esc(id)}')">👤 Ficha</button><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button>
+        ${puede('seguimiento') ? `<button class="btn" onclick="App.formVisita({idCliente:'${esc(id)}', realizada:1})">✅ Registrar visita</button>` : ''}
+        ${puede('recetas') ? `<button class="btn" onclick="App.formRecetaCli('${esc(id)}')">💊 Nueva receta</button>` : ''}
+        ${puede('ventas') ? `<button class="btn primario" onclick="App.venderA('${esc(id)}')">🛒 Venderle</button>` : ''}</div>`);
+    pintarHC();
+  }
+  function filtroHC(t) { S.hcFiltro = t; document.querySelectorAll('#hcFil button').forEach((b, i) => b.classList.toggle('activo', ['', 'visita', 'receta', 'venta', 'cotizacion'][i] === t)); pintarHC(); }
+  function pintarHC() {
+    const el = $('#hcEv'), r = S.hc; if (!el || !r) return;
+    const l = r.eventos.filter(e => !S.hcFiltro || e.tipo === S.hcFiltro);
+    const abrir = e => e.tipo === 'visita' ? `App.verVisita('${esc(e.id)}')` : e.tipo === 'receta' ? `App.verReceta('${esc(e.id)}')` : e.tipo === 'venta' ? `App.verVentaId('${esc(e.id)}')` : `App.verCot('${esc(e.id)}')`;
+    el.innerHTML = !l.length ? '<div class="vacio">Sin registros</div>' : `<div class="hc-linea">${l.map(e => `<div class="hc-ev hc-${e.tipo}" onclick="${abrir(e)}">
+      <div class="hc-ico">${HC_ICO[e.tipo][0]}</div><div class="hc-cuerpo"><div class="hc-tit"><b>${esc(e.titulo)}</b>${e.estado ? ` <span class="etq">${esc(e.estado)}</span>` : ''}<span class="hc-fecha">${esc(e.fecha)}</span></div>
+      ${e.paciente ? `<div>🐄 ${esc(e.paciente)}</div>` : ''}${e.diagnostico || e.motivo ? `<div>🩺 ${esc(e.diagnostico || e.motivo)}</div>` : ''}
+      ${e.tratamientos && e.tratamientos.length ? `<div class="muted">℞ ${esc(e.tratamientos.slice(0, 3).join(' · ').slice(0, 220))}</div>` : ''}
+      ${e.detalle ? `<div class="muted" style="white-space:pre-wrap">${esc(String(e.detalle).slice(0, 300))}</div>` : ''}
+      <div class="hc-ligas">${e.recetas && e.recetas.length ? '💊 ' + esc(e.recetas.join(', ')) + ' ' : ''}${e.venta ? '🧾 ' + esc(e.venta) + ' ' : ''}${e.surtir ? '🏬 Surtir en ' + esc(e.surtir) + ' ' : ''}${e.vendedor ? '👤 ' + esc(e.vendedor) : ''}${e.elaboro ? '👤 ' + esc(e.elaboro) : ''}</div></div></div>`).join('')}</div>`;
+  }
+
   /* ----- Recetas ----- */
   async function cfgRx() { if (!S.rxCfg) { try { S.rxCfg = await pedir('configReceta', {}, true); } catch (e) { S.rxCfg = { vigencia: 15, especies: RX_ESPECIES, maxT: 8 }; } } return S.rxCfg; }
   V.recetas = () => {
     const f = S.fRx = alDia(S.fRx || { desde: hoyISO().slice(0, 8) + '01', hasta: hoyISO(), hastaHoy: hoyISO(), q: '' });
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
         <label>Desde<input type="date" id="rxDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="rxHasta" value="${f.hasta}"></label>
+        <label>Surtir en<select id="rxSucF">${optsSuc(f.suc || '', true, 'Todas')}</select></label>
         <label style="flex:2 1 220px">Buscar<input id="rxQ" value="${esc(f.q)}" placeholder="Folio, propietario, animal, diagnóstico o medicamento"></label>
         <button class="btn primario fijo" onclick="App.formReceta()">💊 Nueva receta</button></div></div>
       <div id="rxRes"><div class="vacio">Cargando…</div></div>`;
-    ['rxDesde', 'rxHasta'].forEach(id => $('#' + id).onchange = cargarRecetas);
+    ['rxDesde', 'rxHasta', 'rxSucF'].forEach(id => $('#' + id).onchange = cargarRecetas);
     $('#rxQ').oninput = e => { f.q = e.target.value; pintarRecetas(); };
     cargarRecetas();
   };
   async function cargarRecetas() {
     const f = S.fRx; if (!$('#rxDesde')) return;
-    f.desde = $('#rxDesde').value; f.hasta = $('#rxHasta').value; marcarHoy(f);
-    try { S.rxLista = (await pedir('listarRecetas', { desde: f.desde, hasta: f.hasta }, true)).recetas; }
+    f.desde = $('#rxDesde').value; f.hasta = $('#rxHasta').value; f.suc = $('#rxSucF') ? $('#rxSucF').value : ''; marcarHoy(f);
+    try { S.rxLista = (await pedir('listarRecetas', { desde: f.desde, hasta: f.hasta, sucCompra: f.suc }, true)).recetas; }
     catch (e) { if ($('#rxRes')) $('#rxRes').innerHTML = `<div class="vacio">${e.red ? 'Consultar recetas requiere conexión.' : esc(e.message)}</div>`; return; }
     pintarRecetas();
   }
@@ -6028,7 +6145,8 @@ const App = (() => {
     S.rxVis = l;
     el.innerHTML = tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: r => `<b>${esc(r.folio)}</b>` }, { t: 'Propietario', h: r => esc(r.propietario) },
       { t: 'Paciente', cls: 'ocultar-movil', h: r => esc([r.especie, r.animal ? '#' + r.animal : '', r.raza].filter(Boolean).join(' · ')) },
-      { t: 'Diagnóstico', h: r => esc(r.diagnostico || r.motivo) }, { t: 'Vigencia', h: r => `<span class="etq ${r.vigente ? 'ok' : ''}">${r.vigente ? 'Vigente' : 'Vencida'}</span><br><small class="muted">${esc(r.validez)}</small>` }],
+      { t: 'Diagnóstico', h: r => esc(r.diagnostico || r.motivo) }, { t: 'Surtir en', cls: 'ocultar-movil', h: r => r.sucCompra ? esc(sucNom(r.sucCompra)) : '<span class="muted">—</span>' },
+      { t: 'Liga', cls: 'ocultar-movil', h: r => (r.idVisita ? '📅' : '') + (r.idVenta ? '🧾' : '') + (!r.idCliente ? ' <span class="etq">Prospecto</span>' : '') }, { t: 'Vigencia', h: r => `<span class="etq ${r.vigente ? 'ok' : ''}">${r.vigente ? 'Vigente' : 'Vencida'}</span><br><small class="muted">${esc(r.validez)}</small>` }],
       l, { clic: 'App.abrirReceta', vacio: 'Sin recetas en el periodo' });
   }
   async function verReceta(id) {
@@ -6042,12 +6160,16 @@ const App = (() => {
       <div class="fc-sec"><h4>🐄 Paciente</h4><div class="fc-rejilla">${dato('Especie', d.especie)}${dato('Nombre / ID', d.animal)}${dato('Raza / cruza', d.raza)}${dato('Edad', d.edad)}${dato('Sexo', d.sexo)}${dato('Peso', d.peso)}${dato('Color', d.color)}${dato('Celular', d.cel)}</div></div>
       ${d.motivo || d.diagnostico ? `<div class="fc-sec"><h4>🩺 Consulta</h4><div class="fc-rejilla">${dato('Motivo', d.motivo)}${dato('Diagnóstico', d.diagnostico)}</div></div>` : ''}
       <div class="fc-sec"><h4>💊 Tratamiento</h4><ol class="rx-lista">${d.tratamientos.map(t => `<li>${esc(t.texto)}</li>`).join('')}</ol>${d.obs ? `<p class="muted">${esc(d.obs)}</p>` : ''}</div>
+      ${!d.idCliente ? `<div class="aviso-cand">🌱 <b>Sin cliente.</b> ${d.puedeAlta ? 'Da de alta al propietario como cliente para venderle y llevar su historia clínica.' : 'Pide al administrador que dé de alta al propietario como cliente.'}
+        ${d.puedeAlta ? `<div class="acciones izq"><button class="btn primario chico" onclick="App.formAltaProspecto('receta')">➕ Dar de alta como cliente</button></div>` : ''}</div>` : ''}
+      ${segIntegra('receta', d)}
       <div class="arch-par">${d.firma ? bloqueArch('recFirma', d.id) : ''}${d.pdfAnterior ? bloqueArch('recPdf', d.id) : ''}</div>
       ${!d.cfg.cedula ? `<p class="muted" style="font-size:13px">ℹ️ Falta capturar el nombre y la cédula del MVZ que firma las recetas${U().rol === 'Administrador' ? ' (en Configuración)' : ''}.</p>` : ''}
       <div class="acciones">
         <button class="btn primario" onclick="App.pdfReceta('${esc(d.id)}')">📄 PDF para enviar</button>
         ${prods.length && puede('cotizaciones') ? `<button class="btn" onclick="App.rxACotizacion('${esc(d.id)}')">📝 Cotizar sus medicamentos</button>` : ''}
-        ${prods.length && puede('ventas') ? `<button class="btn" onclick="App.rxAVenta('${esc(d.id)}')">🛒 Venderle</button>` : ''}
+        ${prods.length && puede('ventas') && d.idCliente ? `<button class="btn" onclick="App.rxAVenta('${esc(d.id)}')">🛒 Venderle</button>` : ''}
+        ${d.idCliente ? `<button class="btn" onclick="App.historiaCliente('${esc(d.idCliente)}')">📖 Historia clínica</button>` : ''}
         <button class="btn" onclick="App.formReceta('${esc(d.id)}', 1)">📋 Duplicar</button>
         ${puedeEd ? `<button class="btn" onclick="App.formReceta('${esc(d.id)}')">✏️ Editar</button>` : ''}
       </div></div>`);
@@ -6069,22 +6191,30 @@ const App = (() => {
   function rxAVenta(id) {
     const d = S.ultimaRx; if (!d || d.id !== id) return;
     if (S.venta && S.venta.lineas.length && !confirm('Tienes una venta en captura que se va a reemplazar. ¿Continuar?')) return;
-    S.venta = ventaNueva(); cerrarModal(); ir('venta');
+    S.venta = ventaNueva(); S.venta.ligar = { receta: d.id, visita: d.idVisita || '' };
+    if (d.sucCompra && d.sucCompra !== S.venta.suc) { if ((D().permitidas || []).indexOf(d.sucCompra) >= 0) S.venta.suc = d.sucCompra; else toast('La receta se canalizó a ' + sucNom(d.sucCompra), true); }
+    cerrarModal(); ir('venta');
     if (d.idCliente && cliente(d.idCliente)) elegirClienteVenta(d.idCliente);
     rxLineas(d).forEach(p => agregarLineaVenta(p));
     S.venta.comentarios = 'Receta ' + d.folio; guardarBorrador(); V.venta();
+    toast('🔗 Al guardarla, la venta quedará relacionada con la receta ' + d.folio + (d.idVisita ? ' y su visita' : ''));
   }
-  async function formReceta(id, duplicar) {
+  /** o (opcional): { idVisita, idCliente, propietario, cel } — receta que sale de una visita */
+  async function formReceta(id, duplicar, o) {
     const cfg = await cfgRx();
-    let d = null;
+    let d = null; o = o || {};
     if (id) { try { d = await pedir('detalleReceta', { id: id }); } catch (e) { return; } }
     const nueva = !d || !!duplicar;
-    S.rx = { id: nueva ? uid() + uid() : d.id, nueva: nueva, cli: d ? d.idCliente : '', lineas: d ? d.tratamientos.map(t => ({ prod: t.prod, texto: t.texto })) : [{ prod: '', texto: '' }], firma: '' };
+    const cli0 = d ? d.idCliente : o.idCliente || '';
+    S.rx = { id: nueva ? uid() + uid() : d.id, nueva: nueva, cli: cli0, lineas: d ? d.tratamientos.map(t => ({ prod: t.prod, texto: t.texto })) : [{ prod: '', texto: '' }], firma: '',
+      visita: o.idVisita || (d && !duplicar ? d.idVisita || '' : ''), suc: (d && d.sucCompra) || (cli0 && (cliente(cli0) || {}).suc) || sucTrabajo() };
     const c = S.rx.cli ? cliente(S.rx.cli) : null, v = (k, def) => d && d[k] !== undefined ? esc(d[k]) : (def || '');
     modal(nueva ? '💊 Nueva receta' : 'Editar receta ' + d.folio, `<div id="fRx" class="form-rx">
+      ${S.rx.visita ? `<p class="muted" style="margin:0 0 8px;font-size:13px">📅 Receta de la visita${S.ultimaVis && S.ultimaVis.id === S.rx.visita ? ' del ' + esc(S.ultimaVis.fecha) : ''}: quedará relacionada con ella.</p>` : ''}
       <div class="fc-sec"><h4>Propietario</h4>
-        <label>Cliente (opcional)<div class="buscador"><input id="rxCli" placeholder="Buscar cliente…" autocomplete="off" value="${c ? esc(c.razon || c.nombre) : ''}"></div></label>
-        <div class="fila"><label style="flex:2 1 200px">Propietario<input id="rxProp" value="${v('propietario', c ? esc(c.nombre) : '')}"></label><label>Celular<input id="rxCel" inputmode="tel" value="${v('cel', c ? esc(c.cel || '') : '')}"></label></div></div>
+        <label>Cliente (opcional; si es prospecto, déjalo vacío y escribe el propietario)<div class="buscador"><input id="rxCli" placeholder="Buscar cliente…" autocomplete="off" value="${c ? esc(c.razon || c.nombre) : ''}"></div></label>
+        <div class="fila"><label style="flex:2 1 200px">Propietario<input id="rxProp" value="${v('propietario', c ? esc(c.nombre) : esc(o.propietario || ''))}"></label><label>Celular<input id="rxCel" inputmode="tel" value="${v('cel', c ? esc(c.cel || '') : esc(o.cel || ''))}"></label></div>
+        <label>🏬 Surtir en la sucursal<select id="rxSuc">${optsSuc(S.rx.suc, true)}</select></label></div>
       <div class="fc-sec"><h4>Paciente</h4><div class="fila">
         <label>Especie<select id="rxEsp">${opts(cfg.especies || RX_ESPECIES, d ? d.especie : 'Bovino')}</select></label><label>Nombre / arete<input id="rxAni" value="${v('animal')}"></label>
         <label>Raza / cruza<input id="rxRaza" value="${v('raza')}"></label></div><div class="fila">
@@ -6099,7 +6229,8 @@ const App = (() => {
         <canvas id="rxFirma" class="firma-pad" width="600" height="180"></canvas>
         <div class="acciones izq"><button class="btn chico" type="button" onclick="App.rxLimpiarFirma()">Borrar firma</button></div></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="rxGuardar" onclick="App.guardarReceta()">💾 Guardar receta</button></div></div>`);
-    buscador($('#rxCli'), { fuente: fuenteClientes, alElegir: x => { S.rx.cli = x.id; const cc = cliente(x.id) || {}; if (!$('#rxProp').value.trim() || nueva) $('#rxProp').value = cc.nombre || cc.razon || ''; if (!$('#rxCel').value.trim()) $('#rxCel').value = cc.cel || ''; } });
+    buscador($('#rxCli'), { fuente: fuenteClientes, alElegir: x => { S.rx.cli = x.id; const cc = cliente(x.id) || {}; if (!$('#rxProp').value.trim() || nueva) $('#rxProp').value = cc.nombre || cc.razon || ''; if (!$('#rxCel').value.trim()) $('#rxCel').value = cc.cel || ''; if (cc.suc && !S.rx.sucTocada) $('#rxSuc').value = cc.suc; } });
+    $('#rxSuc').onchange = () => { S.rx.sucTocada = true; };
     $('#rxCli').addEventListener('input', e => { if (!e.target.value.trim()) S.rx.cli = ''; });
     pintarRxLineas(); padFirma($('#rxFirma'));
   }
@@ -6244,7 +6375,7 @@ const App = (() => {
     const cv = $('#rxFirma');
     const p = { ID_Receta: R.id, nueva: R.nueva, ID_Cliente: R.cli, propietario: g('#rxProp'), cel: g('#rxCel'), especie: $('#rxEsp').value, animal: g('#rxAni'), raza: g('#rxRaza'),
       edad: g('#rxEdad'), sexo: $('#rxSexo').value, peso: g('#rxPeso'), color: g('#rxColor'), motivo: g('#rxMot'), diagnostico: g('#rxDx'), obs: g('#rxObs'),
-      vigencia: Number($('#rxVig').value) || 15, tratamientos: ts, firma: cv && cv._firmado ? cv.toDataURL('image/png') : '' };
+      vigencia: Number($('#rxVig').value) || 15, tratamientos: ts, firma: cv && cv._firmado ? cv.toDataURL('image/png') : '', idVisita: R.visita || '', sucCompra: $('#rxSuc').value };
     $('#rxGuardar').disabled = true;
     try { const r = await pedir('guardarReceta', p); toast('✔ Receta ' + r.folio + ' guardada'); if (S.vista === 'recetas') cargarRecetas(); verReceta(R.id); }
     catch (e) {
@@ -6258,7 +6389,8 @@ const App = (() => {
     modal('Recetas · ' + (c.razon || c.nombre || ''), tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', k: 'folio' }, { t: 'Paciente', h: x => esc([x.especie, x.animal].filter(Boolean).join(' · ')) }, { t: 'Diagnóstico', h: x => esc(x.diagnostico || x.motivo) }], r.recetas, { clic: 'App.abrirReceta', vacio: 'Sin recetas' }) +
       `<div class="acciones"><button class="btn" onclick="App.fichaCliente('${esc(id)}')">← Ficha</button><button class="btn primario" onclick="App.formRecetaCli('${esc(id)}')">💊 Nueva receta</button></div>`);
   }
-  async function formRecetaCli(id) { await formReceta(); const c = cliente(id); if (c && S.rx) { S.rx.cli = id; $('#rxCli').value = c.razon || c.nombre; $('#rxProp').value = c.nombre || c.razon || ''; $('#rxCel').value = c.cel || ''; } }
+  async function formRecetaCli(id) { const c = cliente(id) || {}; await formReceta(null, null, { idCliente: id, propietario: c.nombre || c.razon || '', cel: c.cel || '' }); }
+  function rxDesdeVisita() { const d = S.ultimaVis; if (!d) return; formReceta(null, null, { idVisita: d.id, idCliente: d.idCliente, propietario: d.cliente, cel: d.cel }); }
   async function guardarCfgReceta() {
     const g = s => $(s).value.trim();
     try { S.rxCfg = Object.assign(S.rxCfg || {}, await pedir('guardarConfigReceta', { mvz: g('#cfMvz'), cedula: g('#cfCed'), titulo: g('#cfTit'), leyenda: g('#cfLey'), vigencia: g('#cfVig') })); toast('✔ Datos de la receta guardados'); } catch (e) {}
@@ -6663,6 +6795,7 @@ const App = (() => {
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
     abrirVisita: i => verVisita(S.visAg[i].id), abrirVisitaR: i => verVisita(S.visHechas[i].id),
+    rxDesdeVisita, formLigarVenta, guardarLigaVenta, venderDesdeVisita, formAltaProspecto, guardarAltaProspecto, historiaCliente, filtroHC,
     formReceta, verReceta, pdfReceta, rxACotizacion, rxAVenta, rxMas, rxLimpiarFirma, guardarReceta, recetasDeCliente, formRecetaCli, guardarCfgReceta, abrirReceta: i => verReceta(S.rxVis[i].id)
   };
 })();
