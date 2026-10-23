@@ -3525,17 +3525,22 @@ const App = (() => {
   function pintarLineasTr() {
     const t = S.tr, cont = $('#trLineas'), ep = puede('precio_editar') && verImpC();
     const listaDes = ((D().sucursales || []).find(s => s.id === t.des) || {}).lista;
-    const pLista = id => { const p = prod(id) || { precios: {} }; return (listaDes && p.precios[listaDes]) || p.costo || 0; };
+    // de una sucursal a Matriz: el costo con el que entró cada producto a la sucursal (lo calcula el servidor por lote al guardar)
+    const aMatriz = !!t.des && esMatriz(t.des) && !esMatriz(t.ori);
+    if (aMatriz && t.pEntSuc !== t.ori) { t.pEnt = {}; t.pEntSuc = t.ori; }
+    const faltan = aMatriz ? t.lineas.map(l => l.id).filter(id => t.pEnt[id] === undefined) : [];
+    if (faltan.length && verImpC() && !t.pidiendoEnt) { t.pidiendoEnt = true; pedir('preciosEntrada', { suc: t.ori, ids: faltan }, true).then(r => { faltan.forEach(id => t.pEnt[id] = (r.precios || {})[id] || 0); t.pidiendoEnt = false; if (S.tr === t && $('#trLineas')) pintarLineasTr(); }).catch(() => { t.pidiendoEnt = false; }); }
+    const pLista = id => { const p = prod(id) || { precios: {} }; if (aMatriz && t.pEnt && t.pEnt[id]) return t.pEnt[id]; return (listaDes && p.precios[listaDes]) || p.costo || 0; };
     // IVA del renglón en pesos (precio de la lista de la tienda destino o el capturado × tasa del producto)
     const verIva = verImpC(), ivaTr = l => { if (!verIva || !t.des) return ''; const pu = l.precio !== undefined && l.precio !== '' ? Number(l.precio) || 0 : pLista(l.id);
       return $$(Math.round(Math.round((l.cant || 0) * pu * 100) / 100 * ((prod(l.id) || {}).iva || 0) * 100) / 100); };
-    cont.innerHTML = !t.lineas.length ? '<div class="vacio">Agrega productos</div>' :
+    cont.innerHTML = (aMatriz && t.lineas.length ? '<p class="muted" style="font-size:13px;margin:0 0 6px">↩️ <b>A Matriz:</b> cada lote se regresa al costo con el que entró a esta sucursal (su traspaso de entrada o su compra).</p>' : '') + (!t.lineas.length ? '<div class="vacio">Agrega productos</div>' :
       `<div class="linea cab"><div>Producto</div><div>Lote</div><div>Cant.</div><div>${ep ? 'Precio' : ''}</div><div class="num">${verIva ? 'IVA $' : ''}</div><div class="num">Exist. origen</div><div></div></div>` +
       t.lineas.map((l, i) => { const p = prod(l.id) || {}; return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)}</small></div>
         <div><select data-f="lote"><option value="">Auto (caduca primero)</option>${lotes(l.id, t.ori).map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)} · ${nf(x.q)}</option>`).join('')}</select></div>
         <div><input type="number" data-f="cant" value="${l.cant}"></div>
         <div>${ep ? `<input type="number" data-f="precio" step="0.01" value="${l.precio !== undefined && l.precio !== '' ? l.precio : ''}" placeholder="${t.des ? pLista(l.id) : 'Elige destino'}" inputmode="decimal"><span data-ref>${l.precio !== undefined && l.precio !== '' ? refPrecio(pLista(l.id), l.precio) : ''}</span>` : ''}</div><div class="num" data-iva title="IVA del renglón">${ivaTr(l)}</div>
-        <div class="num">${nf(existencia(l.id, t.ori))}</div><div class="lin-btns">${ep ? '<button class="icono" data-regalo title="Sin cargo ($0.01)">🎁</button>' : ''}<button class="icono" data-del>✕</button></div></div>`; }).join('');
+        <div class="num">${nf(existencia(l.id, t.ori))}</div><div class="lin-btns">${ep ? '<button class="icono" data-regalo title="Sin cargo ($0.01)">🎁</button>' : ''}<button class="icono" data-del>✕</button></div></div>`; }).join(''));
     cont.oninput = cont.onchange = e => { const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return; const l = t.lineas[+row.dataset.i];
       if (f === 'lote') l.lote = e.target.value; else if (f === 'precio') { l.precio = e.target.value === '' ? '' : Number(e.target.value) || 0; row.querySelector('[data-ref]').innerHTML = l.precio === '' ? '' : refPrecio(pLista(l.id), l.precio); } else l[f] = Number(e.target.value) || 0;
       const ci = row.querySelector('[data-iva]'); if (ci) ci.textContent = ivaTr(l); };
