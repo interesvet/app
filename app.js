@@ -545,6 +545,7 @@ const App = (() => {
     { id: 'inventario', t: 'Inventario', i: '🏷️', p: 'inventario', oculto: 1 },
     { id: 'conteo', t: 'Conteo físico', i: '📋', p: 'inventario_fisico', oculto: 1 },
     { id: 'pedido', t: 'Pedido sugerido', i: '🛒', p: ['compras', 'traspasos'], oculto: 1 },
+    { id: 'anCompras', t: 'Análisis de compras', i: '📊', p: 'compras', oculto: 1 },
     { id: 'precios', t: 'Lista de precios', i: '💲', p: 'listas_precios', oculto: 1 },
     { id: 'productos', t: 'Productos', i: '💊', p: 'listas_precios' },
     { id: 'matriz', t: 'Actualizar desde Matriz', i: '🔄', p: 'productos_editar', oculto: 1 },
@@ -576,7 +577,7 @@ const App = (() => {
     seguimiento: { t: 'Seguimiento de clientes', tabs: [
       { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
     compras: { t: 'Compras', tabs: [
-      { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: ['compras', 'traspasos'] }] },
+      { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: ['compras', 'traspasos'] }, { v: 'anCompras', t: '📊 Análisis de compras', p: 'compras' }] },
     productos: { t: 'Productos', tabs: [
       { v: 'productos', a: 'cat', t: '💊 Catálogo', p: 'listas_precios' }, { v: 'productos', a: 'port', t: '📚 Portafolio de productos', p: 'listas_precios' }, { v: 'precios', t: '💲 Lista de precios', p: 'listas_precios' },
       { v: 'productos', a: 'margen', t: '📊 Análisis de precios', p: 'analisis_precios' },
@@ -3283,6 +3284,125 @@ const App = (() => {
         pago: o.pago > 0 ? { monto: o.pago, forma: $('#ocForma').value, banco: $('#ocBanco').value } : null, ID_Requisicion: o.req ? o.req.id : '' });
       toast('✔ Orden ' + r.folio + ' guardada' + (o.req ? ' · ligada a la requisición ' + o.req.folio : '')); S.oc = null; S.cacheTot = {}; refrescarStock(); if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista');
     } catch (e) {}
+  }
+
+
+  /* ---------- ANÁLISIS DE COMPRAS (producto por producto, proveedor y mes) ---------- */
+  const MESES_C = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const fechaTxt = iso => iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
+  const mesTxt = k => { const [y, m] = String(k).split('-'); return MESES_C[Number(m) - 1] + ' ' + y; };
+  V.anCompras = () => {
+    const h = hoyISO();
+    if (!S.fan) S.fan = { desde: h.slice(0, 4) + '-01-01', hasta: h, prov: '', cat: '', texto: '', suc: '', solo: false, tab: 'prod', orden: 'importe' };
+    const f = S.fan, cats = [...new Set((D().productos || []).map(p => p.categoria || 'Sin categoría'))].sort().map(c => ({ id: c, nombre: c }));
+    $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
+      <label>Desde<input type="date" id="anDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="anHasta" value="${f.hasta}"></label>
+      <label>Proveedor<select id="anProv">${opts((D().proveedores || []).slice().sort((a, b) => String(a.nombre).localeCompare(b.nombre)), f.prov, 'Todos')}</select></label>
+      <label>Categoría<select id="anCat">${opts(cats, f.cat, 'Todas')}</select></label>
+      ${U().todasSucursales ? `<label>Sucursal<select id="anSuc">${optsSuc(f.suc, false, 'Todas')}</select></label>` : ''}
+      <label>Producto<input id="anTxt" placeholder="Nombre, clave o laboratorio" value="${esc(f.texto)}"></label>
+      <label class="check fijo"><input type="checkbox" id="anSolo" ${f.solo ? 'checked' : ''}> Solo con factura o nota</label>
+      <button class="btn primario fijo" onclick="App.cargarAnCompras()">Buscar</button><button class="btn fijo" onclick="App.excelAnCompras()">⬇️ Excel</button></div></div>
+      <div class="espacio"></div><div id="anRes"><div class="vacio">Cargando…</div></div>`;
+    $('#anTxt').onkeydown = e => { if (e.key === 'Enter') cargarAnCompras(); };
+    ['#anProv', '#anCat', '#anSuc', '#anSolo'].forEach(k => { if ($(k)) $(k).onchange = cargarAnCompras; });
+    agregarMesAnio('anDesde', 'anHasta', cargarAnCompras);
+    cargarAnCompras();
+  };
+  async function cargarAnCompras() {
+    const f = S.fan; f.desde = $('#anDesde').value; f.hasta = $('#anHasta').value; f.prov = $('#anProv').value; f.cat = $('#anCat').value; f.texto = $('#anTxt').value.trim();
+    f.suc = $('#anSuc') ? $('#anSuc').value : ''; f.solo = $('#anSolo').checked;
+    const nq = S.qAn = (S.qAn || 0) + 1; $('#anRes').innerHTML = '<div class="vacio">Calculando…</div>';
+    let r; try { r = await pedir('analisisCompras', { desde: f.desde, hasta: f.hasta, idProveedor: f.prov, categoria: f.cat, texto: f.texto, sucursal: f.suc, soloFactura: f.solo }); }
+    catch (e) { if (nq === S.qAn && $('#anRes')) $('#anRes').innerHTML = `<div class="vacio">${e.red ? 'El análisis requiere conexión.' : esc(e.message || 'No se pudo calcular')}</div>`; return; }
+    if (nq !== S.qAn || !$('#anRes')) return;
+    S.an = r; pintarAnCompras();
+  }
+  function pintarAnCompras() {
+    const r = S.an, f = S.fan, t = r.totales, vi = r.verImp; if (!r || !$('#anRes')) return;
+    S.charts.forEach(c => c.destroy()); S.charts = [];
+    const ord = (a, b) => f.orden === 'piezas' ? b.piezas - a.piezas : f.orden === 'ordenes' ? b.ordenes - a.ordenes : f.orden === 'nombre' ? String(a.nombre).localeCompare(b.nombre) : ((b.importe || 0) - (a.importe || 0) || b.piezas - a.piezas);
+    const tb = (id, n) => `<button class="${f.tab === id ? 'activo' : ''}" onclick="App.tabAnCompras('${id}')">${n}</button>`;
+    const bon = x => x.bonif ? `<br><small class="muted">+${nf(x.bonif)} bonif.</small>` : '';
+    let cuerpo = '';
+    if (f.tab === 'prod') {
+      S.anLista = r.productos.slice().sort(ord);
+      cuerpo = `<div class="fila" style="margin-bottom:8px"><span class="muted peq" style="flex:1">${nf(r.productos.length)} productos · toca uno para ver cada compra, precios por proveedor y por mes</span>
+        <label class="fijo">Ordenar por<select onchange="App.ordenAnCompras(this.value)">${[['importe', 'Importe'], ['piezas', 'Piezas'], ['ordenes', 'Órdenes'], ['nombre', 'Nombre']].filter(o => vi || o[0] !== 'importe').map(o => `<option value="${o[0]}" ${f.orden === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></label></div>` +
+        tabla([{ t: '#', num: 1, h: x => S.anLista.indexOf(x) + 1 }, { t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.id)} · ${esc(x.cat)}${x.lab ? ' · ' + esc(x.lab) : ''}</small>` },
+          { t: 'Piezas', num: 1, h: x => nf(x.piezas) + bon(x) }]
+          .concat(vi ? [{ t: 'Importe', num: 1, h: x => `<b>${$$(x.importe)}</b>` }, { t: 'Precio prom.', num: 1, h: x => x.pProm !== null ? $$(x.pProm) : '—' },
+            { t: 'Mín – máx', num: 1, cls: 'ocultar-movil', h: x => x.pMin !== null ? (x.pMin === x.pMax ? $$(x.pMin) : $$(x.pMin) + ' – ' + $$(x.pMax)) : '—' }] : [])
+          .concat([{ t: 'Última compra', cls: 'ocultar-movil', h: x => x.ult ? `${vi && x.ult.p !== null ? '<b>' + $$(x.ult.p) + '</b> · ' : ''}${esc(x.ult.f)}<br><small class="muted">${esc(x.ult.prov)}</small>` : '—' },
+            { t: 'Prov.', num: 1, cls: 'ocultar-movil', h: x => x.nProv }, { t: 'Órdenes', num: 1, h: x => x.ordenes }]), S.anLista, { clic: 'App.anProducto', vacio: 'No hay compras con esos filtros' });
+    } else if (f.tab === 'prov') {
+      S.anListaProv = r.proveedores.slice().sort(ord);
+      cuerpo = tabla([{ t: 'Proveedor', h: x => `<b>${esc(x.nombre)}</b>` }, { t: 'Productos', num: 1, h: x => x.productos }, { t: 'Piezas', num: 1, h: x => nf(x.piezas) + bon(x) }]
+        .concat(vi ? [{ t: 'Importe', num: 1, h: x => `<b>${$$(x.importe)}</b>` }, { t: '% del total', num: 1, h: x => t.importe ? (x.importe / t.importe * 100).toFixed(1) + '%' : '—' }] : [])
+        .concat([{ t: 'Órdenes', num: 1, h: x => x.ordenes }]), S.anListaProv, { clic: 'App.anProveedor', vacio: 'No hay compras con esos filtros' });
+    } else {
+      cuerpo = tabla([{ t: 'Mes', h: x => `<b>${mesTxt(x.mes)}</b>` }, { t: 'Piezas', num: 1, h: x => nf(x.piezas) + bon(x) }].concat(vi ? [{ t: 'Importe', num: 1, h: x => `<b>${$$(x.importe)}</b>` }] : [])
+        .concat([{ t: 'Órdenes', num: 1, h: x => x.ordenes }]), r.meses.slice().reverse(), { vacio: 'No hay compras con esos filtros' });
+    }
+    const top = r.productos.slice().sort((a, b) => vi ? (b.importe || 0) - (a.importe || 0) : b.piezas - a.piezas).slice(0, 10);
+    $('#anRes').innerHTML = `<div class="kpis">
+      ${vi ? `<div class="kpi"><small>Comprado (sin IVA)</small><b>${$$(t.importe)}</b><span>${t.ordenes} ${t.ordenes === 1 ? 'orden' : 'órdenes'}</span></div>` : ''}
+      <div class="kpi"><small>Piezas compradas</small><b>${nf(t.piezas)}</b><span>${t.bonif ? '+' + nf(t.bonif) + ' bonificadas' : 'sin bonificaciones'}</span></div>
+      <div class="kpi"><small>Productos distintos</small><b>${nf(t.productos)}</b><span>${t.proveedores} ${t.proveedores === 1 ? 'proveedor' : 'proveedores'}</span></div>
+      ${r.meses.length ? `<div class="kpi"><small>Promedio mensual</small><b>${vi ? $$(t.importe / r.meses.length) : nf(t.piezas / r.meses.length)}</b><span>${r.meses.length} ${r.meses.length === 1 ? 'mes' : 'meses'} con compras</span></div>` : ''}
+      </div>
+      ${r.meses.length ? `<div class="rejilla-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">
+        <div class="tarjeta"><h3 style="margin-top:0">${vi ? 'Compras' : 'Piezas'} por mes</h3><div class="grafica" style="height:240px"><canvas id="gAnMes"></canvas></div></div>
+        <div class="tarjeta"><h3 style="margin-top:0">Los 10 más comprados</h3><div class="grafica" style="height:240px"><canvas id="gAnTop"></canvas></div></div></div>` : ''}
+      <div class="tarjeta"><div class="pestanas" style="margin-bottom:10px">${tb('prod', '💊 Por producto')}${tb('prov', '🏭 Por proveedor')}${tb('mes', '📅 Por mes')}</div>${cuerpo}</div>`;
+    if (r.meses.length) {
+      const val = x => vi ? x.importe : x.piezas;
+      grafica('gAnMes', { type: 'bar', data: { labels: r.meses.map(x => mesTxt(x.mes)), datasets: [{ data: r.meses.map(val), backgroundColor: css('--s1'), borderRadius: 4, maxBarThickness: 30 }] },
+        options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => vi ? $$(c.raw) : nf(c.raw) + ' pzs' } } }, scales: { y: { ticks: { callback: vi ? tickMoneda : v => nf(v) } }, x: { grid: { display: false } } } } });
+      grafica('gAnTop', { type: 'bar', data: { labels: top.map(x => x.nombre), datasets: [{ data: top.map(val), backgroundColor: css('--s2'), borderRadius: 4, maxBarThickness: 22 }] },
+        options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => vi ? $$(c.raw) : nf(c.raw) + ' pzs' } } },
+          scales: { x: { ticks: { callback: vi ? tickMoneda : v => nf(v) } }, y: { grid: { display: false }, ticks: { autoSkip: false, callback: function (v) { const l = this.getLabelForValue(v); return l.length > 26 ? l.slice(0, 25) + '…' : l; } } } } } });
+    }
+  }
+  function tabAnCompras(t) { S.fan.tab = t; pintarAnCompras(); }
+  function ordenAnCompras(o) { S.fan.orden = o; pintarAnCompras(); }
+  function anProveedor(i) { const x = S.anListaProv[i]; if (!x || !x.id) return; S.fan.prov = x.id; S.fan.tab = 'prod'; $('#anProv').value = x.id; cargarAnCompras(); }
+  async function anProducto(i) {
+    const x = S.anLista[i]; if (!x) return; const f = S.fan, vi = S.an.verImp;
+    modal('📊 ' + x.nombre, '<div class="vacio">Cargando compras…</div>');
+    let r; try { r = await pedir('analisisCompras', { desde: f.desde, hasta: f.hasta, idProveedor: f.prov, categoria: f.cat, texto: '', sucursal: f.suc, soloFactura: f.solo, producto: x.id }); } catch (e) { return; }
+    const p = r.productos.find(y => y.id === x.id) || x, l = r.lineas;
+    const porMes = {}; l.forEach(y => { const m = porMes[y.mes] = porMes[y.mes] || { mes: y.mes, piezas: 0, bonif: 0, importe: 0 }; if (y.bonif) m.bonif += y.cant; else { m.piezas += y.cant; m.importe += y.importe || 0; } });
+    modal('📊 ' + p.nombre, `<p class="muted" style="margin-top:0">${esc(p.id)} · ${esc(p.cat)}${p.lab ? ' · ' + esc(p.lab) : ''} · del ${esc(fechaTxt(f.desde))} al ${esc(fechaTxt(f.hasta))}</p>
+      <div class="kpis"><div class="kpi"><small>Piezas</small><b>${nf(p.piezas)}</b><span>${p.bonif ? '+' + nf(p.bonif) + ' bonificadas' : p.ordenes + ' órdenes'}</span></div>
+        ${vi ? `<div class="kpi"><small>Importe</small><b>${$$(p.importe)}</b><span>sin IVA</span></div><div class="kpi"><small>Precio promedio</small><b>${p.pProm !== null ? $$(p.pProm) : '—'}</b><span>${p.pMin !== null ? 'de ' + $$(p.pMin) + ' a ' + $$(p.pMax) : ''}</span></div>` : ''}
+        ${p.ult ? `<div class="kpi"><small>Última compra</small><b>${vi && p.ult.p !== null ? $$(p.ult.p) : esc(p.ult.f)}</b><span>${esc(p.ult.f)} · ${esc(p.ult.prov)}</span></div>` : ''}</div>
+      ${p.provs && p.provs.length > 0 ? `<h4>Por proveedor</h4>` + tabla([{ t: 'Proveedor', k: 'n' }, { t: 'Piezas', num: 1, h: y => nf(y.piezas) }].concat(vi ? [{ t: 'Importe', num: 1, h: y => $$(y.importe) }, { t: 'Precio prom.', num: 1, h: y => y.pProm !== null ? $$(y.pProm) : '—' }] : []), p.provs) : ''}
+      <h4>Por mes</h4>` + tabla([{ t: 'Mes', h: y => mesTxt(y.mes) }, { t: 'Piezas', num: 1, h: y => nf(y.piezas) + (y.bonif ? ' <small class="muted">+' + nf(y.bonif) + ' bonif.</small>' : '') }].concat(vi ? [{ t: 'Importe', num: 1, h: y => $$(y.importe) }, { t: 'Precio prom.', num: 1, h: y => y.piezas ? $$(y.importe / y.piezas) : '—' }] : []),
+        Object.values(porMes).sort((a, b) => b.mes.localeCompare(a.mes))) +
+      `<h4>Cada compra</h4>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Orden', h: y => `<a href="#" onclick="App.abrirCompraId('${esc(y.idOC)}');return false">${esc(y.folio)}</a>` }, { t: 'Proveedor', k: 'proveedor' },
+        { t: 'Cant.', num: 1, h: y => nf(y.cant) + (y.bonif ? ' <span class="etq">bonif.</span>' : '') }].concat(vi ? [{ t: 'Precio', num: 1, h: y => $$(y.precio) + (y.desc ? '<br><small class="muted">−' + y.desc + '%</small>' : '') }, { t: 'Importe', num: 1, h: y => $$(y.importe) }] : [])
+        .concat([{ t: 'Lote', cls: 'ocultar-movil', h: y => y.recibido ? esc(y.lote) : '<span class="muted">por recibir</span>' }]), l, { vacio: 'Sin compras en el periodo' }));
+  }
+  async function excelAnCompras() {
+    const r = S.an, f = S.fan; if (!r) return toast('Primero busca', true);
+    const vi = r.verImp, prov = f.prov ? ((D().proveedores || []).find(p => p.id === f.prov) || {}).nombre : 'Todos';
+    const sub = ['Del ' + fechaTxt(f.desde) + ' al ' + fechaTxt(f.hasta) + ' · proveedor: ' + prov + (f.cat ? ' · categoría: ' + f.cat : '') + (f.texto ? ' · producto: ' + f.texto : ''), 'Importes sin IVA' + (f.solo ? ' · solo órdenes con factura o nota' : ''), hoyTxt()];
+    toast('Armando Excel…');
+    try {
+      const blob = await excelLocal('compras', [
+        { nombre: 'Por producto', titulo: 'Compras por producto', sub: sub, resumen: [['Piezas', r.totales.piezas, 'num'], ['Bonificadas', r.totales.bonif, 'num']].concat(vi ? [['Importe', r.totales.importe, 'mon']] : []).concat([['Productos', r.totales.productos, 'num']]),
+          cols: [{ t: 'Clave', w: 12 }, { t: 'Producto', w: 40 }, { t: 'Categoría', w: 18 }, { t: 'Laboratorio', w: 18 }, { t: 'Piezas', w: 10, fmt: 'num', suma: 1 }, { t: 'Bonificadas', w: 11, fmt: 'num', suma: 1 }]
+            .concat(vi ? [{ t: 'Importe', w: 14, fmt: 'mon', suma: 1 }, { t: 'Precio prom.', w: 13, fmt: 'mon' }, { t: 'Precio mín.', w: 12, fmt: 'mon' }, { t: 'Precio máx.', w: 12, fmt: 'mon' }] : [])
+            .concat([{ t: 'Última compra', w: 13 }, { t: 'Último proveedor', w: 22 }, { t: 'Proveedores', w: 11, fmt: 'num' }, { t: 'Órdenes', w: 10, fmt: 'num', suma: 1 }]),
+          filas: r.productos.map(x => ({ v: [x.id, x.nombre, x.cat, x.lab, x.piezas, x.bonif].concat(vi ? [x.importe, x.pProm, x.pMin, x.pMax] : []).concat([x.ult ? x.ult.f : '', x.ult ? x.ult.prov : '', x.nProv, x.ordenes]) })) },
+        { nombre: 'Por proveedor', titulo: 'Compras por proveedor', sub: sub, cols: [{ t: 'Proveedor', w: 34 }, { t: 'Productos', w: 11, fmt: 'num' }, { t: 'Piezas', w: 11, fmt: 'num', suma: 1 }, { t: 'Bonificadas', w: 11, fmt: 'num', suma: 1 }]
+            .concat(vi ? [{ t: 'Importe', w: 15, fmt: 'mon', suma: 1 }] : []).concat([{ t: 'Órdenes', w: 10, fmt: 'num', suma: 1 }]),
+          filas: r.proveedores.map(x => ({ v: [x.nombre, x.productos, x.piezas, x.bonif].concat(vi ? [x.importe] : []).concat([x.ordenes]) })) },
+        { nombre: 'Por mes', titulo: 'Compras por mes', sub: sub, cols: [{ t: 'Mes', w: 14 }, { t: 'Piezas', w: 11, fmt: 'num', suma: 1 }, { t: 'Bonificadas', w: 11, fmt: 'num', suma: 1 }].concat(vi ? [{ t: 'Importe', w: 15, fmt: 'mon', suma: 1 }] : []).concat([{ t: 'Órdenes', w: 10, fmt: 'num', suma: 1 }]),
+          filas: r.meses.map(x => ({ v: [mesTxt(x.mes), x.piezas, x.bonif].concat(vi ? [x.importe] : []).concat([x.ordenes]) })) }]);
+      entregarArchivo(blob, 'Análisis de compras ' + f.desde + ' a ' + f.hasta + '.xlsx', 'Excel de compras');
+    } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
   }
 
   /* ---------- TRASPASOS ---------- */
@@ -6460,7 +6580,7 @@ const App = (() => {
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
-    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
+    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes,
