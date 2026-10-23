@@ -675,12 +675,13 @@ const App = (() => {
     return true;
   }
   /* ---------- versión de la app instalable: cuál está trabajando en este equipo y si hay una más nueva ---------- */
+  /** VERSION del service worker: "144.20261023-0810-hash" → { n: '144', fecha: '23 oct 2026 · 8:10 a. m.' } (las anteriores no tenían número). */
   function textoVersion(v) {
-    const m = /^(\d{4})(\d{2})(\d{2})(?:-(\d{2})(\d{2}))?-/.exec(String(v || '')); if (!m) return v ? String(v) : '';
-    const mes = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][Number(m[2]) - 1];
-    let t = Number(m[3]) + ' ' + mes + ' ' + m[1];
-    if (m[4]) { const h = Number(m[4]); t += ' · ' + (h % 12 || 12) + ':' + m[5] + (h < 12 ? ' a. m.' : ' p. m.'); }
-    return t;
+    const m = /^(?:(\d+)\.)?(\d{4})(\d{2})(\d{2})(?:-(\d{2})(\d{2}))?-/.exec(String(v || '')); if (!m) return { n: '', fecha: v ? String(v) : '' };
+    const mes = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][Number(m[3]) - 1];
+    let t = Number(m[4]) + ' ' + mes + ' ' + m[2];
+    if (m[5]) { const h = Number(m[5]); t += ' · ' + (h % 12 || 12) + ':' + m[6] + (h < 12 ? ' a. m.' : ' p. m.'); }
+    return { n: m[1] || '', fecha: t };
   }
   async function versionActiva() {
     const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
@@ -692,12 +693,15 @@ const App = (() => {
     if (!window.IV_API) return;
     const act = await versionActiva(); let nueva = '';
     if (navigator.onLine !== false) { try { const t = await (await fetch('sw.js?v=' + Date.now(), { cache: 'no-store' })).text(); nueva = (/const VERSION = '([^']+)'/.exec(t) || [])[1] || ''; } catch (e) {} }
-    S.ver = { act: act, nueva: nueva }; pintarVersion();
+    let srv = S.ver && S.ver.srv || '';
+    if (navigator.onLine !== false && S.token) { try { const r = await pedir('ping', {}, true); if (r && r.v) srv = r.v; } catch (e) {} }
+    S.ver = { act: act, nueva: nueva, srv: srv }; pintarVersion();
   }
   function pintarVersion() {
     const v = S.ver; if (!v || !v.act) return;
-    const vieja = v.nueva && v.nueva !== v.act;
-    const html = `<span title="${esc(v.act)}">📱 Versión <b>${esc(textoVersion(v.act))}</b></span> ` + (vieja ? `<a href="#" class="ver-nueva" onclick="App.actualizarApp();return false">✨ Hay una nueva (${esc(textoVersion(v.nueva))}): actualizar</a>`
+    const a = textoVersion(v.act), n = textoVersion(v.nueva), vieja = v.nueva && v.nueva !== v.act;
+    const html = `<span title="Publicada el ${esc(a.fecha)}">📱 Versión <b>${esc(a.n || a.fecha)}</b>${v.srv ? ` · servidor <b>${esc(v.srv)}</b>` : ''}</span> ` +
+      (vieja ? `<a href="#" class="ver-nueva" onclick="App.actualizarApp();return false">✨ Hay una nueva${n.n ? ' (' + esc(n.n) + ')' : ''}: actualizar</a>`
       : v.nueva ? '<span class="ver-ok">✔ al día</span>' : '<span class="muted">· sin conexión para revisar</span>');
     document.querySelectorAll('.ver-app').forEach(el => { el.innerHTML = html; el.classList.toggle('vieja', !!vieja); });
   }

@@ -41,7 +41,11 @@ ARCH = ['index.html', 'estilos.css', 'app.js', 'config.js', 'shim.js', 'pwa.js',
         'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png']
 hsh = hashlib.sha1()
 for a in ARCH: hsh.update(open(os.path.join(RAIZ, a), 'rb').read())
-version = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-6))).strftime('%Y%m%d-%H%M') + '-' + hsh.hexdigest()[:8]   # hora de Mérida / CDMX
+# número de versión de la app: sube con cada publicación (commits del repositorio + 1 + 80 → la v144 fue la primera numerada)
+import subprocess
+try: numero = int(subprocess.check_output(['git', '-C', RAIZ, 'rev-list', '--count', 'HEAD']).strip()) + 1 + 80
+except Exception: numero = 0
+version = str(numero) + '.' + datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-6))).strftime('%Y%m%d-%H%M') + '-' + hsh.hexdigest()[:8]   # hora de Mérida / CDMX
 sw = open(os.path.join(RAIZ, 'tools', 'sw.plantilla.js'), encoding='utf-8').read()
 sw = sw.replace('__VERSION__', version).replace('__ARCHIVOS__', json.dumps(['./'] + ARCH))
 open(os.path.join(RAIZ, 'sw.js'), 'w', encoding='utf-8').write(sw)
