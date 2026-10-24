@@ -705,6 +705,56 @@ body.con-visor { overflow: hidden; }
   #zonaImpresion .tr-tabla tr.par td { background: #f5f8f6 !important; } #zonaImpresion .tr-enc { background: #f2f7f3 !important; }
   #zonaImpresion .tr-punto b, #zonaImpresion .tr-folio b, #zonaImpresion .tr-emp b { color: #1b1d18 !important; }
 }
+/* ---------- 🎯 Radar comercial ---------- */
+.rd-hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; margin-bottom: 14px; }
+.rd-h-main { border-radius: 16px; padding: 20px 22px; color: #fff; background: linear-gradient(135deg, #1f6f4a 0%, #15543a 60%, #0f3f2c 100%); box-shadow: 0 10px 30px rgba(21, 84, 58, .25); display: flex; flex-direction: column; gap: 6px; }
+.rd-h-main small { opacity: .85; font-size: 13px; }
+.rd-h-main > b { font-size: 40px; line-height: 1.05; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.rd-h-main > span { opacity: .9; font-size: 13.5px; }
+.rd-salud { display: flex; height: 12px; border-radius: 99px; overflow: hidden; background: rgba(255,255,255,.18); margin-top: 8px; gap: 2px; }
+.rd-salud i, .rd-leyenda i { display: block; }
+.rd-salud .ok, .rd-leyenda .ok { background: #7fe0a6; } .rd-salud .ok2, .rd-leyenda .ok2 { background: #d7f36b; }
+.rd-salud .av, .rd-leyenda .av { background: #ffc15c; } .rd-salud .mal, .rd-leyenda .mal { background: #ff7a6e; }
+.rd-leyenda { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 11.5px !important; }
+.rd-leyenda i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; margin-right: 3px; }
+.rd-h-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rd-h-stats > div { background: var(--superficie); border: 1px solid var(--borde); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rd-h-stats small { color: var(--texto-2); font-size: 12px; }
+.rd-h-stats b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.rd-h-stats span { color: var(--texto-2); font-size: 11.5px; }
+.rd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 12px; }
+.rd-card { border: 1px solid var(--borde); border-radius: 14px; padding: 12px 14px; background: var(--superficie); display: flex; flex-direction: column; gap: 9px; transition: box-shadow .15s, transform .15s; }
+.rd-card:hover { box-shadow: 0 8px 22px rgba(0,0,0,.08); transform: translateY(-1px); }
+.rd-top { display: flex; gap: 10px; align-items: flex-start; }
+.rd-n { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--marca); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.rd-nom { flex: 1; min-width: 0; cursor: pointer; display: flex; flex-direction: column; }
+.rd-nom b { overflow: hidden; text-overflow: ellipsis; }
+.rd-ritmo { font-size: 13px; color: var(--texto-2); position: relative; }
+.rd-ritmo b { color: var(--texto); }
+.rd-r1 { display: flex; gap: 8px; justify-content: space-between; align-items: baseline; }
+.rd-din { flex: 0 0 auto; font-weight: 700; color: var(--texto); font-variant-numeric: tabular-nums; }
+.rd-din small { font-weight: 400; color: var(--texto-2); }
+.rd-barra { position: relative; height: 7px; border-radius: 99px; background: var(--superficie-2); margin-top: 7px; overflow: visible; }
+.rd-barra i { display: block; height: 100%; border-radius: 99px; }
+.rd-barra i.ok { background: var(--ok); } .rd-barra i.av { background: var(--aviso); } .rd-barra i.mal { background: var(--peligro); }
+.rd-barra em { position: absolute; left: 33.33%; top: -3px; bottom: -3px; width: 2px; background: var(--texto-2); border-radius: 2px; opacity: .6; }
+.rd-pedido { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; background: var(--marca-suave); border-radius: 10px; padding: 7px 9px; }
+.rd-pedido small { width: 100%; color: var(--marca); font-weight: 600; font-size: 12px; }
+.rd-pedido span { background: var(--superficie); border: 1px solid var(--borde); border-radius: 99px; padding: 2px 9px; font-size: 12.5px; }
+.rd-pedido span b { color: var(--marca); }
+.rd-aviso { font-size: 12.5px; color: var(--aviso); }
+.rd-card .acciones { margin-top: auto; gap: 6px; }
+.rd-emb { display: grid; gap: 8px; margin: 6px 0 10px; }
+.rd-et { display: grid; grid-template-columns: minmax(120px, 190px) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+.rd-et > div { height: 22px; background: var(--superficie-2); border-radius: 7px; overflow: hidden; }
+.rd-et i { display: block; height: 100%; border-radius: 7px; background: var(--marca); opacity: .85; transition: width .6s ease; }
+.rd-et i.ok { background: var(--ok); } .rd-et i.av { background: var(--aviso); } .rd-et i.mal { background: var(--peligro); }
+.rd-et b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rd-fila { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--borde); }
+.rd-fila > div:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rd-fila .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 860px) { .rd-hero { grid-template-columns: 1fr; } .rd-h-main > b { font-size: 34px; } }
+@media (max-width: 480px) { .rd-et { grid-template-columns: 1fr auto; } .rd-et > div { grid-column: 1 / -1; order: 3; height: 14px; } .rd-h-stats b { font-size: 19px; } }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

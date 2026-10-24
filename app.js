@@ -539,6 +539,7 @@ const App = (() => {
     { id: 'cotizaciones', t: 'Cotizaciones', i: '📝', p: 'cotizaciones' },
     { id: 'seguimiento', t: 'Seguimiento', i: '🤝', p: ['seguimiento', 'recetas'] },
     { id: 'visitas', t: 'Visitas', i: '📅', p: 'seguimiento', oculto: 1 },
+    { id: 'radar', t: 'Radar comercial', i: '🎯', p: 'seguimiento', oculto: 1 },
     { id: 'recetas', t: 'Recetas', i: '💊', p: 'recetas', oculto: 1 },
     { id: 'compras', t: 'Compras', i: '📦', p: ['compras', 'traspasos'] },
     { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos'] },
@@ -579,7 +580,7 @@ const App = (() => {
       { v: 'traspasos', t: '🚚 Traspasos', p: 'traspasos' }, { v: 'requisiciones', t: '📑 Requisición de traspaso', p: 'requisiciones' }, { v: 'ajustes', t: '⚖️ Ajustes y mermas', p: ['ajustes', 'mermas'] },
       { v: 'conteo', t: '📋 Conteo físico', p: 'inventario_fisico' }] },
     seguimiento: { t: 'Seguimiento de clientes', tabs: [
-      { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
+      { v: 'radar', t: '🎯 Radar', p: 'seguimiento' }, { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
     compras: { t: 'Compras', tabs: [
       { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: ['compras', 'traspasos'] }, { v: 'anCompras', t: '📊 Análisis de compras', p: 'compras' }] },
     productos: { t: 'Productos', tabs: [
@@ -5833,6 +5834,112 @@ const App = (() => {
       </div></div>`;
   }
 
+  /* ---------- 🎯 RADAR COMERCIAL: a quién atender hoy, embudo de cotizaciones, recuperados y equipo ---------- */
+  V.radar = () => {
+    if (!puede('seguimiento')) return ir('recetas', true);
+    const f = S.fRad = S.fRad || { suc: '', vend: '' };
+    $('#vista').innerHTML = `<div class="tarjeta rd-filtros"><div class="fila">
+        ${U().todasSucursales ? `<label>Sucursal<select id="rdSuc">${optsSuc(f.suc, true, 'Todas')}</select></label>` : ''}
+        ${esJefe() ? `<label>Vendedor<select id="rdVend">${opts((D().vendedores || []).filter(v => U().todasSucursales || v.suc === U().sucursal).map(v => [v.id, v.nombre]), f.vend, 'Todos')}</select></label>` : ''}
+        <div style="flex:3 1 240px" class="muted peq">Todo sale de tu historial de ventas, visitas y cotizaciones: no hay que capturar nada.</div>
+        <button class="btn fijo" onclick="App.cargarRadar()">⟳ Actualizar</button></div></div>
+      <div id="rdRes"><div class="vacio">🎯 Calculando el radar…</div></div>`;
+    if ($('#rdSuc')) $('#rdSuc').onchange = e => { f.suc = e.target.value; cargarRadar(); };
+    if ($('#rdVend')) $('#rdVend').onchange = e => { f.vend = e.target.value; cargarRadar(); };
+    const k = f.suc + '|' + f.vend;
+    if (S.radar && S.radar._k === k && Date.now() - S.radar._t < 600000) pintarRadar(); else cargarRadar();
+  };
+  async function cargarRadar() {
+    const f = S.fRad; if (!f) return;
+    const k = f.suc + '|' + f.vend;
+    let r; try { r = await pedir('radar', { suc: f.suc, vendedor: f.vend }, true); }
+    catch (e) {
+      const g = LS.get('radar', null);
+      if (e.red && g && g._k === k) { S.radar = g; S.radar._viejo = 1; return pintarRadar(); }
+      if ($('#rdRes')) $('#rdRes').innerHTML = `<div class="vacio">${e.red ? 'El radar necesita conexión la primera vez.' : esc(e.message)}</div>`; return;
+    }
+    r._k = k; r._t = Date.now(); S.radar = r; LS.set('radar', r);
+    if ($('#rdRes')) pintarRadar();
+  }
+  const rdCorto = n => String(n || '').split(',')[0].trim();
+  function rdMsgPedido(c) {
+    const quien = (c.nombre || c.razon || '').split(' ')[0];
+    const lista = c.pedido.slice(0, 5).map(p => p.q + ' ' + rdCorto(p.n)).join(', ');
+    return 'Hola ' + quien + ', le saluda ' + U().nombre.split(' ')[0] + ' de Interés Veterinario. ' +
+      (lista ? 'Ya le toca su reposición: ' + lista + '. ¿Se lo preparo para enviárselo?' : 'Hace tiempo no le surtimos, ¿cómo va todo? ¿Le apoyamos con algo?');
+  }
+  function rdPlanCard(c, i) {
+    const nom = c.razon || c.nombre, wa = telWa(c.cel), q = esc(c.id), r = S.radar;
+    const pct = c.cada ? Math.min(100, Math.round(c.sin / (c.cada * 3) * 100)) : 0;
+    return `<div class="rd-card">
+      <div class="rd-top"><span class="rd-n">${i + 1}</span><div class="rd-nom" onclick="App.fichaCliente('${q}')"><b>${esc(nom)}</b>
+        <small class="muted">${[c.rancho ? '🐄 ' + c.rancho : '', c.localidad, esJefe() && c.vendedor ? '👤 ' + c.vendedor : '', U().todasSucursales ? sucNom(c.suc) : ''].filter(Boolean).map(esc).join(' · ')}</small></div>${etqSeg(c.estado)}</div>
+      <div class="rd-ritmo"><div class="rd-r1"><span>${c.cada ? `Compra cada <b>${c.cada} días</b> · lleva <b>${c.sin}</b> sin comprar` : `Lleva <b>${c.sin} días</b> sin comprar`}</span>${r.dinero && c.mensual ? `<span class="rd-din">${$$(c.mensual)}<small>/mes</small></span>` : ''}</div>
+        ${c.cada ? `<div class="rd-barra" title="La raya es cuando le tocaba comprar"><i class="${c.estado === 'Toca comprar' ? 'ok' : c.estado === 'Atrasado' ? 'av' : 'mal'}" style="width:${pct}%"></i><em></em></div>` : ''}</div>
+      ${c.pedido.length ? `<div class="rd-pedido"><small>🧺 Su pedido habitual</small>${c.pedido.map(p => `<span title="Lo compra cada ${p.cada} días · la última vez hace ${p.hace}"><b>${nf(p.q)}</b> ${esc(rdCorto(p.n))}</span>`).join('')}</div>` : ''}
+      ${c.vencido ? `<div class="rd-aviso">⚠️ Tiene saldo vencido de ${$$(c.vencido)}: conviene cobrar antes de surtir.</div>` : ''}
+      <div class="acciones izq">
+        ${wa ? `<a class="btn chico primario" target="_blank" rel="noopener" href="${WA_BASE}${wa}?text=${encodeURIComponent(rdMsgPedido(c))}">💬 WhatsApp</a>` : ''}
+        ${c.pedido.length && puede('cotizaciones') ? `<button class="btn chico" onclick="App.pedidoHabitual('${q}','cot')">📝 Cotizarle su pedido</button>` : ''}
+        ${puede('ventas') ? `<button class="btn chico" onclick="App.pedidoHabitual('${q}','venta')">🛒 ${c.pedido.length ? 'Venderle su pedido' : 'Venderle'}</button>` : ''}
+        ${wa ? `<a class="btn chico" href="tel:${wa.slice(2)}">📞</a>` : ''}
+        <button class="btn chico" onclick="App.formVisita({idCliente:'${q}', realizada:1})" title="Registrar que ya lo atendiste (sale del plan)">✅ Atendido</button>
+      </div></div>`;
+  }
+  function pintarRadar() {
+    const r = S.radar, el = $('#rdRes'); if (!r || !el) return;
+    const s = r.resumen, e = r.embudo, din = r.dinero;
+    const alDia = Math.max(0, s.activos - s.toca - s.atrasados - s.dormidos);
+    const seg = (n, cls, t) => n ? `<i class="${cls}" style="flex:${n}" title="${t}: ${n}"></i>` : '';
+    const mx = Math.max(1, ...e.etapas.map(x => din ? x.monto || 0 : x.n));
+    const hero = `<div class="rd-hero">
+        <div class="rd-h-main"><small>💰 ${din ? 'Venta mensual en juego' : 'Clientes por atender'}</small><b>${din ? $$(s.enJuego) : nf(s.porAtender)}</b>
+          <span>${nf(s.porAtender)} clientes por atender: ${nf(s.toca)} les toca, ${nf(s.atrasados)} atrasados y ${nf(s.dormidos)} dormidos${din ? ' · ' + $$(s.enJuego * 12) + ' al año' : ''}</span>
+          <div class="rd-salud" title="Salud de tu cartera activa">${seg(alDia, 'ok', 'Al día')}${seg(s.toca, 'ok2', 'Les toca')}${seg(s.atrasados, 'av', 'Atrasados')}${seg(s.dormidos, 'mal', 'Dormidos')}</div>
+          <small class="rd-leyenda"><i class="ok"></i>Al día ${s.alDiaPct !== null ? s.alDiaPct + '%' : ''} <i class="ok2"></i>Les toca <i class="av"></i>Atrasados <i class="mal"></i>Dormidos</small></div>
+        <div class="rd-h-stats">
+          <div><small>🏆 Recuperados · 30 días</small><b>${din ? $$(r.recuperados.monto) : nf(r.recuperados.n)}</b><span>${r.recuperados.n === 1 ? '1 cliente volvió' : nf(r.recuperados.n) + ' clientes volvieron'}</span></div>
+          <div><small>📝 Cotizaciones abiertas</small><b>${din ? $$(e.abiertas.monto) : nf(e.abiertas.n)}</b><span>${nf(e.abiertas.n)} por cerrar</span></div>
+          <div><small>🎯 Cierre de cotizaciones</small><b>${e.conversion !== null ? e.conversion + '%' : '—'}</b><span>${e.cerradas ? 'de ' + nf(e.cerradas) + ' cerradas en 90 días' : 'sin cotizaciones cerradas'}</span></div>
+          <div><small>🧊 Sin atender</small><b>${nf(s.sinAtender)}</b><span>${nf(s.enAgenda)} en agenda · ${nf(s.atendidos)} visitados · ${nf(s.conCot)} con cotización</span></div>
+        </div></div>${r._viejo ? `<div class="aviso-cand">📴 Sin conexión: es el radar que se calculó a las ${new Date(r._t).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}.</div>` : ''}`;
+    const plan = `<div class="tarjeta"><h3>🎯 Tu plan de hoy</h3>
+        <p class="muted peq" style="margin-top:-4px">Los clientes con <b>más dinero en juego</b> que nadie ha atendido: sin visita en los últimos 5 días, sin visita programada y sin cotización abierta. Al atenderlos salen de aquí.</p>
+        ${r.plan.length ? `<div class="rd-grid">${r.plan.map(rdPlanCard).join('')}</div>` : '<div class="vacio">🎉 Todos tus clientes por atender ya tienen algo en marcha.</div>'}
+        ${s.sinAtender > r.plan.length ? `<div class="acciones izq"><button class="btn chico" onclick="App.ir('seguimiento',true)">Ver los ${nf(s.porAtender)} por atender →</button></div>` : ''}</div>`;
+    const emb = `<div class="tarjeta"><h3>📈 Embudo de cotizaciones <small class="muted">· últimos 90 días</small></h3>
+        <div class="rd-emb">${e.etapas.map(x => { const v = din ? x.monto || 0 : x.n; return `<div class="rd-et"><span>${esc(x.t)}</span><div><i class="${x.tono}" style="width:${Math.max(x.n ? 3 : 0, Math.round(v / mx * 100))}%"></i></div><b>${nf(x.n)}${din ? ' · ' + $$(x.monto) : ''}</b></div>`; }).join('')}</div>
+        <p class="muted peq">${e.conversion !== null ? `Cierras <b>${e.conversion}%</b> de las cotizaciones que se resuelven` : 'Aún no hay cotizaciones resueltas'}${din && e.vendido ? ` · vendido desde cotización: <b>${$$(e.vendido)}</b>` : ''}${e.canceladas ? ` · ${nf(e.canceladas)} canceladas` : ''}.</p>
+        ${e.enfriando.length ? `<h4 style="margin:14px 0 6px">🧊 Se están enfriando: dales seguimiento hoy</h4>${e.enfriando.map(c => { const wa = telWa(c.cel);
+          const msg = 'Hola ' + (c.nombre || c.cliente).split(' ')[0] + ', le saluda ' + U().nombre.split(' ')[0] + ' de Interés Veterinario. ¿Pudo revisar la cotización ' + c.folio + '? Con gusto le ajusto cantidades o precios para cerrarla.';
+          return `<div class="rd-fila"><div><b>${esc(c.cliente)}</b><small class="muted">${esc(c.folio)} · ${esc(c.fecha)} · hace ${c.edad} días${c.vendedor && esJefe() ? ' · ' + esc(c.vendedor) : ''}</small></div>
+            <span class="etq ${c.estado === 'Vencida' ? 'mal' : 'av'}">${c.estado === 'Vencida' ? 'Vencida' : 'Abierta'}</span>${din ? `<b class="num">${$$(c.total)}</b>` : ''}
+            <div class="lin-btns">${wa ? `<a class="btn chico" target="_blank" rel="noopener" href="${WA_BASE}${wa}?text=${encodeURIComponent(msg)}">💬</a>` : ''}<button class="btn chico" onclick="App.verCot('${esc(c.id)}')">Ver</button></div></div>`; }).join('')}` : ''}</div>`;
+    const rec = `<div class="tarjeta"><h3>🏆 Recuperados en 30 días</h3>
+        ${r.recuperados.lista.length ? r.recuperados.lista.map(c => `<div class="rd-fila"><div><b>${esc(c.nombre)}</b><small class="muted">Volvió el ${esc(c.ult)} después de <b>${c.dias} días</b> (compraba cada ${c.antes})${c.vendedor && esJefe() ? ' · ' + esc(c.vendedor) : ''}</small></div>${din ? `<b class="num ok-txt">${$$(c.monto)}</b>` : ''}</div>`).join('')
+          : '<div class="vacio">Aquí aparecen los clientes que vuelven a comprar después de una pausa mayor a su costumbre.</div>'}</div>`;
+    const eq = r.equipo && r.equipo.length ? `<div class="tarjeta"><h3>👥 Tu equipo</h3>${tabla([{ t: 'Vendedor', k: 'nombre' }, { t: 'Clientes', num: 1, h: x => nf(x.clientes) }, { t: 'Al día', num: 1, h: x => x.alDiaPct === null ? '—' : x.alDiaPct + '%' },
+        { t: 'Por atender', num: 1, h: x => nf(x.porAtender) }].concat(din ? [{ t: 'En juego / mes', num: 1, h: x => $$(x.enJuego) }] : [])
+        .concat([{ t: 'Recuperados', num: 1, h: x => nf(x.recup) + (din && x.recupMonto ? ' · ' + $$(x.recupMonto) : '') }, { t: 'Cotiz. abiertas', num: 1, h: x => nf(x.cotAb) + (din && x.cotAbMonto ? ' · ' + $$(x.cotAbMonto) : '') },
+          { t: 'Cierre', num: 1, h: x => x.conversion === null ? '—' : x.conversion + '%' }]), r.equipo)}</div>` : '';
+    el.innerHTML = hero + plan + `<div class="rejilla-2">${emb}${rec}</div>` + eq;
+  }
+  /** Del radar: cotización o venta nueva con el pedido habitual del cliente (sus productos y la cantidad que suele llevar) a su lista de precios. */
+  function pedidoHabitual(id, modo) {
+    const c = ((S.radar || {}).plan || []).find(x => x.id === id), cl = cliente(id); if (!c || !cl) return;
+    const listas = (D().catalogos || {}).listas || [], lista = cl.lista && listas.indexOf(cl.lista) >= 0 ? cl.lista : 'Publico';
+    const lineas = c.pedido.filter(p => prod(p.id)).map(p => ({ id: p.id, cant: p.q, precio: (prod(p.id).precios || {})[lista] || 0, desc: 0, lote: '' }));
+    if (modo === 'cot') {
+      if (S.cot && S.cot.lineas && S.cot.lineas.length && !confirm('Tienes una cotización en captura que se va a reemplazar. ¿Continuar?')) return;
+      const v = cotNueva(); v.cli = id; v.lista = lista; v.obs = ''; v.lineas = lineas.map(l => ({ id: l.id, cant: l.cant, precio: l.precio, desc: 0 }));
+      S.cot = v; LS.set('borrador_cot', v); S.tabCot = 'nueva'; ir('cotizaciones', true);
+    } else {
+      if (S.venta && S.venta.lineas && S.venta.lineas.length && !confirm('Tienes una venta en captura que se va a reemplazar. ¿Continuar?')) return;
+      S.venta = ventaNueva(); S.venta.lineas = lineas; ir('venta'); elegirClienteVenta(id);
+    }
+    if (lineas.length) toast('🧺 Pedido habitual cargado: revisa cantidades y existencias');
+  }
+
   /* ----- Visitas ----- */
   V.visitas = () => {
     const f = S.fVis = alDia(S.fVis || { desde: sumaDias(hoyISO(), -7), hasta: sumaDias(hoyISO(), 60), hastaHoy: '', vend: '', estado: '' });
@@ -6842,7 +6949,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
