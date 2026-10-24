@@ -115,6 +115,10 @@ const App = (() => {
   /** "Otras sucursales: Champotón 4 · Escárcega 2" (solo las que tienen existencia). */
   const existOtras = (idProd, suc) => { const m = {}; (D().stock || []).forEach(s => { if (s.p === idProd && s.s !== suc && s.q > 0) m[s.s] = (m[s.s] || 0) + s.q; });
     const l = Object.keys(m).map(k => sucNom(k) + ' ' + nf(m[k])); return l.length ? 'Otras sucursales: ' + l.join(' · ') : ''; };
+  /** Piezas en órdenes de compra todavía no recibidas (solo si hay alguna): ' · 🚚 Por llegar 24'. */
+  const porLlegarHtml = (idProd, suc) => { let q = 0; const oc = [];
+    (D().porLlegar || []).forEach(x => { if (x.p === idProd && (!suc || x.s === suc)) { q += x.q; (x.oc || []).forEach(f => { if (oc.indexOf(f) < 0) oc.push(f); }); } });
+    return q > 0 ? ` · <span class="por-llegar" title="En orden de compra sin recibir: ${esc(oc.join(', '))}">🚚 Por llegar <b>${nf(r2(q))}</b></span>` : ''; };
   const existencia = (idProd, suc) => r2((D().stock || []).filter(s => s.p === idProd && (!suc || s.s === suc)).reduce((t, s) => t + s.q, 0));
   /** Existencia de todos los productos de una vez (suc vacío = todas). */
   const mapaExist = suc => { const m = {}; (D().stock || []).forEach(s => { if (!suc || s.s === suc) m[s.p] = (m[s.p] || 0) + s.q; }); return m; };
@@ -1943,7 +1947,7 @@ const App = (() => {
         if (l.lote && !ls.some(x => x.k === l.lote)) ls.unshift({ k: l.lote, l: (l.loteTxt || 'Lote guardado'), c: l.cadTxt || 'sin existencia hoy', q: '' });
         const selLote = ls.length ? `<select data-f="lote"><option value="">Auto (caduca primero)</option>${ls.map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)}${x.q !== '' ? ' · ' + nf(x.q) + ' disp.' : ''}</option>`).join('')}</select>`
           : `<small class="${ex > 0 ? 'muted' : 'error'}">${ex > 0 ? 'Sin lote' : 'Sin existencia en ' + esc(sucNom(v.suc))}</small>`;
-        return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)} · Exist. <span style="font-weight:600" class="${ex < (Number(l.cant) || 0) ? 'error' : ''}">${nf(ex)}</span> en ${esc(sucNom(v.suc))}${p.iva ? ' · IVA <span data-iva></span>' : ' · Exento de IVA'}</small>${otras ? `<small class="muted">${esc(otras)}</small>` : ''}</div><div>${selLote}</div>
+        return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)} · Exist. <span style="font-weight:600" class="${ex < (Number(l.cant) || 0) ? 'error' : ''}">${nf(ex)}</span> en ${esc(sucNom(v.suc))}${porLlegarHtml(l.id, v.suc)}${p.iva ? ' · IVA <span data-iva></span>' : ' · Exento de IVA'}</small>${otras ? `<small class="muted">${esc(otras)}</small>` : ''}</div><div>${selLote}</div>
           <div><input type="number" data-f="cant" min="0" step="any" value="${l.cant}" inputmode="decimal"></div>
           <div><input type="number" data-f="precio" step="0.01" value="${l.precio}" ${ep ? '' : 'readonly'} inputmode="decimal"><span data-ref>${refPrecio((p.precios || {})[v.lista], l.precio)}</span></div>
           <div><input type="number" data-f="desc" step="0.01" value="${l.desc}" ${ep ? '' : 'readonly'} inputmode="decimal"><small class="ref-precio baja" data-dsc></small></div>
@@ -3556,7 +3560,7 @@ const App = (() => {
       return $$(Math.round(Math.round((l.cant || 0) * pu * 100) / 100 * ((prod(l.id) || {}).iva || 0) * 100) / 100); };
     cont.innerHTML = (aMatriz && t.lineas.length ? `<p class="muted" style="font-size:13px;margin:0 0 6px">↩️ <b>A Matriz:</b> el producto regresa con la lista de precios de ${esc(sucNom(t.ori))}${listaOri ? ' (' + esc(listaOri) + ')' : ''}.</p>` : '') + (!t.lineas.length ? '<div class="vacio">Agrega productos</div>' :
       `<div class="linea cab"><div>Producto</div><div>Lote</div><div>Cant.</div><div>${ep ? 'Precio' : ''}</div><div class="num">${verIva ? 'IVA $' : ''}</div><div class="num">Exist. origen</div><div></div></div>` +
-      t.lineas.map((l, i) => { const p = prod(l.id) || {}; return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)}</small></div>
+      t.lineas.map((l, i) => { const p = prod(l.id) || {}; return `<div class="linea" data-i="${i}"><div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)}${porLlegarHtml(l.id, t.ori)}</small></div>
         <div><select data-f="lote"><option value="">Auto (caduca primero)</option>${lotes(l.id, t.ori).map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)} · ${nf(x.q)}</option>`).join('')}</select></div>
         <div><input type="number" data-f="cant" value="${l.cant}"></div>
         <div>${ep ? `<input type="number" data-f="precio" step="0.01" value="${l.precio !== undefined && l.precio !== '' ? l.precio : ''}" placeholder="${t.des ? pLista(l.id) : 'Elige destino'}" inputmode="decimal"><span data-ref>${l.precio !== undefined && l.precio !== '' ? refPrecio(pLista(l.id), l.precio) : ''}</span>` : ''}</div><div class="num" data-iva title="IVA del renglón">${ivaTr(l)}</div>

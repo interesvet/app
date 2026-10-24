@@ -668,6 +668,7 @@ body.con-visor { overflow: hidden; }
 .dep-como b { color: var(--texto); }
 .ver-app { font-size: 11.5px; color: var(--texto-2); margin-top: 6px; line-height: 1.5; text-align: center; }
 .ver-app:empty { display: none; }
+.por-llegar { color: var(--aviso); white-space: nowrap; display: inline-block; }
 .ver-top { font-variant-numeric: tabular-nums; opacity: .85; }
 @media (max-width: 760px) { .ver-top { display: none; } }
 .ver-app .ver-ok { color: var(--ok); }
