@@ -1177,7 +1177,7 @@ const App = (() => {
       const r = await pedir('guardarVenta', params, true);
       S.venta = ventaNueva(); guardarBorrador();
       (r.avisos || []).forEach(a => toast(a, true));
-      toast('✔ Venta ' + r.folio + (r.estatus === 'Pendiente' ? ' guardada como Pendiente de entrega (no descontó inventario)' : ' guardada'));
+      toast('✔ Venta ' + r.folio + (r.estatus === 'Pendiente' ? ' guardada como Pendiente de entrega (no descontó inventario)' : ' guardada') + (r.cotPendiente && r.cotPendiente.folio ? ' · lo que faltó de la cotización pasó a la ' + r.cotPendiente.folio : ''));
       refrescarStock();
       V.venta(); verVenta(r.ID_Venta, true);
     } catch (e) {
@@ -1888,7 +1888,7 @@ const App = (() => {
       <div class="kpi"><small>Vendidas</small><b>${nf(k.vendidas)}</b><span>conversión ${k.conversion}% · ${$$(k.montoVendido)}</span></div>
       <div class="kpi"><small>Vencidas / canceladas</small><b>${nf(k.vencidas)} / ${nf(k.canceladas)}</b><span>vigencia ${r.vigenciaDias} días</span></div></div>` +
       tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) },
-        { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Estado', h: x => etqCot(x.estado) + (x.estado === 'Abierta' ? `<br><small class="muted">vence ${esc(x.vigencia)}</small>` : '') },
+        { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Estado', h: x => etqCot(x.estado) + (x.estado === 'Abierta' ? `<br><small class="muted">vence ${esc(x.vigencia)}</small>` : '') + (x.pendiente ? `<br><small class="muted">pendiente → ${esc(x.pendiente)}</small>` : '') + (x.origen ? `<br><small class="muted">resto de ${esc(x.origen)}</small>` : '') },
         { t: 'Venta', h: x => x.venta ? `<b>${esc(x.venta.folio)}</b>` : '—' }], r.cotizaciones, { clic: 'App.abrirCot', vacio: 'Sin cotizaciones en el periodo' });
   }
   function editorCot(barra) {
@@ -2019,6 +2019,8 @@ const App = (() => {
       <div class="totales" style="margin-top:10px">${totalesHtml(d.sub, d.desc || 0, d.iva, d.total)}</div>
       ${d.letras ? `<p><small>(${esc(d.letras)})</small></p>` : ''}${d.obs ? `<p><small>${esc(d.obs)}</small></p>` : ''}
       <p class="muted"><small>Cotización válida por ${d.vigenciaDias} días (hasta el ${esc(d.vigencia)}). Precios sujetos a existencias y a cambio sin previo aviso después de la vigencia.</small></p></div></div>
+      ${d.cotOrigen ? `<div class="aviso-cand no-imprimir">↩️ Es lo que faltó entregar de la cotización <a href="#" onclick="App.verCot('${esc(d.cotOrigen.id)}');return false"><b>${esc(d.cotOrigen.folio)}</b></a>.</div>` : ''}
+      ${d.surtido ? surtidoCotHtml(d) : ''}
       <div class="acciones no-imprimir">
         <button class="btn primario" onclick="App.pdfCot('${d.id}')">📄 PDF para enviar</button>
         ${d.cel ? `<a class="btn" target="_blank" href="${WA_BASE}52${String(d.cel).replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent('Interés Veterinario — Cotización ' + d.folio + '\nTotal: ' + $$(d.total) + '\nVigente hasta ' + d.vigencia)}">💬 WhatsApp</a>` : ''}
@@ -2030,6 +2032,19 @@ const App = (() => {
         ${d.estado === 'Cancelada' || d.estado === 'Vencida' ? `<button class="btn" onclick="App.reabrirCot('${d.id}')">↩️ Reabrir</button>` : ''}
         ${abierta ? `<button class="btn peligro" onclick="App.cancelarCot('${d.id}')">Cancelar</button>` : ''}
       </div>`);
+  }
+  /** Cotizado contra lo que llevó la venta: lo pendiente pasa (o ya pasó) a una cotización nueva. */
+  function surtidoCotHtml(d) {
+    const s = d.surtido, pend = s.filas.filter(f => f.pendiente > 0), comp = s.filas.filter(f => !(f.pendiente > 0));
+    return `<div class="fc-sec no-imprimir"><h4>📦 Cotizado contra lo vendido en la nota ${esc(d.venta.folio)}</h4>
+      ${tabla([{ t: 'Producto', h: f => esc(f.nombre) }, { t: 'Cotizado', num: 1, h: f => nf(f.cot) }, { t: 'Vendido', num: 1, h: f => nf(f.vendido) },
+        { t: 'Pendiente', num: 1, h: f => f.pendiente > 0 ? `<b class="txt-mal">${nf(f.pendiente)}</b>` : '<span class="etq ok">✔ completo</span>' }], s.filas)}
+      ${s.extras.length ? `<p class="muted" style="font-size:13px;margin:6px 0 0">➕ La venta además llevó (no estaba cotizado): ${s.extras.map(x => esc(x.nombre) + ' × ' + nf(x.vendido)).join(' · ')}</p>` : ''}
+      ${d.cotPendiente ? `<p style="margin:8px 0 0">➡️ Lo pendiente está en la cotización <a href="#" onclick="App.verCot('${esc(d.cotPendiente.id)}');return false"><b>${esc(d.cotPendiente.folio)}</b></a> ${etqCot(d.cotPendiente.estado)}</p>`
+        : pend.length ? `<div class="acciones izq"><button class="btn primario" onclick="App.pendienteCot('${esc(d.id)}')">➡️ Pasar lo pendiente (${pend.length} producto${pend.length === 1 ? '' : 's'}) a una nueva cotización</button></div>` : `<p class="muted" style="margin:6px 0 0">✔ La venta cubrió todo lo cotizado.</p>`}</div>`;
+  }
+  async function pendienteCot(id) {
+    try { const r = await pedir('pendienteCotizacion', { id: id }); toast('✔ Lo pendiente pasó a la cotización ' + r.folio); if (S.vista === 'cotizaciones') cargarCotizaciones(); verCotizacion(r.id); } catch (e) {}
   }
   function pdfCot(id) { const d = S.ultimaCot || {}; generarPdf('pdfCotizacion', { id: id }, { cel: d.cel, asunto: 'Cotización ' + (d.folio || ''), texto: 'Interés Veterinario — Cotización ' + (d.folio || '') + '\nTotal: ' + $$(d.total) + '\nVigente hasta ' + (d.vigencia || ''), volver: `App.verCot('${id}')` }); }
   function editarCot(id) {
@@ -2063,7 +2078,7 @@ const App = (() => {
   }
   async function ligarCot(id) {
     const folio = prompt('Folio de la nota de venta que corresponde a esta cotización (ej. No/Rem-0622):'); if (!folio) return;
-    try { const r = await pedir('ligarVentaCotizacion', { id: id, folio: folio.trim() }); toast('✔ Ligada a la nota ' + r.venta); verCotizacion(id); if (S.vista === 'cotizaciones') cargarCotizaciones(); } catch (e) {}
+    try { const r = await pedir('ligarVentaCotizacion', { id: id, folio: folio.trim() }); toast('✔ Ligada a la nota ' + r.venta + (r.pendiente && r.pendiente.folio ? ' · lo que faltó pasó a la cotización ' + r.pendiente.folio : '')); verCotizacion(id); if (S.vista === 'cotizaciones') cargarCotizaciones(); } catch (e) {}
   }
 
   /* ---------- HISTORIAL DE VENTAS ---------- */
@@ -6787,7 +6802,7 @@ const App = (() => {
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, gastoACompra, asignarSucGastos, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
-    vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
+    vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
     vistaCompras: t => V.compras(t), buscarCompras, actualizarApp, buscarPagosProv, verPagoProv, formEditarPago, guardarEdicionPago, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
