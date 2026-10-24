@@ -215,8 +215,9 @@ const App = (() => {
       'detalleVenta listarCobros cuentasPorCobrar adjuntosCobro estadosCuenta estadoCuentaCliente listarPagosProv detallePagoProv listarCompras ' +
       'detalleCompra listarTraspasos detalleTraspaso reporteTraspasos listarConteos detalleConteo historialAjustes selListaPrecios historialPrecios ' +
       'listarMovimientos listarProveedores detalleCobro dashboard costosReales listarCotizaciones detalleCotizacion facturas detalleFactura facturasNota ' +
-      'listarRequisiciones detalleRequisicion detalleDevolucion porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto').split(' ');
-    const MAX = 300, MAX_TXT = 3e6;
+      'listarRequisiciones detalleRequisicion detalleDevolucion porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto ' +
+      'radar metas historialCliente registro').split(' ');
+    const MAX = 4000, MAX_TXT = 4e6;   // "Actualizar para ruta" guarda miles de consultas (IndexedDB aguanta cientos de MB)
     let dbp = null;
     const db = () => dbp || (dbp = new Promise((res, rej) => {
       try {
@@ -253,7 +254,10 @@ const App = (() => {
           g.onsuccess = () => {
             if (g.result) return fin(Object.assign({ exacto: true }, g.result));
             const q = st.index('a').getAll(a);
-            q.onsuccess = () => { const l = (q.result || []).filter(x => x.u === u && x.i === id).sort((x, y) => y.t - x.t); fin(l[0] ? Object.assign({ exacto: false }, l[0]) : null); };
+            // sin la consulta exacta: la más reciente del mismo cliente / nota / producto; si hay una con fechas que cubren las pedidas, esa primero
+            const rango = x => { try { const o = JSON.parse(x.k.split('|').slice(2).join('|')); return [o.desde || '', o.hasta || '']; } catch (e) { return ['', '']; } };
+            const cubre = x => { if (!p.desde && !p.hasta) return true; const [d, h] = rango(x); return (!d || (p.desde && d <= p.desde)) && (!h || (p.hasta && h >= p.hasta)); };
+            q.onsuccess = () => { const l = (q.result || []).filter(x => x.u === u && x.i === id).sort((x, y) => (cubre(y) - cubre(x)) || (y.t - x.t)); fin(l[0] ? Object.assign({ exacto: false }, l[0]) : null); };
           };
         });
       },
@@ -275,12 +279,17 @@ const App = (() => {
   }
   function quitarAvisoCache() { const el = $('#avisoCache'); if (el) { el.classList.add('oculto'); el.dataset.t = ''; el.dataset.exacto = ''; } }
   /** Precarga silenciosa de las consultas principales (cada 3 h, solo con internet) para tenerlas a la mano sin señal. */
-  async function precargar(forzar, avance) {
+  /**
+   * completo = "Actualizar para ruta": rangos amplios y el detalle de muchas más notas, cotizaciones, requisiciones,
+   * compras y clientes, pedidos en lotes (una llamada trae hasta 40 detalles) para que tarde poco.
+   */
+  async function precargar(forzar, avance, completo) {
     if (!S.token || !navigator.onLine || S.precargando) return;
     const ult = LS.get('precarga_' + (U().id || ''), 0);
     if (!forzar && Date.now() - ult < 3 * 3600e3) return;
     S.precargando = true;
     const h = hoyISO(), dia = n => { const d = new Date(h + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+    if (completo) { try { return await precargaRuta(h, dia, avance); } finally { S.precargando = false; } }
     const lista = [
       ['seguimiento', 'seguimiento', { suc: '', vendedor: '' }],
       ['seguimiento', 'listarVisitas', { desde: dia(-30), hasta: dia(60), vendedor: '', estado: '' }],
@@ -315,6 +324,62 @@ const App = (() => {
       if (ok) { LS.set('precarga_' + (U().id || ''), Date.now()); guardarLibs(); }
     } finally { S.precargando = false; }
     return ok;
+  }
+  /** Lotes de detalle: guarda cada respuesta en el equipo como si se hubiera consultado una por una. */
+  async function loteDetalles(accion, params, avance, etiqueta) {
+    let hechos = 0;
+    for (let i = 0; i < params.length; i += 40) {
+      if (!navigator.onLine || !S.token) break;
+      const parte = params.slice(i, i + 40);
+      if (avance) avance(etiqueta, Math.min(i + 40, params.length) - 1, params.length);
+      let r; try { r = await call('lote', { accion: accion, lista: parte }); } catch (e) { if (e.red) break; continue; }
+      (r.res || []).forEach((x, j) => { if (x && x.ok) { const txt = JSON.stringify(x.data); CQ.guardar(accion, parte[j], x.data, txt.length); hechos++; } });
+      const faltan = (r.res || []).map((x, j) => x ? null : parte[j]).filter(Boolean);   // el servidor se detuvo por tiempo: se reintentan
+      if (faltan.length) { params = params.concat(faltan); }
+    }
+    return hechos;
+  }
+  async function precargaRuta(h, dia, avance) {
+    const res = { listas: 0, detalles: 0 }, guardar = async (a, p, perm) => { if (perm && !puede(perm)) return null; try { const r = await call(a, p); res.listas++; return r; } catch (e) { if (e.red) throw e; return null; } };
+    const paso = (t) => avance && avance(t, 0, 1);
+    paso('listas');
+    const ventas = await guardar('listarVentas', { desde: dia(-365), hasta: h, sucursal: '', texto: '', conSaldo: false, idCliente: '' });
+    await guardar('listarVentas', { desde: dia(-30), hasta: h, sucursal: '', texto: '', conSaldo: false, idCliente: '' });
+    await guardar('listarVentas', { desde: '', hasta: '', sucursal: '', texto: '', conSaldo: true, idCliente: '' });
+    const cxc = await guardar('cuentasPorCobrar', { sucursal: '' }, 'cobranza');
+    await guardar('estadosCuenta', { texto: '', tramo: '' }, 'cobranza');
+    await guardar('listarCobros', { desde: dia(-180), hasta: h, sucursal: '', forma: '', texto: '' }, 'cobranza');
+    const cots = await guardar('listarCotizaciones', { sucursal: '', desde: dia(-180), hasta: h, estado: '', texto: '' }, 'cotizaciones');
+    await guardar('listarCotizaciones', { sucursal: '', desde: dia(-60), hasta: h, estado: '', texto: '' }, 'cotizaciones');
+    const reqs = await guardar('listarRequisiciones', { desde: dia(-180), hasta: h, estado: '', texto: '', sucursal: '' }, 'requisiciones');
+    const comp = await guardar('listarCompras', { desde: dia(-180), hasta: h, texto: '', pendientes: false, idProveedor: '' }, 'compras');
+    await guardar('listarCompras', { pendientes: true }, 'compras');
+    const seg = await guardar('seguimiento', { suc: '', vendedor: '' }, 'seguimiento');
+    await guardar('radar', { suc: '', vendedor: '' }, 'seguimiento');
+    await guardar('metas', { mes: '', suc: '' }, 'seguimiento');
+    await guardar('listarVisitas', { desde: dia(-90), hasta: dia(90), vendedor: '', estado: '' }, 'seguimiento');
+    await guardar('listarVisitas', { desde: dia(-30), hasta: dia(60), vendedor: '', estado: '' }, 'seguimiento');
+    await guardar('listarRecetas', { desde: dia(-365), hasta: h }, 'recetas');
+    await guardar('configReceta', {}, 'recetas');
+    // detalles en lotes
+    const vivos = l => (l || []).filter(x => !/cancel/i.test(x.estado || x.estatus || ''));
+    const idsV = vivos(Array.isArray(ventas) ? ventas : (ventas || {}).notas).slice(0, 600).map(x => ({ ID_Venta: x.id || x.ID_Venta })).filter(x => x.ID_Venta);
+    res.detalles += await loteDetalles('detalleVenta', idsV, avance, 'notas de venta');
+    const lc = cots ? (cots.cotizaciones || cots) : [];
+    if (puede('cotizaciones')) res.detalles += await loteDetalles('detalleCotizacion', vivos(Array.isArray(lc) ? lc : []).slice(0, 300).map(x => ({ id: x.id })).filter(x => x.id), avance, 'cotizaciones');
+    const lr = reqs ? (reqs.requisiciones || reqs) : [];
+    if (puede('requisiciones')) res.detalles += await loteDetalles('detalleRequisicion', (Array.isArray(lr) ? lr : []).slice(0, 150).map(x => ({ id: x.id })).filter(x => x.id), avance, 'requisiciones');
+    if (puede('compras') && Array.isArray(comp)) res.detalles += await loteDetalles('detalleCompra', comp.slice(0, 200).map(x => ({ ID_O_Compra: x.id })).filter(x => x.ID_O_Compra), avance, 'órdenes de compra');
+    // clientes: ficha completa, estado de cuenta e historia de los que se atienden en ruta (por atender, con saldo y los del radar)
+    const idsC = [];
+    ((seg || {}).clientes || []).filter(c => c.estado !== 'Perdido').forEach(c => idsC.push(c.id));
+    (Array.isArray(cxc) ? cxc : ((cxc || {}).clientes || [])).forEach(c => idsC.push(c.idCliente || c.id));
+    const unicos = idsC.filter((x, i, a) => x && a.indexOf(x) === i).slice(0, 400);
+    if (puede('clientes')) res.detalles += await loteDetalles('registro', unicos.map(id => ({ tabla: 'cliente', id: id })), avance, 'fichas de clientes');
+    if (puede('cobranza')) res.detalles += await loteDetalles('estadoCuentaCliente', unicos.map(id => ({ idCliente: id })), avance, 'estados de cuenta');
+    if (puede('recetas')) res.detalles += await loteDetalles('historialCliente', unicos.slice(0, 250).map(id => ({ id: id })), avance, 'historias clínicas');
+    LS.set('precarga_' + (U().id || ''), Date.now()); LS.set('ruta_' + (U().id || ''), { t: Date.now(), listas: res.listas, detalles: res.detalles });
+    return res.listas + res.detalles;
   }
   async function precargarAhora() {
     if (!navigator.onLine) return toast('Necesitas conexión para actualizar la información guardada', true);
@@ -459,9 +524,15 @@ const App = (() => {
     try {
       if (S.cola.length) await sincronizar(true);
       for (let i = 0; S.precargando && i < 240; i++) await new Promise(r => setTimeout(r, 500));   // si ya corría la precarga automática, se espera y se hace completa
-      await refrescarDatos(true); await precargar(true, (que, i, t) => toast('Guardando ' + que + ' en el equipo… ' + (i + 1) + ' de ' + t)); await renovarSesion(); await guardarLibs();
-      await descargarFotos(!S.fotosT || Date.now() - S.fotosT > FOTOS_DIAS * 86400e3, (i, t) => toast('Descargando fotos de productos… ' + Math.round(i / t * 100) + '%'));
-      toast('✔ Listo para ruta: la información quedó guardada en este equipo');
+      // que el navegador no borre lo guardado cuando le falte espacio (Safari/iPad lo respeta si la app está instalada)
+      try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+      await refrescarDatos(true);
+      await precargar(true, (que, i, t) => toast(t > 1 ? '📥 Guardando ' + que + '… ' + (i + 1) + ' de ' + t : '📥 Guardando ' + que + '…'), true);
+      await renovarSesion(); await guardarLibs();
+      await descargarFotos(!S.fotosT || Date.now() - S.fotosT > FOTOS_DIAS * 86400e3, (i, t) => toast('📷 Descargando fotos de productos… ' + Math.round(i / t * 100) + '%'));
+      const rt = LS.get('ruta_' + (U().id || ''), {}); let mb = '';
+      try { const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null; if (est && est.usage) mb = ' · ' + (est.usage / 1048576).toFixed(0) + ' MB en el equipo'; } catch (e) {}
+      toast('✔ Listo para ruta: ' + nf((rt.listas || 0) + (rt.detalles || 0)) + ' consultas guardadas (' + nf(rt.detalles || 0) + ' notas, cotizaciones, compras y clientes)' + mb);
     } catch (e) { toast('No se pudo completar con esta señal; intenta de nuevo', true); }
     finally { cargando(false); pintarBienvEstado(); }
   }
@@ -469,7 +540,9 @@ const App = (() => {
   function pintarBienvEstado() {
     const el = $('#bienvEstado'); if (!el) return;
     const d = S.datos || {}, n = S.cola.length;
+    const rt = LS.get('ruta_' + (U().id || ''), null);
     el.innerHTML = `<span>📦 Información en este equipo: <b>${haceTxt(d._t)}</b> · ${(d.clientes || []).length} clientes · ${(d.productos || []).length} productos</span>
+      ${rt ? `<span>🧭 Preparado para ruta <b>${haceTxt(rt.t)}</b> · ${nf((rt.listas || 0) + (rt.detalles || 0))} consultas guardadas</span>` : ''}
       ${n ? `<span>⟳ <b>${n}</b> por sincronizar${S.sincronizando ? ' (enviando…)' : ' · se envían solas con buena señal'}</span>` : '<span>✔ Todo sincronizado</span>'}
       <button onclick="App.prepararRuta()">📥 Actualizar para ruta</button>`;
   }
