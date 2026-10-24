@@ -735,10 +735,13 @@ const App = (() => {
     const box = document.createElement('div'); box.className = 'sugerencias oculto'; input.parentElement.appendChild(box);
     let items = [], sel = -1;
     let resto = 0;
-    const pintar = () => { box.innerHTML = items.map((x, i) => `<div data-i="${i}" class="${i === sel ? 'sel' : ''}">${esc(x.t)}<small>${esc(x.s || '')}</small></div>`).join('') +
+    const pintar = () => { box.innerHTML = items.map((x, i) => `<div data-i="${i}" class="${i === sel ? 'sel' : ''}${x.nuevo ? ' sug-nuevo' : ''}">${esc(x.t)}<small>${esc(x.s || '')}</small></div>`).join('') +
       (resto ? `<div class="sug-mas">… y ${resto} más. Escribe más letras para afinar.</div>` : ''); box.classList.toggle('oculto', !items.length); };
-    const buscar = () => { const q = input.value.trim(), todos = q ? o.fuente(q) : []; items = todos.slice(0, 40); resto = Math.max(0, todos.length - items.length); sel = items.length ? 0 : -1; pintar(); };
-    const elegir = x => { box.classList.add('oculto'); input.value = o.limpiar ? '' : x.t; o.alElegir(x); };
+    const buscar = () => { const q = input.value.trim(), todos = q ? o.fuente(q) : []; items = todos.slice(0, 40); resto = Math.max(0, todos.length - items.length);
+      // ¿no está? → renglón para darlo de alta ahí mismo (al final de la lista; si no hay resultados, es el único)
+      if (o.nuevo && q.length >= 2) items.push({ nuevo: 1, q: q, t: (todos.length ? '➕ ¿No está? Dar de alta "' : '➕ No existe: dar de alta "') + q + '" como cliente nuevo', s: '' });
+      sel = items.length ? 0 : -1; pintar(); };
+    const elegir = x => { box.classList.add('oculto'); if (x.nuevo) return o.nuevo(x.q); input.value = o.limpiar ? '' : x.t; o.alElegir(x); };
     input.addEventListener('input', buscar);
     input.addEventListener('focus', buscar);
     input.addEventListener('keydown', e => {
@@ -1031,7 +1034,7 @@ const App = (() => {
         <div class="fijo folio" id="vFolio">${ed ? `<span class="folio-et">Nota de Venta · editando</span><b>${esc(v.editFolio)}</b><small>${esc(sucNom(v.suc))}</small>` : ''}</div>
         ${u.todasSucursales && !ed ? `<label class="fijo" style="min-width:180px">Sucursal<select id="vSuc">${optsSuc(v.suc)}</select></label>` : ''}
         <label style="flex:3 1 280px">Cliente<div class="buscador"><input id="vCli" placeholder="Buscar por nombre, razón social, RFC o teléfono…" value="${c ? esc(c.razon || c.nombre) : ''}" autocomplete="off"></div></label>
-        ${puede('clientes_editar') ? '<button class="btn fijo" onclick="App.formCliente(null,true)">+ Cliente</button>' : ''}
+        ${puede('clientes_editar') ? '<button class="btn fijo" onclick="App.formCliente(null,\'venta\')">+ Cliente</button>' : ''}
       </div>
       <div id="vCliInfo" class="muted" style="margin-top:8px">${c ? `Lista <b>${esc(v.lista)}</b> · Crédito ${c.credito} días · ${esc(c.rfc || 'Sin RFC')} · ${esc(c.localidad || c.municipio || '')} ${c.status === 'Inactivo' ? '<span class="etq mal">Inactivo</span>' : ''}` : 'Selecciona un cliente para aplicar su lista de precios.'}</div></div>
       <div class="tarjeta"><div class="buscador buscador-prod"><input id="vProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
@@ -1056,7 +1059,7 @@ const App = (() => {
           <button class="btn primario" id="vGuardar" onclick="App.guardarVenta()">${ed ? '💾 Guardar cambios' : '💾 Guardar venta'}</button></div></div>
       </div>`;
     if ($('#vSuc')) $('#vSuc').onchange = e => { v.suc = e.target.value; v.lineas.forEach(l => l.lote = ''); guardarBorrador(); V.venta(); };
-    buscador($('#vCli'), { fuente: fuenteClientes, alElegir: x => elegirClienteVenta(x.id) });
+    buscador($('#vCli'), { fuente: fuenteClientes, nuevo: puede('clientes_editar') ? q => formCliente(null, 'venta', q) : null, alElegir: x => elegirClienteVenta(x.id) });
     buscador($('#vProd'), { fuente: q => fuenteProductos(v.suc, v.lista, true)(q), limpiar: true, alElegir: x => agregarLineaVenta(x.id) });
     const bind = (id, k, num, sub) => { if (!$(id)) return; $(id).oninput = e => { if (sub) v.cobro[k] = e.target.value; else v[k] = num ? Number(e.target.value) || 0 : e.target.value; guardarBorrador(); totalesVenta(); }; $(id).onchange = $(id).oninput; };
     bind('#vEstatus', 'estatus'); bind('#vEnvio', 'idFlete'); bind('#vGuia', 'guia');
@@ -1911,7 +1914,8 @@ const App = (() => {
       <div class="tarjeta"><div class="fila">
         <div class="fijo folio" id="cFolio">${ed ? `<span class="folio-et">Cotización · editando</span><b>${esc(v.editFolio)}</b><small>${esc(sucNom(v.suc))}</small>` : ''}</div>
         ${U().todasSucursales && !ed ? `<label class="fijo" style="min-width:180px">Sucursal<select id="cSuc">${optsSuc(v.suc)}</select></label>` : ''}
-        <label style="flex:3 1 280px">Cliente<div class="buscador"><input id="cCli" placeholder="Buscar por nombre, razón social, RFC o teléfono…" value="${c ? esc(c.razon || c.nombre) : ''}" autocomplete="off"></div></label></div>
+        <label style="flex:3 1 280px">Cliente<div class="buscador"><input id="cCli" placeholder="Buscar por nombre, razón social, RFC o teléfono…" value="${c ? esc(c.razon || c.nombre) : ''}" autocomplete="off"></div></label>
+        ${puede('clientes_editar') ? '<button class="btn fijo" onclick="App.formCliente(null,\'cot\')">+ Cliente</button>' : ''}</div>
         <div class="muted" style="margin-top:8px">${c ? `Lista <b>${esc(v.lista)}</b> · ${esc(c.rfc || 'Sin RFC')} · ${esc(c.localidad || c.municipio || '')}` : 'Selecciona un cliente para aplicar su lista de precios.'}</div></div>
       <div class="tarjeta"><div class="buscador buscador-prod"><input id="cProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
         <div class="espacio"></div><div class="doc-lineas" id="cLineas"></div></div>
@@ -1921,7 +1925,7 @@ const App = (() => {
           <div class="acciones"><button class="btn peligro" onclick="App.limpiarCot()">${ed ? 'Salir sin guardar' : 'Descartar'}</button>
           <button class="btn primario" id="cGuardar" onclick="App.guardarCot()">${ed ? '💾 Guardar cambios' : '💾 Guardar cotización'}</button></div></div></div>`;
     if ($('#cSuc')) $('#cSuc').onchange = e => { v.suc = e.target.value; v.lineas.forEach(l => l.lote = ''); guardarBorradorCot(); V.cotizaciones('nueva'); };
-    buscador($('#cCli'), { fuente: fuenteClientes, alElegir: x => elegirClienteCot(x.id) });
+    buscador($('#cCli'), { fuente: fuenteClientes, nuevo: puede('clientes_editar') ? q => formCliente(null, 'cot', q) : null, alElegir: x => elegirClienteCot(x.id) });
     buscador($('#cProd'), { fuente: q => fuenteProductos(v.suc, v.lista, true)(q), limpiar: true, alElegir: x => agregarLineaCot(x.id) });
     $('#cObs').oninput = e => { v.obs = e.target.value; guardarBorradorCot(); };
     if (!ed) mostrarFolio('cFolio', v.suc, 'Cotizacion');
@@ -5639,7 +5643,7 @@ const App = (() => {
         { t: 'Teléfono', cls: 'ocultar-movil', k: 'cel' }, { t: 'Clasif.', k: 'clasif', cls: 'ocultar-movil' }, { t: 'Estado', h: c => `<span class="etq ${c.status === 'Inactivo' ? 'mal' : 'ok'}">${esc(c.status || 'Activo')}</span>` }], l, { clic: 'App.abrirCliente' }); cargarAvatares($('#clRes')); };
     ['#clTxt', '#clLista', '#clSt'].forEach(s => enlazarFiltro(s, pintar)); pintar();
   };
-  async function formCliente(i, desdeVenta) {
+  async function formCliente(i, desdeVenta, nombreIni) {
     const c = i === null ? null : S.lista[i];
     let full = c ? { ID_Cliente: c.id, Nombre_cliente: c.nombre, Razon_social: c.razon, RFC: c.rfc, Lista_de_Precios: c.lista, D_Credito: c.credito, Celular: c.cel, Status: c.status } : {};
     if (c) { try { full = await pedir('registro', { tabla: 'cliente', id: c.id }, true); } catch (e) {} }
@@ -5657,10 +5661,13 @@ const App = (() => {
       { k: 'Status', t: 'Estado', tipo: 'select', ops: [['Activo', 'Activo'], ['Inactivo', 'Inactivo (baja)'], ['Prospecto', 'Prospecto']] },
       { k: 'Comentarios', t: 'Comentarios', tipo: 'textarea', ancho: 1 }];
     const ini = c ? full : { Lista_de_Precios: 'Publico', D_Credito: 0, Status: 'Activo', ID_Sucursal: sucTrabajo(), Vendedor: U().id };
-    S.formIni = ini; S.formDesdeVenta = !!desdeVenta;
+    // alta desde el buscador de venta/cotización: el nombre que se escribió (o un RFC / teléfono) ya va capturado
+    const formVals = Object.assign({}, ini); const nq = String(nombreIni || '').trim();
+    if (!c && nq) { if (/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/i.test(nq)) formVals.RFC = nq.toUpperCase(); else if (/^[\d\s\-+()]{7,}$/.test(nq)) formVals.Celular = nq; else formVals.Nombre_cliente = nq.toUpperCase(); }
+    S.formIni = ini; S.formDesdeVenta = desdeVenta === true ? 'venta' : desdeVenta || '';
     const bloqueado = !!c && U().rol !== 'Administrador';
     if (bloqueado) campos.forEach(x => x.dis = true);
-    modal(c ? (c.razon || c.nombre) : 'Nuevo cliente', `${bloqueado ? `<div class="aviso-cand">🔒 <b>Solo el administrador puede modificar clientes.</b> Si necesitas cambiar algún dato de este cliente, <b>solicita autorización</b> al administrador.</div>` : ''}<div class="arch-par">${c ? bloqueArch('cliFoto', c.id) + bloqueArch('cliCsf', c.id) : bloqueArchNuevo('cliFoto', 'cliFotoN') + bloqueArchNuevo('cliCsf', 'cliCsfN')}</div><div id="fCli">${formulario(campos, ini)}</div>
+    modal(c ? (c.razon || c.nombre) : 'Nuevo cliente', `${bloqueado ? `<div class="aviso-cand">🔒 <b>Solo el administrador puede modificar clientes.</b> Si necesitas cambiar algún dato de este cliente, <b>solicita autorización</b> al administrador.</div>` : ''}<div class="arch-par">${c ? bloqueArch('cliFoto', c.id) + bloqueArch('cliCsf', c.id) : bloqueArchNuevo('cliFoto', 'cliFotoN') + bloqueArchNuevo('cliCsf', 'cliCsfN')}</div><div id="fCli">${formulario(campos, formVals)}</div>
       <div class="acciones">${c && puede('ventas') ? `<button class="btn" onclick="App.ventasDeCliente('${esc(c.id)}','${esc(String(c.razon || c.nombre || '').replace(/'/g, ''))}')">🧾 Ver sus ventas</button>` : ''}
       ${c && puede('ventas') ? `<button class="btn" onclick="App.venderA('${c.id}')">🛒 Venderle</button>` : ''}
       <button class="btn" onclick="${c ? `App.verCliente(${i})` : 'App.cerrarModal()'}">${c ? '← Volver a la ficha' : 'Cancelar'}</button>${puede('clientes_editar') && !bloqueado ? `<button class="btn primario" onclick="App.guardarCliente()">Guardar</button>` : ''}</div>`);
@@ -5735,7 +5742,8 @@ const App = (() => {
     try { await pedir('guardarCliente', datos); aplicarLocal(); toast('✔ Cliente guardado' + (conArch ? await subirArchNuevos([['cliFoto', '#cliFotoN'], ['cliCsf', '#cliCsfN']], datos.ID_Cliente) : '')); }
     catch (e) { if (!e.red) return; encolar('guardarCliente', datos, 'Cliente ' + local.nombre); aplicarLocal(); toast('📴 Cliente guardado en el dispositivo' + (conArch ? '. La foto y la constancia se adjuntan con conexión, desde la ficha del cliente.' : '')); }
     cerrarModal();
-    if (S.formDesdeVenta && S.vista === 'venta') elegirClienteVenta(local.id);
+    if (S.formDesdeVenta === 'venta' && S.vista === 'venta') elegirClienteVenta(local.id);
+    else if (S.formDesdeVenta === 'cot' && S.vista === 'cotizaciones' && S.cot) elegirClienteCot(local.id);
     else if (S.vista === 'clientes') { V.clientes(); const k = (S.lista || []).findIndex(z => z.id === local.id); if (!nuevo && k >= 0) verCliente(k); }
   }
   /** Historial completo de ventas de un cliente (todas las fechas y sucursales, por su ID). */
