@@ -540,6 +540,7 @@ const App = (() => {
     { id: 'seguimiento', t: 'Seguimiento', i: '🤝', p: ['seguimiento', 'recetas'] },
     { id: 'visitas', t: 'Visitas', i: '📅', p: 'seguimiento', oculto: 1 },
     { id: 'radar', t: 'Radar comercial', i: '🎯', p: 'seguimiento', oculto: 1 },
+    { id: 'metas', t: 'Metas y comisiones', i: '🏆', p: 'seguimiento', oculto: 1 },
     { id: 'recetas', t: 'Recetas', i: '💊', p: 'recetas', oculto: 1 },
     { id: 'compras', t: 'Compras', i: '📦', p: ['compras', 'traspasos'] },
     { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos'] },
@@ -580,7 +581,7 @@ const App = (() => {
       { v: 'traspasos', t: '🚚 Traspasos', p: 'traspasos' }, { v: 'requisiciones', t: '📑 Requisición de traspaso', p: 'requisiciones' }, { v: 'ajustes', t: '⚖️ Ajustes y mermas', p: ['ajustes', 'mermas'] },
       { v: 'conteo', t: '📋 Conteo físico', p: 'inventario_fisico' }] },
     seguimiento: { t: 'Seguimiento de clientes', tabs: [
-      { v: 'radar', t: '🎯 Radar', p: 'seguimiento' }, { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
+      { v: 'radar', t: '🎯 Radar', p: 'seguimiento' }, { v: 'metas', t: '🏆 Metas', p: 'seguimiento' }, { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
     compras: { t: 'Compras', tabs: [
       { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: ['compras', 'traspasos'] }, { v: 'anCompras', t: '📊 Análisis de compras', p: 'compras' }] },
     productos: { t: 'Productos', tabs: [
@@ -5977,6 +5978,89 @@ const App = (() => {
     if (lineas.length) toast('🧺 Pedido habitual cargado: revisa cantidades y existencias');
   }
 
+  /* ---------- 🏆 METAS Y COMISIONES ---------- */
+  const MT_MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const mtMesTxt = k => k ? MT_MES[+k.slice(5, 7) - 1] + ' ' + k.slice(0, 4) : '';
+  const mtMesCorto = k => MT_MES[+k.slice(5, 7) - 1].slice(0, 3);
+  V.metas = () => {
+    if (!puede('seguimiento')) return ir('recetas', true);
+    const f = S.fMeta = S.fMeta || { mes: '', suc: '' };
+    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
+        <label>Mes<input type="month" id="mtMes" value="${esc(f.mes || hoyISO().slice(0, 7))}"></label>
+        ${U().todasSucursales ? `<label>Sucursal<select id="mtSuc">${optsSuc(f.suc, true, 'Todas')}</select></label>` : ''}
+        <div style="flex:3 1 240px" class="muted peq">Venta neta sin IVA (la misma de Inicio). La comisión se calcula sobre lo vendido o lo cobrado, según la regla de cada vendedor.</div>
+        <button class="btn fijo" onclick="App.cargarMetas()">⟳ Actualizar</button></div></div><div id="mtRes"><div class="vacio">🏆 Calculando…</div></div>`;
+    $('#mtMes').onchange = e => { f.mes = e.target.value; cargarMetas(); };
+    if ($('#mtSuc')) $('#mtSuc').onchange = e => { f.suc = e.target.value; cargarMetas(); };
+    cargarMetas();
+  };
+  async function cargarMetas() {
+    const f = S.fMeta; if (!f) return;
+    let r; try { r = await pedir('metas', { mes: f.mes, suc: f.suc }, true); }
+    catch (e) { const g = LS.get('metas', null); if (e.red && g && g.mes === (f.mes || g.mesActual)) { S.metas = g; return pintarMetas(); }
+      if ($('#mtRes')) $('#mtRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : esc(e.message)}</div>`; return; }
+    S.metas = r; LS.set('metas', r); if ($('#mtRes')) pintarMetas();
+  }
+  /** esperado: % del mes transcurrido (verde si va al ritmo o mejor, ámbar si va hasta 15 puntos abajo, rojo si más). */
+  function anillo(pct, tam, txt, esperado) {
+    const r = 42, c = 2 * Math.PI * r, p = pct === null ? 0 : Math.max(0, Math.min(100, pct)), ref = esperado === undefined ? 100 : esperado;
+    const cls = pct === null ? '' : pct >= 100 || pct >= ref ? 'ok' : pct >= ref - 15 ? 'av' : 'mal';
+    return `<svg class="mt-anillo ${cls}" width="${tam}" height="${tam}" viewBox="0 0 100 100" role="img" aria-label="${pct === null ? 'sin meta' : pct + '%'}"><circle cx="50" cy="50" r="${r}" class="fondo"/><circle cx="50" cy="50" r="${r}" class="val" stroke-dasharray="${(c * p / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 50 50)"/>
+      <text x="50" y="${txt ? 49 : 56}" text-anchor="middle" class="pct">${pct === null ? '—' : pct + '%'}</text>${txt ? `<text x="50" y="66" text-anchor="middle" class="sub">${esc(txt)}</text>` : ''}</svg>`;
+  }
+  function mtCard(v, i, r) {
+    const din = r.dinero, m = v.meta, esperado = r.diasMes ? Math.round(r.transcurridos / r.diasMes * 100) : 0, actual = r.mes === r.mesActual;
+    const med = v.avance !== null && i < 3 && r.vendedores.length > 1 ? ['🥇', '🥈', '🥉'][i] : '';
+    const ritmo = v.avance === null || !actual ? '' : v.avance >= esperado ? `<span class="etq ok">▲ ${v.avance - esperado} pts arriba del ritmo</span>` : `<span class="etq av">▼ ${esperado - v.avance} pts abajo del ritmo</span>`;
+    const hmx = Math.max(1, ...v.historia.map(h => Math.max(h.venta || 0, h.meta || 0)));
+    return `<div class="mt-card${v.yo ? ' yo' : ''}">
+      <div class="mt-top">${anillo(v.avance, 92, m ? 'de la meta' : 'sin meta', actual ? esperado : 100)}<div class="mt-nom"><b>${med} ${esc(v.nombre)}</b><small class="muted">${esc(sucNom(v.suc))}${v.yo ? ' · tú' : ''}</small>
+        ${m ? `<div class="mt-venta">${din ? `<b>${$$(v.venta)}</b> <small>de ${$$(m.venta)}</small>` : `<b>${v.avance}%</b>`}</div>${ritmo}` : `<div class="mt-venta">${din ? `<b>${$$(v.venta)}</b> <small>vendido</small>` : ''}</div>`}</div>
+        ${r.puedeDefinir ? `<button class="btn chico fijo" onclick="App.formMeta('${esc(v.id)}')">⚙️ ${m ? 'Meta' : 'Definir meta'}</button>` : ''}</div>
+      ${m && m.venta ? `<div class="mt-barra" title="La raya marca dónde deberías ir hoy (${esperado}% del mes)"><i class="${v.avance >= 100 ? 'ok' : v.avance >= esperado ? 'ok2' : 'av'}" style="width:${Math.min(100, v.avance)}%"></i>${actual ? `<em style="left:${esperado}%"></em>` : ''}</div>` : ''}
+      <div class="mt-datos">
+        ${m && m.venta && actual ? `<div><small>Al cierre, a este ritmo</small><b>${din ? $$(v.proyeccion) : ''} <span class="${v.proyPct >= 100 ? 'ok-txt' : 'error'}">${v.proyPct}%</span></b></div>
+          <div><small>${v.falta ? 'Te faltan' : '¡Meta lograda!'}</small><b>${v.falta ? (din ? $$(v.falta) : '') + (r.restan ? ` <span class="muted">· ${din ? $$(v.porDia) : ''}/día en ${r.restan} d</span>` : '') : '🎉'}</b></div>` : ''}
+        <div><small>Clientes que compraron</small><b>${nf(v.clientes)}${m && m.clientes ? ` <span class="muted">de ${nf(m.clientes)}</span>` : ''}</b></div>
+        <div><small>Notas · ticket</small><b>${nf(v.notas)}${din ? ` <span class="muted">· ${$$(v.ticket)}</span>` : ''}</b></div>
+        <div><small>Visitas realizadas</small><b>${nf(v.visitas)}</b></div>
+        <div><small>Cotizaciones vendidas</small><b>${nf(v.cotVend)} <span class="muted">de ${nf(v.cotEm)}</span></b></div>
+      </div>
+      ${m && m.comision !== null && din ? `<div class="mt-com"><div><small>💰 Comisión ${actual ? 'ganada hasta hoy' : 'del mes'}</small><b>${$$(v.comision)}</b><span class="muted">${m.comision}% de lo ${m.base === 'Cobrado' ? 'cobrado' : 'vendido'}${m.bono ? ` · +${m.bono}% de bono al llegar a la meta` : ''}${v.conBono ? ' <span class="etq ok">🎉 bono ganado</span>' : ''}</span></div>
+        ${actual && v.comisionProy !== null ? `<div><small>Si sigue así</small><b>${$$(v.comisionProy)}</b></div>` : ''}</div>` : ''}
+      <div class="mt-hist" title="Últimos 6 meses: barra = venta · raya = meta">${v.historia.map(h => `<div><span><i style="height:${Math.round((h.venta || 0) / hmx * 100)}%" class="${h.pct === null ? '' : h.pct >= 100 ? 'ok' : 'av'}"></i>${h.meta ? `<em style="bottom:${Math.round(h.meta / hmx * 100)}%"></em>` : ''}</span><small>${mtMesCorto(h.mes)}${h.pct !== null ? '<br>' + h.pct + '%' : ''}</small></div>`).join('')}</div>
+    </div>`;
+  }
+  function pintarMetas() {
+    const r = S.metas, el = $('#mtRes'); if (!r || !el) return;
+    const e = r.equipo, varios = r.vendedores.length > 1, esperado = r.diasMes ? Math.round(r.transcurridos / r.diasMes * 100) : 0;
+    const hero = varios || r.puedeDefinir ? `<div class="mt-hero">${anillo(e.avance, 120, 'del equipo', r.mes === r.mesActual ? esperado : 100)}<div><small>🏆 ${esc(mtMesTxt(r.mes))}${r.mes === r.mesActual ? ` · día ${r.transcurridos} de ${r.diasMes} (deberían ir en ${esperado}%)` : ''}</small>
+        <b>${r.dinero ? $$(e.venta) : (e.avance !== null ? e.avance + '%' : '—')}</b><span>${e.meta ? (r.dinero ? 'de una meta de ' + $$(e.meta) : 'de la meta del equipo') : 'Aún no hay metas definidas para este mes'}${e.comisiones !== null && r.dinero ? ' · comisiones a pagar: <b>' + $$(e.comisiones) + '</b>' : ''}</span></div></div>` : '';
+    el.innerHTML = hero + (r.vendedores.length ? `<div class="mt-grid">${r.vendedores.map((v, i) => mtCard(v, i, r)).join('')}</div>`
+      : '<div class="vacio">No hay vendedores con ventas, visitas o metas en este mes.</div>');
+  }
+  function formMeta(id) {
+    const r = S.metas, v = r && r.vendedores.find(x => x.id === id); if (!v) return;
+    const m = v.meta || {}, hist = v.historia.filter(h => h.mes < r.mesActual && h.venta).slice(-3);
+    const sug = hist.length ? Math.round(hist.reduce((t, h) => t + h.venta, 0) / hist.length * 1.1 / 1000) * 1000 : 0;
+    modal('🏆 Meta de ' + v.nombre, `<div class="rejilla-2" style="gap:10px">
+        <label>Meta de venta del mes (sin IVA)<input type="number" id="fmVenta" min="0" step="1000" value="${m.venta || ''}" placeholder="${sug || ''}">${sug ? `<small class="muted">Sugerida: ${$$(sug)} (promedio de ${hist.length} mes${hist.length === 1 ? '' : 'es'} + 10 %) · <a href="#" onclick="$('#fmVenta').value=${sug};return false">usar</a></small>` : ''}</label>
+        <label>Meta de clientes que le compran<input type="number" id="fmCli" min="0" step="1" value="${m.clientes || ''}"></label>
+        <label>Comisión %<input type="number" id="fmCom" min="0" max="50" step="0.1" value="${m.comision !== undefined && m.comision !== null ? m.comision : ''}" placeholder="Ej. 3"></label>
+        <label>Se calcula sobre<select id="fmBase"><option value="Vendido" ${m.base !== 'Cobrado' ? 'selected' : ''}>Lo vendido en el mes</option><option value="Cobrado" ${m.base === 'Cobrado' ? 'selected' : ''}>Lo cobrado en el mes (sin IVA)</option></select></label>
+        <label>Bono extra al llegar a su meta (%)<input type="number" id="fmBono" min="0" max="50" step="0.1" value="${m.bono || ''}" placeholder="Ej. 1"></label>
+        <label>Aplica para<select id="fmMes"><option value="">Todos los meses</option><option value="${esc(r.mes)}" ${m.soloEsteMes ? 'selected' : ''}>Solo ${esc(mtMesTxt(r.mes))}</option></select></label></div>
+      <p class="muted peq">La comisión nunca se calcula sobre la utilidad. "Solo este mes" manda sobre la de todos los meses.</p>
+      <div class="acciones">${v.meta ? `<button class="btn peligro" onclick="App.guardarMeta('${esc(id)}', true)">Quitar esta meta</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarMeta('${esc(id)}')">Guardar</button></div>`);
+  }
+  async function guardarMeta(id, quitar) {
+    const r = S.metas, mesSel = quitar ? ((r.vendedores.find(x => x.id === id) || {}).meta || {}).soloEsteMes ? r.mes : '' : $('#fmMes').value;
+    if (quitar && !confirm('¿Quitar la meta' + (mesSel ? ' de ' + mtMesTxt(mesSel) : ' de todos los meses') + '?')) return;
+    const p = quitar ? { idVendedor: id, mes: mesSel, quitar: 1 } : { idVendedor: id, mes: mesSel, metaVenta: $('#fmVenta').value, metaClientes: $('#fmCli').value, comisionPct: $('#fmCom').value || 0, base: $('#fmBase').value, bonoPct: $('#fmBono').value || 0 };
+    if (!quitar && !(Number(p.metaVenta) > 0) && !(Number(p.metaClientes) > 0)) return toast('Captura la meta de venta o de clientes', true);
+    try { await pedir('guardarMeta', p); toast(quitar ? 'Meta quitada' : '✔ Meta guardada'); cerrarModal(); cargarMetas(); } catch (e) {}
+  }
+
   /* ----- Visitas ----- */
   V.visitas = () => {
     const f = S.fVis = alDia(S.fVis || { desde: sumaDias(hoyISO(), -7), hasta: sumaDias(hoyISO(), 60), hastaHoy: '', vend: '', estado: '' });
@@ -6986,7 +7070,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, cargarMetas, formMeta, guardarMeta, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
