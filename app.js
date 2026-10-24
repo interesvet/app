@@ -216,7 +216,7 @@ const App = (() => {
       'detalleCompra listarTraspasos detalleTraspaso reporteTraspasos listarConteos detalleConteo historialAjustes selListaPrecios historialPrecios ' +
       'listarMovimientos listarProveedores detalleCobro dashboard costosReales listarCotizaciones detalleCotizacion facturas detalleFactura facturasNota ' +
       'listarRequisiciones detalleRequisicion detalleDevolucion porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto ' +
-      'radar metas historialCliente registro').split(' ');
+      'radar metas historialCliente registro comparativo').split(' ');
     const MAX = 4000, MAX_TXT = 4e6;   // "Actualizar para ruta" guarda miles de consultas (IndexedDB aguanta cientos de MB)
     let dbp = null;
     const db = () => dbp || (dbp = new Promise((res, rej) => {
@@ -954,7 +954,7 @@ const App = (() => {
       <div class="kpi"><small>Por pagar del periodo</small><b>${$$(k.comprasSaldo || 0)}</b><span>${k.comprasConSaldo || 0} ${k.comprasConSaldo === 1 ? 'orden' : 'órdenes'} con saldo</span></div>
       <div class="kpi kpi-clic" onclick="App.ir('compras')"><small>Cuentas por pagar (total)</small><b>${$$(k.cxp)}</b><span>${k.cxpOrdenes || 0} ${k.cxpOrdenes === 1 ? 'orden' : 'órdenes'}${k.cxpVencido > 0.009 ? ` · <b class="txt-mal">vencido ${$$(k.cxpVencido)}</b>` : ' · nada vencido'}</span></div>
       </div></div>`;
-    $('#dash').innerHTML = `${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}${htmlCompras}<div class="kpis">
+    $('#dash').innerHTML = `<div class="tarjeta cmp" id="dashComp"><div class="vacio">📅 Comparando con el mismo periodo del año anterior…</div></div>${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}${htmlCompras}<div class="kpis">
       ${kpi('Ventas netas (sin IVA)', $$(k.ventas), k.notas + ' notas · ticket ' + $$(k.ticket))}
       ${c ? kpi(U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)') : ''}
       ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%') : ''}
@@ -993,6 +993,7 @@ const App = (() => {
         plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: x => x.dataset.label + ': ' + $$(x.raw) } } },
         scales: { y: { ticks: { callback: tickMoneda } }, x: { grid: { display: false } } } } });
     barras('gSuc', r.porSucursal.map(x => ({ nombre: sucNom(x.nombre), valor: x.valor })), null, true);
+    cargarComparativo(p);
     barras('gCat', r.porCategoria, null, true);
     barras('gVend', r.porVendedor, null, true);
     if (r.resultados && !r.resultados.error && $('#gGastos')) {
@@ -1000,6 +1001,87 @@ const App = (() => {
       barras('gGastos', op.map(x => ({ nombre: x.cat, valor: x.monto })), css('--aviso'), true);
     }
   }
+  /* ---------- 📅 Comparativo contra el año anterior (Inicio) ---------- */
+  const delta = (a, b) => b ? Math.round((a - b) / Math.abs(b) * 1000) / 10 : (a ? null : 0);
+  function chipDelta(a, b, malSiSube, tipo) {
+    if (tipo === '%') { const d = Math.round((a - b) * 10) / 10; if (!d) return '<span class="cmp-d igual">= igual</span>'; const bueno = malSiSube ? d < 0 : d > 0; return `<span class="cmp-d ${bueno ? 'sube' : 'baja'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d)} pts</span>`; }
+    const d = delta(a, b);
+    if (d === null) return '<span class="cmp-d sube">✨ nuevo</span>';
+    if (!d) return '<span class="cmp-d igual">= igual</span>';
+    const bueno = malSiSube ? d < 0 : d > 0;
+    return `<span class="cmp-d ${bueno ? 'sube' : 'baja'}">${d > 0 ? '▲' : '▼'} ${Math.abs(d).toLocaleString('es-MX')}%</span>`;
+  }
+  const fmtK = (v, tipo) => tipo === 'n' ? nf(v) : tipo === '%' ? v + '%' : $$(v);
+  async function cargarComparativo(p) {
+    const el = $('#dashComp'); if (!el) return;
+    let r; try { r = await pedir('comparativo', p, true); } catch (e) { el.innerHTML = `<div class="vacio">${e.red ? 'El comparativo necesita conexión.' : esc(e.message)}</div>`; return; }
+    if (!$('#dashComp')) return;
+    S.comp = r; pintarComparativo();
+  }
+  function pintarComparativo() {
+    const r = S.comp, el = $('#dashComp'); if (!r || !el) return;
+    const yA = r.periodo.actual.hasta.slice(-4), yB = r.periodo.anterior.hasta.slice(-4);
+    const fila = (x, i, cmpA, cmpB, nom) => `<tr><td class="num muted">${i + 1}</td><td>${esc(nom)}</td><td class="num"><b>${$$(cmpA)}</b></td><td class="num muted">${cmpB ? $$(cmpB) : '—'}</td><td class="num">${chipDelta(cmpA, cmpB)}</td>
+      <td class="num muted">${x.rB ? '#' + x.rB : '<span class="cmp-d sube">nuevo</span>'}</td></tr>`;
+    const tablaTop = (l, f, g, nom, titulo) => `<div class="tabla-cont"><table class="cmp-tabla"><thead><tr><th class="num">#</th><th>${titulo}</th><th class="num">${yA}</th><th class="num">${yB}</th><th class="num">Cambio</th><th class="num">Lugar en ${yB}</th></tr></thead>
+      <tbody>${l.length ? l.map((x, i) => fila(x, i, f(x), g(x), nom(x))).join('') : '<tr><td colspan="6" class="vacio">Sin ventas en el periodo</td></tr>'}</tbody></table></div>`;
+    const salieron = (top, ant, key) => ant.filter(x => !top.some(y => key(y) === key(x)));
+    const fuera = (l, key, nom, f) => l.length ? `<p class="muted peq" style="margin:6px 0 0">Salieron del top 10 de ${yB}: ${l.map(x => `<b>${esc(nom(x))}</b> (#${x.rB} → ${x.rA ? '#' + x.rA : 'sin venta'})`).join(' · ')}</p>` : '';
+    el.innerHTML = `<div class="cmp-cab"><h3 style="margin:0">📅 Contra el año anterior</h3><small class="muted">${esc(r.periodo.actual.desde)} – ${esc(r.periodo.actual.hasta)} <b>vs</b> ${esc(r.periodo.anterior.desde)} – ${esc(r.periodo.anterior.hasta)}</small></div>
+      <div class="cmp-kpis">${r.kpi.map(k => `<div class="cmp-kpi"><small>${esc(k.t)}</small><b>${fmtK(k.a, k.tipo)}</b><span>${chipDelta(k.a, k.b, k.malSiSube, k.tipo)} <em>${yB}: ${fmtK(k.b, k.tipo)}</em></span></div>`).join('')}</div>
+      <div class="grafica" style="height:240px;margin-top:10px"><canvas id="gComp"></canvas></div>
+      <div class="rejilla-2" style="margin-top:12px">
+        <div><h4 style="margin:4px 0 8px">🏷️ Top 10 productos</h4>${tablaTop(r.topProductos, x => x.impA, x => x.impB, x => x.nombre, 'Producto')}${fuera(salieron(r.topProductos, r.topProductosAnt, x => x.id), x => x.id, x => rdCorto(x.nombre))}</div>
+        <div><h4 style="margin:4px 0 8px">👥 Top 10 clientes</h4>${tablaTop(r.topClientes, x => x.a, x => x.b, x => x.nombre, 'Cliente')}${fuera(salieron(r.topClientes, r.topClientesAnt, x => x.nombre), x => x.nombre, x => x.nombre)}</div>
+      </div>
+      <div class="acciones izq" style="margin-top:10px"><button class="btn primario" onclick="App.compProductos()">📋 Producto por producto (${nf(r.productos.length)})</button>
+        <span class="muted peq">✨ ${nf(r.nuevos)} productos nuevos · ${nf(r.perdidos)} que se vendieron en ${yB} y no ahora · ${nf(r.clientesNuevos)} clientes nuevos · ${nf(r.clientesPerdidos)} que compraron en ${yB} y no ahora</span></div>`;
+    const ds = [{ label: 'Ventas de cada mes', data: r.meses.map(m => m.ventas), backgroundColor: css('--s1'), borderRadius: 4 },
+      { label: 'Mismo mes del año anterior', data: r.meses.map(m => m.ventasAnt), backgroundColor: css('--texto-3') || '#bbb', borderRadius: 4 }];
+    grafica('gComp', { type: 'bar', data: { labels: r.meses.map(m => m.etiqueta), datasets: ds },
+      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: x => x.dataset.label + ': ' + $$(x.raw), footer: it => { const m = r.meses[it[0].dataIndex], d = delta(m.ventas, m.ventasAnt); return d === null ? 'nuevo' : (d > 0 ? '▲ ' : '▼ ') + Math.abs(d) + '% contra el año anterior'; } } } },
+        scales: { y: { ticks: { callback: tickMoneda } }, x: { grid: { display: false } } } } });
+  }
+  /** Ventana con todos los productos: este periodo contra el mismo periodo del año anterior. */
+  function compProductos() {
+    const r = S.comp; if (!r) return;
+    S.fComp = S.fComp || { q: '', filtro: 'todos', orden: 'actual' };
+    const yA = r.periodo.actual.hasta.slice(-4), yB = r.periodo.anterior.hasta.slice(-4);
+    modal('📋 Producto por producto · ' + yA + ' vs ' + yB, `<div class="fila" style="margin-bottom:8px">
+        <label style="flex:2 1 200px">Buscar<input id="cpQ" value="${esc(S.fComp.q)}" placeholder="Nombre o clave"></label>
+        <label>Mostrar<select id="cpF">${opts([['todos', 'Todos'], ['crecen', '▲ Crecen'], ['caen', '▼ Caen'], ['nuevos', '✨ Nuevos (no se vendían)'], ['perdidos', '⚠️ Ya no se venden']], S.fComp.filtro)}</select></label>
+        <label>Ordenar por<select id="cpO">${opts([['actual', 'Venta ' + yA], ['anterior', 'Venta ' + yB], ['sube', 'Mayor crecimiento $'], ['baja', 'Mayor caída $'], ['pct', 'Cambio %']], S.fComp.orden)}</select></label>
+        <button class="btn fijo" onclick="App.compCsv()">⬇️ Excel (CSV)</button></div><div id="cpRes"></div>`);
+    const pinta = () => {
+      const f = S.fComp; let l = r.productos.slice();
+      if (f.q) l = l.filter(x => coincide(x.id + ' ' + x.nombre, f.q));
+      if (f.filtro === 'crecen') l = l.filter(x => x.impA > x.impB && x.impB > 0); if (f.filtro === 'caen') l = l.filter(x => x.impA < x.impB && x.impA > 0);
+      if (f.filtro === 'nuevos') l = l.filter(x => x.impA > 0 && !(x.impB > 0)); if (f.filtro === 'perdidos') l = l.filter(x => x.impB > 0 && !(x.impA > 0));
+      const ord = { actual: (a, b) => b.impA - a.impA, anterior: (a, b) => b.impB - a.impB, sube: (a, b) => (b.impA - b.impB) - (a.impA - a.impB), baja: (a, b) => (a.impA - a.impB) - (b.impA - b.impB), pct: (a, b) => (delta(b.impA, b.impB) || 9e9) - (delta(a.impA, a.impB) || 9e9) };
+      l.sort(ord[f.orden]);
+      const tA = l.reduce((t, x) => t + x.impA, 0), tB = l.reduce((t, x) => t + x.impB, 0);
+      $('#cpRes').innerHTML = `<p class="muted peq" style="margin:0 0 6px">${nf(l.length)} productos · ${yA}: <b>${$$(tA)}</b> · ${yB}: <b>${$$(tB)}</b> ${chipDelta(tA, tB)}</p>
+        <div class="tabla-cont" style="max-height:60vh"><table class="cmp-tabla"><thead><tr><th>Producto</th><th class="num">Piezas ${yA}</th><th class="num">Piezas ${yB}</th><th class="num">Venta ${yA}</th><th class="num">Venta ${yB}</th><th class="num">Diferencia</th><th class="num">Cambio</th>${r.verUtil ? `<th class="num">Utilidad ${yA}</th><th class="num">Utilidad ${yB}</th>` : ''}</tr></thead>
+        <tbody>${l.slice(0, 600).map(x => `<tr><td class="cmp-prod">${esc(x.nombre)}<small class="muted"> · ${esc(x.id)}${x.rA ? ' · #' + x.rA : ''}</small></td><td class="num">${nf(x.cantA)}</td><td class="num muted">${nf(x.cantB)}</td>
+          <td class="num"><b>${$$(x.impA)}</b></td><td class="num muted">${$$(x.impB)}</td><td class="num ${x.impA - x.impB >= 0 ? 'ok-txt' : 'error'}">${(x.impA - x.impB >= 0 ? '+' : '') + $$(x.impA - x.impB)}</td><td class="num">${chipDelta(x.impA, x.impB)}</td>
+          ${r.verUtil ? `<td class="num">${$$(x.utilA || 0)}</td><td class="num muted">${$$(x.utilB || 0)}</td>` : ''}</tr>`).join('')}</tbody></table></div>${l.length > 600 ? '<p class="muted peq">Se muestran 600; usa el buscador o descarga el CSV para verlos todos.</p>' : ''}`;
+    };
+    $('#cpQ').oninput = e => { S.fComp.q = e.target.value; pinta(); };
+    $('#cpF').onchange = e => { S.fComp.filtro = e.target.value; pinta(); };
+    $('#cpO').onchange = e => { S.fComp.orden = e.target.value; pinta(); };
+    pinta();
+  }
+  function compCsv() {
+    const r = S.comp; if (!r) return;
+    const yA = r.periodo.actual.hasta.slice(-4), yB = r.periodo.anterior.hasta.slice(-4), q = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
+    const cab = ['Clave', 'Producto', 'Piezas ' + yA, 'Piezas ' + yB, 'Venta ' + yA, 'Venta ' + yB, 'Diferencia', 'Cambio %'].concat(r.verUtil ? ['Utilidad ' + yA, 'Utilidad ' + yB] : []);
+    const filas = r.productos.map(x => [x.id, x.nombre, x.cantA, x.cantB, x.impA, x.impB, Math.round((x.impA - x.impB) * 100) / 100, delta(x.impA, x.impB) === null ? 'nuevo' : delta(x.impA, x.impB)].concat(r.verUtil ? [x.utilA, x.utilB] : []));
+    const csv = '﻿' + [cab].concat(filas).map(f => f.map(q).join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'Comparativo productos ' + r.periodo.actual.desde.replace(/\//g, '-') + ' al ' + r.periodo.actual.hasta.replace(/\//g, '-') + ' vs ' + yB + '.csv'; a.click();
+  }
+
   /* ---------- Estado de resultados (solo el dueño) ---------- */
   /** Inicio (dueño): de las ventas a la UTILIDAD NETA del periodo, paso por paso. */
   function htmlUtilNeta(R) {
@@ -7143,7 +7225,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, cargarMetas, formMeta, guardarMeta, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
