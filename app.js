@@ -690,20 +690,27 @@ const App = (() => {
     return '';
   }
   async function revisarVersionApp() {
-    if (!window.IV_API) return;
-    const act = await versionActiva(); let nueva = '';
-    if (navigator.onLine !== false) { try { const t = await (await fetch('sw.js?v=' + Date.now(), { cache: 'no-store' })).text(); nueva = (/const VERSION = '([^']+)'/.exec(t) || [])[1] || ''; } catch (e) {} }
+    const pwa = !!window.IV_API, act = pwa ? await versionActiva() : ''; let nueva = '';
+    if (pwa && navigator.onLine !== false) { try { const t = await (await fetch('sw.js?v=' + Date.now(), { cache: 'no-store' })).text(); nueva = (/const VERSION = '([^']+)'/.exec(t) || [])[1] || ''; } catch (e) {} }
     let srv = S.ver && S.ver.srv || '';
     if (navigator.onLine !== false && S.token) { try { const r = await pedir('ping', {}, true); if (r && r.v) srv = r.v; } catch (e) {} }
     S.ver = { act: act, nueva: nueva, srv: srv }; pintarVersion();
   }
   function pintarVersion() {
-    const v = S.ver; if (!v || !v.act) return;
+    const v = S.ver; if (!v || (!v.act && !v.srv)) return;
     const a = textoVersion(v.act), n = textoVersion(v.nueva), vieja = v.nueva && v.nueva !== v.act;
-    const html = `<span title="Publicada el ${esc(a.fecha)}">📱 Versión <b>${esc(a.n || a.fecha)}</b>${v.srv ? ` · servidor <b>${esc(v.srv)}</b>` : ''}</span> ` +
+    const html = `<span title="Publicada el ${esc(a.fecha)}">${v.act ? `📱 Versión <b>${esc(a.n || a.fecha)}</b>` : '📱'}${v.srv ? ` · servidor <b>${esc(v.srv)}</b>` : ''}</span> ` +
       (vieja ? `<a href="#" class="ver-nueva" onclick="App.actualizarApp();return false">✨ Hay una nueva${n.n ? ' (' + esc(n.n) + ')' : ''}: actualizar</a>`
-      : v.nueva ? '<span class="ver-ok">✔ al día</span>' : '<span class="muted">· sin conexión para revisar</span>');
+      : v.nueva ? '<span class="ver-ok">✔ al día</span>' : !v.act ? '' : '<span class="muted">· sin conexión para revisar</span>');
     document.querySelectorAll('.ver-app').forEach(el => { el.innerHTML = html; el.classList.toggle('vieja', !!vieja); });
+    // en la barra de arriba (escritorio y tableta): corto, el detalle va en el globo
+    const top = $('#verTop');
+    if (top) {
+      top.classList.remove('oculto'); top.classList.toggle('aviso', !!vieja);
+      top.title = (a.n ? 'App versión ' + a.n + ' · publicada el ' + a.fecha : 'App') + (v.srv ? ' · servidor ' + v.srv : '') + (vieja ? ' · hay una nueva, toca para actualizar' : v.nueva ? ' · al día' : '');
+      top.innerHTML = vieja ? '✨ Actualizar a ' + esc(n.n || 'nueva') : (a.n ? 'v' + esc(a.n) : '') + (v.srv ? (a.n ? ' · ' : '') + 's' + esc(v.srv) : '') + (v.nueva ? ' ✔' : '');
+      top.onclick = vieja ? () => App.actualizarApp() : null; top.style.cursor = vieja ? 'pointer' : '';
+    }
   }
   /** Baja de nuevo los archivos de la app (no toca la sesión ni lo pendiente de enviar). */
   function actualizarApp() {
