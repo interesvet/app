@@ -6248,15 +6248,17 @@ const App = (() => {
     $('#rxCli').addEventListener('input', e => { if (!e.target.value.trim()) S.rx.cli = ''; });
     pintarRxLineas(); padFirma($('#rxFirma'));
   }
+  /** En la receta va el medicamento sin la presentación: "Ceftiofur 5%, Frasco de 100 ml." → "Ceftiofur 5%". */
+  const nombreRx = n => { const t = String(n || '').trim(), i = t.indexOf(','); return (i > 0 ? t.slice(0, i) : t).replace(/[.\s]+$/, '').trim(); };
   function pintarRxLineas() {
     const cont = $('#rxLin'); if (!cont) return;
     cont.innerHTML = S.rx.lineas.map((l, i) => { const p = l.prod ? prod(l.prod) : null; return `<div class="rx-lin" data-i="${i}"><b>${i + 1}.</b><div class="rx-campos">
-      <div class="buscador"><input data-prod placeholder="Medicamento del catálogo (opcional)" autocomplete="off" value="${p ? esc(p.nombre) : ''}"></div>
+      <div class="buscador"><input data-prod placeholder="Medicamento del catálogo (opcional)" autocomplete="off" value="${p ? esc(nombreRx(p.nombre)) : ''}"></div>
       <textarea data-t rows="2" placeholder="Dosis, vía, frecuencia y días. Ej. 1 ml por cada 10 kg, intramuscular, cada 24 h por 3 días">${esc(l.texto)}</textarea></div>
       <button class="icono" type="button" title="Quitar" data-del>✕</button></div>`; }).join('');
     cont.querySelectorAll('.rx-lin').forEach(row => {
       const i = +row.dataset.i, l = S.rx.lineas[i], inp = row.querySelector('[data-prod]'), ta = row.querySelector('[data-t]');
-      buscador(inp, { fuente: q => fuenteProductos(sucTrabajo(), '', true)(q), alElegir: x => { l.prod = x.id; if (!ta.value.trim()) { ta.value = x.t.replace(/[.\s]+$/, '') + '. '; l.texto = ta.value; } ta.focus(); } });
+      buscador(inp, { fuente: q => fuenteProductos(sucTrabajo(), '', true)(q), alElegir: x => { l.prod = x.id; const n = nombreRx((prod(x.id) || {}).nombre || x.t); inp.value = n; if (!ta.value.trim()) { ta.value = n + '. '; l.texto = ta.value; } ta.focus(); } });
       inp.addEventListener('input', () => { if (!inp.value.trim()) l.prod = ''; });
       ta.oninput = () => { l.texto = ta.value; };
       row.querySelector('[data-del]').onclick = () => { S.rx.lineas.splice(i, 1); if (!S.rx.lineas.length) S.rx.lineas.push({ prod: '', texto: '' }); pintarRxLineas(); };
