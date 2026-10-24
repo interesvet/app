@@ -1470,7 +1470,7 @@ const App = (() => {
     if (!v) { v = document.createElement('div'); v.id = 'visor'; v.className = 'visor'; v.onclick = e => { if (e.target === v) cerrarVisor(); }; document.body.appendChild(v); }
     v.innerHTML = `<div class="visor-caja">${html}</div>`; v.classList.remove('oculto');
   }
-  function cerrarVisor() { const v = $('#visor'); if (v) { v.classList.add('oculto'); v.innerHTML = ''; } }
+  // (cerrarVisor está más abajo: cierra este visor de archivos y el de PDF)
   async function verArch(tipo, id, archivo) {
     visor('<p class="muted" style="text-align:center;padding:30px">Cargando…</p>');
     let r; try { r = await pedir('verArchivo', { tipo: tipo, id: id, archivo: archivo }); } catch (e) { return cerrarVisor(); }
@@ -5367,7 +5367,9 @@ const App = (() => {
   }
   function soltarHojaVisor(h) { if (!h.dataset.ok) return; delete h.dataset.ok; const c = h.querySelector('canvas'); if (c) { c.width = c.height = 0; } h.innerHTML = '<span>' + h.dataset.p + '</span>'; }
   function zoomVisor(d) { const V = S.visor; if (!V || !V.doc) return; V.zoom = Math.max(1, Math.min(3, V.zoom + d * 0.5)); armarHojasVisor(); }
+  /** Cierra el visor de PDF generado (#visorPdf) y el de archivos adjuntos (#visor): antes eran dos funciones con el mismo nombre y la de adjuntos no cerraba. */
   function cerrarVisor() {
+    const va = $('#visor'); if (va) { va.classList.add('oculto'); va.innerHTML = ''; }
     const el = $('#visorPdf'); if (el) { el.classList.add('oculto'); el.innerHTML = ''; } document.body.classList.remove('con-visor');
     if (S.visor) { if (S.visor.obs) S.visor.obs.disconnect(); if (S.visor.doc) S.visor.doc.destroy(); } S.visor = null;
   }
