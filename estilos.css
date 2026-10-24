@@ -753,6 +753,12 @@ body.con-visor { overflow: hidden; }
 .rd-fila { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--borde); }
 .rd-fila > div:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .rd-fila .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mot-opc { display: flex; flex-wrap: wrap; gap: 7px; }
+.mot-opc .chip-op { font-size: 14px; padding: 7px 12px; cursor: pointer; }
+.rd-opc { display: grid; gap: 10px; }
+.rd-opc-b { text-align: left; border: 1px solid var(--borde); background: var(--superficie); color: var(--texto); border-radius: 12px; padding: 12px 14px; cursor: pointer; font: inherit; display: flex; flex-direction: column; gap: 3px; }
+.rd-opc-b:hover { border-color: var(--marca); background: var(--marca-suave); }
+.rd-opc-b small { color: var(--texto-2); }
 @media (max-width: 860px) { .rd-hero { grid-template-columns: 1fr; } .rd-h-main > b { font-size: 34px; } }
 @media (max-width: 480px) { .rd-et { grid-template-columns: 1fr auto; } .rd-et > div { grid-column: 1 / -1; order: 3; height: 14px; } .rd-h-stats b { font-size: 19px; } }
 /* ---- solo app instalable ---- */

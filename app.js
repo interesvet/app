@@ -2034,6 +2034,7 @@ const App = (() => {
       </tbody></table></div>
       <div class="totales" style="margin-top:10px">${totalesHtml(d.sub, d.desc || 0, d.iva, d.total)}</div>
       ${d.letras ? `<p><small>(${esc(d.letras)})</small></p>` : ''}${d.obs ? `<p><small>${esc(d.obs)}</small></p>` : ''}
+      ${d.motivoPerdida && d.estado === 'Cancelada' ? `<p class="no-imprimir"><span class="etq mal">💔 ${esc(d.motivoPerdida)}</span></p>` : ''}
       <p class="muted"><small>Cotización válida por ${d.vigenciaDias} días (hasta el ${esc(d.vigencia)}). Precios sujetos a existencias y a cambio sin previo aviso después de la vigencia.</small></p></div></div>
       ${d.cotOrigen ? `<div class="aviso-cand no-imprimir">↩️ Es lo que faltó entregar de la cotización <a href="#" onclick="App.verCot('${esc(d.cotOrigen.id)}');return false"><b>${esc(d.cotOrigen.folio)}</b></a>.</div>` : ''}
       ${d.surtido ? surtidoCotHtml(d) : ''}
@@ -2045,8 +2046,8 @@ const App = (() => {
         ${abierta && puede('seguimiento') && d.idCliente ? `<button class="btn" onclick="App.formVisita({idCliente:'${esc(d.idCliente)}', idCot:'${d.id}'})">📅 Programar visita para entregarla</button>` : ''}
         ${d.estado !== 'Vendida' ? `<button class="btn" onclick="App.ligarCot('${d.id}')">🔗 Ligar a una nota existente</button>` : ''}
         ${d.venta ? `<button class="btn" onclick="App.verVentaId('${d.venta.id}')">🧾 Ver nota ${esc(d.venta.folio)}</button>` : ''}
-        ${d.estado === 'Cancelada' || d.estado === 'Vencida' ? `<button class="btn" onclick="App.reabrirCot('${d.id}')">↩️ Reabrir</button>` : ''}
-        ${abierta ? `<button class="btn peligro" onclick="App.cancelarCot('${d.id}')">Cancelar</button>` : ''}
+        ${d.estado === 'Cancelada' || d.estado === 'Vencida' ? `<button class="btn" onclick="App.reabrirCot('${d.id}')">🔄 Renovar / reabrir</button>` : ''}
+        ${abierta || d.estado === 'Vencida' ? `<button class="btn peligro" onclick="App.cancelarCot('${d.id}')">❌ Se perdió / cancelar</button>` : ''}
       </div>`);
   }
   /** Cotizado contra lo que llevó la venta: lo pendiente pasa (o ya pasó) a una cotización nueva. */
@@ -2084,13 +2085,42 @@ const App = (() => {
     const sin = d.lineas.filter(l => existencia(l.prod, v.suc) < l.cant); if (sin.length) toast('⚠️ ' + sin.length + ' producto(s) sin existencia suficiente en ' + sucNom(v.suc), true);
   }
   function quitarCotVenta() { if (S.venta) { delete S.venta.desdeCot; guardarBorrador(); V.venta(); } }
-  async function cancelarCot(id) {
-    const motivo = prompt('Motivo de la cancelación (ej. el cliente no aceptó el precio):'); if (motivo === null) return;
-    try { await pedir('cancelarCotizacion', { id: id, motivo: motivo }); toast('Cotización cancelada'); verCotizacion(id); if (S.vista === 'cotizaciones') cargarCotizaciones(); } catch (e) {}
+  const COT_MOTIVOS = ['Precio', 'No había existencia', 'Compró a otro proveedor', 'Tiempo de entrega', 'Ya no lo necesitó', 'Sin presupuesto / crédito', 'No respondió', 'Error o duplicada', 'Otro'];
+  const COT_MOT_ICO = { 'Precio': '💲', 'No había existencia': '📦', 'Compró a otro proveedor': '🏃', 'Tiempo de entrega': '⏱️', 'Ya no lo necesitó': '🤷', 'Sin presupuesto / crédito': '💳', 'No respondió': '🔇', 'Error o duplicada': '🗑️', 'Otro': '✏️' };
+  /** Cerrar como perdida: el motivo se elige de una lista (para poder medir por qué se pierden ventas) + comentario opcional. */
+  function cancelarCot(id) {
+    S.motCot = '';
+    modal('❌ ¿Por qué se perdió?', `<p class="muted" style="margin-top:0">Elige el motivo principal. Con esto el Radar te dice <b>por qué se pierden tus ventas</b>.</p>
+      <div class="mot-opc">${COT_MOTIVOS.map(m => `<button class="chip-op" data-m="${esc(m)}" onclick="App.motCotElegir(this)">${COT_MOT_ICO[m] || ''} ${esc(m)}</button>`).join('')}</div>
+      <label style="margin-top:10px">Comentario (opcional)<input id="motCotTxt" placeholder="Ej. la competencia lo dio en $1,200; pidió entrega en 2 días…"></label>
+      <p class="muted peq">🗑️ "Error o duplicada" la cancela sin contarla como venta perdida.</p>
+      <div class="acciones"><button class="btn" onclick="App.verCot('${esc(id)}')">← Volver</button><button class="btn peligro" id="motCotOk" disabled onclick="App.motCotGuardar('${esc(id)}')">Cerrar como perdida</button></div>`);
   }
-  async function reabrirCot(id) {
-    if (!confirm('¿Reabrir la cotización? Su fecha cambia a hoy y la vigencia vuelve a correr.')) return;
-    try { await pedir('reabrirCotizacion', { id: id }); toast('Cotización reabierta'); verCotizacion(id); if (S.vista === 'cotizaciones') cargarCotizaciones(); } catch (e) {}
+  function motCotElegir(b) {
+    document.querySelectorAll('.mot-opc .chip-op').forEach(x => x.classList.toggle('on', x === b)); S.motCot = b.dataset.m;
+    const ok = $('#motCotOk'); ok.disabled = false; ok.textContent = S.motCot === 'Error o duplicada' ? 'Cancelar cotización' : 'Cerrar como perdida';
+  }
+  async function motCotGuardar(id) {
+    if (!S.motCot) return toast('Elige un motivo', true);
+    try { await pedir('cancelarCotizacion', { id: id, categoria: S.motCot, motivo: ($('#motCotTxt') || {}).value || '' });
+      toast(S.motCot === 'Error o duplicada' ? 'Cotización cancelada' : '💔 Registrada como perdida: ' + S.motCot); despuesDeCot(id); } catch (e) {}
+  }
+  /** Vencida o cancelada: renovar a precios de hoy o reabrir igual. */
+  function reabrirCot(id) {
+    modal('🔄 Volver a ofrecer la cotización', `<p class="muted" style="margin-top:0">La fecha cambia a hoy y la vigencia vuelve a correr ${'15'} días.</p>
+      <div class="rd-opc">
+        <button class="rd-opc-b" onclick="App.reabrirCotOk('${esc(id)}', true)"><b>🔄 Renovar con precios de hoy</b><small>Cada producto toma el precio actual de la lista del cliente (respeta los descuentos % de cada renglón).</small></button>
+        <button class="rd-opc-b" onclick="App.reabrirCotOk('${esc(id)}', false)"><b>↩️ Reabrir con los mismos precios</b><small>Respeta los precios que ya se le habían dado.</small></button>
+      </div><div class="acciones"><button class="btn" onclick="App.verCot('${esc(id)}')">← Volver</button></div>`);
+  }
+  async function reabrirCotOk(id, precios) {
+    try { const r = await pedir('reabrirCotizacion', { id: id, precios: !!precios });
+      toast(precios ? (r.cambios ? '🔄 Renovada: ' + r.cambios + ' precio' + (r.cambios === 1 ? '' : 's') + ' actualizado' + (r.cambios === 1 ? '' : 's') + (puede('ver_importes') ? ' · total ' + $$(r.antes) + ' → ' + $$(r.total) : '') : '🔄 Renovada: los precios ya estaban al día') : 'Cotización reabierta');
+      despuesDeCot(id); } catch (e) {}
+  }
+  function despuesDeCot(id) {
+    if (S.vista === 'radar') { cerrarModal(); S.radar = null; cargarRadar(); } else verCotizacion(id);
+    if (S.vista === 'cotizaciones') cargarCotizaciones();
   }
   async function ligarCot(id) {
     const folio = prompt('Folio de la nota de venta que corresponde a esta cotización (ej. No/Rem-0622):'); if (!folio) return;
@@ -5909,12 +5939,19 @@ const App = (() => {
         ${s.sinAtender > r.plan.length ? `<div class="acciones izq"><button class="btn chico" onclick="App.ir('seguimiento',true)">Ver los ${nf(s.porAtender)} por atender →</button></div>` : ''}</div>`;
     const emb = `<div class="tarjeta"><h3>📈 Embudo de cotizaciones <small class="muted">· últimos 90 días</small></h3>
         <div class="rd-emb">${e.etapas.map(x => { const v = din ? x.monto || 0 : x.n; return `<div class="rd-et"><span>${esc(x.t)}</span><div><i class="${x.tono}" style="width:${Math.max(x.n ? 3 : 0, Math.round(v / mx * 100))}%"></i></div><b>${nf(x.n)}${din ? ' · ' + $$(x.monto) : ''}</b></div>`; }).join('')}</div>
-        <p class="muted peq">${e.conversion !== null ? `Cierras <b>${e.conversion}%</b> de las cotizaciones que se resuelven` : 'Aún no hay cotizaciones resueltas'}${din && e.vendido ? ` · vendido desde cotización: <b>${$$(e.vendido)}</b>` : ''}${e.canceladas ? ` · ${nf(e.canceladas)} canceladas` : ''}.</p>
+        <p class="muted peq">${e.conversion !== null ? `Cierras <b>${e.conversion}%</b> de las cotizaciones que se resuelven` : 'Aún no hay cotizaciones resueltas'}${din && e.vendido ? ` · vendido desde cotización: <b>${$$(e.vendido)}</b>` : ''}${e.canceladas ? ` · ${nf(e.canceladas)} ${e.canceladas === 1 ? 'perdida' : 'perdidas'}` : ''}.</p>
         ${e.enfriando.length ? `<h4 style="margin:14px 0 6px">🧊 Se están enfriando: dales seguimiento hoy</h4>${e.enfriando.map(c => { const wa = telWa(c.cel);
           const msg = 'Hola ' + (c.nombre || c.cliente).split(' ')[0] + ', le saluda ' + U().nombre.split(' ')[0] + ' de Interés Veterinario. ¿Pudo revisar la cotización ' + c.folio + '? Con gusto le ajusto cantidades o precios para cerrarla.';
           return `<div class="rd-fila"><div><b>${esc(c.cliente)}</b><small class="muted">${esc(c.folio)} · ${esc(c.fecha)} · hace ${c.edad} días${c.vendedor && esJefe() ? ' · ' + esc(c.vendedor) : ''}</small></div>
             <span class="etq ${c.estado === 'Vencida' ? 'mal' : 'av'}">${c.estado === 'Vencida' ? 'Vencida' : 'Abierta'}</span>${din ? `<b class="num">${$$(c.total)}</b>` : ''}
-            <div class="lin-btns">${wa ? `<a class="btn chico" target="_blank" rel="noopener" href="${WA_BASE}${wa}?text=${encodeURIComponent(msg)}">💬</a>` : ''}<button class="btn chico" onclick="App.verCot('${esc(c.id)}')">Ver</button></div></div>`; }).join('')}` : ''}</div>`;
+            <div class="lin-btns">${wa ? `<a class="btn chico" target="_blank" rel="noopener" href="${WA_BASE}${wa}?text=${encodeURIComponent(msg)}" title="Dar seguimiento por WhatsApp">💬</a>` : ''}${c.estado === 'Vencida' && puede('cotizaciones') ? `<button class="btn chico" title="Renovar / reabrir" onclick="App.reabrirCot('${esc(c.id)}')">🔄</button>` : ''}${puede('cotizaciones') ? `<button class="btn chico" title="Se perdió" onclick="App.cancelarCot('${esc(c.id)}')">❌</button>` : ''}<button class="btn chico" onclick="App.verCot('${esc(c.id)}')">Ver</button></div></div>`; }).join('')}` : ''}</div>`;
+    const pe = r.perdidas, pmx = pe ? Math.max(1, ...pe.motivos.map(m => din ? m.monto || 0 : m.n)) : 1;
+    const perd = pe ? `<div class="tarjeta"><h3>💔 ¿Por qué se pierden las ventas? <small class="muted">· últimos 90 días</small></h3>
+        ${!pe.n ? '<div class="vacio">No se ha perdido ninguna cotización en 90 días. 👏</div>' : `
+        <p class="muted peq" style="margin-top:-4px"><b>${nf(pe.n)}</b> ${pe.n === 1 ? 'cotización' : 'cotizaciones'}${din ? ' por <b>' + $$(pe.monto) + '</b>' : ''} no se ${pe.n === 1 ? 'vendió' : 'vendieron'}.${pe.sinClasificar ? ` ${nf(pe.sinClasificar)} vencieron sin que nadie dijera por qué: ábrelas desde "Se están enfriando" y márcalas con ❌ o 🔄.` : ''}</p>
+        <div class="rd-emb">${pe.motivos.map(m => { const v = din ? m.monto || 0 : m.n, venc = /^Vencida/.test(m.t), sin = /^Sin motivo/.test(m.t);
+          return `<div class="rd-et"><span>${venc ? '⌛' : sin ? '❔' : COT_MOT_ICO[m.t] || '✏️'} ${esc(m.t)}</span><div><i class="${venc || sin ? '' : 'mal'}" style="width:${Math.max(3, Math.round(v / pmx * 100))}%;${venc || sin ? 'opacity:.45' : ''}"></i></div><b>${nf(m.n)}${din ? ' · ' + $$(m.monto) : ''}</b></div>`; }).join('')}</div>
+        ${pe.productos.length ? `<h4 style="margin:12px 0 6px">Productos que más se quedan sin vender</h4>${pe.productos.map(x => `<div class="rd-fila"><div><b>${esc(rdCorto(x.n))}</b><small class="muted">en ${nf(x.veces)} cotizaci${x.veces === 1 ? 'ón' : 'ones'} · ${nf(x.piezas)} piezas</small></div>${din ? `<b class="num">${$$(x.monto)}</b>` : ''}</div>`).join('')}` : ''}`}</div>` : '';
     const rec = `<div class="tarjeta"><h3>🏆 Recuperados en 30 días</h3>
         ${r.recuperados.lista.length ? r.recuperados.lista.map(c => `<div class="rd-fila"><div><b>${esc(c.nombre)}</b><small class="muted">Volvió el ${esc(c.ult)} después de <b>${c.dias} días</b> (compraba cada ${c.antes})${c.vendedor && esJefe() ? ' · ' + esc(c.vendedor) : ''}</small></div>${din ? `<b class="num ok-txt">${$$(c.monto)}</b>` : ''}</div>`).join('')
           : '<div class="vacio">Aquí aparecen los clientes que vuelven a comprar después de una pausa mayor a su costumbre.</div>'}</div>`;
@@ -5922,7 +5959,7 @@ const App = (() => {
         { t: 'Por atender', num: 1, h: x => nf(x.porAtender) }].concat(din ? [{ t: 'En juego / mes', num: 1, h: x => $$(x.enJuego) }] : [])
         .concat([{ t: 'Recuperados', num: 1, h: x => nf(x.recup) + (din && x.recupMonto ? ' · ' + $$(x.recupMonto) : '') }, { t: 'Cotiz. abiertas', num: 1, h: x => nf(x.cotAb) + (din && x.cotAbMonto ? ' · ' + $$(x.cotAbMonto) : '') },
           { t: 'Cierre', num: 1, h: x => x.conversion === null ? '—' : x.conversion + '%' }]), r.equipo)}</div>` : '';
-    el.innerHTML = hero + plan + `<div class="rejilla-2">${emb}${rec}</div>` + eq;
+    el.innerHTML = hero + plan + `<div class="rejilla-2">${emb}${perd}</div>` + rec + eq;
   }
   /** Del radar: cotización o venta nueva con el pedido habitual del cliente (sus productos y la cantidad que suele llevar) a su lista de precios. */
   function pedidoHabitual(id, modo) {
@@ -6949,7 +6986,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
