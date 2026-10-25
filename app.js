@@ -6251,7 +6251,7 @@ const App = (() => {
     const f = S.fCom = S.fCom || { tab: 'comis', id: '', desde: '', hasta: '' };
     if (tab) f.tab = tab;
     $('#vista').innerHTML = `<div class="pestanas">${COM_TABS.map(t => `<button class="${f.tab === t[0] ? 'activo' : ''}" onclick="App.comTab('${t[0]}')">${t[1]}</button>`).join('')}</div><div id="comRes"><div class="vacio">💼 Cargando…</div></div>`;
-    cargarComis().catch(() => null).then(c => { if (!c) return; if (f.tab === 'comis') pintarComis(); else if (f.tab === 'liquidar') pintarLiquidar(); else if (f.tab === 'notas') pintarNotasCom(); else cargarLiqs(); });
+    cargarComis().catch(() => null).then(c => { if (!c) return; if (f.tab === 'comis') pintarComis(); else if (f.tab === 'liquidar') pintarLiquidar(); else if (f.tab === 'notas') pintarNotasCom(); else cargarLiqs(f.lCom); });
   };
   function comTab(t) { S.fCom.tab = t; V.comisiones(); }
   async function cargarComis(forzar) {
@@ -6269,7 +6269,7 @@ const App = (() => {
         <div class="com-top"><b>${esc(c.nombre)}</b><span class="etq">${c.tipo === 'Sucursal' ? '🏬 ' + esc(sucNom(c.sucursal)) : '🤝 Independiente'}</span>${c.confidencial ? '<span class="etq mal">🔒 Confidencial</span>' : ''}${c.activo ? '' : '<span class="etq">Inactivo</span>'}</div>
         <div class="muted peq">${comRegla(c)}${c.factura ? ' · factura: +IVA ' + nf(c.iva) + '% −ISR ' + nf(c.retIsr) + '% −IVA ' + nf(c.retIva) + '%' : ' · sin factura'}</div>
         <div class="com-datos">${c.tipo === 'Independiente' ? `<div><small>Clientes</small><b>${nf(c.clientes)}</b></div>` : ''}<div><small>Por pagar</small><b>${$$(c.porPagar)}</b></div><div><small>Liquidado hasta</small><b>${c.ultimoHasta ? esc(fechaCorta(c.ultimoHasta)) : '—'}</b></div></div>
-        <div class="acciones izq"><button class="btn chico" onclick="App.formComi('${esc(c.id)}')">✏️ Editar</button>${c.tipo === 'Independiente' ? `<button class="btn chico" onclick="App.comiClientes('${esc(c.id)}')">👥 Clientes</button>` : ''}<button class="btn chico primario" onclick="App.comiLiquidar('${esc(c.id)}')">🧮 Liquidar</button><button class="btn chico" onclick="App.comiHist('${esc(c.id)}')">📄 Historial</button></div>
+        <div class="acciones izq"><button class="btn chico" onclick="App.formComi('${esc(c.id)}')">✏️ Editar</button>${c.tipo === 'Independiente' ? `<button class="btn chico" onclick="App.comiClientes('${esc(c.id)}')">👥 Clientes</button>` : ''}<button class="btn chico primario" onclick="App.comiLiquidar('${esc(c.id)}')">🧮 Liquidar</button><button class="btn chico" onclick="App.comiHist('${esc(c.id)}')">📄 Liquidaciones y pagos${c.porPagar ? ' · ' + $$(c.porPagar) + ' por pagar' : ''}</button></div>
       </div>`).join('')}</div>` : '<div class="vacio">Aún no tienes comisionistas. Da de alta el primero con “+ Nuevo comisionista”.</div>'}`;
   }
   function formComi(id) {
@@ -6545,14 +6545,35 @@ const App = (() => {
   }
   /* --- liquidaciones --- */
   async function cargarLiqs(id) {
-    const el = $('#comRes'); if (!el) return;
-    let l; try { l = await pedir('liquidaciones', id ? { id: id } : {}, true); } catch (e) { el.innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : esc(e.message)}</div>`; return; }
+    const el = $('#comRes'), f = S.fCom; if (!el) return;
+    if (id !== undefined) f.lCom = id || '';
+    const coms = (S.comis || {}).comisionistas || [];
+    el.innerHTML = `<div class="tarjeta"><div class="fila"><label>Comisionista<select id="lqlCom"><option value="">Todos</option>${coms.map(c => `<option value="${esc(c.id)}" ${f.lCom === c.id ? 'selected' : ''}>${esc(c.nombre)}${c.confidencial ? ' 🔒' : ''}</option>`).join('')}</select></label>
+        <label>Estado<select id="lqlEst"><option value="">Todas</option>${['Por pagar', 'Pagada', 'Cancelada'].map(e => `<option ${f.lEst === e ? 'selected' : ''}>${e}</option>`).join('')}</select></label>
+        <button class="btn primario fijo" onclick="App.comTab('liquidar')">🧮 Nueva liquidación</button></div>
+        <p class="muted peq" style="margin:8px 0 0">Cada liquidación es el estado de cuenta de comisiones de un periodo. Aquí registras su <b>pago</b> (transferencia, efectivo o nota de crédito), subes el <b>comprobante</b> y sacas el <b>PDF</b> o el <b>recibo</b> para enviárselo al comisionista.</p></div>
+      <div id="lqlRes"><div class="vacio">📄 Cargando…</div></div>`;
+    $('#lqlCom').onchange = e => { f.lCom = e.target.value; cargarLiqs(); };
+    $('#lqlEst').onchange = e => { f.lEst = e.target.value; cargarLiqs(); };
+    let l; try { l = await pedir('liquidaciones', f.lCom ? { id: f.lCom } : {}, true); } catch (e) { $('#lqlRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : esc(e.message)}</div>`; return; }
+    if (f.lEst) l = l.filter(x => x.estado === f.lEst);
     const etq = e => /pagad/i.test(e) ? 'ok' : /cancel/i.test(e) ? 'mal' : 'av';
-    el.innerHTML = l.length ? `<div class="tarjeta"><div class="tabla-cont"><table><thead><tr><th>Folio</th><th>Fecha</th><th>Comisionista</th><th>Periodo</th><th class="num">Total</th><th>Estado</th></tr></thead><tbody>
-      ${l.map(x => `<tr class="clic" onclick="App.verLiq('${esc(x.id)}')"><td><b>${esc(x.folio)}</b></td><td>${esc(x.fecha)}</td><td>${esc(x.comisionista)}${x.confidencial ? ' 🔒' : ''}</td><td>${esc(x.desde)} – ${esc(x.hasta)}</td><td class="num">${$$(x.total)}</td><td><span class="etq ${etq(x.estado)}">${esc(x.estado)}</span>${x.pago ? ' <small class="muted">' + esc(x.pago) + '</small>' : ''}</td></tr>`).join('')}</tbody></table></div></div>`
-      : '<div class="vacio">Aún no hay liquidaciones.</div>';
+    const vivas = l.filter(x => !/cancel/i.test(x.estado)), porPagar = vivas.filter(x => !/pagad/i.test(x.estado)).reduce((a, x) => a + x.total, 0), pagado = vivas.filter(x => /pagad/i.test(x.estado)).reduce((a, x) => a + x.total, 0);
+    $('#lqlRes').innerHTML = l.length ? `<div class="com-datos tarjeta"><div><small>Por pagar</small><b>${$$(porPagar)}</b></div><div><small>Pagado</small><b>${$$(pagado)}</b></div><div><small>Liquidaciones</small><b>${nf(l.length)}</b></div></div>
+      <div class="tarjeta"><div class="tabla-cont"><table><thead><tr><th>Folio</th><th>Comisionista</th><th>Periodo</th><th class="num">Total</th><th>Estado / pago</th><th>Acciones</th></tr></thead><tbody>
+      ${l.map(x => { const pag = /pagad/i.test(x.estado), can = /cancel/i.test(x.estado); return `<tr><td><b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small></td><td>${esc(x.comisionista)}${x.confidencial ? ' 🔒' : ''}</td><td>${esc(x.desde)} – ${esc(x.hasta)}</td><td class="num"><b>${$$(x.total)}</b>${x.montoNC ? `<br><small class="muted">N/C ${$$(x.montoNC)}</small>` : ''}</td>
+        <td><span class="etq ${etq(x.estado)}">${esc(x.estado)}</span>${x.pago ? `<br><small class="muted">${esc(x.pago)} · ${esc(x.forma)}${x.referencia ? ' · ' + esc(x.referencia) : ''}</small>` : ''}</td>
+        <td><div class="acciones izq" style="margin:0">${can ? '' : `<button class="btn chico ${pag ? '' : 'primario'}" onclick="App.liqAccion('${esc(x.id)}','pago')">${pag ? '✏️ Pago / comprobante' : '💵 Agregar pago'}</button>`}
+          <button class="btn chico" onclick="App.liqAccion('${esc(x.id)}','pdf')">📄 PDF</button>${pag ? `<button class="btn chico" onclick="App.liqAccion('${esc(x.id)}','recibo')">🧾 Recibo</button>` : ''}<button class="btn chico" onclick="App.liqAccion('${esc(x.id)}','ver')">👁️ Ver</button></div></td></tr>`; }).join('')}</tbody></table></div></div>`
+      : `<div class="vacio">${f.lCom || f.lEst ? 'No hay liquidaciones con esos filtros.' : 'Aún no hay liquidaciones. Ve a <b>🧮 Liquidar</b>, elige al comisionista y el periodo, calcula y guarda la liquidación; después aquí le registras el pago.'}</div>`;
   }
-  function comiHist(id) { S.fCom.tab = 'liqs'; $('#vista').querySelectorAll('.pestanas button').forEach((b, i) => b.classList.toggle('activo', i === 2)); cargarLiqs(id); }
+  function comiHist(id) { S.fCom.tab = 'liqs'; V.comisiones(); setTimeout(() => cargarLiqs(id), 0); }
+  /** Acciones directas desde la lista: pago (abre el detalle en la sección de pago), pdf, recibo, ver. */
+  async function liqAccion(id, que) {
+    if (que === 'ver' || que === 'pago') { await verLiq(id); if (que === 'pago') setTimeout(() => { const t = $('#lpF'); if (t) { t.closest('.tarjeta').scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 150); return; }
+    let d; try { d = await pedir('detalleLiquidacion', { id: id }, true); } catch (e) { return; }
+    S.liqDet = d; if (que === 'pdf') comiPdf(1); else comiRecibo();
+  }
   async function verLiq(id) {
     let d; try { d = await pedir('detalleLiquidacion', { id: id }, true); } catch (e) { return; }
     S.liqDet = d; S.lpNC = {}; const pag = /pagad/i.test(d.estado), can = /cancel/i.test(d.estado), formas = ['Transferencia', 'Efectivo', 'Cheque', 'Depósito'];
@@ -7966,7 +7987,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, comiRecibo, lpBuscarNC, lpSumaNC, comiPeriodo, comiPrecioAdd, comiPrecioQuitar, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, comiRecibo, liqAccion, lpBuscarNC, lpSumaNC, comiPeriodo, comiPrecioAdd, comiPrecioQuitar, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
