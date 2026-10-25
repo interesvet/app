@@ -6256,11 +6256,11 @@ const App = (() => {
   function comTab(t) { S.fCom.tab = t; V.comisiones(); }
   async function cargarComis(forzar) {
     if (S.comis && !forzar) return S.comis;
-    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (162).' : esc(e.message)}</div>`; throw e; }
+    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (163).' : esc(e.message)}</div>`; throw e; }
     return S.comis;
   }
   const comPorId = id => ((S.comis || {}).comisionistas || []).find(c => c.id === id);
-  const comRegla = c => `${c.lista ? 'Diferencia contra su precio ' + esc(c.lista) + ' · ' : ''}${Object.keys(c.prods || {}).length ? nf(Object.keys(c.prods).length) + ' producto' + (Object.keys(c.prods).length === 1 ? '' : 's') + ' con % propio · ' : ''}${Object.keys(c.cats || {}).length ? Object.keys(c.cats).map(k => esc(k) + ' ' + nf(c.cats[k]) + '%').join(' · ') + ' · ' : ''}${nf(c.pct)}% general · sobre lo ${c.base === 'Vendido' ? 'vendido' : 'cobrado'} sin IVA`;
+  const comRegla = c => `${Object.keys(c.precios || {}).length ? nf(Object.keys(c.precios).length) + ' precio' + (Object.keys(c.precios).length === 1 ? '' : 's') + ' especial' + (Object.keys(c.precios).length === 1 ? '' : 'es') + ' · ' : ''}${c.lista ? 'Diferencia contra su precio ' + esc(c.lista) + ' · ' : ''}${Object.keys(c.prods || {}).length ? nf(Object.keys(c.prods).length) + ' producto' + (Object.keys(c.prods).length === 1 ? '' : 's') + ' con % propio · ' : ''}${Object.keys(c.cats || {}).length ? Object.keys(c.cats).map(k => esc(k) + ' ' + nf(c.cats[k]) + '%').join(' · ') + ' · ' : ''}${nf(c.pct)}% general · sobre lo ${c.base === 'Vendido' ? 'vendido' : 'cobrado'} sin IVA`;
   function pintarComis() {
     const el = $('#comRes'), l = (S.comis || {}).comisionistas || []; if (!el) return;
     el.innerHTML = `<div class="tarjeta"><div class="fila"><div style="flex:3 1 260px" class="muted peq">🔒 Solo tú ves esta sección. <b>Independiente</b>: gana sobre los clientes que le asignes (o notas sueltas). <b>De sucursal</b>: gana sobre todo lo de una sucursal, sin ligarse a clientes ni notas. <b>Confidencial</b>: nunca aparece en notas, PDF, fichas ni pantallas de nadie más.</div>
@@ -6283,11 +6283,14 @@ const App = (() => {
         <label>Comisión general % <small class="muted">(sobre la nota)</small><input type="number" id="fcoPct" min="0" max="60" step="0.1" value="${c.pct === '' ? '' : c.pct}" placeholder="Ej. 5"></label>
         <label id="fcoListaL">Su lista de precios <small class="muted">(gana la diferencia)</small><select id="fcoLista"><option value="">— Sin lista —</option>${((S.comis || {}).listas || []).map(x => `<option ${x === c.lista ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
         <p class="muted peq" style="grid-column:1/-1;margin:0">Cómo se calcula cada producto de la nota: <b>1)</b> si tiene su lista y el producto tiene ese precio, gana la <b>diferencia</b> entre lo vendido y su precio (ej. lista Aliado y se vendió a Farmacia); <b>2)</b> si no, el <b>% del producto</b>; <b>3)</b> el % de su categoría; <b>4)</b> el % general.</p>
+        <details id="fcoPreD" style="grid-column:1/-1"${Object.keys(c.precios || {}).length ? ' open' : ''}><summary>💲 Precio especial por producto <span class="muted">(manda sobre su lista; gana la diferencia contra este precio)</span></summary>
+          <div class="fila" style="margin-top:8px"><input id="fcoEBus" list="fcoPList" placeholder="🔍 Producto"><input type="number" id="fcoEPre" min="0" step="0.01" placeholder="Precio sin IVA" style="max-width:130px"><button class="btn fijo" type="button" onclick="App.comiPrecioAdd()">+ Agregar</button></div><div id="fcoPres"></div></details>
         <details id="fcoProdD" style="grid-column:1/-1"${Object.keys(c.prods || {}).length ? ' open' : ''}><summary>% por producto <span class="muted">(opcional)</span></summary>
           <div class="fila" style="margin-top:8px"><input id="fcoPBus" list="fcoPList" placeholder="🔍 Producto"><datalist id="fcoPList">${(D().productos || []).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist>
             <input type="number" id="fcoPPct" min="0" max="60" step="0.1" placeholder="%" style="max-width:90px"><button class="btn fijo" type="button" onclick="App.comiProdAdd()">+ Agregar</button></div><div id="fcoProds"></div></details>
         ${cats.length ? `<details style="grid-column:1/-1"${Object.keys(c.cats || {}).length ? ' open' : ''}><summary>% distinto por categoría de producto <span class="muted">(opcional; vacío = el general)</span></summary><div class="rejilla-2" style="gap:8px;margin-top:8px">
           ${cats.map((k, i) => `<label>${esc(k)}<input type="number" class="fcoCat" data-k="${esc(k)}" min="0" max="60" step="0.1" value="${c.cats && c.cats[k] !== undefined ? c.cats[k] : ''}"></label>`).join('')}</div></details>` : ''}
+        <label style="grid-column:1/-1">También es mi cliente <small class="muted">(para aplicarle su comisión como nota de crédito)</small><input id="fcoCli" list="fcoCList" value="${esc(comCliNombre(c))}" placeholder="Opcional: busca su nombre como cliente"><datalist id="fcoCList">${(D().clientes || []).slice(0, 3000).map(x => `<option value="${esc(x.razon || x.nombre)}">`).join('')}</datalist></label>
         <label>RFC<input id="fcoRfc" value="${esc(c.rfc || '')}"></label><label>Régimen fiscal<input id="fcoReg" value="${esc(c.regimen || '')}"></label>
         <label>Teléfono<input id="fcoTel" value="${esc(c.tel || '')}"></label><label>Correo<input id="fcoMail" value="${esc(c.correo || '')}"></label>
         <label>Banco<input id="fcoBco" value="${esc(c.banco || '')}"></label><label>CLABE<input id="fcoClabe" value="${esc(c.clabe || '')}" inputmode="numeric"></label>
@@ -6298,8 +6301,9 @@ const App = (() => {
         <label style="grid-column:1/-1">Comentarios<input id="fcoCom" value="${esc(c.comentarios || '')}"></label></div>
       <p class="muted peq">Las tasas de IVA y retenciones confírmalas con tu contador (dependen del régimen del comisionista).</p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarComi('${esc(id)}')">Guardar</button></div>`);
-    S.fcoProds = Object.assign({}, c.prods || {}); comiProdPintar(); comiTipo();
+    S.fcoProds = Object.assign({}, c.prods || {}); S.fcoPrecios = Object.assign({}, c.precios || {}); comiProdPintar(); comiPrecioPintar(); comiTipo();
   }
+  const comCliId = t => { t = norm(t || '').trim(); if (!t) return ''; const x = (D().clientes || []).find(c => norm(c.razon || c.nombre) === t || norm(c.nombre) === t); return x ? x.id : ''; };
   function comiTipo() { const s = $('#fcoTipo').value === 'Sucursal'; $('#fcoSucL').style.display = s ? '' : 'none'; $('#fcoListaL').style.display = s ? 'none' : ''; }
   function comiProdPintar() {
     const el = $('#fcoProds'); if (!el) return; const ks = Object.keys(S.fcoProds || {});
@@ -6311,9 +6315,19 @@ const App = (() => {
     S.fcoProds[x.id] = Number(v); $('#fcoPBus').value = ''; $('#fcoPPct').value = ''; comiProdPintar();
   }
   function comiProdQuitar(k) { delete S.fcoProds[k]; comiProdPintar(); }
+  function comiPrecioPintar() {
+    const el = $('#fcoPres'); if (!el) return; const ks = Object.keys(S.fcoPrecios || {});
+    el.innerHTML = ks.length ? ks.map(k => { const pr = prod(k) || {}; return `<div class="com-prod"><span>${esc(pr.nombre || k)}</span><b>${$$(S.fcoPrecios[k])}</b><button class="icono" type="button" aria-label="Quitar" onclick="App.comiPrecioQuitar('${esc(k)}')">✕</button></div>`; }).join('') : '<p class="muted peq">Sin precios especiales.</p>';
+  }
+  function comiPrecioAdd() {
+    const n = norm($('#fcoEBus').value), x = (D().productos || []).find(p => norm(p.nombre) === n) || (D().productos || []).find(p => n && norm(p.nombre).indexOf(n) >= 0);
+    const v = Number($('#fcoEPre').value); if (!x) return toast('Elige un producto de la lista', true); if (!(v > 0)) return toast('Captura el precio especial (sin IVA)', true);
+    S.fcoPrecios[x.id] = v; $('#fcoEBus').value = ''; $('#fcoEPre').value = ''; comiPrecioPintar();
+  }
+  function comiPrecioQuitar(k) { delete S.fcoPrecios[k]; comiPrecioPintar(); }
   async function guardarComi(id) {
     const cats = {}; document.querySelectorAll('.fcoCat').forEach(i => { if (i.value !== '') cats[i.dataset.k] = Number(i.value); });
-    const p = { id: id, nombre: $('#fcoNom').value, tipo: $('#fcoTipo').value, sucursal: $('#fcoSuc').value, base: $('#fcoBase').value, pct: Number($('#fcoPct').value) || 0, cats: cats, lista: $('#fcoTipo').value === 'Sucursal' ? '' : $('#fcoLista').value, prods: S.fcoProds || {},
+    const p = { id: id, nombre: $('#fcoNom').value, tipo: $('#fcoTipo').value, sucursal: $('#fcoSuc').value, base: $('#fcoBase').value, pct: Number($('#fcoPct').value) || 0, cats: cats, lista: $('#fcoTipo').value === 'Sucursal' ? '' : $('#fcoLista').value, prods: S.fcoProds || {}, precios: S.fcoPrecios || {}, idCliente: comCliId($('#fcoCli').value),
       rfc: $('#fcoRfc').value, regimen: $('#fcoReg').value, tel: $('#fcoTel').value, correo: $('#fcoMail').value, banco: $('#fcoBco').value, clabe: $('#fcoClabe').value,
       factura: $('#fcoFac').checked, iva: Number($('#fcoIva').value) || 0, retIsr: Number($('#fcoRisr').value) || 0, retIva: Number($('#fcoRiva').value) || 0,
       confidencial: $('#fcoConf').checked, activo: $('#fcoAct').checked, comentarios: $('#fcoCom').value };
@@ -6394,21 +6408,37 @@ const App = (() => {
     if (S.lqCalc && S.lqCalc.k === f.id + f.desde + f.hasta) pintarCalc();
   }
   /* periodo por meses (con fechas exactas si se necesita) */
-  const finMes = m => { const [y, mm] = m.split('-').map(Number), d = new Date(y, mm, 0), h = hoyISO(), x = y + '-' + ('0' + mm).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); return x > h ? h : x; };
-  const comPeriodoHtml = (p, f) => `<label>Del mes<input type="month" id="${p}M1" value="${esc((f.desde || '').slice(0, 7))}"></label><label>Al mes<input type="month" id="${p}M2" value="${esc((f.hasta || '').slice(0, 7))}"></label>
-      <label>Desde<input type="date" id="${p}De" value="${esc(f.desde)}"></label><label>Hasta<input type="date" id="${p}A" value="${esc(f.hasta)}"></label>`;
-  const comAtajosHtml = p => `<div class="com-atajos">${[['mes', 'Este mes'], ['ant', 'Mes pasado'], ['3m', 'Últimos 3 meses'], ['6m', 'Últimos 6 meses'], ['anio', 'Este año'], ['aant', 'Año pasado']].map(a => `<button class="chip-op" type="button" onclick="App.comAtajo('${p}','${a[0]}')">${a[1]}</button>`).join('')}</div>`;
+  const COM_PER = [['anio', 'Todo el año'], ['t1', '1er trimestre'], ['t2', '2º trimestre'], ['t3', '3er trimestre'], ['t4', '4º trimestre'], ['s1', '1er semestre'], ['s2', '2º semestre']].concat(['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map((m, i) => ['m' + (i + 1), m]));
+  const comPeriodoHtml = (p, f) => { const y = +hoyISO().slice(0, 4), anios = []; for (let a = y; a >= 2019; a--) anios.push(a);
+    return `<label>Año<select id="${p}Y" onchange="App.comiPeriodo('${p}')"><option value="">—</option>${anios.map(a => `<option ${String(a) === (f.desde || '').slice(0, 4) ? 'selected' : ''}>${a}</option>`).join('')}<option value="hist">Histórico (todo)</option></select></label>
+      <label>Periodo<select id="${p}P" onchange="App.comiPeriodo('${p}')">${COM_PER.map(x => `<option value="${x[0]}">${x[1]}</option>`).join('')}</select></label>
+      <label>Desde<input type="date" id="${p}De" value="${esc(f.desde)}"></label><label>Hasta<input type="date" id="${p}A" value="${esc(f.hasta)}"></label>`; };
+  const comAtajosHtml = p => `<div class="com-atajos">${[['mes', 'Este mes'], ['ant', 'Mes pasado'], ['tri', 'Este trimestre'], ['sem', 'Este semestre'], ['anio', 'Este año'], ['aant', 'Año pasado'], ['hist', 'Histórico']].map(a => `<button class="chip-op" type="button" onclick="App.comAtajo('${p}','${a[0]}')">${a[1]}</button>`).join('')}</div>`;
+  const finMes = (y, m) => { const d = new Date(y, m, 0), h = hoyISO(), x = y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); return x > h ? h : x; };
+  /** Rango de un año + periodo (anio, t1..t4, s1, s2, m1..m12). */
+  function rangoPer(y, k) {
+    if (y === 'hist') return ['2000-01-01', hoyISO()];
+    y = +y; const r = k === 'anio' ? [1, 12] : /^t/.test(k) ? [(+k[1] - 1) * 3 + 1, +k[1] * 3] : /^s/.test(k) ? [(+k[1] - 1) * 6 + 1, +k[1] * 6] : [+k.slice(1), +k.slice(1)];
+    return [y + '-' + ('0' + r[0]).slice(-2) + '-01', finMes(y, r[1])];
+  }
+  function comPonRango(p, de, a) { const f = S.fCom; if (p === 'lq') { f.desde = de; f.hasta = a; } else { f.nDe = de; f.nA = a; } $('#' + p + 'De').value = de; $('#' + p + 'A').value = a; }
+  function comiPeriodo(p) { const y = $('#' + p + 'Y').value; if (!y) return; $('#' + p + 'P').disabled = y === 'hist'; const r = rangoPer(y, $('#' + p + 'P').value); comPonRango(p, r[0], r[1]); }
   function comPeriodoEnlazar(p, f) {
-    const m1 = $('#' + p + 'M1'), m2 = $('#' + p + 'M2'), de = $('#' + p + 'De'), a = $('#' + p + 'A');
-    m1.onchange = () => { if (!m1.value) return; if (!m2.value || m2.value < m1.value) m2.value = m1.value; de.value = f.desde = m1.value + '-01'; a.value = f.hasta = finMes(m2.value); };
-    m2.onchange = () => { if (!m2.value) return; if (!m1.value || m1.value > m2.value) { m1.value = m2.value; de.value = f.desde = m2.value + '-01'; } a.value = f.hasta = finMes(m2.value); };
-    de.onchange = () => { f.desde = de.value; m1.value = de.value.slice(0, 7); }; a.onchange = () => { f.hasta = a.value; m2.value = a.value.slice(0, 7); };
+    const de = $('#' + p + 'De'), a = $('#' + p + 'A');
+    de.onchange = () => { f.desde = de.value; $('#' + p + 'Y').value = ''; }; a.onchange = () => { f.hasta = a.value; $('#' + p + 'Y').value = ''; };
   }
   function comAtajo(p, k) {
-    const h = hoyISO(), y = +h.slice(0, 4), m = +h.slice(5, 7), mes = (yy, mm) => { while (mm < 1) { mm += 12; yy--; } return yy + '-' + ('0' + mm).slice(-2); };
-    const r = { mes: [mes(y, m), mes(y, m)], ant: [mes(y, m - 1), mes(y, m - 1)], '3m': [mes(y, m - 2), mes(y, m)], '6m': [mes(y, m - 5), mes(y, m)], anio: [y + '-01', mes(y, m)], aant: [(y - 1) + '-01', (y - 1) + '-12'] }[k];
-    const de = r[0] + '-01', a = finMes(r[1]), f = S.fCom; if (p === 'lq') { f.desde = de; f.hasta = a; } else { f.nDe = de; f.nA = a; }
-    $('#' + p + 'M1').value = r[0]; $('#' + p + 'M2').value = r[1]; $('#' + p + 'De').value = de; $('#' + p + 'A').value = a;
+    const h = hoyISO(), y = +h.slice(0, 4), m = +h.slice(5, 7);
+    let r;
+    if (k === 'hist') r = rangoPer('hist');
+    else if (k === 'mes') r = rangoPer(y, 'm' + m);
+    else if (k === 'ant') r = m === 1 ? rangoPer(y - 1, 'm12') : rangoPer(y, 'm' + (m - 1));
+    else if (k === 'tri') r = rangoPer(y, 't' + Math.ceil(m / 3));
+    else if (k === 'sem') r = rangoPer(y, 's' + (m <= 6 ? 1 : 2));
+    else if (k === 'anio') r = rangoPer(y, 'anio'); else r = rangoPer(y - 1, 'anio');
+    comPonRango(p, r[0], r[1]);
+    $('#' + p + 'Y').value = k === 'hist' ? 'hist' : k === 'aant' ? String(y - 1) : (k === 'ant' && m === 1 ? String(y - 1) : String(y));
+    $('#' + p + 'P').value = k === 'mes' ? 'm' + m : k === 'ant' ? 'm' + (m === 1 ? 12 : m - 1) : k === 'tri' ? 't' + Math.ceil(m / 3) : k === 'sem' ? 's' + (m <= 6 ? 1 : 2) : 'anio';
     if (p === 'lq') comiCalcular(); else cargarNotasCom();
   }
   async function comiCalcular() {
@@ -6462,7 +6492,7 @@ const App = (() => {
     if (!f.nDe || !f.nA || f.nDe > f.nA) return toast('Revisa el periodo', true);
     $('#ntRes').innerHTML = '<div class="vacio">🧾 Buscando notas…</div>';
     let r; try { r = await pedir('notasComi', { desde: f.nDe, hasta: f.nA, com: f.nCom || '', suc: f.nSuc || '', q: f.nQ || '' }, true); }
-    catch (e) { $('#ntRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '🧾 Se activa en cuanto se publique la actualización del servidor (162).' : esc(e.message)}</div>`; return; }
+    catch (e) { $('#ntRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '🧾 Se activa en cuanto se publique la actualización del servidor (163).' : esc(e.message)}</div>`; return; }
     S.ntDatos = r; S.ntSel = {}; pintarNotasLista();
   }
   function pintarNotasLista() {
@@ -6525,17 +6555,61 @@ const App = (() => {
   function comiHist(id) { S.fCom.tab = 'liqs'; $('#vista').querySelectorAll('.pestanas button').forEach((b, i) => b.classList.toggle('activo', i === 2)); cargarLiqs(id); }
   async function verLiq(id) {
     let d; try { d = await pedir('detalleLiquidacion', { id: id }, true); } catch (e) { return; }
-    S.liqDet = d; const pag = /pagad/i.test(d.estado), can = /cancel/i.test(d.estado);
-    modal('📄 ' + d.folio + ' · ' + d.comisionista.nombre, `<p class="muted">${esc(d.desde)} – ${esc(d.hasta)} · <span class="etq ${pag ? 'ok' : can ? 'mal' : 'av'}">${esc(d.estado)}</span>${pag ? ` · pagada el ${esc(d.pago)} ${esc(d.forma)} ${esc(d.referencia)}${d.uuid ? ' · UUID ' + esc(d.uuid) : ''}` : ''}</p>
-      ${comTotHtml(d.totales, d.comisionista)}${comLineasHtml(d.lineas)}${d.notas ? `<p class="muted peq">${esc(d.notas)}</p>` : ''}
-      ${!pag && !can ? `<div class="rejilla-2" style="gap:8px;margin-top:10px"><label>Fecha de pago<input type="date" id="lpF" value="${hoyISO()}"></label><label>Forma de pago<select id="lpForma"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option></select></label>
-        <label>Referencia<input id="lpRef"></label><label>Folio fiscal (UUID) de su factura<input id="lpUuid" placeholder="Opcional"></label></div>
-        <p class="muted peq">Si pagaste por transferencia, sube el comprobante en el recuadro de abajo (PDF o foto).</p>` : ''}
+    S.liqDet = d; S.lpNC = {}; const pag = /pagad/i.test(d.estado), can = /cancel/i.test(d.estado), formas = ['Transferencia', 'Efectivo', 'Cheque', 'Depósito'];
+    const fBase = String(d.forma || '').replace(' + Nota de crédito', '').replace(/^Nota de crédito$/, '');
+    const ncHtml = (d.nc || []).length ? `<div class="com-nc"><b>Notas de crédito aplicadas (${$$(d.montoNC)})</b>${d.nc.map(x => `<div>🧾 ${esc(x.folio)} · ${esc(x.cliente)} · ${esc(x.fecha)} <b>${$$(x.monto)}</b></div>`).join('')}</div>` : '';
+    modal('📄 ' + d.folio + ' · ' + d.comisionista.nombre, `<p class="muted">${esc(d.desde)} – ${esc(d.hasta)} · <span class="etq ${pag ? 'ok' : can ? 'mal' : 'av'}">${esc(d.estado)}</span>${pag ? ` · pagada el ${esc(d.pago)} · ${esc(d.forma)} ${esc(d.referencia)}${d.uuid ? ' · UUID ' + esc(d.uuid) : ''}` : ''}</p>
+      ${comTotHtml(d.totales, d.comisionista)}${comLineasHtml(d.lineas)}${d.notas ? `<p class="muted peq">${esc(d.notas)}</p>` : ''}${ncHtml}
+      ${!can ? `<div class="tarjeta" style="margin-top:10px"><h4 style="margin:0 0 8px">${pag ? '✏️ Editar el pago' : '💵 Registrar el pago'}</h4>
+        <div class="rejilla-2" style="gap:8px"><label>Fecha de pago<input type="date" id="lpF" value="${esc(d.pagoIso || hoyISO())}"></label>
+        <label>Forma de pago del resto<select id="lpForma">${formas.map(f => `<option ${f === fBase ? 'selected' : ''}>${f}</option>`).join('')}</select></label>
+        <label>Referencia / No. de transferencia<input id="lpRef" value="${esc(d.referencia || '')}"></label><label>Folio fiscal (UUID) de su factura<input id="lpUuid" value="${esc(d.uuid || '')}" placeholder="Opcional"></label></div>
+        <details id="lpNCd" style="margin-top:8px"><summary>🧾 Aplicar la comisión como <b>nota de crédito</b> a notas pendientes (p. ej. productos que le vendiste)</summary>
+          <div class="fila" style="margin-top:8px"><input id="lpNCq" value="${esc(comCliNombre(d.comisionista))}" placeholder="Cliente o folio"><button class="btn fijo" type="button" onclick="App.lpBuscarNC()">🔍 Notas con saldo</button></div>
+          <div id="lpNCl"></div><p class="muted peq">Se registra como cobro de esa nota (forma: nota de crédito, folio ${esc(d.folio)}) y baja su saldo. Lo que no cubras con N/C se paga con la forma de arriba.</p></details>
+        <p class="muted peq">Si pagaste por transferencia, sube el comprobante en el recuadro de abajo (PDF o foto).</p></div>` : ''}
       ${bloqueArch('liqComp', id)}
-      <div class="acciones"><button class="btn" onclick="App.comiPdf(1)">📄 PDF</button>${!pag && !can ? `<button class="btn peligro" onclick="App.comiCancelarLiq('${esc(id)}')">Cancelar</button><button class="btn primario" onclick="App.comiPagar('${esc(id)}')">✔ Marcar pagada</button>` : ''}</div>`);
+      <div class="acciones"><button class="btn" onclick="App.comiPdf(1)">📄 PDF</button>${pag ? `<button class="btn" onclick="App.comiRecibo()">🧾 Recibo de pago</button>` : ''}${!pag && !can ? `<button class="btn peligro" onclick="App.comiCancelarLiq('${esc(id)}')">Cancelar</button>` : ''}${!can ? `<button class="btn primario" onclick="App.comiPagar('${esc(id)}')">${pag ? '💾 Guardar cambios' : '✔ Marcar pagada'}</button>` : ''}</div>`);
+  }
+  const comCliNombre = c => { const x = c && c.idCliente ? cliente(c.idCliente) : null; return x ? (x.razon || x.nombre || '') : ''; };
+  async function lpBuscarNC() {
+    const el = $('#lpNCl'), q = $('#lpNCq').value.trim(); if (q.length < 2) return toast('Escribe el cliente o el folio', true);
+    el.innerHTML = '<span class="muted">Buscando…</span>';
+    let l; try { l = await pedir('cuentasPorCobrar', { sucursal: '', texto: q }, true); } catch (e) { el.innerHTML = ''; return; }
+    S.lpNotas = l.slice(0, 60);
+    el.innerHTML = S.lpNotas.length ? `<div class="tabla-cont"><table><thead><tr><th>Nota</th><th>Fecha</th><th>Cliente</th><th class="num">Saldo</th><th class="num">Aplicar $</th></tr></thead><tbody>${S.lpNotas.map((x, i) => `<tr><td>${esc(x.folio)}</td><td>${esc(x.fecha)}</td><td>${esc(x.cliente)}</td><td class="num">${$$(x.saldo)}</td>
+      <td class="num"><input type="number" class="lpNCm" data-i="${i}" min="0" step="0.01" max="${x.saldo}" style="max-width:110px" placeholder="0.00" oninput="App.lpSumaNC()"></td></tr>`).join('')}</tbody></table></div><div id="lpNCs" class="muted peq"></div>` : '<p class="muted">Sin notas con saldo.</p>';
+  }
+  function lpSumaNC() {
+    const d = S.liqDet; let t = 0; document.querySelectorAll('.lpNCm').forEach(i => t += Number(i.value) || 0);
+    const disp = d.totales.total - (d.montoNC || 0);
+    $('#lpNCs').innerHTML = `N/C a aplicar: <b>${$$(t)}</b> de ${$$(disp)} disponibles${t > disp + 0.009 ? ' <span class="error">· pasa del total</span>' : ' · resto por ' + esc($('#lpForma').value) + ': <b>' + $$(Math.max(0, disp - t)) + '</b>'}`;
   }
   async function comiPagar(id) {
-    try { await pedir('pagarLiquidacion', { id: id, fecha: $('#lpF').value, forma: $('#lpForma').value, referencia: $('#lpRef').value, uuid: $('#lpUuid').value }); toast('✔ Liquidación pagada'); S.comis = null; verLiq(id); if (S.vista === 'comisiones') V.comisiones(); } catch (e) {}
+    const nc = []; let mal = '';
+    document.querySelectorAll('.lpNCm').forEach(i => { const m = Number(i.value) || 0, x = S.lpNotas[+i.dataset.i]; if (m > 0) { if (m > x.saldo + 0.009) mal = 'El monto para ' + x.folio + ' pasa de su saldo'; nc.push({ idVenta: x.id, monto: m }); } });
+    if (mal) return toast(mal, true);
+    if (nc.length && !confirm('Se aplicará ' + $$(nc.reduce((s, x) => s + x.monto, 0)) + ' como nota de crédito a ' + nc.length + ' nota(s). Esto registra el cobro en esas notas y no se puede quitar desde aquí. ¿Continuar?')) return;
+    try { await pedir('pagarLiquidacion', { id: id, fecha: $('#lpF').value, forma: $('#lpForma').value, referencia: $('#lpRef').value, uuid: $('#lpUuid').value, nc: nc });
+      toast(/pagad/i.test(S.liqDet.estado) ? '✔ Pago actualizado' : '✔ Liquidación pagada'); S.comis = null; verLiq(id); if (S.vista === 'comisiones' && S.fCom.tab === 'liqs') cargarLiqs(); } catch (e) {}
+  }
+  /** Recibo de pago para entregar al comisionista. */
+  async function comiRecibo() {
+    const d = S.liqDet; if (!d) return; const c = d.comisionista, t = d.totales, transf = Math.max(0, t.total - (d.montoNC || 0));
+    const filas = [['Comisiones del ' + d.desde + ' al ' + d.hasta + ' (' + d.lineas.length + ' movimientos)', $$(t.comision)]];
+    if (t.devoluciones) filas.push(['Descuento por notas canceladas / devueltas', $$(t.devoluciones)]);
+    if (t.iva) filas.push(['+ IVA', $$(t.iva)]); if (t.retIsr) filas.push(['- Retención ISR', $$(t.retIsr)]); if (t.retIva) filas.push(['- Retención IVA', $$(t.retIva)]);
+    const sp = { titulo: 'Recibo de pago de comisiones', folio: d.folio, fecha: 'Pagado el ' + d.pago, extra: [d.forma, d.referencia ? 'Ref. ' + d.referencia : ''],
+      suc: sucDoc((D().sucursales || []).find(s => s.id === 'SUC_MAT_1')),
+      izq: ['Recibí de Interés Veterinario', c.nombre, c.rfc ? 'RFC: ' + c.rfc : '', [c.banco, c.clabe ? 'CLABE ' + c.clabe : ''].filter(Boolean).join(' · ')],
+      der: ['Liquidación ' + d.folio, 'Periodo: ' + d.desde + ' al ' + d.hasta],
+      cols: [{ t: 'Concepto', w: 5 }, { t: 'Importe', w: 1.4, num: 1 }], filas: filas,
+      totales: [(d.montoNC ? ['Aplicado como nota de crédito', d.montoNC] : null), (d.montoNC ? ['Pagado por ' + String(d.forma).replace(' + Nota de crédito', ''), transf] : null), ['Total recibido', t.total, 1]],
+      letras: d.letras,
+      notas: [(d.nc || []).length ? 'Notas de crédito aplicadas: ' + d.nc.map(x => x.folio + ' (' + $$(x.monto) + ')').join(', ') : '', d.uuid ? 'Factura del comisionista UUID ' + d.uuid : '',
+        'Recibo la cantidad arriba indicada a mi entera satisfacción por concepto de comisiones del periodo señalado.'],
+      firmas: ['Recibí: ' + c.nombre, 'Entregó: Interés Veterinario'], archivo: 'Recibo ' + d.folio + ' ' + c.nombre + '.pdf', pie: 'Recibo de pago de comisiones ' + d.folio };
+    try { verPdf(await pdfLocal(sp), sp.archivo); } catch (e) { toast(e.message, true); }
   }
   async function comiCancelarLiq(id) {
     const m = prompt('Motivo de la cancelación (lo incluido vuelve a quedar pendiente de liquidar):'); if (!m) return;
@@ -7892,7 +7966,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, comiRecibo, lpBuscarNC, lpSumaNC, comiPeriodo, comiPrecioAdd, comiPrecioQuitar, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
