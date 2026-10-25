@@ -829,6 +829,19 @@ th.ordenable { cursor: pointer; user-select: none; } th.ordenable:hover { color:
 .rd-opc-b small { color: var(--texto-2); }
 @media (max-width: 860px) { .rd-hero { grid-template-columns: 1fr; } .rd-h-main > b { font-size: 34px; } }
 @media (max-width: 480px) { .rd-et { grid-template-columns: 1fr auto; } .rd-et > div { grid-column: 1 / -1; order: 3; height: 14px; } .rd-h-stats b { font-size: 19px; } }
+/* 💼 Comisiones */
+.com-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.com-card { background: var(--superficie); border: 1px solid var(--borde); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.com-card.inactivo { opacity: .6; }
+.com-top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; } .com-top b { font-size: 16px; margin-right: auto; }
+.com-datos { display: flex; gap: 18px; flex-wrap: wrap; } .com-datos small { display: block; color: var(--texto-3); font-size: 11px; } .com-datos b { font-size: 16px; }
+.com-tots { max-width: 380px; margin-left: auto; display: flex; flex-direction: column; gap: 4px; }
+.com-tot { display: flex; justify-content: space-between; gap: 12px; color: var(--texto-2); }
+.com-tot.gran { border-top: 1px solid var(--borde); padding-top: 6px; margin-top: 4px; color: var(--texto); font-size: 18px; }
+.cc-lista { max-height: 50vh; overflow: auto; border: 1px solid var(--borde); border-radius: 10px; margin: 10px 0; }
+.cc-it { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--borde); cursor: pointer; flex-direction: row !important; }
+.cc-it:last-child { border-bottom: 0; }
+label.chk { display: inline-flex !important; flex-direction: row !important; gap: 6px; align-items: center; margin-right: 14px; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
