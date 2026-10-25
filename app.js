@@ -6256,7 +6256,7 @@ const App = (() => {
   function comTab(t) { S.fCom.tab = t; V.comisiones(); }
   async function cargarComis(forzar) {
     if (S.comis && !forzar) return S.comis;
-    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (160).' : esc(e.message)}</div>`; throw e; }
+    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (161).' : esc(e.message)}</div>`; throw e; }
     return S.comis;
   }
   const comPorId = id => ((S.comis || {}).comisionistas || []).find(c => c.id === id);
@@ -6462,7 +6462,7 @@ const App = (() => {
     if (!f.nDe || !f.nA || f.nDe > f.nA) return toast('Revisa el periodo', true);
     $('#ntRes').innerHTML = '<div class="vacio">🧾 Buscando notas…</div>';
     let r; try { r = await pedir('notasComi', { desde: f.nDe, hasta: f.nA, com: f.nCom || '', suc: f.nSuc || '', q: f.nQ || '' }, true); }
-    catch (e) { $('#ntRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '🧾 Se activa en cuanto se publique la actualización del servidor (160).' : esc(e.message)}</div>`; return; }
+    catch (e) { $('#ntRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '🧾 Se activa en cuanto se publique la actualización del servidor (161).' : esc(e.message)}</div>`; return; }
     S.ntDatos = r; S.ntSel = {}; pintarNotasLista();
   }
   function pintarNotasLista() {
