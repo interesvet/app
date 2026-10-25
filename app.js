@@ -578,12 +578,41 @@ const App = (() => {
     const opsAnio = sel => (tabla ? `<option value="todos" ${sel === 'todos' ? 'selected' : ''}>Todos</option>` : '') +
       anios.concat(sel && sel !== 'todos' && anios.indexOf(+sel) < 0 ? [+sel] : []).sort((x, y) => y - x).map(y => `<option value="${y}" ${String(y) === sel ? 'selected' : ''}>${y}</option>`).join('');
     const [mSel, ySel] = detectar();
+    // periodo rápido: día, semana, mes, trimestre, semestre, año, varios años, histórico
+    const isoDe = d => iso(d.getFullYear(), d.getMonth() + 1, d.getDate()), hoyD = () => { const x = new Date(); return new Date(x.getFullYear(), x.getMonth(), x.getDate()); };
+    const rangoRap = v => {
+      const h = hoyD(), y = h.getFullYear(), m = h.getMonth() + 1, H = isoDe(h), ini = (yy, mm) => iso(yy, mm, 1);
+      if (v === 'hoy') return [H, H];
+      if (v === 'ayer') { const a = new Date(h); a.setDate(a.getDate() - 1); return [isoDe(a), isoDe(a)]; }
+      if (v === 'dia') return [dI.value || H, dI.value || H];
+      if (v === 'semana') { const a = new Date(h); a.setDate(a.getDate() - ((a.getDay() + 6) % 7)); return [isoDe(a), H]; }
+      if (v === 'mes') return [ini(y, m), H];
+      if (v === 'mesant') { const yy = m === 1 ? y - 1 : y, mm = m === 1 ? 12 : m - 1; return [ini(yy, mm), iso(yy, mm, new Date(yy, mm, 0).getDate())]; }
+      if (v === 'tri') return [ini(y, Math.floor((m - 1) / 3) * 3 + 1), H];
+      if (v === 'sem') return [ini(y, m <= 6 ? 1 : 7), H];
+      if (v === 'anio') return [ini(y, 1), H];
+      if (v === 'aant') return [ini(y - 1, 1), iso(y - 1, 12, 31)];
+      if (/^a\d$/.test(v)) return [ini(y - (+v[1] - 1), 1), H];
+      if (v === 'hist') return tabla ? ['', ''] : ['2000-01-01', H];
+      return null;
+    };
+    const RAP = [['', 'Personalizado'], ['hoy', 'Hoy'], ['ayer', 'Ayer'], ['dia', 'Un día (elige la fecha)'], ['semana', 'Esta semana'], ['mes', 'Este mes'], ['mesant', 'Mes pasado'], ['tri', 'Este trimestre'], ['sem', 'Este semestre'],
+      ['anio', 'Este año'], ['aant', 'Año pasado'], ['a2', 'Últimos 2 años'], ['a3', 'Últimos 3 años'], ['a5', 'Últimos 5 años'], ['hist', 'Histórico (todo)']];
+    const detRap = () => {
+      const a = dI.value, b = hI.value;
+      if ((!a && !b) || (a <= '2000-01-01' && (!b || b === hoyISO()))) return 'hist';
+      for (const o of RAP) { if (!o[0] || o[0] === 'dia') continue; const r = rangoRap(o[0]); if (r && r[0] === a && r[1] === b) return o[0]; }
+      return a && a === b ? 'dia' : '';
+    };
     const lblD = dI.closest('label');
     const cont = document.createElement('span'); cont.style.display = 'contents';
-    cont.innerHTML = `<label>Mes<select id="${idDesde}Mes" ${ySel === 'todos' ? 'disabled' : ''}><option value="">Personalizado</option>${MESES_TXT.map((n, i) => `<option value="${i + 1}" ${mSel === String(i + 1) ? 'selected' : ''}>${n}</option>`).join('')}<option value="todo" ${mSel === 'todo' ? 'selected' : ''}>Todo el año</option></select></label>
+    cont.innerHTML = `<label>Periodo<select id="${idDesde}Rap">${RAP.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select></label><label>Mes<select id="${idDesde}Mes" ${ySel === 'todos' ? 'disabled' : ''}><option value="">Personalizado</option>${MESES_TXT.map((n, i) => `<option value="${i + 1}" ${mSel === String(i + 1) ? 'selected' : ''}>${n}</option>`).join('')}<option value="todo" ${mSel === 'todo' ? 'selected' : ''}>Todo el año</option></select></label>
       <label>Año<select id="${idDesde}Anio">${opsAnio(ySel)}</select></label>`;
     lblD.parentNode.insertBefore(cont, lblD);
-    const mS = $('#' + idDesde + 'Mes'), yS = $('#' + idDesde + 'Anio');
+    const mS = $('#' + idDesde + 'Mes'), yS = $('#' + idDesde + 'Anio'), rS = $('#' + idDesde + 'Rap');
+    rS.value = detRap();
+    const sincMesAnio = () => { if (rS.value === 'hist') { mS.value = ''; if (tabla) { yS.value = 'todos'; mS.disabled = true; } return; } const [m2, y2] = detectar(); if (y2 && !(y2 === 'todos' && !tabla)) { if (![...yS.options].some(o => o.value === y2)) yS.insertAdjacentHTML('beforeend', `<option value="${y2}">${y2}</option>`); yS.value = y2; } mS.value = m2; mS.disabled = yS.value === 'todos'; };
+    rS.onchange = () => { const r = rangoRap(rS.value); if (!r) return; dI.value = r[0]; hI.value = r[1]; sincMesAnio(); if (buscar) buscar(); if (rS.value === 'dia') try { dI.showPicker && dI.showPicker(); } catch (e) {} };
     const aplicar = () => {
       if (yS.value === 'todos') { mS.value = ''; mS.disabled = true; dI.value = ''; hI.value = ''; if (buscar) buscar(); return; }
       mS.disabled = false;
@@ -593,9 +622,12 @@ const App = (() => {
       else { dI.value = iso(y, +m, 1); hI.value = iso(y, +m, new Date(y, +m, 0).getDate()); }
       if (buscar) buscar();
     };
-    mS.onchange = aplicar;
-    yS.onchange = () => { if (yS.value !== 'todos' && !mS.value) mS.value = 'todo'; aplicar(); };
-    const manual = () => { mS.value = ''; mS.disabled = false; if (yS.value === 'todos' && (dI.value || hI.value)) yS.value = String((dI.value || hI.value).slice(0, 4)) || String(anioAct); };
+    mS.onchange = () => { aplicar(); rS.value = detRap(); };
+    yS.onchange = () => { if (yS.value !== 'todos' && !mS.value) mS.value = 'todo'; aplicar(); rS.value = detRap(); };
+    const manual = e => {
+      if (rS.value === 'dia' && e && e.target === dI) { hI.value = dI.value; if (buscar) buscar(); }
+      else rS.value = detRap();
+      mS.value = ''; mS.disabled = false; if (yS.value === 'todos' && (dI.value || hI.value)) yS.value = String((dI.value || hI.value).slice(0, 4)) || String(anioAct); };
     dI.addEventListener('input', manual); hI.addEventListener('input', manual);
     // años reales con registros (una vez por sesión)
     if (tabla && !S.anios[tabla]) pedir('aniosRegistros', { tabla: tabla }, true).then(l => {
@@ -8048,6 +8080,7 @@ const App = (() => {
       <button class="btn primario fijo" onclick="App.rclCargar()">Buscar</button></div>
       <p class="muted peq" style="margin-top:8px">${cli ? 'Reclamaciones que te hacen tus clientes: producto dañado, caducado, equivocado, faltante… Se capturan desde la nota de venta; el Administrador dictamina si procede y decide a dónde va la mercancía y cómo se compensa (N/C, reembolso o reposición).' : 'Reclamaciones que tú haces a tus proveedores, desde la orden de compra o desde una reclamación de cliente (el lote se rastrea hasta su orden). Registra la guía con que la envías y la nota de crédito que te den.'}</p></div>
       <div class="espacio"></div><div id="rcLista"><div class="vacio">Cargando…</div></div>`;
+    agregarMesAnio('rcDesde', 'rcHasta', rclCargar);
     $('#rcTxt').onkeydown = e => { if (e.key === 'Enter') rclCargar(); };
     ['rcEst', 'rcSuc'].forEach(i => { if ($('#' + i)) $('#' + i).onchange = rclCargar; });
     rclCargar();
