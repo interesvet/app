@@ -1616,7 +1616,7 @@ const App = (() => {
   const verAdjCob = (id, f) => verAdj('cobro', id, f), subirAdjCob = (id, i) => subirAdj('cobro', id, i), quitarAdjCob = (id, f) => quitarAdj('cobro', id, f);
   /* ---------- FOTOS Y DOCUMENTOS: clientes, ventas, compras, vendedores, proveedores ---------- */
   const ARCH_TIT = { cliFoto: '📷 Foto del cliente', cliCsf: '🧾 Constancia de situación fiscal', ventaGuia: '📦 Guía de envío', ocGuia: '📦 Guía de envío', trGuia: '📦 Guía de envío', vendFoto: '📷 Foto del vendedor', provLogo: '🏷️ Logotipo del proveedor',
-    visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)', sucFoto: '🏬 Foto de la sucursal',
+    visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)', sucFoto: '🏬 Foto de la sucursal', liqComp: '🧾 Comprobante de pago (transferencia)',
     ocFactura: '🧾 Factura del proveedor (PDF y XML)', ocNota: '📝 Nota de venta / cotización del proveedor (foto o PDF)', prodFicha: '📑 Ficha técnica (PDF)', ventaFirma: '✍️ Firma de recibido', ocFirma: '✍️ Firma de recepción', trFirma: '✍️ Firma de recibido', devDoc: '🧾 Documento fiscal de cancelación (XML y PDF)' };
   const ARCH_ACEPTA = { devDoc: 'application/pdf,.xml,text/xml,application/xml', ocFactura: 'application/pdf,.xml,text/xml,application/xml', prodFicha: 'application/pdf' };
   const ARCH_BTN = { devDoc: '➕ Agregar XML o PDF', ocFactura: '➕ Adjuntar PDF o XML', prodFicha: '📑 Subir ficha técnica (PDF)' };
@@ -6256,7 +6256,7 @@ const App = (() => {
   function comTab(t) { S.fCom.tab = t; V.comisiones(); }
   async function cargarComis(forzar) {
     if (S.comis && !forzar) return S.comis;
-    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (161).' : esc(e.message)}</div>`; throw e; }
+    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (162).' : esc(e.message)}</div>`; throw e; }
     return S.comis;
   }
   const comPorId = id => ((S.comis || {}).comisionistas || []).find(c => c.id === id);
@@ -6462,7 +6462,7 @@ const App = (() => {
     if (!f.nDe || !f.nA || f.nDe > f.nA) return toast('Revisa el periodo', true);
     $('#ntRes').innerHTML = '<div class="vacio">🧾 Buscando notas…</div>';
     let r; try { r = await pedir('notasComi', { desde: f.nDe, hasta: f.nA, com: f.nCom || '', suc: f.nSuc || '', q: f.nQ || '' }, true); }
-    catch (e) { $('#ntRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '🧾 Se activa en cuanto se publique la actualización del servidor (161).' : esc(e.message)}</div>`; return; }
+    catch (e) { $('#ntRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '🧾 Se activa en cuanto se publique la actualización del servidor (162).' : esc(e.message)}</div>`; return; }
     S.ntDatos = r; S.ntSel = {}; pintarNotasLista();
   }
   function pintarNotasLista() {
@@ -6472,7 +6472,7 @@ const App = (() => {
       ${r.notas.map(x => `<tr${/cancel|devuel/i.test(x.estatus) ? ' class="muted"' : ''}><td><input type="checkbox" style="width:auto" class="ntChk" data-id="${esc(x.id)}" ${S.ntSel[x.id] ? 'checked' : ''} onchange="App.ntMarca('${esc(x.id)}',this.checked)"></td>
         <td>${esc(x.fecha)}</td><td>${esc(x.folio)}${/cancel|devuel/i.test(x.estatus) ? ' <small>(' + esc(x.estatus) + ')</small>' : ''}</td><td>${esc(x.cliente)}</td><td>${esc(sucNom(x.suc))}</td><td class="num">${$$(x.neto)}</td>
         <td class="num">${x.total ? Math.min(100, Math.round(x.cobrado / x.total * 100)) + '%' : ''}</td><td>${x.comNombre ? esc(x.comNombre) + (x.origen === 'cliente' ? ' <small class="muted">(del cliente)</small>' : '') : '<span class="muted">—</span>'}</td>
-        <td>${regla(x)}${x.liquidada ? `<br><small class="muted">✔ ${esc(x.liquidada)}</small>` : ''}</td><td class="num">${x.comision === null ? '' : '<b>' + $$(x.comision) + '</b>'}</td></tr>`).join('')}</tbody></table></div>
+        <td>${regla(x)}${x.liquidada ? `<br><small class="muted">✔ ${esc(x.liquidada)}</small>` : ''}</td><td class="num">${x.comision === null ? '' : '<b>' + $$(x.comision) + '</b>'} <button class="btn chico" title="Poner a mano lo que se le paga de esta nota" onclick="App.ntMonto('${esc(x.id)}')">✏️ $</button></td></tr>`).join('')}</tbody></table></div>
       ${r.total > r.notas.length ? `<p class="muted peq">Se muestran ${nf(r.notas.length)} de ${nf(r.total)}; acota el periodo.</p>` : ''}</div>` : '<div class="vacio">No hay notas con esos filtros.</div>';
     ntBarra();
   }
@@ -6489,6 +6489,21 @@ const App = (() => {
       <label>Valor<input type="number" id="ntaVal" min="0" step="0.01" placeholder="% o $"></label>
       <button class="btn primario fijo" onclick="App.ntAsignar()">Aplicar</button></div>`;
     if (prev.c !== undefined) { $('#ntaCom').value = prev.c; if ([...$('#ntaTipo').options].some(o => o.value === prev.t)) $('#ntaTipo').value = prev.t; $('#ntaVal').value = prev.v || ''; }
+  }
+  function ntMonto(id) {
+    const x = S.ntDatos.notas.find(n => n.id === id); if (!x) return;
+    const ind = ((S.comis || {}).comisionistas || []).filter(c => c.tipo === 'Independiente' && (c.activo || c.id === x.com));
+    modal('✏️ Comisión a mano · ' + x.folio, `<p class="muted">${esc(x.cliente)} · ${esc(x.fecha)} · neto sin IVA ${$$(x.neto)}${x.comision !== null ? ' · hoy le tocan ' + $$(x.comision) : ''}</p>
+      <div class="rejilla-2" style="gap:10px"><label>Comisionista<select id="nmCom">${ind.map(c => `<option value="${esc(c.id)}" ${c.id === x.com ? 'selected' : ''}>${esc(c.nombre)}${c.confidencial ? ' 🔒' : ''}</option>`).join('')}</select></label>
+      <label>Valor a pagar de esta nota $<input type="number" id="nmVal" min="0" step="0.01" value="${x.regla && x.regla.tipo === 'Monto' ? x.regla.valor : ''}" placeholder="Ej. 350"></label></div>
+      <p class="muted peq">Este monto reemplaza su regla normal solo en esta nota. Si su base es lo cobrado, se le paga conforme el cliente vaya pagando la nota.${x.liquidada ? ' ⚠️ Esta nota ya está en ' + esc(x.liquidada) + '; lo ya liquidado no se recalcula.' : ''}</p>
+      <div class="acciones">${x.regla ? `<button class="btn" onclick="App.ntMontoOk('${esc(id)}', true)">Volver a su regla normal</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.ntMontoOk('${esc(id)}')">Guardar</button></div>`);
+  }
+  async function ntMontoOk(id, quitar) {
+    const idCom = $('#nmCom').value, val = $('#nmVal').value;
+    if (!idCom) return toast('Primero da de alta al comisionista', true);
+    if (!quitar && (val === '' || Number(val) < 0)) return toast('Captura el valor a pagar', true);
+    try { await pedir('asignarNotasComi', { ids: [id], idCom: idCom, tipo: quitar ? 'Regla' : 'Monto', valor: val }); toast('✔ Guardado'); cerrarModal(); cargarNotasCom(); } catch (e) {}
   }
   async function ntAsignar() {
     const ids = Object.keys(S.ntSel || {}), idCom = $('#ntaCom').value, tipo = $('#ntaTipo').value, valor = $('#ntaVal').value;
@@ -6514,7 +6529,9 @@ const App = (() => {
     modal('📄 ' + d.folio + ' · ' + d.comisionista.nombre, `<p class="muted">${esc(d.desde)} – ${esc(d.hasta)} · <span class="etq ${pag ? 'ok' : can ? 'mal' : 'av'}">${esc(d.estado)}</span>${pag ? ` · pagada el ${esc(d.pago)} ${esc(d.forma)} ${esc(d.referencia)}${d.uuid ? ' · UUID ' + esc(d.uuid) : ''}` : ''}</p>
       ${comTotHtml(d.totales, d.comisionista)}${comLineasHtml(d.lineas)}${d.notas ? `<p class="muted peq">${esc(d.notas)}</p>` : ''}
       ${!pag && !can ? `<div class="rejilla-2" style="gap:8px;margin-top:10px"><label>Fecha de pago<input type="date" id="lpF" value="${hoyISO()}"></label><label>Forma de pago<select id="lpForma"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option></select></label>
-        <label>Referencia<input id="lpRef"></label><label>Folio fiscal (UUID) de su factura<input id="lpUuid" placeholder="Opcional"></label></div>` : ''}
+        <label>Referencia<input id="lpRef"></label><label>Folio fiscal (UUID) de su factura<input id="lpUuid" placeholder="Opcional"></label></div>
+        <p class="muted peq">Si pagaste por transferencia, sube el comprobante en el recuadro de abajo (PDF o foto).</p>` : ''}
+      ${bloqueArch('liqComp', id)}
       <div class="acciones"><button class="btn" onclick="App.comiPdf(1)">📄 PDF</button>${!pag && !can ? `<button class="btn peligro" onclick="App.comiCancelarLiq('${esc(id)}')">Cancelar</button><button class="btn primario" onclick="App.comiPagar('${esc(id)}')">✔ Marcar pagada</button>` : ''}</div>`);
   }
   async function comiPagar(id) {
@@ -7875,7 +7892,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
