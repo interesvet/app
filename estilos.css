@@ -841,6 +841,9 @@ th.ordenable { cursor: pointer; user-select: none; } th.ordenable:hover { color:
 .cc-lista { max-height: 50vh; overflow: auto; border: 1px solid var(--borde); border-radius: 10px; margin: 10px 0; }
 .cc-it { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--borde); cursor: pointer; flex-direction: row !important; }
 .cc-it:last-child { border-bottom: 0; }
+.com-atajos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.com-barra { position: sticky; top: 0; z-index: 5; border-color: var(--marca); }
+.com-prod { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--borde); } .com-prod span { flex: 1; }
 label.chk { display: inline-flex !important; flex-direction: row !important; gap: 6px; align-items: center; margin-right: 14px; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;

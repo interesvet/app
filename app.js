@@ -6245,22 +6245,22 @@ const App = (() => {
   }
 
   /* ---------- 💼 COMISIONES (solo el dueño): comisionistas independientes, comisión de sucursal y liquidaciones ---------- */
-  const COM_TABS = [['comis', '💼 Comisionistas'], ['liquidar', '🧮 Liquidar'], ['liqs', '📄 Liquidaciones']];
+  const COM_TABS = [['comis', '💼 Comisionistas'], ['liquidar', '🧮 Liquidar'], ['notas', '🧾 Notas'], ['liqs', '📄 Liquidaciones']];
   V.comisiones = (tab) => {
     if (!puede('dueno')) return ir('inicio');
     const f = S.fCom = S.fCom || { tab: 'comis', id: '', desde: '', hasta: '' };
     if (tab) f.tab = tab;
     $('#vista').innerHTML = `<div class="pestanas">${COM_TABS.map(t => `<button class="${f.tab === t[0] ? 'activo' : ''}" onclick="App.comTab('${t[0]}')">${t[1]}</button>`).join('')}</div><div id="comRes"><div class="vacio">💼 Cargando…</div></div>`;
-    cargarComis().catch(() => null).then(c => { if (!c) return; if (f.tab === 'comis') pintarComis(); else if (f.tab === 'liquidar') pintarLiquidar(); else cargarLiqs(); });
+    cargarComis().catch(() => null).then(c => { if (!c) return; if (f.tab === 'comis') pintarComis(); else if (f.tab === 'liquidar') pintarLiquidar(); else if (f.tab === 'notas') pintarNotasCom(); else cargarLiqs(); });
   };
   function comTab(t) { S.fCom.tab = t; V.comisiones(); }
   async function cargarComis(forzar) {
     if (S.comis && !forzar) return S.comis;
-    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (158).' : esc(e.message)}</div>`; throw e; }
+    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (160).' : esc(e.message)}</div>`; throw e; }
     return S.comis;
   }
   const comPorId = id => ((S.comis || {}).comisionistas || []).find(c => c.id === id);
-  const comRegla = c => `${nf(c.pct)}% de lo ${c.base === 'Vendido' ? 'vendido' : 'cobrado'} sin IVA${Object.keys(c.cats || {}).length ? ' · ' + Object.keys(c.cats).map(k => esc(k) + ' ' + nf(c.cats[k]) + '%').join(' · ') : ''}`;
+  const comRegla = c => `${c.lista ? 'Diferencia contra su precio ' + esc(c.lista) + ' · ' : ''}${Object.keys(c.prods || {}).length ? nf(Object.keys(c.prods).length) + ' producto' + (Object.keys(c.prods).length === 1 ? '' : 's') + ' con % propio · ' : ''}${Object.keys(c.cats || {}).length ? Object.keys(c.cats).map(k => esc(k) + ' ' + nf(c.cats[k]) + '%').join(' · ') + ' · ' : ''}${nf(c.pct)}% general · sobre lo ${c.base === 'Vendido' ? 'vendido' : 'cobrado'} sin IVA`;
   function pintarComis() {
     const el = $('#comRes'), l = (S.comis || {}).comisionistas || []; if (!el) return;
     el.innerHTML = `<div class="tarjeta"><div class="fila"><div style="flex:3 1 260px" class="muted peq">🔒 Solo tú ves esta sección. <b>Independiente</b>: gana sobre los clientes que le asignes (o notas sueltas). <b>De sucursal</b>: gana sobre todo lo de una sucursal, sin ligarse a clientes ni notas. <b>Confidencial</b>: nunca aparece en notas, PDF, fichas ni pantallas de nadie más.</div>
@@ -6280,7 +6280,12 @@ const App = (() => {
         <label>Tipo<select id="fcoTipo" onchange="App.comiTipo()"><option value="Independiente" ${c.tipo !== 'Sucursal' ? 'selected' : ''}>Independiente (por clientes / notas)</option><option value="Sucursal" ${c.tipo === 'Sucursal' ? 'selected' : ''}>De sucursal (todo lo de una sucursal)</option></select></label>
         <label id="fcoSucL">Sucursal<select id="fcoSuc">${optsSuc(c.sucursal || '', true, 'Elige…')}</select></label>
         <label>Se calcula sobre<select id="fcoBase"><option value="Cobrado" ${c.base !== 'Vendido' ? 'selected' : ''}>Lo cobrado (sin IVA)</option><option value="Vendido" ${c.base === 'Vendido' ? 'selected' : ''}>Lo vendido (sin IVA)</option></select></label>
-        <label>Comisión general %<input type="number" id="fcoPct" min="0" max="60" step="0.1" value="${c.pct === '' ? '' : c.pct}" placeholder="Ej. 5"></label>
+        <label>Comisión general % <small class="muted">(sobre la nota)</small><input type="number" id="fcoPct" min="0" max="60" step="0.1" value="${c.pct === '' ? '' : c.pct}" placeholder="Ej. 5"></label>
+        <label id="fcoListaL">Su lista de precios <small class="muted">(gana la diferencia)</small><select id="fcoLista"><option value="">— Sin lista —</option>${((S.comis || {}).listas || []).map(x => `<option ${x === c.lista ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+        <p class="muted peq" style="grid-column:1/-1;margin:0">Cómo se calcula cada producto de la nota: <b>1)</b> si tiene su lista y el producto tiene ese precio, gana la <b>diferencia</b> entre lo vendido y su precio (ej. lista Aliado y se vendió a Farmacia); <b>2)</b> si no, el <b>% del producto</b>; <b>3)</b> el % de su categoría; <b>4)</b> el % general.</p>
+        <details id="fcoProdD" style="grid-column:1/-1"${Object.keys(c.prods || {}).length ? ' open' : ''}><summary>% por producto <span class="muted">(opcional)</span></summary>
+          <div class="fila" style="margin-top:8px"><input id="fcoPBus" list="fcoPList" placeholder="🔍 Producto"><datalist id="fcoPList">${(D().productos || []).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist>
+            <input type="number" id="fcoPPct" min="0" max="60" step="0.1" placeholder="%" style="max-width:90px"><button class="btn fijo" type="button" onclick="App.comiProdAdd()">+ Agregar</button></div><div id="fcoProds"></div></details>
         ${cats.length ? `<details style="grid-column:1/-1"${Object.keys(c.cats || {}).length ? ' open' : ''}><summary>% distinto por categoría de producto <span class="muted">(opcional; vacío = el general)</span></summary><div class="rejilla-2" style="gap:8px;margin-top:8px">
           ${cats.map((k, i) => `<label>${esc(k)}<input type="number" class="fcoCat" data-k="${esc(k)}" min="0" max="60" step="0.1" value="${c.cats && c.cats[k] !== undefined ? c.cats[k] : ''}"></label>`).join('')}</div></details>` : ''}
         <label>RFC<input id="fcoRfc" value="${esc(c.rfc || '')}"></label><label>Régimen fiscal<input id="fcoReg" value="${esc(c.regimen || '')}"></label>
@@ -6293,12 +6298,22 @@ const App = (() => {
         <label style="grid-column:1/-1">Comentarios<input id="fcoCom" value="${esc(c.comentarios || '')}"></label></div>
       <p class="muted peq">Las tasas de IVA y retenciones confírmalas con tu contador (dependen del régimen del comisionista).</p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarComi('${esc(id)}')">Guardar</button></div>`);
-    comiTipo();
+    S.fcoProds = Object.assign({}, c.prods || {}); comiProdPintar(); comiTipo();
   }
-  function comiTipo() { const s = $('#fcoTipo').value === 'Sucursal'; $('#fcoSucL').style.display = s ? '' : 'none'; }
+  function comiTipo() { const s = $('#fcoTipo').value === 'Sucursal'; $('#fcoSucL').style.display = s ? '' : 'none'; $('#fcoListaL').style.display = s ? 'none' : ''; }
+  function comiProdPintar() {
+    const el = $('#fcoProds'); if (!el) return; const ks = Object.keys(S.fcoProds || {});
+    el.innerHTML = ks.length ? ks.map(k => `<div class="com-prod"><span>${esc((prod(k) || {}).nombre || k)}</span><b>${nf(S.fcoProds[k])}%</b><button class="icono" type="button" aria-label="Quitar" onclick="App.comiProdQuitar('${esc(k)}')">✕</button></div>`).join('') : '<p class="muted peq">Sin productos con % propio.</p>';
+  }
+  function comiProdAdd() {
+    const n = norm($('#fcoPBus').value), x = (D().productos || []).find(p => norm(p.nombre) === n) || (D().productos || []).find(p => norm(p.nombre).indexOf(n) >= 0 && n);
+    const v = $('#fcoPPct').value; if (!x) return toast('Elige un producto de la lista', true); if (v === '' || Number(v) < 0) return toast('Captura el %', true);
+    S.fcoProds[x.id] = Number(v); $('#fcoPBus').value = ''; $('#fcoPPct').value = ''; comiProdPintar();
+  }
+  function comiProdQuitar(k) { delete S.fcoProds[k]; comiProdPintar(); }
   async function guardarComi(id) {
     const cats = {}; document.querySelectorAll('.fcoCat').forEach(i => { if (i.value !== '') cats[i.dataset.k] = Number(i.value); });
-    const p = { id: id, nombre: $('#fcoNom').value, tipo: $('#fcoTipo').value, sucursal: $('#fcoSuc').value, base: $('#fcoBase').value, pct: Number($('#fcoPct').value) || 0, cats: cats,
+    const p = { id: id, nombre: $('#fcoNom').value, tipo: $('#fcoTipo').value, sucursal: $('#fcoSuc').value, base: $('#fcoBase').value, pct: Number($('#fcoPct').value) || 0, cats: cats, lista: $('#fcoTipo').value === 'Sucursal' ? '' : $('#fcoLista').value, prods: S.fcoProds || {},
       rfc: $('#fcoRfc').value, regimen: $('#fcoReg').value, tel: $('#fcoTel').value, correo: $('#fcoMail').value, banco: $('#fcoBco').value, clabe: $('#fcoClabe').value,
       factura: $('#fcoFac').checked, iva: Number($('#fcoIva').value) || 0, retIsr: Number($('#fcoRisr').value) || 0, retIva: Number($('#fcoRiva').value) || 0,
       confidencial: $('#fcoConf').checked, activo: $('#fcoAct').checked, comentarios: $('#fcoCom').value };
@@ -6347,10 +6362,18 @@ const App = (() => {
         <option value="">El del cliente${delCli ? ' (' + esc(delCli.nombre) + ')' : ' (ninguno)'}</option>
         ${r.lista.map(c => `<option value="${esc(c.id)}" ${r.actual === c.id ? 'selected' : ''}>Solo esta nota: ${esc(c.nombre)}</option>`).join('')}
         <option value="NINGUNO" ${r.actual === 'NINGUNO' ? 'selected' : ''}>Nadie (esta nota no paga comisión)</option></select></label>
+      ${comReglaHtml('cn')}
       <p class="muted peq">🔒 Solo lo ves tú; no aparece en la nota ni en su PDF.</p>
       <div class="acciones"><button class="btn" onclick="App.verVentaId('${esc(idVenta)}')">Volver</button><button class="btn primario" onclick="App.comiNotaOk('${esc(idVenta)}')">Guardar</button></div>`);
   }
-  async function comiNotaOk(idVenta) { try { await pedir('comisionNota', { idVenta: idVenta, idCom: $('#cnSel').value }); toast('✔ Guardado'); verVenta(idVenta); } catch (e) {} }
+  /** Selector de regla para notas: la suya, % de la nota o monto fijo. */
+  const comReglaHtml = (p, una) => `<div class="rejilla-2" style="gap:8px;margin-top:8px"><label>Comisión de ${una === false ? 'estas notas' : 'esta nota'}<select id="${p}Tipo" onchange="document.getElementById('${p}ValL').style.display=this.value?'':'none'"><option value="">Su regla normal</option><option value="Pct">% de la nota (sin IVA)</option>${una === false ? '' : '<option value="Monto">Monto fijo $</option>'}</select></label>
+      <label id="${p}ValL" style="display:none">Valor<input type="number" id="${p}Val" min="0" step="0.01" placeholder="% o $"></label></div>`;
+  async function comiNotaOk(idVenta) {
+    const idCom = $('#cnSel').value, tipo = $('#cnTipo').value, valor = $('#cnVal').value;
+    if (tipo && (!idCom || idCom === 'NINGUNO')) return toast('Para poner % o monto, elige “Solo esta nota: …” con el comisionista', true);
+    if (tipo && valor === '') return toast('Captura el valor', true);
+    try { await pedir('asignarNotasComi', { ids: [idVenta], idCom: idCom, tipo: tipo || 'Regla', valor: valor }); toast('✔ Guardado'); verVenta(idVenta); } catch (e) {} }
   /* --- liquidar --- */
   function comiLiquidar(id) { const f = S.fCom = S.fCom || {}; f.id = id; f.desde = ''; f.hasta = ''; f.tab = 'liquidar'; if (S.vista !== 'comisiones') ir('comisiones'); else V.comisiones(); }
   function pintarLiquidar() {
@@ -6361,14 +6384,32 @@ const App = (() => {
     if (!f.hasta) f.hasta = hoy;
     el.innerHTML = l.length ? `<div class="tarjeta"><div class="fila">
         <label>Comisionista<select id="lqCom">${l.map(x => `<option value="${esc(x.id)}" ${x.id === f.id ? 'selected' : ''}>${esc(x.nombre)}${x.confidencial ? ' 🔒' : ''}</option>`).join('')}</select></label>
-        <label>Desde<input type="date" id="lqDe" value="${esc(f.desde)}"></label><label>Hasta<input type="date" id="lqA" value="${esc(f.hasta)}"></label>
-        <button class="btn primario fijo" onclick="App.comiCalcular()">🧮 Calcular</button></div>
+        ${comPeriodoHtml('lq', f)}
+        <button class="btn primario fijo" onclick="App.comiCalcular()">🧮 Calcular</button></div>${comAtajosHtml('lq')}
         ${c ? `<p class="muted peq" style="margin:8px 0 0">${c.tipo === 'Sucursal' ? '🏬 Todo lo de ' + esc(sucNom(c.sucursal)) + ' · ' : '🤝 Sus clientes y notas asignadas · '}${comRegla(c)}. Solo toma lo que no se ha liquidado antes; si una nota ya comisionada se canceló o devolvió, se descuenta.</p>` : ''}</div>
       <div id="lqRes"></div>` : '<div class="vacio">Primero da de alta un comisionista.</div>';
     if (!l.length) return;
     $('#lqCom').onchange = e => { f.id = e.target.value; f.desde = ''; f.hasta = ''; pintarLiquidar(); };
-    $('#lqDe').onchange = e => f.desde = e.target.value; $('#lqA').onchange = e => f.hasta = e.target.value;
+    comPeriodoEnlazar('lq', f);
     if (S.lqCalc && S.lqCalc.k === f.id + f.desde + f.hasta) pintarCalc();
+  }
+  /* periodo por meses (con fechas exactas si se necesita) */
+  const finMes = m => { const [y, mm] = m.split('-').map(Number), d = new Date(y, mm, 0), h = hoyISO(), x = y + '-' + ('0' + mm).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); return x > h ? h : x; };
+  const comPeriodoHtml = (p, f) => `<label>Del mes<input type="month" id="${p}M1" value="${esc((f.desde || '').slice(0, 7))}"></label><label>Al mes<input type="month" id="${p}M2" value="${esc((f.hasta || '').slice(0, 7))}"></label>
+      <label>Desde<input type="date" id="${p}De" value="${esc(f.desde)}"></label><label>Hasta<input type="date" id="${p}A" value="${esc(f.hasta)}"></label>`;
+  const comAtajosHtml = p => `<div class="com-atajos">${[['mes', 'Este mes'], ['ant', 'Mes pasado'], ['3m', 'Últimos 3 meses'], ['6m', 'Últimos 6 meses'], ['anio', 'Este año'], ['aant', 'Año pasado']].map(a => `<button class="chip-op" type="button" onclick="App.comAtajo('${p}','${a[0]}')">${a[1]}</button>`).join('')}</div>`;
+  function comPeriodoEnlazar(p, f) {
+    const m1 = $('#' + p + 'M1'), m2 = $('#' + p + 'M2'), de = $('#' + p + 'De'), a = $('#' + p + 'A');
+    m1.onchange = () => { if (!m1.value) return; if (!m2.value || m2.value < m1.value) m2.value = m1.value; de.value = f.desde = m1.value + '-01'; a.value = f.hasta = finMes(m2.value); };
+    m2.onchange = () => { if (!m2.value) return; if (!m1.value || m1.value > m2.value) { m1.value = m2.value; de.value = f.desde = m2.value + '-01'; } a.value = f.hasta = finMes(m2.value); };
+    de.onchange = () => { f.desde = de.value; m1.value = de.value.slice(0, 7); }; a.onchange = () => { f.hasta = a.value; m2.value = a.value.slice(0, 7); };
+  }
+  function comAtajo(p, k) {
+    const h = hoyISO(), y = +h.slice(0, 4), m = +h.slice(5, 7), mes = (yy, mm) => { while (mm < 1) { mm += 12; yy--; } return yy + '-' + ('0' + mm).slice(-2); };
+    const r = { mes: [mes(y, m), mes(y, m)], ant: [mes(y, m - 1), mes(y, m - 1)], '3m': [mes(y, m - 2), mes(y, m)], '6m': [mes(y, m - 5), mes(y, m)], anio: [y + '-01', mes(y, m)], aant: [(y - 1) + '-01', (y - 1) + '-12'] }[k];
+    const de = r[0] + '-01', a = finMes(r[1]), f = S.fCom; if (p === 'lq') { f.desde = de; f.hasta = a; } else { f.nDe = de; f.nA = a; }
+    $('#' + p + 'M1').value = r[0]; $('#' + p + 'M2').value = r[1]; $('#' + p + 'De').value = de; $('#' + p + 'A').value = a;
+    if (p === 'lq') comiCalcular(); else cargarNotasCom();
   }
   async function comiCalcular() {
     const f = S.fCom; f.desde = $('#lqDe').value; f.hasta = $('#lqA').value;
@@ -6377,8 +6418,8 @@ const App = (() => {
     try { const r = await pedir('calcularComision', { id: f.id, desde: f.desde, hasta: f.hasta }, true); S.lqCalc = Object.assign(r, { k: f.id + f.desde + f.hasta }); pintarCalc(); } catch (e) { $('#lqRes').innerHTML = ''; }
   }
   function comLineasHtml(lineas) {
-    return `<div class="tabla-cont"><table><thead><tr><th>Fecha</th><th>Nota</th><th>Cliente</th><th>Sucursal</th><th>Concepto</th><th class="num">Base sin IVA</th><th class="num">%</th><th class="num">Comisión</th></tr></thead><tbody>
-      ${lineas.map(x => `<tr${x.comision < 0 ? ' class="error"' : ''}><td>${esc(x.fecha)}</td><td>${esc(x.folio)}</td><td>${esc(x.cliente)}</td><td>${esc(sucNom(x.suc))}</td><td>${esc(x.tipo === 'Cobro' ? 'Cobro' : x.tipo === 'Venta' ? 'Venta' : '↩️ Cancelada / devuelta')}</td><td class="num">${x.base ? $$(x.base) : ''}</td><td class="num">${x.pct ? nf(x.pct) + '%' : ''}</td><td class="num"><b>${$$(x.comision)}</b></td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="tabla-cont"><table><thead><tr><th>Fecha</th><th>Nota</th><th>Cliente</th><th>Sucursal</th><th>Concepto / regla</th><th class="num">Base sin IVA</th><th class="num">% efectivo</th><th class="num">Comisión</th></tr></thead><tbody>
+      ${lineas.map(x => `<tr${x.comision < 0 ? ' class="error"' : ''}><td>${esc(x.fecha)}</td><td>${esc(x.folio)}</td><td>${esc(x.cliente)}</td><td>${esc(sucNom(x.suc))}</td><td>${esc(x.tipo === 'Cobro' ? 'Cobro' : x.tipo === 'Venta' ? 'Venta' : '↩️ Cancelada / devuelta')}${x.regla ? `<br><small class="muted">${esc(x.regla)}</small>` : ''}</td><td class="num">${x.base ? $$(x.base) : ''}</td><td class="num">${x.pct ? nf(x.pct) + '%' : ''}</td><td class="num"><b>${$$(x.comision)}</b></td></tr>`).join('')}</tbody></table></div>`;
   }
   function comTotHtml(t, c) {
     const fila = (a, b, n) => `<div class="com-tot${n ? ' gran' : ''}"><span>${a}</span><b>${$$(b)}</b></div>`;
@@ -6395,6 +6436,67 @@ const App = (() => {
     const f = S.fCom, r = S.lqCalc; if (!r) return;
     if (!confirm('¿Guardar la liquidación de ' + r.comisionista.nombre + ' por ' + $$(r.totales.total) + '?\nLo incluido ya no se volverá a liquidar (salvo que la canceles).')) return;
     try { const g = await pedir('guardarLiquidacion', { id: f.id, desde: f.desde, hasta: f.hasta }); toast('✔ Liquidación ' + g.folio + ' guardada'); S.lqCalc = null; await cargarComis(true); verLiq(g.id); f.tab = 'liqs'; V.comisiones(); } catch (e) {}
+  }
+  /* --- 🧾 notas de venta (también anteriores): asignar comisionista y su % o monto --- */
+  function pintarNotasCom() {
+    const f = S.fCom, el = $('#comRes'); if (!el) return;
+    const h = hoyISO(); if (!f.nDe) { f.nDe = h.slice(0, 8) + '01'; f.nA = h; }
+    const fx = { desde: f.nDe, hasta: f.nA }, ind = ((S.comis || {}).comisionistas || []).filter(c => c.tipo === 'Independiente');
+    el.innerHTML = `<div class="tarjeta"><div class="fila">${comPeriodoHtml('nt', fx)}
+        <label>Comisionista<select id="ntCom"><option value="">Todas las notas</option><option value="-" ${f.nCom === '-' ? 'selected' : ''}>Sin comisionista</option>${ind.map(c => `<option value="${esc(c.id)}" ${f.nCom === c.id ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></label>
+        ${U().todasSucursales ? `<label>Sucursal<select id="ntSuc">${optsSuc(f.nSuc || '', true, 'Todas')}</select></label>` : ''}
+        <label style="flex:2 1 180px">Buscar<input id="ntQ" value="${esc(f.nQ || '')}" placeholder="Cliente o folio"></label>
+        <button class="btn fijo" onclick="App.cargarNotasCom()">⟳ Buscar</button></div>${comAtajosHtml('nt')}
+        <p class="muted peq" style="margin:8px 0 0">Marca las notas (de cualquier fecha) y asígnalas al comisionista con su regla normal, un % de la nota o un monto fijo. Las notas de sus clientes ya le tocan solas; aquí puedes cambiar notas sueltas.</p></div>
+      <div id="ntBarra" class="tarjeta com-barra oculto"></div><div id="ntRes"><div class="vacio">🧾 Buscando notas…</div></div>`;
+    const fy = { set desde(v) { f.nDe = v; }, get desde() { return f.nDe; }, set hasta(v) { f.nA = v; }, get hasta() { return f.nA; } };
+    comPeriodoEnlazar('nt', fy);
+    $('#ntCom').onchange = e => { f.nCom = e.target.value; cargarNotasCom(); };
+    if ($('#ntSuc')) $('#ntSuc').onchange = e => { f.nSuc = e.target.value; cargarNotasCom(); };
+    $('#ntQ').onkeydown = e => { if (e.key === 'Enter') cargarNotasCom(); };
+    cargarNotasCom();
+  }
+  async function cargarNotasCom() {
+    const f = S.fCom; if (!$('#ntRes')) return;
+    f.nDe = $('#ntDe').value; f.nA = $('#ntA').value; f.nQ = $('#ntQ').value;
+    if (!f.nDe || !f.nA || f.nDe > f.nA) return toast('Revisa el periodo', true);
+    $('#ntRes').innerHTML = '<div class="vacio">🧾 Buscando notas…</div>';
+    let r; try { r = await pedir('notasComi', { desde: f.nDe, hasta: f.nA, com: f.nCom || '', suc: f.nSuc || '', q: f.nQ || '' }, true); }
+    catch (e) { $('#ntRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '🧾 Se activa en cuanto se publique la actualización del servidor (160).' : esc(e.message)}</div>`; return; }
+    S.ntDatos = r; S.ntSel = {}; pintarNotasLista();
+  }
+  function pintarNotasLista() {
+    const r = S.ntDatos, el = $('#ntRes'); if (!r || !el) return;
+    const regla = x => x.origen === 'nadie' ? '<span class="etq">Nadie</span>' : x.regla ? `<span class="etq av">${x.regla.tipo === 'Monto' ? $$(x.regla.valor) + ' fijo' : nf(x.regla.valor) + '% de la nota'}</span>` : x.com ? `<small class="muted">${esc(x.detalleRegla || 'su regla')}</small>` : '';
+    el.innerHTML = r.notas.length ? `<div class="tarjeta"><div class="tabla-cont"><table><thead><tr><th><input type="checkbox" style="width:auto" aria-label="Todas" onchange="App.ntTodas(this.checked)"></th><th>Fecha</th><th>Nota</th><th>Cliente</th><th>Sucursal</th><th class="num">Neto sin IVA</th><th class="num">Cobrado</th><th>Comisionista</th><th>Regla</th><th class="num">Comisión</th></tr></thead><tbody>
+      ${r.notas.map(x => `<tr${/cancel|devuel/i.test(x.estatus) ? ' class="muted"' : ''}><td><input type="checkbox" style="width:auto" class="ntChk" data-id="${esc(x.id)}" ${S.ntSel[x.id] ? 'checked' : ''} onchange="App.ntMarca('${esc(x.id)}',this.checked)"></td>
+        <td>${esc(x.fecha)}</td><td>${esc(x.folio)}${/cancel|devuel/i.test(x.estatus) ? ' <small>(' + esc(x.estatus) + ')</small>' : ''}</td><td>${esc(x.cliente)}</td><td>${esc(sucNom(x.suc))}</td><td class="num">${$$(x.neto)}</td>
+        <td class="num">${x.total ? Math.min(100, Math.round(x.cobrado / x.total * 100)) + '%' : ''}</td><td>${x.comNombre ? esc(x.comNombre) + (x.origen === 'cliente' ? ' <small class="muted">(del cliente)</small>' : '') : '<span class="muted">—</span>'}</td>
+        <td>${regla(x)}${x.liquidada ? `<br><small class="muted">✔ ${esc(x.liquidada)}</small>` : ''}</td><td class="num">${x.comision === null ? '' : '<b>' + $$(x.comision) + '</b>'}</td></tr>`).join('')}</tbody></table></div>
+      ${r.total > r.notas.length ? `<p class="muted peq">Se muestran ${nf(r.notas.length)} de ${nf(r.total)}; acota el periodo.</p>` : ''}</div>` : '<div class="vacio">No hay notas con esos filtros.</div>';
+    ntBarra();
+  }
+  function ntMarca(id, v) { if (v) S.ntSel[id] = 1; else delete S.ntSel[id]; ntBarra(); }
+  function ntTodas(v) { S.ntSel = {}; if (v) S.ntDatos.notas.forEach(x => S.ntSel[x.id] = 1); document.querySelectorAll('.ntChk').forEach(c => c.checked = v); ntBarra(); }
+  function ntBarra() {
+    const el = $('#ntBarra'), n = Object.keys(S.ntSel || {}).length; if (!el) return;
+    el.classList.toggle('oculto', !n); if (!n) return;
+    const ind = ((S.comis || {}).comisionistas || []).filter(c => c.tipo === 'Independiente' && c.activo);
+    const prev = { c: ($('#ntaCom') || {}).value, t: ($('#ntaTipo') || {}).value, v: ($('#ntaVal') || {}).value };
+    el.innerHTML = `<div class="fila"><b class="fijo">${nf(n)} nota${n === 1 ? '' : 's'}</b>
+      <label>Asignar a<select id="ntaCom"><option value="">El del cliente</option>${ind.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}${c.confidencial ? ' 🔒' : ''}</option>`).join('')}<option value="NINGUNO">Nadie (sin comisión)</option></select></label>
+      <label>Comisión<select id="ntaTipo"><option value="">Su regla normal</option><option value="Pct">% de la nota (sin IVA)</option>${n === 1 ? '<option value="Monto">Monto fijo $</option>' : ''}</select></label>
+      <label>Valor<input type="number" id="ntaVal" min="0" step="0.01" placeholder="% o $"></label>
+      <button class="btn primario fijo" onclick="App.ntAsignar()">Aplicar</button></div>`;
+    if (prev.c !== undefined) { $('#ntaCom').value = prev.c; if ([...$('#ntaTipo').options].some(o => o.value === prev.t)) $('#ntaTipo').value = prev.t; $('#ntaVal').value = prev.v || ''; }
+  }
+  async function ntAsignar() {
+    const ids = Object.keys(S.ntSel || {}), idCom = $('#ntaCom').value, tipo = $('#ntaTipo').value, valor = $('#ntaVal').value;
+    if (tipo && (!idCom || idCom === 'NINGUNO')) return toast('Para poner % o monto, elige el comisionista', true);
+    if (tipo && valor === '') return toast('Captura el valor', true);
+    const liq = S.ntDatos.notas.filter(x => S.ntSel[x.id] && x.liquidada);
+    if (liq.length && !confirm(liq.length + ' de las notas ya están en una liquidación (' + liq.map(x => x.liquidada).join(', ') + '). Lo ya liquidado no se recalcula; ¿continuar?')) return;
+    try { await pedir('asignarNotasComi', { ids: ids, idCom: idCom, tipo: tipo || 'Regla', valor: valor }); toast('✔ ' + ids.length + ' nota' + (ids.length === 1 ? '' : 's') + ' actualizada' + (ids.length === 1 ? '' : 's')); cargarNotasCom(); } catch (e) {}
   }
   /* --- liquidaciones --- */
   async function cargarLiqs(id) {
@@ -7773,7 +7875,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
