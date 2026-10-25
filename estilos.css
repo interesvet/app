@@ -846,6 +846,12 @@ th.ordenable { cursor: pointer; user-select: none; } th.ordenable:hover { color:
 .com-barra { position: sticky; top: 0; z-index: 5; border-color: var(--marca); }
 .com-prod { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--borde); } .com-prod span { flex: 1; }
 label.chk { display: inline-flex !important; flex-direction: row !important; gap: 6px; align-items: center; margin-right: 14px; }
+/* Reclamaciones: pasos */
+.rcl-pasos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.rcl-pasos > div { flex: 1 1 110px; border: 1px solid var(--borde); border-radius: 10px; padding: 6px 8px; font-size: 12px; color: var(--texto-3); background: var(--superficie); display: flex; gap: 6px; align-items: center; }
+.rcl-pasos > div.hecho { color: var(--ok); border-color: var(--ok); background: var(--superficie-2); font-weight: 600; }
+.rcl-pasos > div span { font-size: 13px; }
+small.ok { color: var(--ok); }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

@@ -618,6 +618,7 @@ const App = (() => {
     { id: 'metas', t: 'Metas y comisiones', i: '🏆', p: 'seguimiento', oculto: 1 },
     { id: 'recetas', t: 'Recetas', i: '💊', p: 'recetas', oculto: 1 },
     { id: 'compras', t: 'Compras', i: '📦', p: ['compras', 'traspasos'] },
+    { id: 'reclamaciones', t: 'Reclamaciones', i: '📣', p: ['ventas', 'compras', 'inventario'] },
     { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos'] },
     { id: 'comisiones', t: 'Comisiones', i: '💼', p: 'dueno' },
     { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'requisiciones', 'ajustes', 'mermas', 'inventario_fisico'] },
@@ -1468,6 +1469,7 @@ const App = (() => {
         ${!offline && d.id && !bloq && viva && puede('ventas_cancelar') ? `<button class="btn peligro" onclick="App.cancelarVenta('${d.id}')">Cancelar toda la nota</button>` : ''}
         ${!offline && d.id && bloq && viva && puede('devoluciones') ? `<button class="btn peligro" onclick="App.nuevaDevolucion('${d.id}')">↩️ Devolución de la nota completa</button>` : ''}
         ${d.devolucion && puede('devoluciones') ? `<button class="btn" onclick="App.verDev('${esc(d.devolucion.id)}')">↩️ Ver devolución ${esc(d.devolucion.folio)}</button>` : ''}
+        ${!offline && d.id && d.estatus !== 'Cancelado' && puede('ventas') ? `<button class="btn" onclick="App.rclDesde('Cliente','${d.id}')">📣 Reclamación</button>` : ''}
         ${!offline && d.id && puede('dueno') ? `<button class="btn" onclick="App.comiNota('${d.id}','${esc(d.folio)}')">💼 Comisión</button>` : ''}
       </div>${!offline && d.id && d.estatus !== 'Cancelado' && puede('facturacion') ? '<div id="notaFact" class="no-imprimir fact-bloque"><span class="muted">Cargando facturación…</span></div>' : ''}${!offline && d.id && puede('ventas') ? bloqueArch('ventaGuia', d.id) + (d.estatus === 'Entregado' ? bloqueArch('ventaFirma', d.id) : '') : ''}${bloq ? `<p class="muted no-imprimir" style="text-align:right;margin-top:6px">🔒 Nota ${[d.facturada ? 'facturada' : '', pagada ? 'pagada al 100 %' : ''].filter(Boolean).join(' y ')}: ya no se pueden quitar productos, editarla ni cancelarla.${puede('devoluciones') ? ' Si el cliente regresa la mercancía, usa “Devolución de la nota completa”' + (d.facturada ? ' con el acuse de cancelación o la nota de crédito.' : '.') : ''}</p>` : ''}`;
   }
@@ -3401,6 +3403,7 @@ const App = (() => {
         <div class="acciones"><button class="btn primario" onclick="App.recibirCompra('${d.id}')">✔ Recibir en inventario</button></div></div>` : ''}
       ${bloqueArch('ocNota', d.id)}${bloqueArch('ocFactura', d.id)}${bloqueArch('ocGuia', d.id)}${bloqueArch('ocFirma', d.id)}
       <div class="acciones no-imprimir"><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button><button class="btn" onclick="App.pdfCompra('${d.id}')" title="Solo cantidad, producto y categoría: sin costos">📄 PDF para proveedor</button>${puede('ver_costos') ? `<button class="btn" onclick="App.pdfCompra('${d.id}', true)" title="Con costos, descuentos, IVA y totales (no se manda al proveedor)">📄 PDF interno</button>` : ''}
+      ${puede('compras') && !d.cancelada ? `<button class="btn" onclick="App.rclDesde('Proveedor','${d.id}')">📣 Reclamar al proveedor</button>` : ''}
       ${puede('compras') && !d.cancelada ? `<button class="btn" onclick="App.formFacturaCompra('${d.id}')">🧾 ${d.factura || d.nota ? 'Editar' : 'Capturar'} factura / nota</button>` : ''}
       ${puede('compras') && d.editable ? `<button class="btn" onclick="App.editarCompra()">✏️ Editar orden</button><button class="btn peligro" onclick="App.cancelarCompra('${d.id}')">🚫 Cancelar orden</button>` : ''}
       ${d.saldo > 0.009 && puede('pagos_proveedor') ? `<button class="btn" onclick="App.formNotaCredito('${d.id}',${d.saldo})">🧾 Nota de crédito</button><button class="btn primario" onclick="App.formPagoProv('${d.id}',${d.saldo})">Registrar pago</button>` : ''}</div>`);
@@ -8016,10 +8019,364 @@ const App = (() => {
   window.IVNativo = { version: 1, login: (u, p) => { const a = $('#lgUser'), b = $('#lgPass'); if (!a || !b) return false; a.value = u || ''; b.value = p || ''; if (u && p) entrar({ preventDefault() {} }); return true; } };
   document.addEventListener('DOMContentLoaded', iniciar);
 
+  /* ---------------- 📣 RECLAMACIONES (de clientes y a proveedores) ----------------
+   *  Lista por tipo, alta desde una nota de venta / orden de compra (o desde una reclamación de cliente que se pasa al
+   *  proveedor), y el detalle con sus pasos: revisión, mercancía recibida, dictamen (solo Administrador), destino de la
+   *  mercancía en el inventario, compensaciones (N/C, reembolso, reposición), envíos con guía, archivos y PDF. */
+  const RCL_EST = { 'Abierta': 'av', 'En revisión': 'av', 'Procede': 'ok', 'Procede parcial': 'ok', 'No procede': 'mal', 'Cerrada': '', 'Cancelada': 'mal' };
+  const rclEtq = e => `<span class="etq ${RCL_EST[e] || ''}">${esc(e || '')}</span>`;
+  const RCL_DEST_AYUDA = {
+    Cliente: '<b>Regresa a existencia</b>: entra al inventario (vendible). <b>Merma</b>: entra y sale como merma (cuenta en el tablero, a costo). <b>Reclamar al proveedor</b>: queda apartada, no entra al inventario, y luego la pasas al proveedor. <b>Se queda con el cliente</b>: sin movimiento.',
+    Proveedor: '<b>Devuelta al proveedor</b>: si estaba en tu inventario, sale. <b>Se queda en inventario</b>: sin movimiento. <b>Desecho</b>: si estaba en tu inventario, se registra como merma.'
+  };
+  const rclKpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
+  V.reclamaciones = (tab) => {
+    const h = hoyISO(), f = S.rcl = alDia(S.rcl || { tab: 'Cliente', lista: 'Cliente', desde: '', hasta: h, hastaHoy: h, estado: 'vivas', texto: '', sucursal: sucFiltro() });
+    if (tab) f.tab = tab;
+    if ((f.tab === 'Proveedor' || f.lista === 'Proveedor') && !puede('compras')) { f.tab = f.tab === 'Proveedor' ? 'Cliente' : f.tab; f.lista = 'Cliente'; }
+    if (f.tab === 'Cliente' || f.tab === 'Proveedor') f.lista = f.tab;
+    const tb = (id, t) => `<button class="${f.tab === id ? 'activo' : ''}" onclick="App.rclTab('${id}')">${t}</button>`;
+    const barra = `<div class="pestanas">${tb('Cliente', '👥 De clientes')}${puede('compras') ? tb('Proveedor', '🏭 A proveedores') : ''}${tb('nueva', '+ Nueva reclamación')}${f.tab === 'ver' ? tb('ver', '📣 ' + esc((S.rclD || {}).folio || 'Detalle')) : ''}</div>`;
+    if (f.tab === 'nueva') return rclNueva(barra);
+    if (f.tab === 'ver') return rclVer(barra);
+    const cli = f.tab === 'Cliente';
+    $('#vista').innerHTML = barra + `<div class="tarjeta no-imprimir"><div class="fila">
+      <label>Desde<input type="date" id="rcDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="rcHasta" value="${f.hasta}"></label>
+      <label>Estado<select id="rcEst">${opts([['vivas', 'Pendientes (sin cerrar)']].concat(['Abierta', 'En revisión', 'Procede', 'Procede parcial', 'No procede', 'Cerrada', 'Cancelada'].map(x => [x, x])), f.estado, 'Todas')}</select></label>
+      ${U().todasSucursales ? `<label>Sucursal<select id="rcSuc">${optsSuc(f.sucursal || '', false, 'Todas')}</select></label>` : ''}
+      <label>Buscar<input id="rcTxt" placeholder="Folio, ${cli ? 'nota, cliente' : 'orden, proveedor, factura'}, guía…" value="${esc(f.texto)}"></label>
+      <button class="btn primario fijo" onclick="App.rclCargar()">Buscar</button></div>
+      <p class="muted peq" style="margin-top:8px">${cli ? 'Reclamaciones que te hacen tus clientes: producto dañado, caducado, equivocado, faltante… Se capturan desde la nota de venta; el Administrador dictamina si procede y decide a dónde va la mercancía y cómo se compensa (N/C, reembolso o reposición).' : 'Reclamaciones que tú haces a tus proveedores, desde la orden de compra o desde una reclamación de cliente (el lote se rastrea hasta su orden). Registra la guía con que la envías y la nota de crédito que te den.'}</p></div>
+      <div class="espacio"></div><div id="rcLista"><div class="vacio">Cargando…</div></div>`;
+    $('#rcTxt').onkeydown = e => { if (e.key === 'Enter') rclCargar(); };
+    ['rcEst', 'rcSuc'].forEach(i => { if ($('#' + i)) $('#' + i).onchange = rclCargar; });
+    rclCargar();
+  };
+  function rclTab(t) { if (t !== 'ver') S.rclD = null; if (t === 'nueva') S.rclN = null; S.rcl.tab = t; V.reclamaciones(); }
+  function rclErr(e) { return e.red ? 'Las reclamaciones requieren conexión.' : /desconocida/i.test(e.message || '') ? '📣 Reclamaciones se activa en cuanto se publique la actualización del servidor (166).' : esc(e.message || e); }
+  async function rclCargar() {
+    const f = S.rcl;
+    if ($('#rcDesde')) Object.assign(f, marcarHoy({ desde: $('#rcDesde').value, hasta: $('#rcHasta').value, estado: $('#rcEst').value, texto: $('#rcTxt').value.trim(), sucursal: $('#rcSuc') ? $('#rcSuc').value : f.sucursal }));
+    let r; try { r = await pedir('listarReclamaciones', { tipo: f.lista, desde: f.desde, hasta: f.hasta, estado: f.estado, texto: f.texto, sucursal: f.sucursal }, true); }
+    catch (e) { if ($('#rcLista')) $('#rcLista').innerHTML = `<div class="vacio">${rclErr(e)}</div>`; return; }
+    S.rclCat = r.cat; S.rclPer = r.per; S.rclLista = r.lista;
+    const el = $('#rcLista'); if (!el) return;
+    const k = r.kpi || {}, ver = k.reclamado !== null && k.reclamado !== undefined, cli = f.lista === 'Cliente';
+    el.innerHTML = (r.hayAntiguas ? `<div class="tarjeta"><div class="fila"><div style="flex:3 1 260px">📚 Hay reclamaciones anteriores (AppSheet) en la hoja “Reclamacion”. Se pueden traer como <b>historial</b> (cerradas, sin mover inventario ni tocar las hojas anteriores).</div><button class="btn fijo" onclick="App.rclMigrar()">Traer historial</button></div></div>` : '') +
+      `<div class="kpis">${rclKpi('Reclamaciones', nf(k.num || 0), nf(k.abiertas || 0) + ' sin cerrar')}${rclKpi('Proceden', nf(k.procede || 0), nf(k.noProcede || 0) + ' no proceden')}
+        ${ver ? rclKpi('Valor reclamado', $$(k.reclamado), 'aceptado ' + $$(k.aceptado || 0)) + rclKpi('Compensado', $$(k.compensado || 0), cli ? 'N/C, reembolsos y reposiciones' : 'N/C, reembolsos y reposiciones recibidas') : ''}
+        ${rclKpi('Días para cerrar', k.diasProm === null || k.diasProm === undefined ? '—' : nf(k.diasProm), 'promedio de las cerradas')}</div>` +
+      ((k.porMotivo || []).length ? `<p class="muted peq" style="margin:6px 0">Motivos: ${k.porMotivo.slice(0, 6).map(x => esc(x.nombre) + ' <b>' + nf(x.valor) + '</b>').join(' · ')}</p>` : '') +
+      tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>${x.folioDerivada ? `<br><small class="muted">→ ${esc(x.folioDerivada)}</small>` : x.folioOrigen ? `<br><small class="muted">← ${esc(x.folioOrigen)}</small>` : ''}${x.historial ? '<br><small class="muted">historial</small>' : ''}` },
+        { t: cli ? 'Nota' : 'Orden', h: x => esc(cli ? x.nota : x.orden) }, { t: cli ? 'Cliente' : 'Proveedor', h: x => esc(cli ? x.cliente : x.proveedor) },
+        { t: 'Motivo', cls: 'ocultar-movil', h: x => esc(x.motivo) }, { t: 'Estado', h: x => rclEtq(x.estado) + (x.dias !== null && x.estado !== 'Cerrada' && x.estado !== 'Cancelada' ? `<br><small class="muted">${nf(x.dias)} días</small>` : '') }]
+        .concat(ver ? [{ t: 'Reclamado', num: 1, h: x => $$(x.reclamado) }, { t: 'Compensado', num: 1, cls: 'ocultar-movil', h: x => x.compensado ? $$(x.compensado) : '—' }] : [])
+        .concat([{ t: 'Guía', cls: 'ocultar-movil', h: x => esc(x.ida.guia || '') }])
+        .concat(U().todasSucursales ? [{ t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }] : []),
+        r.lista, { clic: 'App.rclAbrirIx', vacio: 'Sin reclamaciones con esos filtros' });
+  }
+  function rclAbrirIx(i) { const x = (S.rclLista || [])[i]; if (x) rclAbrir(x.id); }
+  function rclAbrir(id) { cerrarModal(); S.rcl = S.rcl || alDia({ tab: 'Cliente', lista: 'Cliente', desde: '', hasta: hoyISO(), hastaHoy: hoyISO(), estado: 'vivas', texto: '', sucursal: sucFiltro() }); S.rcl.verId = id; S.rcl.tab = 'ver'; if (S.vista !== 'reclamaciones') ir('reclamaciones'); else V.reclamaciones(); }
+  async function rclMigrar() {
+    if (!confirm('¿Traer las reclamaciones de AppSheet como historial? Quedan como cerradas; no se mueve inventario ni se tocan las hojas anteriores.')) return;
+    try { const r = await pedir('migrarReclAntiguas', {}); toast('✔ ' + nf(r.importadas) + ' reclamaciones y ' + nf(r.renglones) + ' productos importados'); rclCargar(); } catch (e) {}
+  }
+
+  /* ---- alta ---- */
+  function rclDesde(tipo, id) { S.rcl = S.rcl || alDia({ tab: 'nueva', lista: tipo, desde: '', hasta: hoyISO(), hastaHoy: hoyISO(), estado: 'vivas', texto: '', sucursal: sucFiltro() }); S.rclN = { tipo: tipo, idDoc: id }; S.rcl.tab = 'nueva'; cerrarModal(); if (S.vista !== 'reclamaciones') ir('reclamaciones'); else V.reclamaciones(); }
+  function rclAlProveedor() { const d = S.rclD; S.rclN = { tipo: 'Proveedor', idOrigen: d.id }; S.rcl.tab = 'nueva'; V.reclamaciones(); }
+  function rclNueva(barra) {
+    const N = S.rclN = S.rclN || { tipo: S.rcl.lista === 'Proveedor' && puede('compras') ? 'Proveedor' : 'Cliente' };
+    if (!N.prep && (N.idDoc || N.idOrigen)) {
+      $('#vista').innerHTML = barra + '<div class="vacio">Cargando…</div>';
+      pedir('prepararRecl', N.idOrigen ? { tipo: 'Proveedor', idOrigen: N.idOrigen } : N.tipo === 'Cliente' ? { tipo: 'Cliente', idVenta: N.idDoc } : { tipo: 'Proveedor', idOC: N.idDoc })
+        .then(p => { N.prep = p; N.idDoc = ''; V.reclamaciones(); }).catch(e => { N.idDoc = ''; N.idOrigen = ''; $('#vista').innerHTML = barra + `<div class="vacio">${rclErr(e)}</div>`; });
+      return;
+    }
+    if (!N.prep) {
+      const cli = N.tipo === 'Cliente';
+      $('#vista').innerHTML = barra + `<div class="tarjeta"><h3 style="margin-top:0">📣 Nueva reclamación</h3>
+        ${puede('compras') ? `<div class="pestanas" style="margin-bottom:10px"><button class="${cli ? 'activo' : ''}" onclick="App.rclNTipo('Cliente')">👥 Me reclama un cliente</button><button class="${!cli ? 'activo' : ''}" onclick="App.rclNTipo('Proveedor')">🏭 Reclamo a un proveedor</button></div>` : ''}
+        <div class="fila"><label style="flex:3 1 260px">${cli ? 'Busca la nota de venta (folio, cliente, RFC o guía)' : 'Busca la orden de compra (folio, proveedor, RFC o factura)'}<input id="rnBus" placeholder="${cli ? 'Ej. 0625 o RANCHO EL SOL' : 'Ej. O/C 0012 o EQUIVET'}"></label>
+        <button class="btn primario fijo" onclick="App.rclBuscar()">Buscar</button></div>
+        <div id="rnRes" style="margin-top:10px"></div></div>`;
+      $('#rnBus').onkeydown = e => { if (e.key === 'Enter') rclBuscar(); };
+      setTimeout(() => $('#rnBus') && $('#rnBus').focus(), 50);
+      return;
+    }
+    rclForm(barra);
+  }
+  function rclNTipo(t) { S.rclN = { tipo: t }; V.reclamaciones(); }
+  async function rclBuscar() {
+    const N = S.rclN, t = $('#rnBus').value.trim(); if (t.length < 2) return toast('Escribe al menos 2 letras', true);
+    $('#rnRes').innerHTML = '<div class="vacio">Buscando…</div>';
+    let l; try { l = await pedir('buscarOrigenRecl', { tipo: N.tipo, texto: t }); } catch (e) { $('#rnRes').innerHTML = `<div class="vacio">${rclErr(e)}</div>`; return; }
+    S.rclRes = l;
+    $('#rnRes').innerHTML = tabla([{ t: 'Fecha', k: 'fecha' }, { t: N.tipo === 'Cliente' ? 'Nota' : 'Orden', h: x => `<b>${esc(x.folio)}</b>` }, { t: N.tipo === 'Cliente' ? 'Cliente' : 'Proveedor', h: x => esc(x.nombre) },
+      { t: N.tipo === 'Cliente' ? 'Estatus' : 'Factura', cls: 'ocultar-movil', h: x => esc(N.tipo === 'Cliente' ? x.estatus : x.factura) }].concat(l.some(x => x.total !== null && x.total !== undefined) ? [{ t: 'Total', num: 1, h: x => $$(x.total) }] : [])
+      .concat(U().todasSucursales ? [{ t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }] : []), l, { clic: 'App.rclElegir', vacio: 'No encontré documentos con ese texto' });
+  }
+  async function rclElegir(i) {
+    const N = S.rclN, x = (S.rclRes || [])[i]; if (!x) return;
+    if (N.prep && N.prep.idOrigen === undefined && N.prep.origen) {   // reclamación pasada al proveedor sin orden rastreada: solo se elige la orden
+      Object.assign(N.prep, { idOC: x.id, orden: x.folio, proveedor: x.nombre, facturaProv: x.factura || '' }); cerrarModal(); return V.reclamaciones();
+    }
+    N.idDoc = x.id; N.prep = null; V.reclamaciones();
+  }
+  function rclElegirOC() {
+    modal('Elige la orden de compra', `<div class="fila"><label style="flex:3 1 220px">Orden, proveedor o factura<input id="rnBus"></label><button class="btn primario fijo" onclick="App.rclBuscarOC()">Buscar</button></div><div id="rnRes" style="margin-top:10px"></div>`);
+    $('#rnBus').onkeydown = e => { if (e.key === 'Enter') rclBuscarOC(); };
+  }
+  async function rclBuscarOC() {
+    const t = $('#rnBus').value.trim(); if (t.length < 2) return;
+    let l; try { l = await pedir('buscarOrigenRecl', { tipo: 'Proveedor', texto: t }); } catch (e) { return; }
+    S.rclRes = l;
+    $('#rnRes').innerHTML = tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Orden', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Proveedor', h: x => esc(x.nombre) }, { t: 'Factura', h: x => esc(x.factura) }], l, { clic: 'App.rclElegir', vacio: 'Sin órdenes' });
+  }
+  function rclForm(barra) {
+    const N = S.rclN, P = N.prep, cli = P.tipo === 'Cliente', ver = P.lineas.some(l => l.precio !== null && l.precio !== undefined), mot = (P.cat || {}).motivos || [];
+    const paga = (P.cat || {}).paga || ['Nosotros', 'Cliente', 'Proveedor'];
+    const desdeOrigen = !!P.origen;
+    $('#vista').innerHTML = barra + `<div class="tarjeta"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div>
+        <h3 style="margin:0">📣 ${cli ? 'Reclamación de cliente' : 'Reclamación a proveedor'}</h3>
+        <p class="muted" style="margin:4px 0 0">${cli ? `Nota <b>${esc(P.nota)}</b> · ${esc(P.cliente || '')}${P.factura ? ' · Factura ' + esc(P.factura) : ''}${P.envio && P.envio.guia ? ' · se envió por ' + esc(P.envio.nombre || '') + ' guía ' + esc(P.envio.guia) : ''}`
+          : `${P.orden ? 'Orden <b>' + esc(P.orden) + '</b> · ' + esc(P.proveedor || '') + (P.facturaProv ? ' · Factura ' + esc(P.facturaProv) : '') : '<span class="error">Sin orden de compra: elígela</span>'} <button class="btn chico" onclick="App.rclElegirOC()">${P.orden ? 'Cambiar' : 'Elegir'} orden</button>`}
+          ${desdeOrigen ? `<br>Viene de la reclamación de cliente <b>${esc(P.origen.folio)}</b> (${esc(P.origen.cliente || '')})` : ''} · ${esc(sucNom(P.suc))}</p></div>
+        <div style="text-align:right"><small class="muted">Folio</small><div><b>${esc(P.folio)}</b></div></div></div>
+      <div class="espacio"></div>
+      <h4 style="margin:6px 0">Productos reclamados</h4>
+      <p class="muted peq" style="margin:0 0 6px">Marca los productos y la cantidad. ${desdeOrigen ? 'Vienen los que se dictaminaron como “Reclamar al proveedor”.' : ''}${!cli && !desdeOrigen ? 'Si el producto está en tu inventario y lo regresas, saldrá del inventario cuando se dictamine.' : ''}</p>
+      <div class="tabla-cont"><table><thead><tr><th></th><th>Producto</th><th class="ocultar-movil">Lote</th><th class="ocultar-movil">Cad.</th><th class="num">${cli ? 'Vendido' : desdeOrigen ? 'Aceptado' : 'Comprado'}</th><th class="num">Reclama</th>${ver ? '<th class="num">Precio</th>' : ''}<th>Detalle</th></tr></thead><tbody>
+        ${P.lineas.map((l, i) => `<tr><td><input type="checkbox" class="rnChk" data-i="${i}" ${desdeOrigen || P.lineas.length === 1 ? 'checked' : ''} style="width:auto"></td><td><b>${esc(l.nombre)}</b>${l.oc && desdeOrigen ? `<br><small class="muted">${l.exacto ? 'Lote de la orden ' : 'Última compra: '}${esc(l.oc)}</small>` : ''}</td>
+          <td class="ocultar-movil">${esc(l.lote || '')}</td><td class="ocultar-movil">${esc(l.cad || '')}</td><td class="num">${nf(l.max)}</td>
+          <td class="num"><input type="number" class="rnCant" data-i="${i}" min="0" max="${l.max}" step="any" value="${desdeOrigen ? l.max : ''}" placeholder="0" style="width:80px;text-align:right"></td>
+          ${ver ? `<td class="num">${l.precio === null ? '—' : $$(l.precio)}</td>` : ''}<td><input class="rnMot" data-i="${i}" placeholder="Ej. 2 frascos rotos" style="min-width:140px"></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="rejilla-2" style="gap:10px;margin-top:10px">
+        <label>Motivo *<select id="rnMotivo">${opts(mot, P.motivo || '', 'Elige…')}</select></label>
+        <label style="grid-column:1/-1">Descripción<textarea id="rnDesc" rows="2" placeholder="Qué pasó, cómo llegó, qué pide el ${cli ? 'cliente' : 'proveedor'}…">${esc(desdeOrigen ? (P.origen.desc || '') : '')}</textarea></label>
+      </div>
+      <h4 style="margin:12px 0 6px">🚚 Envío de la mercancía ${cli ? '(si el cliente la regresa)' : '(al proveedor)'} <small class="muted">— opcional, puedes capturarlo después</small></h4>
+      <div class="fila"><label>Método<select id="rnPaq">${opts(paqueterias(), '', '—')}</select></label><label>No. de guía<input id="rnGuia"></label>
+        <label>Fecha<input type="date" id="rnFecha"></label>${ver ? '<label>Costo<input type="number" id="rnCosto" min="0" step="0.01"></label>' : ''}<label>Paga<select id="rnPaga">${opts(paga, '', '—')}</select></label></div>
+      <p class="muted peq">Después de guardar puedes subir fotos de evidencia, la guía y la nota de crédito.</p>
+      <div class="acciones"><button class="btn" onclick="App.rclTab('nueva')">Elegir otro documento</button><button class="btn primario" id="rnBtn" onclick="App.rclGuardar()">📣 Registrar reclamación</button></div></div>`;
+    document.querySelectorAll('.rnCant').forEach(x => x.oninput = () => { const c = document.querySelector('.rnChk[data-i="' + x.dataset.i + '"]'); if (c) c.checked = Number(x.value) > 0; });
+    document.querySelectorAll('.rnChk').forEach(x => x.onchange = () => { const c = document.querySelector('.rnCant[data-i="' + x.dataset.i + '"]'); if (c && x.checked && !(Number(c.value) > 0)) c.value = P.lineas[x.dataset.i].max; if (c && !x.checked) c.value = ''; });
+    if (P.lineas.length === 1 && !desdeOrigen) { const c = document.querySelector('.rnCant'); if (c) c.value = P.lineas[0].max; }
+  }
+  async function rclGuardar() {
+    const P = S.rclN.prep, cli = P.tipo === 'Cliente';
+    const lineas = [];
+    for (const c of document.querySelectorAll('.rnChk')) {
+      if (!c.checked) continue;
+      const i = +c.dataset.i, l = P.lineas[i], q = Number(document.querySelector('.rnCant[data-i="' + i + '"]').value);
+      if (!(q > 0)) return toast('Pon la cantidad de ' + l.nombre, true);
+      if (q > l.max + 0.0001) return toast(l.nombre + ': máximo ' + nf(l.max), true);
+      lineas.push(Object.assign({}, l, { cant: q, motivo: document.querySelector('.rnMot[data-i="' + i + '"]').value.trim() }));
+    }
+    if (!lineas.length) return toast('Marca al menos un producto', true);
+    const motivo = $('#rnMotivo').value; if (!motivo) return toast('Elige el motivo', true);
+    if (!cli && !P.idOC && !P.idProv) return toast('Elige la orden de compra', true);
+    const prm = { tipo: P.tipo, suc: P.suc, motivo: motivo, desc: $('#rnDesc').value.trim(), lineas: lineas, idVenta: P.idVenta, idOC: P.idOC, idProv: P.idProv, idOrigen: P.origen ? P.origen.id : '',
+      ida: { metodo: $('#rnPaq').value, guia: $('#rnGuia').value.trim(), fecha: $('#rnFecha').value, costo: $('#rnCosto') ? $('#rnCosto').value : '', paga: $('#rnPaga').value } };
+    $('#rnBtn').disabled = true;
+    try { const r = await pedir('guardarReclamacion', prm); toast('✔ Reclamación ' + r.folio + ' registrada'); S.rclN = null; S.rcl.lista = P.tipo; rclAbrir(r.id); }
+    catch (e) { if ($('#rnBtn')) $('#rnBtn').disabled = false; }
+  }
+
+  /* ---- detalle ---- */
+  async function rclVer(barra) {
+    $('#vista').innerHTML = barra + '<div id="rcVer"><div class="vacio">Cargando…</div></div>';
+    let d; try { d = await pedir('detalleReclamacion', { id: S.rcl.verId }); } catch (e) { if ($('#rcVer')) $('#rcVer').innerHTML = `<div class="vacio">${rclErr(e)}</div>`; return; }
+    S.rclD = d; const t = document.querySelector('.pestanas button.activo'); if (t) t.textContent = '📣 ' + d.folio;
+    pintarRcl();
+  }
+  function rclRecargar() { S.rcl.tab = 'ver'; V.reclamaciones(); }
+  function pintarRcl() {
+    const d = S.rclD, el = $('#rcVer'); if (!el || !d) return;
+    const cli = d.tipo === 'Cliente', per = d.per || {}, ver = d.reclamado !== null && d.reclamado !== undefined;
+    const viva = ['Cerrada', 'Cancelada'].indexOf(d.estado) < 0, mueve = l => cli ? /^(Regresa|Merma)/.test(l.destino) : (l.enInv && /^(Devuelta|Desecho)/.test(l.destino));
+    const pendInv = d.lineas.filter(l => (l.aceptada || 0) > 0 && mueve(l) && !l.aplicado), alProv = cli && d.lineas.some(l => /proveedor/i.test(l.destino) && (l.aceptada || 0) > 0);
+    const aceptadas = d.lineas.filter(l => (l.aceptada || 0) > 0 && l.destino);
+    const pasos = [['Alta', true], ['En revisión', d.estado !== 'Abierta'], [cli ? 'Mercancía recibida' : 'El proveedor la recibió', d.recibida], ['Dictamen', !!d.dictamen],
+      ['Inventario', !!d.dictamen && (d.dictamen === 'No procede' || (aceptadas.length > 0 && !pendInv.length))], ['Compensación', d.compensaciones.length > 0 || d.dictamen === 'No procede'], ['Cerrada', d.estado === 'Cerrada']];
+    const b = (t, fn, cls) => `<button class="btn ${cls || ''}" onclick="App.${fn}">${t}</button>`;
+    const acc = [
+      d.estado === 'Abierta' ? b('🔎 Pasar a revisión', "rclEstado('revision')") : '',
+      viva && !d.recibida ? b(cli ? '📦 Mercancía recibida' : '📦 El proveedor la recibió', "rclEstado('recibida')") : '',
+      viva && per.resolver ? b(d.dictamen ? '⚖️ Cambiar dictamen' : '⚖️ Dictaminar', 'rclDictaminar()', d.dictamen ? '' : 'primario') : '',
+      viva && per.resolver && pendInv.length ? b('📦 Aplicar al inventario (' + pendInv.length + ')', 'rclAplicar()', 'primario') : '',
+      viva && per.resolver && d.dictamen && d.dictamen !== 'No procede' ? b('💳 Compensación', 'rclCompensar()', d.compensaciones.length ? '' : 'primario') : '',
+      alProv && !d.folioDerivada && puede('compras') && d.estado !== 'Cancelada' ? b('🏭 Pasar al proveedor', 'rclAlProveedor()') : '',
+      viva && per.resolver && d.dictamen ? b('✔ Cerrar', "rclEstado('cerrar')") : '',
+      viva && per.resolver && !d.compensaciones.length && !d.lineas.some(l => l.aplicado && l.aplicado !== 'Sin movimiento') ? b('Cancelar', "rclEstado('cancelar')", 'peligro') : '',
+      d.estado === 'Cerrada' && U().rol === 'Administrador' ? b('↩️ Reabrir', "rclEstado('reabrir')") : '',
+      b('📄 PDF', 'rclPdf()')].join('');
+    const env = (t, k, e) => `<div class="fact-fila"><span style="flex:1;min-width:0"><b>${t}</b><br><small class="muted">${e.nombre || e.guia || e.fecha ? [e.nombre, e.guia ? 'guía ' + esc(e.guia) : '', e.fecha, e.costo ? $$(e.costo) : '', e.paga ? 'paga ' + esc(e.paga) : ''].filter(Boolean).map(x => String(x).indexOf('guía') === 0 ? x : esc(x)).join(' · ') : 'Sin capturar'}</small></span>${viva ? `<button class="btn chico" onclick="App.rclEnvio('${k}')">✏️</button>` : ''}</div>`;
+    const icoA = t => t === 'pdf' ? '📄' : t === 'xml' ? '🧾' : '📷', catA = { evidencia: 'Evidencia', guia: 'Guía', nc: 'Nota de crédito', otro: 'Otro' };
+    el.innerHTML = `<div class="tarjeta"><div class="un-cab"><div style="min-width:0">
+        <h3 style="margin:0">📣 ${esc(d.folio)} ${rclEtq(d.estado)}</h3>
+        <p class="muted" style="margin:4px 0 0">${cli ? 'Reclamación de cliente' : 'Reclamación a proveedor'} · ${esc(d.fecha)} ${esc(d.hora || '')} · ${esc(sucNom(d.suc))} · capturó ${esc(d.usuario || '')}</p>
+        <p style="margin:6px 0 0"><b>${esc(cli ? d.cliente : d.proveedor)}</b> · ${cli ? (d.idVenta ? `Nota <a href="#" onclick="event.preventDefault();App.verVenta('${esc(d.idVenta)}')">${esc(d.nota)}</a>` : esc(d.nota || '')) : (d.idOC && puede('compras') ? `Orden <a href="#" onclick="event.preventDefault();App.verCompra('${esc(d.idOC)}')">${esc(d.orden)}</a>` : esc(d.orden || ''))}${(cli ? d.factura : d.facturaProv) ? ' · Factura ' + esc(cli ? d.factura : d.facturaProv) : ''}
+          ${d.notaSaldo !== undefined && cli ? ` · saldo de la nota ${$$(d.notaSaldo)}` : ''}${d.ocSaldo !== undefined && !cli ? ` · saldo de la orden ${$$(d.ocSaldo)}` : ''}</p>
+        ${d.folioOrigen ? `<p style="margin:4px 0 0">↩️ Viene de la reclamación de cliente <a href="#" onclick="event.preventDefault();App.rclAbrir('${esc(d.idOrigen)}')">${esc(d.folioOrigen)}</a></p>` : ''}
+        ${d.folioDerivada ? `<p style="margin:4px 0 0">🏭 Se reclamó al proveedor en <a href="#" onclick="event.preventDefault();App.rclAbrir('${esc(d.idDerivada)}')">${esc(d.folioDerivada)}</a></p>` : ''}
+        <p style="margin:6px 0 0">Motivo: <b>${esc(d.motivo)}</b>${d.desc ? ' — ' + esc(d.desc) : ''}</p></div>
+        ${ver ? `<div class="un-total"><small>Valor reclamado</small><b>${$$(d.reclamado)}</b><span>${d.dictamen ? 'aceptado ' + $$(d.aceptado || 0) + ' · ' : ''}compensado ${$$(d.compensado || 0)}</span></div>` : ''}</div>
+      <div class="rcl-pasos">${pasos.map(p => `<div class="${p[1] ? 'hecho' : ''}"><span>${p[1] ? '✔' : '○'}</span>${p[0]}</div>`).join('')}</div>
+      <div class="acciones izq no-imprimir" style="margin-top:10px">${acc}</div></div>
+      <div class="tarjeta"><h3>Productos</h3>${tabla([{ t: 'Producto', h: l => `<b>${esc(l.nombre)}</b>${l.motivo ? `<br><small class="muted">${esc(l.motivo)}</small>` : ''}` }, { t: 'Lote', cls: 'ocultar-movil', h: l => esc(l.lote) }, { t: 'Cad.', cls: 'ocultar-movil', h: l => esc(l.cad) },
+        { t: 'Reclamado', num: 1, h: l => nf(l.cant) }, { t: 'Aceptado', num: 1, h: l => l.aceptada === null ? '—' : nf(l.aceptada) }]
+        .concat(ver ? [{ t: 'Importe', num: 1, cls: 'ocultar-movil', h: l => $$(l.importe) }] : [])
+        .concat([{ t: 'Destino', h: l => l.destino ? `${esc(l.destino)}<br><small class="${l.aplicado && l.aplicado.indexOf('SI') === 0 ? 'ok' : 'muted'}">${l.aplicado ? (l.aplicado.indexOf('SI') === 0 ? '✔ ' + esc(l.mov || 'aplicado') : esc(l.aplicado)) : mueve(l) ? 'por aplicar al inventario' : ''}</small>` : '<small class="muted">Sin decidir</small>' }]), d.lineas)}
+        ${!cli ? '<p class="muted peq" style="margin-top:6px">' + (d.lineas.some(l => l.enInv) ? '📦 Productos que están en tu inventario: si se devuelven al proveedor, salen al aplicar el dictamen.' : 'Estos productos no están en tu inventario (vienen de la reclamación del cliente).') + '</p>' : ''}</div>
+      ${d.dictamen ? `<div class="tarjeta"><h3>⚖️ Dictamen: ${rclEtq(d.dictamen)}</h3><p class="muted" style="margin:0">${esc(d.dictamenFecha)} · ${esc(d.dictamenPor)}${d.resolucion ? ' · Resolución: <b>' + esc(d.resolucion) + '</b>' : ''}</p>${d.dictamenCom ? `<p style="margin:6px 0 0">${esc(d.dictamenCom)}</p>` : ''}</div>` : ''}
+      <div class="rejilla-2">
+        <div class="tarjeta"><h3>🚚 Envíos</h3>${env(cli ? 'Mercancía que regresa el cliente' : 'Mercancía enviada al proveedor', 'ida', d.ida)}${env(cli ? 'Reposición al cliente' : 'Reposición del proveedor', 'reg', d.reg)}
+          ${d.recibida ? `<p class="muted peq" style="margin-top:6px">📦 ${cli ? 'Recibida' : 'El proveedor la recibió'} el ${esc(d.fechaRecibida)}</p>` : ''}</div>
+        <div class="tarjeta"><h3>📎 Archivos</h3>${d.archivosLista.length ? d.archivosLista.map(a => `<div class="fact-fila"><span style="flex:1;min-width:0;word-break:break-all">${icoA(a.tipo)} ${esc(catA[a.cat] || a.cat)} · ${esc(a.original || a.nombre)}<br><small class="muted">${esc(a.fecha)} · ${esc(a.usuario || '')}</small></span><button class="btn chico" onclick="App.rclVerArch('${esc(a.id)}')">Ver</button></div>`).join('') : '<div class="muted">Sin archivos</div>'}
+          ${d.estado !== 'Cancelada' ? `<div class="fila no-imprimir" style="margin-top:8px"><label>Tipo<select id="rcCat">${opts([['evidencia', '📷 Evidencia (fotos)'], ['guia', '📦 Guía de envío'], ['nc', '🧾 Nota de crédito (PDF / XML)'], ['otro', 'Otro']], 'evidencia')}</select></label>
+            <label class="btn fijo" style="cursor:pointer">➕ Subir<input type="file" accept="image/*,application/pdf,.pdf,.xml,text/xml" multiple style="display:none" onchange="App.rclSubir(this)"></label></div>` : ''}</div></div>
+      ${d.compensaciones.length ? `<div class="tarjeta"><h3>💳 Compensaciones</h3>${tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Tipo', h: c => `<b>${esc(c.tipo)}</b>${c.lineas ? '<br><small class="muted">' + c.lineas.map(l => nf(l.cant) + ' ' + esc(l.nombre || l.prod) + (l.lote ? ' (' + esc(l.lote) + ')' : '')).join(', ') + '</small>' : ''}` },
+        { t: 'Folio', h: c => esc(c.folio || '') + (c.uuid ? `<br><small class="muted">${esc(c.uuid)}</small>` : '') }, { t: 'Aplicada a / forma', h: c => esc(c.aplicadaA || c.forma || '') }]
+        .concat(ver ? [{ t: 'Monto', num: 1, h: c => $$(c.monto || 0) }] : []).concat([{ t: 'Capturó', cls: 'ocultar-movil', h: c => esc(c.usuario || '') + (c.comentarios ? `<br><small class="muted">${esc(c.comentarios)}</small>` : '') }]), d.compensaciones)}</div>` : ''}
+      <div class="tarjeta"><h3>🕑 Historial</h3>${(d.historialLog || []).slice().reverse().map(h => `<div class="fact-fila"><span style="flex:1"><b>${esc(h.a)}</b>${h.d ? ' — ' + esc(h.d) : ''}<br><small class="muted">${esc(h.f)} · ${esc(h.u)}</small></span></div>`).join('') || '<div class="muted">—</div>'}
+        ${d.datosOrigen ? `<details style="margin-top:8px"><summary class="muted">Datos originales (AppSheet)</summary><pre style="white-space:pre-wrap;font-size:11px">${esc(d.datosOrigen)}</pre></details>` : ''}</div>`;
+  }
+  async function rclEstado(acc) {
+    const d = S.rclD, prm = { id: d.id, accion: acc };
+    if (acc === 'cancelar') { const m = prompt('¿Por qué se cancela la reclamación ' + d.folio + '?'); if (!m) return; prm.comentarios = m; }
+    if (acc === 'cerrar') {
+      if (!confirm('¿Cerrar la reclamación ' + d.folio + '? Ya no se podrán agregar compensaciones.')) return;
+      const mueve = l => d.tipo === 'Cliente' ? /^(Regresa|Merma)/.test(l.destino) : (l.enInv && /^(Devuelta|Desecho)/.test(l.destino));
+      if (d.lineas.some(l => (l.aceptada || 0) > 0 && mueve(l) && !l.aplicado)) { if (!confirm('Hay productos con destino sin aplicar al inventario. ¿Cerrar de todos modos SIN moverlos?')) return; prm.forzar = true; }
+    }
+    if (acc === 'reabrir' && !confirm('¿Reabrir la reclamación ' + d.folio + '?')) return;
+    if (acc === 'recibida') prm.fecha = hoyISO();
+    try { await pedir('estadoRecl', prm); toast('✔ Listo'); rclRecargar(); } catch (e) {}
+  }
+  function rclDictaminar() {
+    const d = S.rclD, dests = (d.cat || {}).destinos || [];
+    modal('⚖️ Dictamen · ' + d.folio, `<label>Dictamen *<select id="rdDict">${opts(['Procede', 'Procede parcial', 'No procede'], d.dictamen || '', 'Elige…')}</select></label>
+      <div class="tabla-cont" style="margin-top:8px"><table><thead><tr><th>Producto</th><th class="num">Reclamado</th><th class="num">Aceptado</th><th>Destino de la mercancía</th></tr></thead><tbody>
+      ${d.lineas.map((l, i) => `<tr><td><b>${esc(l.nombre)}</b><br><small class="muted">${esc(l.lote || '')}${d.tipo === 'Proveedor' ? (l.enInv ? ' · en tu inventario' : ' · no está en tu inventario') : ''}</small></td><td class="num">${nf(l.cant)}</td>
+        <td class="num"><input type="number" class="rdAc" data-i="${i}" min="0" max="${l.cant}" step="any" value="${l.aceptada === null ? l.cant : l.aceptada}" style="width:76px;text-align:right" ${l.aplicado ? 'disabled' : ''}></td>
+        <td><select class="rdDe" data-i="${i}" ${l.aplicado ? 'disabled' : ''}>${opts(dests, l.destino || '', 'Sin decidir')}</select></td></tr>`).join('')}</tbody></table></div>
+      <p class="muted peq" style="margin:6px 0">${RCL_DEST_AYUDA[d.tipo]}</p>
+      <label>Resolución <small class="muted">(lo que se acordó)</small><input id="rdRes" value="${esc(d.resolucion || '')}" placeholder="${d.tipo === 'Cliente' ? 'Ej. N/C por 2 piezas y reposición de 1' : 'Ej. el proveedor emite N/C'}"></label>
+      <label>Comentarios <small class="muted">(obligatorio si no procede; sale en el PDF)</small><textarea id="rdCom" rows="2">${esc(d.dictamenCom || '')}</textarea></label>
+      <label class="chk"><input type="checkbox" id="rdApl" checked style="width:auto"> Aplicar ya al inventario los destinos elegidos</label>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.rclDictamenOk()">Guardar dictamen</button></div>`);
+    $('#rdDict').onchange = () => { const no = $('#rdDict').value === 'No procede'; document.querySelectorAll('.rdAc').forEach(x => { if (!x.disabled) { if (no) { x.dataset.prev = x.value; x.value = 0; } else if (x.dataset.prev) x.value = x.dataset.prev; } }); };
+  }
+  async function rclDictamenOk() {
+    const d = S.rclD, dict = $('#rdDict').value; if (!dict) return toast('Elige el dictamen', true);
+    const lineas = d.lineas.map((l, i) => ({ id: l.id, aceptada: document.querySelector('.rdAc[data-i="' + i + '"]').value, destino: document.querySelector('.rdDe[data-i="' + i + '"]').value }));
+    if (dict !== 'No procede' && lineas.some(l => Number(l.aceptada) > 0 && !l.destino) && !confirm('Hay productos aceptados sin destino. ¿Guardar así? (podrás decidir después)')) return;
+    try { const r = await pedir('dictaminarRecl', { id: d.id, dictamen: dict, lineas: lineas, resolucion: $('#rdRes').value.trim(), comentarios: $('#rdCom').value.trim(), aplicar: $('#rdApl').checked });
+      cerrarModal(); toast('✔ Dictamen guardado' + (r.avisos && r.avisos.length ? ': ' + r.avisos.join(' · ') : '')); refrescarStock(); rclRecargar(); } catch (e) {}
+  }
+  async function rclAplicar() {
+    if (!confirm('¿Aplicar al inventario los destinos de los productos aceptados?')) return;
+    try { const r = await pedir('aplicarDestinosRecl', { id: S.rclD.id }); toast('✔ ' + ((r.avisos || []).join(' · ') || 'Sin movimientos')); refrescarStock(); rclRecargar(); } catch (e) {}
+  }
+  function rclEnvio(k) {
+    const d = S.rclD, e = d[k] || {}, ver = d.reclamado !== null && d.reclamado !== undefined, cli = d.tipo === 'Cliente';
+    modal('🚚 ' + (k === 'ida' ? (cli ? 'Mercancía que regresa el cliente' : 'Mercancía enviada al proveedor') : (cli ? 'Reposición al cliente' : 'Reposición del proveedor')), `<div class="rejilla-2" style="gap:10px">
+      <label>Método de envío<select id="reMet">${opts(paqueterias(), e.metodo || '', '—')}</select></label><label>No. de guía<input id="reGuia" value="${esc(e.guia || '')}"></label>
+      <label>Fecha<input type="date" id="reFecha" value="${esc(e.fechaIso || '')}"></label>${ver ? `<label>Costo del envío<input type="number" id="reCosto" min="0" step="0.01" value="${e.costo || ''}"></label>` : ''}
+      <label>Paga el envío<select id="rePaga">${opts((d.cat || {}).paga || [], e.paga || '', '—')}</select></label></div>
+      <p class="muted peq">La foto o PDF de la guía súbela en 📎 Archivos (tipo “Guía de envío”).</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.rclEnvioOk('${k}')">Guardar</button></div>`);
+  }
+  async function rclEnvioOk(k) {
+    try { await pedir('envioRecl', { id: S.rclD.id, cual: k, metodo: $('#reMet').value, guia: $('#reGuia').value.trim(), fecha: $('#reFecha').value, costo: $('#reCosto') ? $('#reCosto').value : '', paga: $('#rePaga').value });
+      cerrarModal(); toast('✔ Envío guardado'); rclRecargar(); } catch (e) {}
+  }
+  async function rclCompensar() {
+    const d = S.rclD, cli = d.tipo === 'Cliente', comp = (d.cat || {}).comp || [];
+    const acept = d.lineas.filter(l => (l.aceptada || 0) > 0);
+    modal('💳 Compensación · ' + d.folio, `<label>Tipo *<select id="rcTipo">${opts(comp, comp[0])}</select></label>
+      <div id="rcCampos"></div>
+      <label>Fecha<input type="date" id="rcFecha" value="${hoyISO()}"></label>
+      <label>Comentarios<input id="rcCom"></label>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="rcBtn" onclick="App.rclCompOk()">Guardar compensación</button></div>`);
+    let aplicables = null;
+    const pinta = async () => {
+      const t = $('#rcTipo').value, el = $('#rcCampos'); if (!el) return;
+      if (/Reposici/.test(t)) {
+        el.innerHTML = `<p class="muted peq">${cli ? 'Lo que le mandas al cliente sale de tu inventario (se toma el lote más próximo a caducar).' : 'Lo que te repone el proveedor entra a tu inventario con su lote.'}</p>
+          ${acept.map((l, i) => `<div class="fila" style="margin-bottom:6px"><div style="flex:2 1 180px"><b>${esc(l.nombre)}</b><br><small class="muted">aceptado ${nf(l.aceptada)}</small></div>
+            <label>Cantidad<input type="number" class="rpQ" data-p="${esc(l.prod)}" min="0" step="any" value="${l.aceptada}" style="width:80px"></label>
+            ${cli ? '' : `<label>Lote<input class="rpL" data-i="${i}"></label><label>Caducidad<input type="date" class="rpC" data-i="${i}"></label>`}</div>`).join('') || '<div class="muted">No hay productos aceptados</div>'}
+          <label>Valor <small class="muted">(opcional; si lo dejas vacío se calcula ${cli ? 'a costo' : 'al precio de compra'})</small><input type="number" id="rcMonto" min="0" step="0.01"></label>`;
+        return;
+      }
+      const nc = t === 'Nota de crédito', reemb = /Reembolso/.test(t);
+      el.innerHTML = `<label>Monto *<input type="number" id="rcMonto" min="0" step="0.01" value="${Math.max(0, Math.round(((d.aceptado || 0) - (d.compensado || 0)) * 100) / 100) || ''}"></label>
+        ${nc || reemb || /Saldo/.test(t) ? `<label>${nc ? 'Folio de la N/C *' : reemb ? 'Referencia / folio' : 'Folio o referencia'}<input id="rcFolio"></label>` : ''}
+        ${nc ? `<label>Folio fiscal (UUID) <small class="muted">(si es CFDI)</small><input id="rcUuid" placeholder="36 caracteres"></label>
+          <label>${cli ? 'Aplicar a la nota' : 'Aplicar a la orden de compra'}<select id="rcAplica"><option value="">Cargando…</option></select></label>
+          <p class="muted peq">${cli ? 'Se registra como cobro con Folio N/C en la nota elegida (baja su saldo). Sin nota: queda como saldo a favor del cliente.' : 'Se registra como nota de crédito del proveedor en la orden elegida (baja su saldo). Sin orden: queda como saldo a favor por aplicar.'} El PDF / XML súbelo en 📎 Archivos.</p>` : ''}
+        ${reemb ? `<label>Forma *<select id="rcForma">${opts(['Efectivo', 'Transferencia', 'Depósito', 'Cheque'], 'Transferencia')}</select></label>` : ''}`;
+      if (nc) {
+        if (!aplicables) {
+          aplicables = [];
+          try {
+            if (cli) { const l = await pedir('cuentasPorCobrar', { sucursal: '', texto: d.cliente || '' }, true); aplicables = l.filter(v => !d.idCliente || v.idCliente === d.idCliente).map(v => ({ id: v.id, t: v.folio + ' · saldo ' + $$(v.saldo) })); }
+            else { const l = await pedir('buscarOrigenRecl', { tipo: 'Proveedor', texto: d.proveedor || d.orden || '' }, true); aplicables = l.filter(o => o.saldo > 0.009).map(o => ({ id: o.id, t: o.folio + ' · saldo ' + $$(o.saldo) })); }
+          } catch (e) {}
+        }
+        const s = $('#rcAplica'); if (!s) return;
+        const pre = cli ? (aplicables.find(x => x.id === d.idVenta) ? d.idVenta : '') : (aplicables.find(x => x.id === d.idOC) ? d.idOC : '');
+        s.innerHTML = `<option value="">${cli ? 'Saldo a favor del cliente (no se aplica a una nota)' : 'Saldo a favor con el proveedor (por aplicar)'}</option>` + aplicables.map(x => `<option value="${esc(x.id)}" ${x.id === pre ? 'selected' : ''}>${esc(x.t)}</option>`).join('');
+      }
+    };
+    $('#rcTipo').onchange = pinta; pinta();
+  }
+  async function rclCompOk() {
+    const d = S.rclD, cli = d.tipo === 'Cliente', t = $('#rcTipo').value, prm = { id: d.id, tipo: t, fecha: $('#rcFecha').value, comentarios: $('#rcCom').value.trim(), monto: $('#rcMonto') ? $('#rcMonto').value : '' };
+    if (/Reposici/.test(t)) {
+      prm.lineas = [...document.querySelectorAll('.rpQ')].map((x, i) => ({ prod: x.dataset.p, cant: x.value, lote: cli ? '' : (document.querySelector('.rpL[data-i="' + i + '"]') || {}).value || '', cad: cli ? '' : (document.querySelector('.rpC[data-i="' + i + '"]') || {}).value || '' })).filter(l => Number(l.cant) > 0);
+      if (!prm.lineas.length) return toast('Pon la cantidad de la reposición', true);
+    } else {
+      if (!(Number(prm.monto) > 0)) return toast('Captura el monto', true);
+      prm.folio = $('#rcFolio') ? $('#rcFolio').value.trim() : '';
+      if (t === 'Nota de crédito') { if (!prm.folio) return toast('Captura el folio de la N/C', true); prm.uuid = $('#rcUuid').value.trim(); if (cli) prm.idVenta = $('#rcAplica').value; else prm.idOC = $('#rcAplica').value; }
+      if ($('#rcForma')) prm.forma = $('#rcForma').value;
+    }
+    $('#rcBtn').disabled = true;
+    try { await pedir('compensarRecl', prm); cerrarModal(); toast('✔ Compensación registrada'); if (/Reposici/.test(t)) refrescarStock(); rclRecargar(); } catch (e) { if ($('#rcBtn')) $('#rcBtn').disabled = false; }
+  }
+  async function rclSubir(input) {
+    const fs = [...(input.files || [])]; input.value = ''; if (!fs.length) return;
+    const cat = $('#rcCat') ? $('#rcCat').value : 'evidencia';
+    for (const f of fs) {
+      let uri;
+      try {
+        if (/\.xml$/i.test(f.name || '') || /xml/i.test(f.type || '')) uri = await leerXml(f);
+        else uri = await leerComprobante(f, 1600);
+      } catch (e) { toast(e.message || 'No se pudo leer ' + f.name, true); continue; }
+      try { await pedir('subirArchivoRecl', { id: S.rclD.id, cat: cat, dataUri: uri, nombre: f.name }); toast('✔ ' + f.name + ' subido'); } catch (e) {}
+    }
+    rclRecargar();
+  }
+  async function rclVerArch(archivo) {
+    visor('<p class="muted" style="text-align:center;padding:30px">Cargando…</p>');
+    let r; try { r = await pedir('verArchivoRecl', { id: S.rclD.id, archivo: archivo }); } catch (e) { return cerrarVisor(); }
+    const cerrar = '<button class="btn" onclick="App.cerrarVisor()">✕ Cerrar</button>', drive = r.drive ? `<a class="btn" target="_blank" rel="noopener" href="${esc(r.drive)}">Abrir en Drive</a>` : '';
+    if (r.tipo === 'xml' && r.texto !== undefined) return visor(`<h4 style="margin:0 0 8px;word-break:break-all">🧾 ${esc(r.nombre)}</h4><pre style="white-space:pre-wrap;word-break:break-all;max-height:68vh;overflow:auto;font-size:11px;background:var(--superficie-2);padding:10px;border-radius:8px">${esc(r.texto)}</pre><div class="acciones">${cerrar}${drive}</div>`);
+    if (r.grande || !r.uri) return visor(`<h4>${esc(r.nombre)}</h4><p class="muted">El archivo es muy grande para mostrarlo aquí.</p><div class="acciones">${cerrar}${drive}</div>`);
+    const url = uriABlobUrl(r.uri), vista = r.tipo === 'pdf' ? `<iframe src="${url}" title="Documento" style="width:100%;height:72vh;border:0;border-radius:8px;background:#fff"></iframe>` : `<img src="${url}" alt="" style="max-width:100%;max-height:74vh;border-radius:8px;display:block;margin:auto">`;
+    visor(`<h4 style="margin:0 0 8px;word-break:break-all">${esc(r.nombre)}</h4>${vista}<div class="acciones">${cerrar}<a class="btn" href="${url}" download="${esc(r.nombre)}">⬇️ Descargar</a>${drive}</div>`);
+  }
+  function rclPdf() { const d = S.rclD; generarPdf('pdfReclamacion', { id: d.id }, { asunto: 'Reclamación ' + d.folio, texto: 'Interés Veterinario — Reclamación ' + d.folio + (d.tipo === 'Cliente' ? ' · nota ' + (d.nota || '') : ' · orden ' + (d.orden || '')), volver: `App.rclAbrir('${d.id}')` }); }
+
   /* ---------------- API pública (para onclick) ---------------- */
   return {
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, gastoACompra, asignarSucGastos, cargarSucursales, verSucursal,
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, gastoACompra, asignarSucGastos, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
