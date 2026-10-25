@@ -216,7 +216,7 @@ const App = (() => {
       'detalleCompra listarTraspasos detalleTraspaso reporteTraspasos listarConteos detalleConteo historialAjustes selListaPrecios historialPrecios ' +
       'listarMovimientos listarProveedores detalleCobro dashboard costosReales listarCotizaciones detalleCotizacion facturas detalleFactura facturasNota ' +
       'listarRequisiciones detalleRequisicion detalleDevolucion porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto ' +
-      'radar metas historialCliente registro comparativo analisis').split(' ');
+      'radar metas historialCliente registro comparativo analisis mapaClientes').split(' ');
     const MAX = 4000, MAX_TXT = 4e6;   // "Actualizar para ruta" guarda miles de consultas (IndexedDB aguanta cientos de MB)
     let dbp = null;
     const db = () => dbp || (dbp = new Promise((res, rej) => {
@@ -361,6 +361,7 @@ const App = (() => {
     await guardar('listarVisitas', { desde: dia(-30), hasta: dia(60), vendedor: '', estado: '' }, 'seguimiento');
     await guardar('listarRecetas', { desde: dia(-365), hasta: h }, 'recetas');
     await guardar('configReceta', {}, 'recetas');
+    await guardar('mapaClientes', {});
     // detalles en lotes
     const vivos = l => (l || []).filter(x => !/cancel/i.test(x.estado || x.estatus || ''));
     const idsV = vivos(Array.isArray(ventas) ? ventas : (ventas || {}).notas).slice(0, 600).map(x => ({ ID_Venta: x.id || x.ID_Venta })).filter(x => x.ID_Venta);
@@ -630,6 +631,7 @@ const App = (() => {
     { id: 'productos', t: 'Productos', i: '💊', p: 'listas_precios' },
     { id: 'matriz', t: 'Actualizar desde Matriz', i: '🔄', p: 'productos_editar', oculto: 1 },
     { id: 'clientes', t: 'Clientes', i: '👥', p: 'clientes' },
+    { id: 'mapa', t: 'Mapa', i: '🗺️', p: ['clientes', 'ventas', 'cobranza', 'seguimiento'] },
     { id: 'proveedores', t: 'Proveedores', i: '🏭', p: 'proveedores' },
     { id: 'config', t: 'Configuración', i: '⚙️' }
   ];
@@ -706,7 +708,7 @@ const App = (() => {
   const esMovil = () => { try { return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) || window.innerWidth <= 820; } catch (e) { return window.innerWidth <= 820; } };
   const SUB_MENU = { inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
     seguimiento: 'Clientes por atender y visitas', compras: 'Órdenes de compra y pedido sugerido', gastos: 'Gastos del negocio', sucursales: 'Inventario, traspasos y requisiciones',
-    productos: 'Catálogo, portafolio y precios', clientes: 'Cartera de clientes', proveedores: 'Laboratorios y distribuidores', config: 'Folios, permisos y ajustes' };
+    productos: 'Catálogo, portafolio y precios', clientes: 'Cartera de clientes', mapa: 'Dónde están tus clientes: casa y rancho', proveedores: 'Laboratorios y distribuidores', config: 'Folios, permisos y ajustes' };
   function saludo() { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; }
   function bienvenida() {
     let el = $('#bienvenida');
@@ -6435,6 +6437,136 @@ const App = (() => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'Dashboard ' + tab + ' por año.csv'; a.click();
   }
 
+  /* ---------- 🗺️ MAPA DE CLIENTES: casa, rancho y última visita ---------- */
+  const MP_COL = { 'Al día': '#1f7a3a', 'Toca comprar': '#7cb342', 'Atrasado': '#e08a00', 'Dormido': '#c23b32', 'Perdido': '#555b63', 'Sin compras': '#2a78d6', '': '#2a78d6' };
+  const MP_ICO = { casa: '🏠', rancho: '🐄', visita: '📍' };
+  const MP_TXT = { casa: 'Casa', rancho: 'Rancho / trabajo', visita: 'Última visita' };
+  const mpUrl = s => 'https:' + '\/\/' + s;
+  async function cargarLeaflet() {
+    if (!LIBS.leaflet) LIBS.leaflet = { url: CDN + 'leaflet/1.9.4/leaflet.min.js', ok: () => window.L && window.L.map ? window.L : null };
+    if (!document.getElementById('cssLeaflet')) {
+      let css = ''; try { css = await fetch(CDN + 'leaflet/1.9.4/leaflet.min.css').then(r => r.ok ? r.text() : ''); if (css) KV.set('css_leaflet', css); } catch (e) {}
+      if (!css) css = (await KV.get('css_leaflet')) || '';
+      css = css.replace(/url\((['"]?)images\//g, 'url($1' + CDN + 'leaflet/1.9.4/images/');   // íconos de la hoja de estilos (capas, etc.) desde el CDN
+      const st = document.createElement('style'); st.id = 'cssLeaflet'; st.textContent = css; document.head.appendChild(st);
+    }
+    return libLocal('leaflet');
+  }
+  V.mapa = () => {
+    const f = S.fMapa = S.fMapa || { casa: 1, rancho: 1, visita: 1, estado: '', vend: '', q: '' };
+    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
+        <label style="flex:2 1 200px">Buscar cliente<input id="mpQ" value="${esc(f.q)}" placeholder="Nombre, rancho o localidad"></label>
+        ${esJefe() ? `<label>Vendedor<select id="mpVend">${opts((D().vendedores || []).map(v => [v.id, v.nombre]), f.vend, 'Todos')}</select></label>` : ''}
+        ${puede('seguimiento') ? `<label>Estado de compra<select id="mpEst">${opts(['Toca comprar', 'Atrasado', 'Dormido', 'Al día', 'Perdido'].map(x => [x, x]), f.estado, 'Todos')}</select></label>` : ''}
+        <button class="btn fijo primario" onclick="App.mapaCerca()">📍 Cerca de mí</button></div>
+        <div class="mp-capas" id="mpCapas"></div></div>
+      <div class="mp-cont"><div id="mpMapa" class="mp-mapa"><div class="vacio">🗺️ Cargando el mapa…</div></div><div class="mp-lado" id="mpLado"></div></div>`;
+    $('#mpQ').oninput = e => { f.q = e.target.value; clearTimeout(S.mpT); S.mpT = setTimeout(() => pintarMapa(), 300); };
+    if ($('#mpVend')) $('#mpVend').onchange = e => { f.vend = e.target.value; pintarMapa(true); };
+    if ($('#mpEst')) $('#mpEst').onchange = e => { f.estado = e.target.value; pintarMapa(true); };
+    cargarMapa();
+  };
+  async function cargarMapa() {
+    let Lf, r;
+    try { [Lf, r] = await Promise.all([cargarLeaflet(), pedir('mapaClientes', {}, true)]); }
+    catch (e) { if ($('#mpMapa')) $('#mpMapa').innerHTML = `<div class="vacio">${e.red ? 'El mapa necesita conexión la primera vez.' : /desconocida/i.test(e.message) ? '🗺️ El mapa se activa en cuanto se publique la actualización del servidor (157).' : esc(e.message)}</div>`; return; }
+    S.mp = r; const el = $('#mpMapa'); if (!el) return; el.innerHTML = '';
+    if (S.mpMap) { try { S.mpMap.remove(); } catch (e) {} }
+    const m = S.mpMap = Lf.map(el, { zoomControl: true, attributionControl: true }).setView([18.5, -90.5], 7);
+    const calle = Lf.tileLayer(mpUrl('{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'), { maxZoom: 19, attribution: '© OpenStreetMap' });
+    const sat = Lf.tileLayer(mpUrl('server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'), { maxZoom: 19, attribution: 'Imágenes © Esri' });
+    (LS.get('mapa_capa', 'calle') === 'sat' ? sat : calle).addTo(m);
+    Lf.control.layers({ '🗺️ Mapa': calle, '🛰️ Satélite': sat }, null, { position: 'topright' }).addTo(m);
+    m.on('baselayerchange', e => LS.set('mapa_capa', e.layer === sat ? 'sat' : 'calle'));
+    m.on('click', e => { if (S.mpUbicar) { const u = S.mpUbicar; S.mpUbicar = null; el.classList.remove('mp-eligiendo'); formUbicar(u.id, u.tipo, e.latlng.lat.toFixed(6) + ', ' + e.latlng.lng.toFixed(6)); } });
+    S.mpGrupo = Lf.layerGroup().addTo(m);
+    pintarMapa(true);
+    setTimeout(() => m.invalidateSize(), 200);
+  }
+  function mpLista() {
+    const r = S.mp, f = S.fMapa; if (!r) return [];
+    return r.clientes.filter(c => (!f.q || coincide([c.razon, c.nombre, c.rancho, c.localidad, c.municipio].join(' '), f.q)) && (!f.vend || c.vendedor === f.vend) && (!f.estado || c.estado === f.estado));
+  }
+  const mpPuntos = c => { const f = S.fMapa, l = []; if (f.casa && c.casa) l.push(['casa', c.casa]); if (f.rancho && c.ranchoU) l.push(['rancho', c.ranchoU]); if (f.visita && c.visita && !c.casa && !c.ranchoU) l.push(['visita', c.visita]); return l; };
+  function mpDist(a, b) { const R = 6371, t = x => x * Math.PI / 180, dLa = t(b[0] - a[0]), dLo = t(b[1] - a[1]); const h = Math.sin(dLa / 2) ** 2 + Math.cos(t(a[0])) * Math.cos(t(b[0])) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
+  function mpPopup(c, tipo, g) {
+    const nom = c.razon || c.nombre, wa = telWa(c.cel), q = esc(c.id), col = MP_COL[c.estado] || MP_COL[''];
+    return `<div class="mp-pop"><b>${esc(nom)}</b>${c.rancho ? `<small>🐄 ${esc(c.rancho)}</small>` : ''}<small class="muted">${MP_ICO[tipo]} ${MP_TXT[tipo]}${tipo === 'visita' && c.visitaF ? ' (' + esc(c.visitaF) + ')' : ''} · ${esc([c.localidad, c.municipio].filter(Boolean).join(', '))}</small>
+      ${c.estado ? `<div><span class="etq" style="background:${col}22;color:${col}">${esc(c.estado)}</span> <small class="muted">${c.cada ? 'compra cada ' + c.cada + ' d · ' : ''}${c.sin !== null ? 'última hace ' + c.sin + ' d' : ''}</small></div>` : ''}
+      ${c.mensual ? `<small>~${$$(c.mensual)} al mes</small>` : ''}${S.mpYo ? `<small>📏 a ${mpDist(S.mpYo, g).toFixed(1)} km de ti</small>` : ''}
+      <div class="mp-pop-b"><a class="btn chico primario" target="_blank" rel="noopener" href="${mpUrl('www.google.com/maps/dir/?api=1&destination=' + g[0] + ',' + g[1])}">🧭 Cómo llegar</a>
+        ${wa ? `<a class="btn chico" target="_blank" rel="noopener" href="${WA_BASE}${wa}">💬</a>` : ''}
+        ${cliente(c.id) ? `<button class="btn chico" onclick="App.fichaCliente('${q}')">👤 Ficha</button>` : ''}
+        ${puede('ventas') ? `<button class="btn chico" onclick="App.venderA('${q}')">🛒</button>` : ''}
+        ${S.mp.puedeUbicar && tipo !== 'visita' ? `<button class="btn chico" title="Corregir ubicación" onclick="App.formUbicar('${q}','${tipo}')">✏️</button>` : ''}</div></div>`;
+  }
+  function pintarMapa(ajustar) {
+    const r = S.mp, f = S.fMapa, Lf = window.L, m = S.mpMap; if (!r || !m || !Lf) return;
+    S.mpGrupo.clearLayers(); S.mpMarcas = {};
+    const l = mpLista(), pts = [];
+    l.forEach(c => mpPuntos(c).forEach(([tipo, g]) => {
+      const col = MP_COL[c.estado] || MP_COL[''];
+      const ic = Lf.divIcon({ className: '', html: `<div class="mp-pin mp-${tipo}" style="background:${col}">${MP_ICO[tipo]}</div>`, iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -14] });
+      const mk = Lf.marker(g, { icon: ic, title: (c.razon || c.nombre) + ' · ' + MP_TXT[tipo] }).bindPopup(mpPopup(c, tipo, g), { maxWidth: 280 });
+      mk.addTo(S.mpGrupo); (S.mpMarcas[c.id] = S.mpMarcas[c.id] || []).push(mk); pts.push(g);
+    }));
+    if (S.mpYo) Lf.circleMarker(S.mpYo, { radius: 9, color: '#fff', weight: 3, fillColor: '#2a78d6', fillOpacity: 1 }).bindTooltip('Tú estás aquí').addTo(S.mpGrupo);
+    if (ajustar && pts.length) m.fitBounds(Lf.latLngBounds(pts).pad(0.12), { maxZoom: 13 });
+    const cuenta = k => l.filter(c => k === 'casa' ? c.casa : k === 'rancho' ? c.ranchoU : (c.visita && !c.casa && !c.ranchoU)).length;
+    $('#mpCapas').innerHTML = ['casa', 'rancho', 'visita'].map(k => `<button class="chip-op ${f[k] ? 'on' : ''}" onclick="App.mapaCapa('${k}')">${MP_ICO[k]} ${MP_TXT[k]} <b>${nf(cuenta(k))}</b></button>`).join('') +
+      (puede('seguimiento') ? `<span class="mp-ley">${['Toca comprar', 'Atrasado', 'Dormido', 'Al día', 'Perdido'].map(e => `<i style="background:${MP_COL[e]}"></i>${e}`).join('')}<i style="background:${MP_COL['']}"></i>Sin historial</span>` : '');
+    pintarLadoMapa(l);
+  }
+  function pintarLadoMapa(l) {
+    const r = S.mp, el = $('#mpLado'); if (!el) return;
+    const sin = l.filter(c => !c.casa && !c.ranchoU && !c.visita);
+    let html = '';
+    if (S.mpYo) {
+      const cerca = [];
+      l.forEach(c => mpPuntos(c).forEach(([tipo, g]) => cerca.push({ c: c, tipo: tipo, g: g, d: mpDist(S.mpYo, g) })));
+      cerca.sort((a, b) => a.d - b.d);
+      const vistos = {}, top = cerca.filter(x => vistos[x.c.id] ? false : (vistos[x.c.id] = 1)).slice(0, 15);
+      html += `<h3>📍 Más cerca de ti</h3>${top.map(x => `<div class="mp-item" onclick="App.mapaIr('${esc(x.c.id)}',${x.g[0]},${x.g[1]})"><span class="mp-dot" style="background:${MP_COL[x.c.estado] || MP_COL['']}"></span><div><b>${esc(x.c.razon || x.c.nombre)}</b><small class="muted">${MP_ICO[x.tipo]} ${x.d.toFixed(1)} km${x.c.estado ? ' · ' + esc(x.c.estado) : ''}</small></div></div>`).join('') || '<div class="vacio">Sin clientes ubicados cerca.</div>'}`;
+    }
+    html += `<h3>📊 Ubicaciones</h3><div class="mp-res"><span>🏠 Casa <b>${nf(r.resumen.casa)}</b></span><span>🐄 Rancho <b>${nf(r.resumen.rancho)}</b></span><span>📍 Solo visita <b>${nf(r.resumen.visita)}</b></span><span>❔ Sin ubicación <b>${nf(r.resumen.sin)}</b></span></div>`;
+    if (sin.length) html += `<h3>❔ Sin ubicación (${nf(sin.length)})</h3><p class="muted peq">${r.puedeUbicar ? 'Toca 📍 para ponerle su ubicación: con tu GPS cuando estés ahí, tocando el mapa o pegando el enlace de Google Maps.' : 'Pide al administrador que capture su ubicación (casa o rancho) en la ficha del cliente.'}</p>
+      ${sin.slice(0, 80).map(c => `<div class="mp-item"><span class="mp-dot" style="background:${MP_COL[c.estado] || MP_COL['']}"></span><div><b>${esc(c.razon || c.nombre)}</b><small class="muted">${esc([c.localidad, c.municipio].filter(Boolean).join(', ') || c.dir || 'sin dirección')}</small></div>${r.puedeUbicar ? `<button class="btn chico fijo" onclick="App.formUbicar('${esc(c.id)}','rancho')">📍</button>` : ''}</div>`).join('')}`;
+    el.innerHTML = html;
+  }
+  function mapaCapa(k) { S.fMapa[k] = S.fMapa[k] ? 0 : 1; pintarMapa(); }
+  function mapaIr(id, la, lo) { const m = S.mpMap; if (!m) return; m.setView([la, lo], 15); const mk = (S.mpMarcas[id] || []).find(x => { const p = x.getLatLng(); return Math.abs(p.lat - la) < 1e-6 && Math.abs(p.lng - lo) < 1e-6; }); if (mk) setTimeout(() => mk.openPopup(), 300); if (esMovil()) $('#mpMapa').scrollIntoView({ behavior: 'smooth' }); }
+  function mapaCerca() {
+    if (!navigator.geolocation) return toast('Este equipo no da su ubicación', true);
+    toast('📍 Buscando tu ubicación…');
+    navigator.geolocation.getCurrentPosition(p => { S.mpYo = [p.coords.latitude, p.coords.longitude]; pintarMapa();
+      // encuadra tu ubicación con tus 5 clientes más cercanos
+      const cerca = []; mpLista().forEach(c => mpPuntos(c).forEach(([t, g]) => cerca.push(g))); cerca.sort((a, b) => mpDist(S.mpYo, a) - mpDist(S.mpYo, b));
+      if (S.mpMap && window.L) S.mpMap.fitBounds(window.L.latLngBounds([S.mpYo].concat(cerca.slice(0, 5))).pad(0.15), { maxZoom: 14 }); },
+      e => toast(e.code === 1 ? 'Permite el acceso a la ubicación para ver qué clientes tienes cerca' : 'No se pudo obtener tu ubicación', true), { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  }
+  /** Administrador: poner o corregir la ubicación de casa / rancho (GPS, tocando el mapa o pegando coordenadas o un enlace de Google Maps). */
+  function formUbicar(id, tipo, valor) {
+    const c = (S.mp.clientes || []).find(x => x.id === id); if (!c) return;
+    const act = tipo === 'casa' ? c.casa : c.ranchoU;
+    modal('📍 Ubicación de ' + (c.razon || c.nombre), `<label>¿Qué ubicación?<select id="ubTipo"><option value="rancho" ${tipo !== 'casa' ? 'selected' : ''}>🐄 Rancho / trabajo</option><option value="casa" ${tipo === 'casa' ? 'selected' : ''}>🏠 Casa</option></select></label>
+      <label style="margin-top:8px">Coordenadas o enlace de Google Maps<input id="ubVal" value="${esc(valor || (act ? act.join(', ') : ''))}" placeholder="19.950610, -88.882922"></label>
+      <div class="acciones izq"><button class="btn" onclick="App.ubicarGps()">📍 Estoy aquí (usar mi GPS)</button><button class="btn" onclick="App.ubicarEnMapa('${esc(id)}')">🗺️ Tocar en el mapa</button></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarUbicacion('${esc(id)}')">Guardar</button></div>`);
+  }
+  function ubicarGps() {
+    if (!navigator.geolocation) return toast('Este equipo no da su ubicación', true);
+    navigator.geolocation.getCurrentPosition(p => { const i = $('#ubVal'); if (i) i.value = p.coords.latitude.toFixed(6) + ', ' + p.coords.longitude.toFixed(6); toast('📍 Ubicación tomada (precisión ±' + Math.round(p.coords.accuracy) + ' m)'); },
+      () => toast('No se pudo obtener tu ubicación', true), { enableHighAccuracy: true, timeout: 20000 });
+  }
+  function ubicarEnMapa(id) { const tipo = $('#ubTipo').value; cerrarModal(); S.mpUbicar = { id: id, tipo: tipo }; $('#mpMapa').classList.add('mp-eligiendo'); toast('🗺️ Toca en el mapa el lugar exacto'); }
+  async function guardarUbicacion(id) {
+    const tipo = $('#ubTipo').value, v = $('#ubVal').value.trim(); if (!v) return toast('Captura la ubicación', true);
+    try { const r = await pedir('ubicarCliente', { id: id, tipo: tipo, coords: v });
+      const c = S.mp.clientes.find(x => x.id === id); if (c) { if (tipo === 'casa') c.casa = r.coords; else c.ranchoU = r.coords; }
+      const rs = S.mp.resumen, cl = S.mp.clientes; rs.casa = cl.filter(x => x.casa).length; rs.rancho = cl.filter(x => x.ranchoU).length; rs.sin = cl.filter(x => !x.casa && !x.ranchoU && !x.visita).length;
+      cerrarModal(); toast('✔ Ubicación guardada'); pintarMapa(); mapaIr(id, r.coords[0], r.coords[1]); } catch (e) {}
+  }
+
   /* ----- Visitas ----- */
   V.visitas = () => {
     const f = S.fVis = alDia(S.fVis || { desde: sumaDias(hoyISO(), -7), hasta: sumaDias(hoyISO(), 60), hastaHoy: '', vend: '', estado: '' });
@@ -7444,7 +7576,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
