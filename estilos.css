@@ -718,6 +718,9 @@ body.con-visor { overflow: hidden; }
 .cmp-d.igual { color: var(--texto-2); background: var(--superficie-2); }
 .cmp-tabla td, .cmp-tabla th { padding: 6px 8px; font-size: 13px; } .cmp-tabla td:nth-child(2) { max-width: 260px; } .cmp-tabla td.cmp-prod { min-width: 220px; max-width: none; }
 @media (max-width: 600px) { .cmp-kpis { grid-template-columns: 1fr 1fr; } .cmp-kpi { padding: 8px 10px; } .cmp-kpi b { font-size: 16px; } .cmp-kpi em { width: 100%; } }
+/* ---------- 📊 Dashboard ---------- */
+.tb-tabla tr.clic { cursor: pointer; } .tb-tabla tr.clic:hover td { background: var(--marca-suave); }
+th.ordenable { cursor: pointer; user-select: none; } th.ordenable:hover { color: var(--marca); }
 /* ---------- 🏆 Metas ---------- */
 .mt-hero { display: flex; gap: 20px; align-items: center; border-radius: 16px; padding: 18px 22px; margin-bottom: 14px; color: #fff; background: linear-gradient(135deg, #1f6f4a 0%, #15543a 60%, #0f3f2c 100%); box-shadow: 0 10px 30px rgba(21, 84, 58, .25); }
 .mt-hero > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

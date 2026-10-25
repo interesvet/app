@@ -216,7 +216,7 @@ const App = (() => {
       'detalleCompra listarTraspasos detalleTraspaso reporteTraspasos listarConteos detalleConteo historialAjustes selListaPrecios historialPrecios ' +
       'listarMovimientos listarProveedores detalleCobro dashboard costosReales listarCotizaciones detalleCotizacion facturas detalleFactura facturasNota ' +
       'listarRequisiciones detalleRequisicion detalleDevolucion porFacturar listarVendedores utilidadVentas utilidadNota gastosDetalle gastos sucursalesResumen gruposGasto ' +
-      'radar metas historialCliente registro comparativo').split(' ');
+      'radar metas historialCliente registro comparativo analisis').split(' ');
     const MAX = 4000, MAX_TXT = 4e6;   // "Actualizar para ruta" guarda miles de consultas (IndexedDB aguanta cientos de MB)
     let dbp = null;
     const db = () => dbp || (dbp = new Promise((res, rej) => {
@@ -607,6 +607,7 @@ const App = (() => {
   /* ---------------- navegación ---------------- */
   const MENU = [
     { id: 'inicio', t: 'Inicio', i: '🏠' },
+    { id: 'tablero', t: 'Dashboard', i: '📊', p: 'dashboard' },
     { id: 'venta', t: 'Nueva venta', i: '🛒', p: 'ventas' },
     { id: 'ventas', t: 'Ventas', i: '🧾', p: ['ventas', 'cobranza'] },
     { id: 'cotizaciones', t: 'Cotizaciones', i: '📝', p: 'cotizaciones' },
@@ -703,7 +704,7 @@ const App = (() => {
   }
   /* ---------- BIENVENIDA (solo celulares y tabletas: iPhone, iPad, Android) ---------- */
   const esMovil = () => { try { return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) || window.innerWidth <= 820; } catch (e) { return window.innerWidth <= 820; } };
-  const SUB_MENU = { inicio: 'Resultados y resumen del día', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
+  const SUB_MENU = { inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
     seguimiento: 'Clientes por atender y visitas', compras: 'Órdenes de compra y pedido sugerido', gastos: 'Gastos del negocio', sucursales: 'Inventario, traspasos y requisiciones',
     productos: 'Catálogo, portafolio y precios', clientes: 'Cartera de clientes', proveedores: 'Laboratorios y distribuidores', config: 'Folios, permisos y ajustes' };
   function saludo() { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; }
@@ -6216,6 +6217,187 @@ const App = (() => {
     try { await pedir('guardarMeta', p); toast(quitar ? 'Meta quitada' : '✔ Meta guardada'); cerrarModal(); cargarMetas(); } catch (e) {}
   }
 
+  /* ---------- 📊 DASHBOARD: análisis y comparativos por año (cliente, producto, proveedor, categoría, sucursal, vendedor) ---------- */
+  const TB_COL = ['#1f6f4a', '#2a78d6', '#d95926', '#8e44ad', '#c79a00', '#199e70', '#6b7280', '#b03a6b'];
+  const TB_TABS = [['resumen', '📈 Resumen por año'], ['clientes', '👥 Clientes'], ['productos', '💊 Productos'], ['proveedores', '🏭 Proveedores'], ['categorias', '🏷️ Categorías'], ['sucursales', '🏬 Sucursales'], ['vendedores', '👤 Vendedores']];
+  const TB_TIPO = { clientes: 'cliente', productos: 'producto', proveedores: 'proveedor', categorias: 'categoria', sucursales: 'sucursal', vendedores: 'vendedor' };
+  const MES3 = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  V.tablero = (tab) => {
+    const f = S.fTb = S.fTb || { tab: 'resumen', suc: '', a: '', b: '', met: '', q: '', filtro: '', orden: 'a', aFecha: true };
+    if (tab) f.tab = tab;
+    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
+        ${U().todasSucursales ? `<label>Sucursal<select id="tbSuc">${optsSuc(f.suc, true, 'Todas')}</select></label>` : ''}
+        <label>Año<select id="tbA"></select></label><label>Comparar con<select id="tbB"></select></label>
+        <label id="tbFechaL" class="fijo" style="align-self:flex-end;display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" id="tbFecha" ${f.aFecha ? 'checked' : ''} style="width:auto"> A la misma fecha</label>
+        <button class="btn fijo" onclick="App.cargarTablero(true)">⟳ Actualizar</button></div>
+        <p class="muted peq" style="margin:8px 0 0">Venta neta sin IVA (igual que Inicio). Compras: órdenes con factura o nota del proveedor. Toca cualquier renglón para ver su detalle mes a mes de cada año.</p></div>
+      <div class="pestanas" id="tbTabs"></div><div id="tbRes"><div class="vacio">📊 Reuniendo todos tus años…</div></div>`;
+    if ($('#tbSuc')) $('#tbSuc').onchange = e => { f.suc = e.target.value; cargarTablero(true); };
+    $('#tbFecha').onchange = e => { f.aFecha = e.target.checked; pintarTablero(); };
+    cargarTablero();
+  };
+  async function cargarTablero(forzar) {
+    const f = S.fTb; if (!f) return;
+    if (!forzar && S.tb && S.tb._suc === f.suc && Date.now() - S.tb._t < 900000) return pintarTablero();
+    if ($('#tbRes')) $('#tbRes').innerHTML = '<div class="vacio">📊 Reuniendo todos tus años…</div>';
+    let r; try { r = await pedir('analisis', { sucursal: f.suc }, true); }
+    catch (e) { if ($('#tbRes')) $('#tbRes').innerHTML = `<div class="vacio">${e.red ? 'El Dashboard necesita conexión la primera vez.' : /desconocida/i.test(e.message) ? '📊 El Dashboard se activa en cuanto se publique la actualización del servidor (156).' : esc(e.message)}</div>`; return; }
+    r._suc = f.suc; r._t = Date.now(); S.tb = r;
+    const an = r.anios.slice().reverse();
+    if (!f.a || an.indexOf(+f.a) < 0) f.a = String(an[0] || new Date().getFullYear());
+    if (!f.b || an.indexOf(+f.b) < 0 || f.b === f.a) f.b = String(an.find(y => y < +f.a) || an[1] || f.a);
+    pintarTablero();
+  }
+  /** Meses que cuentan: con "a la misma fecha" y el año elegido es el actual, solo enero → mes actual en los dos años. */
+  function tbMeses() { const f = S.fTb, hoy = new Date(); return f.aFecha && +f.a === hoy.getFullYear() ? hoy.getMonth() + 1 : 12; }
+  function tbVar(a, b, malSiSube) {
+    if (!b && !a) return '<span class="muted">—</span>'; if (!b) return '<span class="etq ok">nuevo</span>'; if (!a) return '<span class="etq mal">sin venta</span>';
+    const p = (a - b) / Math.abs(b) * 100, bien = malSiSube ? p <= 0 : p >= 0;
+    return `<span class="etq ${Math.abs(p) < 0.05 ? '' : bien ? 'ok' : 'mal'}">${p > 0 ? '▲' : p < 0 ? '▼' : '='} ${Math.abs(p).toFixed(1)}%</span>`;
+  }
+  function pintarTablero() {
+    const r = S.tb, f = S.fTb, el = $('#tbRes'); if (!r || !el) return;
+    S.charts.forEach(c => c.destroy()); S.charts = [];
+    const an = r.anios.slice().reverse(), op = v => an.map(y => `<option value="${y}" ${String(y) === String(v) ? 'selected' : ''}>${y}</option>`).join('');
+    $('#tbA').innerHTML = op(f.a); $('#tbB').innerHTML = op(f.b);
+    $('#tbA').onchange = e => { f.a = e.target.value; pintarTablero(); }; $('#tbB').onchange = e => { f.b = e.target.value; pintarTablero(); };
+    $('#tbFechaL').style.display = +f.a === new Date().getFullYear() ? '' : 'none';
+    const tabs = TB_TABS.filter(([k]) => k !== 'proveedores' || r.verCompras).filter(([k]) => k !== 'sucursales' || r.sucursales);
+    if (!tabs.some(t => t[0] === f.tab)) f.tab = 'resumen';
+    $('#tbTabs').innerHTML = tabs.map(([k, t]) => `<button class="${f.tab === k ? 'activo' : ''}" onclick="App.tbTab('${k}')">${t}</button>`).join('');
+    if (!r.anios.length) { el.innerHTML = '<div class="vacio">Aún no hay ventas registradas.</div>'; return; }
+    if (f.tab === 'resumen') return pintarTbResumen(el);
+    pintarTbEntidad(el, f.tab);
+  }
+  function tbTab(k) { const f = S.fTb; f.tab = k; f.q = ''; f.filtro = ''; f.orden = 'a'; f.met = ''; pintarTablero(); }
+  function pintarTbResumen(el) {
+    const r = S.tb, f = S.fTb, din = r.dinero, nm = tbMeses();
+    const A = r.anual.find(x => String(x.anio) === String(f.a)) || r.anual[r.anual.length - 1], B = r.anual.find(x => String(x.anio) === String(f.b));
+    const FK = { v: 'ventas', c: 'compras', u: 'utilidad', mer: 'mermas' }, corte = tbCorte();
+    const suma = (x, k) => !x ? 0 : corte && x.fecha ? (x.fecha[FK[k]] || 0) : x.meses.slice(0, nm).reduce((t, m) => t + (m[k] || 0), 0);
+    const cuenta = (x) => !x ? 0 : corte && x.fecha ? x.fecha.notas : x.meses.slice(0, nm).reduce((t, m) => t + m.n, 0);
+    const vA = suma(A, 'v'), vB = suma(B, 'v'), uA = suma(A, 'u'), uB = suma(B, 'u'), nA = cuenta(A), nB = cuenta(B);
+    const tile = (t, a, b, fmt, mal) => `<div class="kpi"><small>${t}</small><b>${fmt(a)}</b><span>${tbVar(a, b, mal)} ${f.b}: ${fmt(b)}</span></div>`;
+    const per = corte ? `del 1 de enero al ${r.corte} de cada año` : 'año completo';
+    const html = `<div class="tarjeta"><h3>📅 ${f.a} contra ${f.b} <small class="muted">· ${per}</small></h3><div class="kpis" style="margin:0">
+        ${din ? tile('Ventas netas', vA, vB, $$) : tile('Notas de venta', nA, nB, nf)}
+        ${r.verUtil ? tile('Utilidad bruta', uA, uB, $$) + `<div class="kpi"><small>Margen bruto</small><b>${vA ? (uA / vA * 100).toFixed(1) + '%' : '—'}</b><span>${f.b}: ${vB ? (uB / vB * 100).toFixed(1) + '%' : '—'}</span></div>` : ''}
+        ${r.verCompras && din ? tile('Compras', suma(A, 'c'), suma(B, 'c'), $$, true) : ''}
+        ${din ? tile('Mermas', suma(A, 'mer'), suma(B, 'mer'), $$, true) : ''}
+        ${din ? tile('Notas de venta', nA, nB, nf) + tile('Ticket promedio', nA ? vA / nA : 0, nB ? vB / nB : 0, $$) : ''}
+        ${(() => { const ca = corte && A.fecha ? A.fecha.clientes : A.clientes, cb = !B ? 0 : corte && B.fecha ? B.fecha.clientes : B.clientes; return `<div class="kpi"><small>Clientes que compraron</small><b>${nf(ca)}</b><span>${tbVar(ca, cb)} ${f.b}: ${nf(cb)}</span></div>`; })()}
+      </div></div>
+      <div class="rejilla-2"><div class="tarjeta"><h3>📈 Ventas mes a mes, año con año</h3><div class="grafica" style="height:300px"><canvas id="tbG1"></canvas></div></div>
+        <div class="tarjeta"><h3>📊 Totales por año</h3><div class="grafica" style="height:300px"><canvas id="tbG2"></canvas></div></div></div>
+      ${r.verUtil ? `<div class="rejilla-2"><div class="tarjeta"><h3>💰 Utilidad bruta mes a mes</h3><div class="grafica" style="height:260px"><canvas id="tbG3"></canvas></div></div>
+        <div class="tarjeta"><h3>📐 Margen bruto mes a mes</h3><div class="grafica" style="height:260px"><canvas id="tbG4"></canvas></div></div></div>` : ''}
+      ${r.verCompras && din ? `<div class="tarjeta"><h3>📦 Compras contra ventas, mes a mes (${f.a})</h3><div class="grafica" style="height:260px"><canvas id="tbG5"></canvas></div></div>` : ''}
+      <div class="tarjeta"><h3>🗓️ Resumen de cada año</h3><div class="tabla-cont"><table><thead><tr><th>Año</th>${din ? '<th class="num">Ventas</th><th class="num">Crecimiento</th>' : ''}${r.verUtil ? '<th class="num">Utilidad</th><th class="num">Margen</th>' : ''}${r.verCompras && din ? '<th class="num">Compras</th>' : ''}${din ? '<th class="num">Mermas</th>' : ''}<th class="num">Notas</th>${din ? '<th class="num">Ticket</th>' : ''}<th class="num">Clientes</th></tr></thead><tbody>
+        ${r.anual.slice().reverse().map((x, i, l) => { const prev = l[i + 1]; return `<tr><td><b>${x.anio}</b>${x.anio === new Date().getFullYear() ? ' <small class="muted">(en curso)</small>' : ''}</td>${din ? `<td class="num">${$$(x.ventas)}</td><td class="num">${prev ? tbVar(x.ventas, prev.ventas) : '—'}</td>` : ''}${r.verUtil ? `<td class="num">${$$(x.utilidad)}</td><td class="num">${x.margen !== null ? x.margen + '%' : '—'}</td>` : ''}${r.verCompras && din ? `<td class="num">${$$(x.compras)}</td>` : ''}${din ? `<td class="num">${$$(x.mermas)}</td>` : ''}<td class="num">${nf(x.notas)}</td>${din ? `<td class="num">${x.notas ? $$(x.ventas / x.notas) : '—'}</td>` : ''}<td class="num">${nf(x.clientes)}</td></tr>`; }).join('')}
+      </tbody></table></div><p class="muted peq">El crecimiento compara año completo contra año completo; el año en curso todavía no está completo (arriba lo comparas a la misma fecha).</p></div>`;
+    el.innerHTML = html;
+    const anios = r.anual.map(x => x.anio), col = y => TB_COL[(anios.length - 1 - anios.indexOf(y)) % TB_COL.length];
+    const lineas = k => r.anual.map(x => ({ label: String(x.anio), data: x.meses.map((m, i) => x.anio === new Date().getFullYear() && i > new Date().getMonth() ? null : (k === 'margen' ? (m.v ? Math.round(m.u / m.v * 1000) / 10 : null) : m[k])),
+      borderColor: col(x.anio), backgroundColor: col(x.anio), tension: .3, borderWidth: x.anio === +f.a ? 3.5 : 2, pointRadius: x.anio === +f.a ? 3 : 1.5, spanGaps: false }));
+    const ejeY = k => ({ beginAtZero: true, ticks: { callback: k === 'margen' ? v => v + '%' : din ? tickMoneda : v => v } });
+    const tip = k => ({ callbacks: { label: c => c.dataset.label + ': ' + (k === 'margen' ? c.parsed.y + '%' : din ? $$(c.parsed.y) : nf(c.parsed.y)) } });
+    grafica('tbG1', { type: 'line', data: { labels: MES3, datasets: lineas(din ? 'v' : 'n') }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: tip('v') }, scales: { y: ejeY('v') } } });
+    const ds2 = [{ label: 'Ventas', data: r.anual.map(x => x.ventas), backgroundColor: '#1f6f4a' }];
+    if (r.verCompras) ds2.push({ label: 'Compras', data: r.anual.map(x => x.compras), backgroundColor: '#2a78d6' });
+    if (r.verUtil) ds2.push({ label: 'Utilidad', data: r.anual.map(x => x.utilidad), backgroundColor: '#c79a00' });
+    grafica('tbG2', { type: 'bar', data: { labels: anios.map(String), datasets: din ? ds2 : [{ label: 'Notas', data: r.anual.map(x => x.notas), backgroundColor: '#1f6f4a' }] }, options: { maintainAspectRatio: false, plugins: { tooltip: tip('v') }, scales: { y: ejeY('v') } } });
+    if (r.verUtil) {
+      grafica('tbG3', { type: 'line', data: { labels: MES3, datasets: lineas('u') }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: tip('u') }, scales: { y: ejeY('u') } } });
+      grafica('tbG4', { type: 'line', data: { labels: MES3, datasets: lineas('margen') }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: tip('margen') }, scales: { y: { ticks: { callback: v => v + '%' } } } } });
+    }
+    if (r.verCompras && din) grafica('tbG5', { type: 'bar', data: { labels: MES3, datasets: [{ label: 'Ventas ' + f.a, data: A.meses.map(m => m.v), backgroundColor: '#1f6f4a' }, { label: 'Compras ' + f.a, data: A.meses.map(m => m.c), backgroundColor: '#2a78d6' }] }, options: { maintainAspectRatio: false, plugins: { tooltip: tip('v') }, scales: { y: ejeY('v') } } });
+  }
+  /** valor de una entidad en un año con la métrica elegida (v venta · q piezas · u utilidad · c compras) */
+  const tbCorte = () => { const f = S.fTb; return !!(f && f.aFecha && +f.a === new Date().getFullYear()); };
+  const tbVal = (x, y, m) => { const z = (tbCorte() && x.f ? x.f : x.y)[y]; return z ? (z[m] || 0) : 0; };
+  function tbMetricas(tab) {
+    const r = S.tb, m = [];
+    if (tab === 'proveedores') return [['c', 'Compras $']];
+    if (r.dinero) m.push(['v', 'Venta $']);
+    if (tab === 'productos' || tab === 'categorias') m.push(['q', 'Piezas vendidas']);
+    if (r.verUtil && tab !== 'proveedores') m.push(['u', 'Utilidad $']);
+    if (tab === 'productos' && r.verCompras && r.dinero) m.push(['c', 'Compras $']);
+    if (!m.length) m.push(['q', 'Piezas']);
+    return m;
+  }
+  function pintarTbEntidad(el, tab) {
+    const r = S.tb, f = S.fTb, mets = tbMetricas(tab);
+    if (!f.met || !mets.some(m => m[0] === f.met)) f.met = mets[0][0];
+    const met = f.met, esDin = met !== 'q', fmt = v => esDin ? $$(v) : nf(v);
+    const lista = r[tab] || [], a = f.a, b = f.b;
+    const totA = lista.reduce((t, x) => t + tbVal(x, a, met), 0), totB = lista.reduce((t, x) => t + tbVal(x, b, met), 0);
+    const rk = y => { const m = {}; lista.filter(x => tbVal(x, y, met) > 0).sort((p, q) => tbVal(q, y, met) - tbVal(p, y, met)).forEach((x, i) => m[x.id] = i + 1); return m; };
+    const rA = rk(a), rB = rk(b);
+    let l = lista.filter(x => tbVal(x, a, met) || tbVal(x, b, met));
+    if (f.q) l = l.filter(x => coincide(x.n + ' ' + (x.cat || '') + ' ' + (x.lab || '') + ' ' + x.id, f.q));
+    if (f.filtro === 'crecen') l = l.filter(x => tbVal(x, a, met) > tbVal(x, b, met) && tbVal(x, b, met) > 0);
+    if (f.filtro === 'caen') l = l.filter(x => tbVal(x, a, met) < tbVal(x, b, met) && tbVal(x, a, met) > 0);
+    if (f.filtro === 'nuevos') l = l.filter(x => tbVal(x, a, met) > 0 && !tbVal(x, b, met));
+    if (f.filtro === 'perdidos') l = l.filter(x => tbVal(x, b, met) > 0 && !tbVal(x, a, met));
+    const dif = x => tbVal(x, a, met) - tbVal(x, b, met), pct = x => tbVal(x, b, met) ? dif(x) / tbVal(x, b, met) : (tbVal(x, a, met) ? 9e9 : 0);
+    const ord = { a: (p, q) => tbVal(q, a, met) - tbVal(p, a, met), b: (p, q) => tbVal(q, b, met) - tbVal(p, b, met), dif: (p, q) => dif(q) - dif(p), difm: (p, q) => dif(p) - dif(q), pct: (p, q) => pct(q) - pct(p), n: (p, q) => p.n.localeCompare(q.n) };
+    l.sort(ord[f.orden] || ord.a);
+    const nuevos = lista.filter(x => tbVal(x, a, met) > 0 && !tbVal(x, b, met)).length, perdidos = lista.filter(x => tbVal(x, b, met) > 0 && !tbVal(x, a, met)).length;
+    const nombre = { clientes: 'Cliente', productos: 'Producto', proveedores: 'Proveedor', categorias: 'Categoría', sucursales: 'Sucursal', vendedores: 'Vendedor' }[tab];
+    const plural = { clientes: 'Clientes', productos: 'Productos', proveedores: 'Proveedores', categorias: 'Categorías', sucursales: 'Sucursales', vendedores: 'Vendedores' }[tab];
+    const th = (k, t, num) => `<th class="${num ? 'num' : ''} ordenable" onclick="App.tbOrden('${k}')">${t}${f.orden === k ? ' ▾' : ''}</th>`;
+    const top = lista.filter(x => tbVal(x, a, met) > 0).sort(ord.a).slice(0, 15);
+    el.innerHTML = `<div class="tarjeta"><div class="fila">
+        ${mets.length > 1 ? `<label>Medir por<select id="tbMet">${mets.map(([k, t]) => `<option value="${k}" ${k === met ? 'selected' : ''}>${t}</option>`).join('')}</select></label>` : ''}
+        <label style="flex:2 1 220px">Buscar<input id="tbQ" value="${esc(f.q)}" placeholder="${nombre}${tab === 'productos' ? ', laboratorio o categoría' : ''}"></label>
+        <label>Mostrar<select id="tbFil">${[['', 'Todos'], ['crecen', '▲ Crecen'], ['caen', '▼ Caen'], ['nuevos', '✨ Nuevos en ' + a], ['perdidos', '⚠️ Ya no en ' + a]].map(([k, t]) => `<option value="${k}" ${k === f.filtro ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <button class="btn fijo" onclick="App.tbCsv('${tab}')">⬇️ Excel (CSV)</button></div>
+        <div class="kpis" style="margin:10px 0 0"><div class="kpi"><small>Total ${a}${tbCorte() ? ' al ' + r.corte : ''}</small><b>${fmt(totA)}</b><span>${tbVar(totA, totB, tab === 'proveedores')} ${b}: ${fmt(totB)}</span></div>
+          <div class="kpi"><small>${plural} con movimiento en ${a}${tbCorte() ? ' (al ' + r.corte + ')' : ''}</small><b>${nf(Object.keys(rA).length)}</b><span>${b}: ${nf(Object.keys(rB).length)}</span></div>
+          <div class="kpi kpi-clic" onclick="App.tbFiltro('nuevos')"><small>✨ Nuevos en ${a}</small><b>${nf(nuevos)}</b><span>no estaban en ${b}</span></div>
+          <div class="kpi kpi-clic" onclick="App.tbFiltro('perdidos')"><small>⚠️ Ya no aparecen en ${a}</small><b>${nf(perdidos)}</b><span>sí estaban en ${b}</span></div></div></div>
+      <div class="rejilla-2"><div class="tarjeta"><h3>🏆 Top 15 de ${a} contra ${b}</h3><div class="grafica" style="height:${Math.max(260, top.length * 26 + 60)}px"><canvas id="tbE1"></canvas></div></div>
+        <div class="tarjeta"><h3>🥧 Participación en ${a}</h3><div class="grafica" style="height:${Math.max(260, top.length * 26 + 60)}px"><canvas id="tbE2"></canvas></div></div></div>
+      <div class="tarjeta"><div class="tabla-cont"><table class="tb-tabla"><thead><tr><th class="num">#</th>${th('n', nombre)}${th('a', a, 1)}${th('b', b, 1)}${th('dif', 'Diferencia', 1)}${th('pct', 'Cambio', 1)}<th class="num">Participación</th><th class="num">Lugar en ${b}</th></tr></thead><tbody>
+        ${l.slice(0, 500).map(x => { const va = tbVal(x, a, met), vb = tbVal(x, b, met), d = va - vb;
+          return `<tr class="clic" onclick="App.tbDetalle('${tab}','${esc(String(x.id)).replace(/'/g, '&#39;')}')"><td class="num muted">${rA[x.id] || '—'}</td><td><b>${esc(tab === 'productos' ? String(x.n).split(',')[0] : x.n)}</b>${tab === 'productos' ? `<small class="muted"> ${esc(String(x.n).split(',').slice(1).join(',').trim())}${x.cat ? ' · ' + esc(x.cat) : ''}</small>` : ''}</td>
+            <td class="num">${fmt(va)}</td><td class="num muted">${fmt(vb)}</td><td class="num ${d > 0 ? 'ok-txt' : d < 0 ? 'error' : ''}">${d > 0 ? '+' : ''}${fmt(d)}</td><td class="num">${tbVar(va, vb, tab === 'proveedores')}</td>
+            <td class="num">${totA ? (va / totA * 100).toFixed(1) + '%' : '—'}</td><td class="num muted">${rB[x.id] ? '#' + rB[x.id] : '—'}</td></tr>`; }).join('') || `<tr><td colspan="8" class="vacio">Sin resultados</td></tr>`}
+      </tbody></table></div>${l.length > 500 ? `<p class="muted peq">Se muestran 500 de ${nf(l.length)}; usa el buscador o descarga el CSV.</p>` : ''}</div>`;
+    if ($('#tbMet')) $('#tbMet').onchange = e => { f.met = e.target.value; pintarTablero(); };
+    $('#tbQ').oninput = e => { f.q = e.target.value; clearTimeout(S.tbQT); S.tbQT = setTimeout(() => { pintarTablero(); const i = $('#tbQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); };
+    $('#tbFil').onchange = e => { f.filtro = e.target.value; pintarTablero(); };
+    const etq = x => { const t = tab === 'productos' ? String(x.n).split(',')[0] : x.n; return t.length > 28 ? t.slice(0, 27) + '…' : t; };
+    const tipF = { callbacks: { label: c => c.dataset.label + ': ' + fmt(c.parsed.x !== undefined && c.chart.config.type === 'bar' ? c.parsed.x : c.parsed) } };
+    grafica('tbE1', { type: 'bar', data: { labels: top.map(etq), datasets: [{ label: a, data: top.map(x => tbVal(x, a, met)), backgroundColor: TB_COL[0] }, { label: b, data: top.map(x => tbVal(x, b, met)), backgroundColor: 'rgba(120,130,140,.45)' }] },
+      options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { tooltip: tipF }, scales: { x: { beginAtZero: true, ticks: { callback: esDin ? tickMoneda : v => v } } }, onClick: (e, els) => { if (els[0]) tbDetalle(tab, top[els[0].index].id); } } });
+    const ot = Math.max(0, totA - top.slice(0, 8).reduce((t, x) => t + tbVal(x, a, met), 0));
+    grafica('tbE2', { type: 'doughnut', data: { labels: top.slice(0, 8).map(etq).concat(ot > 0 ? ['Otros'] : []), datasets: [{ data: top.slice(0, 8).map(x => tbVal(x, a, met)).concat(ot > 0 ? [ot] : []), backgroundColor: TB_COL.concat(['#9ca3af']) }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: c => c.label + ': ' + fmt(c.parsed) + (totA ? ' (' + (c.parsed / totA * 100).toFixed(1) + '%)' : '') } } } } });
+  }
+  function tbOrden(k) { const f = S.fTb; f.orden = f.orden === k && k === 'dif' ? 'difm' : k; pintarTablero(); }
+  function tbFiltro(k) { S.fTb.filtro = S.fTb.filtro === k ? '' : k; pintarTablero(); }
+  async function tbDetalle(tab, id) {
+    const r = S.tb, f = S.fTb, x = (r[tab] || []).find(z => String(z.id) === String(id)); if (!x) return;
+    const tipo = TB_TIPO[tab], mets = tbMetricas(tab), din = r.dinero;
+    modal('📊 ' + x.n, `<div class="tabla-cont"><table><thead><tr><th>Año</th>${mets.map(m => `<th class="num">${m[1]}</th>`).join('')}<th class="num">Crecimiento</th>${tab === 'productos' && r.verCompras ? '<th class="num">Piezas compradas</th>' : ''}</tr></thead><tbody>
+        ${r.anios.slice().reverse().map((y, i, l) => `<tr><td><b>${y}</b></td>${mets.map(m => `<td class="num">${m[0] === 'q' ? nf(tbVal(x, y, 'q')) : $$(tbVal(x, y, m[0]))}</td>`).join('')}<td class="num">${l[i + 1] ? tbVar(tbVal(x, y, mets[0][0]), tbVal(x, l[i + 1], mets[0][0]), tab === 'proveedores') : '—'}</td>${tab === 'productos' && r.verCompras ? `<td class="num">${nf(tbVal(x, y, 'qc'))}</td>` : ''}</tr>`).join('')}
+      </tbody></table></div><h4 style="margin:14px 0 6px">Mes a mes, año con año</h4><div class="grafica" style="height:280px"><canvas id="tbD1"></canvas></div>
+      <div class="acciones">${tab === 'clientes' && cliente(id) ? `<button class="btn" onclick="App.cerrarModal();App.fichaCliente('${esc(id)}')">👤 Ficha del cliente</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+    let d; try { d = await pedir('analisis', { sucursal: f.suc, detalle: { tipo: tipo, id: id } }, true); } catch (e) { const c = $('#tbD1'); if (c) c.parentElement.innerHTML = '<div class="vacio">El detalle mes a mes necesita conexión.</div>'; return; }
+    const k = tab === 'proveedores' ? 'c' : din ? 'v' : 'q', anios = d.anios, col = y => TB_COL[(anios.length - 1 - anios.indexOf(y)) % TB_COL.length], hoy = new Date();
+    if (!$('#tbD1')) return;
+    grafica('tbD1', { type: 'line', data: { labels: MES3, datasets: d.serie.map(s => ({ label: String(s.anio), data: s.meses.map((m, i) => s.anio === hoy.getFullYear() && i > hoy.getMonth() ? null : m[k]), borderColor: col(s.anio), backgroundColor: col(s.anio), tension: .3, borderWidth: String(s.anio) === String(f.a) ? 3.5 : 2 })) },
+      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + (k === 'q' ? nf(c.parsed.y) : $$(c.parsed.y)) } } }, scales: { y: { beginAtZero: true, ticks: { callback: k === 'q' ? v => v : tickMoneda } } } } });
+  }
+  function tbCsv(tab) {
+    const r = S.tb, f = S.fTb, mets = tbMetricas(tab), q = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
+    const cab = ['Clave', 'Nombre'].concat(tab === 'productos' ? ['Categoría', 'Laboratorio'] : []).concat(...r.anios.map(y => mets.map(m => m[1] + ' ' + y)));
+    const filas = (r[tab] || []).map(x => [x.id, x.n].concat(tab === 'productos' ? [x.cat || '', x.lab || ''] : []).concat(...r.anios.map(y => mets.map(m => tbVal(x, y, m[0])))));
+    const csv = '﻿' + [cab].concat(filas).map(fl => fl.map(q).join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'Dashboard ' + tab + ' por año.csv'; a.click();
+  }
+
   /* ----- Visitas ----- */
   V.visitas = () => {
     const f = S.fVis = alDia(S.fVis || { desde: sumaDias(hoyISO(), -7), hasta: sumaDias(hoyISO(), 60), hastaHoy: '', vend: '', estado: '' });
@@ -7225,7 +7407,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
