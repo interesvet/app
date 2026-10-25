@@ -986,7 +986,7 @@ const App = (() => {
       ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%') : ''}
       ${kpi('Cobrado en el periodo', $$(k.cobrado), 'Ventas con IVA ' + $$(k.ventasConIva))}
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
-        'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
+        'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (r.resultados.comisiones ? ' · comisiones aparte ' + $$(r.resultados.comisiones) : '') + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
       ${kpi('Mermas', $$(k.mermas), c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
       ${kpi('Por cobrar', $$(k.cxc), 'Vencido ' + $$(k.cxcVencida))}
       ${c ? kpi('Inventario valorizado', $$(k.valorInventario), nf(k.piezas) + ' piezas') : kpi('Piezas en inventario', nf(k.piezas), '')}
@@ -1117,14 +1117,28 @@ const App = (() => {
     const paso = (t, v, cls, menos) => `<div class="un-paso ${cls || ''}"><small>${menos ? '− ' : ''}${t}</small><b>${menos ? $$(Math.abs(v)) : $$(v)}</b>${!menos ? `<span>${pct(v)} de ventas</span>` : ''}</div>`;
     const neta = R.utilidadNeta, est = neta < 0 ? 'mal' : (R.ventas && neta / R.ventas < 0.05 ? 'av' : 'ok');
     return `<div class="tarjeta un-card"><div class="un-cab"><div><h3 style="margin:0">💰 Utilidad neta del periodo</h3>
-        <p class="muted" style="margin:4px 0 0">Lo que realmente le queda a la empresa: ventas − costo de lo vendido − mermas − gastos de operación − gastos financieros. Sin IVA. La depreciación va aparte.</p></div>
+        <p class="muted" style="margin:4px 0 0">Lo que realmente le queda a la empresa: ventas − costo de lo vendido − mermas − gastos de operación${R.comisiones ? ' − comisiones' : ''} − gastos financieros. Sin IVA. La depreciación va aparte.</p></div>
         <div class="un-total ${est}"><small>Utilidad neta</small><b>${$$(neta)}</b><span>Margen neto ${pct(neta)}</span></div></div>
       <div class="un-flujo">
         ${paso('Ventas netas', R.ventas)}${paso('Costo de lo vendido', R.costo, 'resta', 1)}${paso('Utilidad bruta', R.utilidadBruta, 'sub')}
-        ${paso('Mermas', R.mermas, 'resta', 1)}${paso('Gastos de operación', R.gastosOperacion, 'resta', 1)}
+        ${paso('Mermas', R.mermas, 'resta', 1)}${paso('Gastos de operación', R.gastosOperacion, 'resta', 1)}${R.comisiones || R.comi ? paso('Comisiones', R.comisiones || 0, 'resta', 1) : ''}
         ${paso('Utilidad de operación', R.utilidadOperacion, 'sub')}${paso('Gastos financieros', R.financieros, 'resta', 1)}${paso('Utilidad neta', neta, 'fin ' + est)}
-      </div></div>` + htmlDepreciacion(R);
+      </div></div>` + htmlComisionesGasto(R) + htmlDepreciacion(R);
   }
+  /** 💼 Comisiones del periodo como gasto (solo el dueño): devengadas, pagadas y por pagar, por comisionista. */
+  function htmlComisionesGasto(R) {
+    const C = R.comi; if (!C || !(C.devengadas || C.pagadas || C.porPagar)) return '';
+    const pct = v => R.ventas ? (v / R.ventas * 100).toFixed(1) + '%' : '—', l = C.porComisionista || [];
+    return `<div class="tarjeta dep-card"><div class="un-cab"><div><h3 style="margin:0">💼 Gastos por comisiones</h3>
+        <p class="muted" style="margin:4px 0 0">Lo que generaron tus comisionistas en el periodo (ya restado arriba, sin IVA): lo liquidado más lo que falta liquidar. Si un comisionista te factura, su factura no se cuenta dos veces en gastos de operación.</p></div>
+        <div class="un-total"><small>Comisiones del periodo</small><b>${$$(C.devengadas)}</b><span>${pct(C.devengadas)} de ventas</span></div></div>
+      <div class="un-flujo">${[['Liquidadas', C.liquidadas], ['Sin liquidar aún', C.sinLiquidar], ['Pagadas en el periodo', C.pagadas], ['Por pagar al corte', C.porPagar]].map(x => `<div class="un-paso"><small>${x[0]}</small><b>${$$(x[1])}</b></div>`).join('')}</div>
+      ${C.porPagar ? `<p class="muted" style="margin:8px 0 0">Por pagar: ${$$(C.porPagarLiquidado)} en liquidaciones sin pagar + ${$$(C.porPagarSinLiquidar)} sin liquidar (desde 2019). Si algo viejo ya lo pagaste fuera de la app, liquídalo y márcalo pagado en Comisiones.</p>` : ''}
+      ${l.length ? `<div class="tabla-cont" style="margin-top:10px">${tabla([{ t: 'Comisionista', h: x => `<b>${esc(x.nombre)}</b>` }, { t: 'Del periodo', num: 1, h: x => $$(x.devengadas) },
+        { t: 'Pagado', num: 1, cls: 'ocultar-movil', h: x => $$(x.pagadas) }, { t: 'Por pagar', num: 1, h: x => x.porPagar ? `<b>${$$(x.porPagar)}</b>` : '—' }], l)}</div>` : ''}
+      <div class="com-barra" style="margin-top:8px"><button class="btn chico" onclick="App.irComisTab('liquidar')">💼 Liquidar</button> <button class="btn chico" onclick="App.irComisTab('liqs')">📋 Liquidaciones</button></div></div>`;
+  }
+  function irComisTab(t) { S.fCom = S.fCom || {}; S.fCom.tab = t; if (S.vista !== 'comisiones') ir('comisiones'); else V.comisiones(); }
   /** Depreciación de inversiones: cuadro aparte (informativo), con la explicación del cálculo. No se resta de la utilidad neta. */
   function htmlDepreciacion(R) {
     if (!R.depreciacion) return '';
@@ -1157,6 +1171,7 @@ const App = (() => {
         ${fila('<b>Utilidad bruta</b>', R.utilidadBruta, { total: 1 })}
         ${fila('Mermas', R.mermas, { menos: 1, sangria: 1 })}
         ${fila('Gastos de operación', R.gastosOperacion, { menos: 1, sangria: 1 })}
+        ${R.comisiones ? fila('Comisiones', R.comisiones, { menos: 1, sangria: 1 }) : ''}
         ${fila('<b>Utilidad de operación</b>', R.utilidadOperacion, { total: 1 })}
         ${fila('Gastos financieros', R.financieros, { menos: 1, sangria: 1 })}
         ${fila('<b>Utilidad neta</b>', R.utilidadNeta, { total: 1 })}
@@ -8004,7 +8019,7 @@ const App = (() => {
   /* ---------------- API pública (para onclick) ---------------- */
   return {
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, gastoACompra, asignarSucGastos, cargarSucursales, verSucursal,
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, gastoACompra, asignarSucGastos, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
