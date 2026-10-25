@@ -719,6 +719,9 @@ body.con-visor { overflow: hidden; }
 .cmp-tabla td, .cmp-tabla th { padding: 6px 8px; font-size: 13px; } .cmp-tabla td:nth-child(2) { max-width: 260px; } .cmp-tabla td.cmp-prod { min-width: 220px; max-width: none; }
 @media (max-width: 600px) { .cmp-kpis { grid-template-columns: 1fr 1fr; } .cmp-kpi { padding: 8px 10px; } .cmp-kpi b { font-size: 16px; } .cmp-kpi em { width: 100%; } }
 /* ---------- 📊 Dashboard ---------- */
+.tb-anios { display: flex; flex-direction: column; gap: 6px; flex: 3 1 320px; } .tb-anios > small { color: var(--texto-2); font-size: 13px; }
+.tb-anios .chip-op small { font-weight: 400; opacity: .75; }
+.tb-cmps { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; } .tb-cmps > span { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .tb-tabla tr.clic { cursor: pointer; } .tb-tabla tr.clic:hover td { background: var(--marca-suave); }
 th.ordenable { cursor: pointer; user-select: none; } th.ordenable:hover { color: var(--marca); }
 /* ---------- 🏆 Metas ---------- */

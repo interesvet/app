@@ -894,7 +894,29 @@ const App = (() => {
     Chart.defaults.font.family = 'Inter, system-ui, sans-serif';
     Chart.defaults.color = css('--texto-2');
     Chart.defaults.borderColor = css('--borde');
+    if (cfg.type === 'doughnut' || cfg.type === 'pie') circularConPct(cfg);
     S.charts.push(new Chart(el, cfg));
+  }
+  /**
+   * Gráficas circulares: el % de cada rebanada escrito sobre ella (si cabe) y en la leyenda ("Nombre · 28.1 %"),
+   * porque el color solo no dice nada. Se aplica a todas las de la app.
+   */
+  function circularConPct(cfg) {
+    const ds = cfg.data.datasets[0], tot = () => (ds.data || []).reduce((t, v) => t + (Number(v) || 0), 0);
+    const pct = v => { const t = tot(); return t ? (v / t * 100) : 0; }, txt = v => { const p = pct(v); return (p >= 10 ? p.toFixed(0) : p.toFixed(1)) + '%'; };
+    ds.borderColor = css('--superficie') || '#fff'; ds.borderWidth = 2;
+    cfg.options = cfg.options || {}; cfg.options.plugins = cfg.options.plugins || {};
+    const lg = cfg.options.plugins.legend = Object.assign({ position: 'right' }, cfg.options.plugins.legend || {});
+    lg.labels = Object.assign({}, lg.labels || {}, { generateLabels: ch => {
+      const base = Chart.overrides[ch.config.type].plugins.legend.labels.generateLabels(ch);
+      return base.map((it, i) => { const n = String(it.text || ''), corto = n.length > 24 ? n.slice(0, 23) + '…' : n; return Object.assign(it, { text: corto + ' · ' + txt(ds.data[i] || 0) }); });
+    } });
+    cfg.plugins = (cfg.plugins || []).concat([{ id: 'pctCirc', afterDatasetsDraw(ch) {
+      const meta = ch.getDatasetMeta(0), c = ch.ctx; c.save(); c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.font = '600 12px Inter, system-ui, sans-serif';
+      meta.data.forEach((arc, i) => { if (meta.data[i].hidden) return; const v = ds.data[i] || 0; if (pct(v) < 4) return;
+        const pos = arc.tooltipPosition(); c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,.35)'; c.strokeText(txt(v), pos.x, pos.y); c.fillStyle = '#fff'; c.fillText(txt(v), pos.x, pos.y); });
+      c.restore(); } }]);
   }
   const tickMoneda = v => { const a = Math.abs(v); return (a >= 1e6 ? '$' + (v / 1e6).toFixed(1) + 'M' : a >= 1e3 ? '$' + (v / 1e3).toFixed(0) + 'k' : '$' + v); };
   function barras(id, items, color, horizontal) {
@@ -6227,7 +6249,7 @@ const App = (() => {
     if (tab) f.tab = tab;
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
         ${U().todasSucursales ? `<label>Sucursal<select id="tbSuc">${optsSuc(f.suc, true, 'Todas')}</select></label>` : ''}
-        <label>Año<select id="tbA"></select></label><label>Comparar con<select id="tbB"></select></label>
+        <div class="tb-anios"><small>Años a comparar <span class="muted">(toca para elegir varios; el más reciente es el principal)</span></small><div class="multi-sel" id="tbAnios"></div></div>
         <label id="tbFechaL" class="fijo" style="align-self:flex-end;display:flex;gap:6px;align-items:center;white-space:nowrap"><input type="checkbox" id="tbFecha" ${f.aFecha ? 'checked' : ''} style="width:auto"> A la misma fecha</label>
         <button class="btn fijo" onclick="App.cargarTablero(true)">⟳ Actualizar</button></div>
         <p class="muted peq" style="margin:8px 0 0">Venta neta sin IVA (igual que Inicio). Compras: órdenes con factura o nota del proveedor. Toca cualquier renglón para ver su detalle mes a mes de cada año.</p></div>
@@ -6244,9 +6266,17 @@ const App = (() => {
     catch (e) { if ($('#tbRes')) $('#tbRes').innerHTML = `<div class="vacio">${e.red ? 'El Dashboard necesita conexión la primera vez.' : /desconocida/i.test(e.message) ? '📊 El Dashboard se activa en cuanto se publique la actualización del servidor (156).' : esc(e.message)}</div>`; return; }
     r._suc = f.suc; r._t = Date.now(); S.tb = r;
     const an = r.anios.slice().reverse();
-    if (!f.a || an.indexOf(+f.a) < 0) f.a = String(an[0] || new Date().getFullYear());
-    if (!f.b || an.indexOf(+f.b) < 0 || f.b === f.a) f.b = String(an.find(y => y < +f.a) || an[1] || f.a);
-    pintarTablero();
+    f.sel = (f.sel || []).filter(y => an.indexOf(+y) >= 0);
+    if (!f.sel.length) f.sel = an.slice(0, 2).map(String);
+    tbFijarAB(); pintarTablero();
+  }
+  /** Años elegidos (más reciente primero): el principal (a) es el más reciente y b el que le sigue. */
+  const tbSel = () => (S.fTb.sel || []).slice().sort((x, y) => y - x);
+  function tbFijarAB() { const f = S.fTb, l = tbSel(); f.a = l[0]; f.b = l[1] || l[0]; }
+  function tbAnio(y) {
+    const f = S.fTb, y2 = String(y), i = f.sel.indexOf(y2);
+    if (i >= 0) { if (f.sel.length === 1) return toast('Deja al menos un año', true); f.sel.splice(i, 1); } else f.sel.push(y2);
+    tbFijarAB(); pintarTablero();
   }
   /** Meses que cuentan: con "a la misma fecha" y el año elegido es el actual, solo enero → mes actual en los dos años. */
   function tbMeses() { const f = S.fTb, hoy = new Date(); return f.aFecha && +f.a === hoy.getFullYear() ? hoy.getMonth() + 1 : 12; }
@@ -6258,10 +6288,9 @@ const App = (() => {
   function pintarTablero() {
     const r = S.tb, f = S.fTb, el = $('#tbRes'); if (!r || !el) return;
     S.charts.forEach(c => c.destroy()); S.charts = [];
-    const an = r.anios.slice().reverse(), op = v => an.map(y => `<option value="${y}" ${String(y) === String(v) ? 'selected' : ''}>${y}</option>`).join('');
-    $('#tbA').innerHTML = op(f.a); $('#tbB').innerHTML = op(f.b);
-    $('#tbA').onchange = e => { f.a = e.target.value; pintarTablero(); }; $('#tbB').onchange = e => { f.b = e.target.value; pintarTablero(); };
-    $('#tbFechaL').style.display = +f.a === new Date().getFullYear() ? '' : 'none';
+    const an = r.anios.slice().reverse(), colA = y => TB_COL[(r.anios.length - 1 - r.anios.indexOf(+y)) % TB_COL.length];
+    $('#tbAnios').innerHTML = an.map(y => { const on = f.sel.indexOf(String(y)) >= 0; return `<button class="chip-op ${on ? 'on' : ''}" onclick="App.tbAnio(${y})" style="${on ? `border-color:${colA(y)};box-shadow:inset 0 -3px 0 ${colA(y)}` : ''}">${on ? '✔ ' : ''}${y}${y === new Date().getFullYear() ? ' <small>(en curso)</small>' : ''}</button>`; }).join('');
+    $('#tbFechaL').style.display = +f.a === new Date().getFullYear() && f.sel.length > 1 ? '' : 'none';
     const tabs = TB_TABS.filter(([k]) => k !== 'proveedores' || r.verCompras).filter(([k]) => k !== 'sucursales' || r.sucursales);
     if (!tabs.some(t => t[0] === f.tab)) f.tab = 'resumen';
     $('#tbTabs').innerHTML = tabs.map(([k, t]) => `<button class="${f.tab === k ? 'activo' : ''}" onclick="App.tbTab('${k}')">${t}</button>`).join('');
@@ -6277,15 +6306,21 @@ const App = (() => {
     const suma = (x, k) => !x ? 0 : corte && x.fecha ? (x.fecha[FK[k]] || 0) : x.meses.slice(0, nm).reduce((t, m) => t + (m[k] || 0), 0);
     const cuenta = (x) => !x ? 0 : corte && x.fecha ? x.fecha.notas : x.meses.slice(0, nm).reduce((t, m) => t + m.n, 0);
     const vA = suma(A, 'v'), vB = suma(B, 'v'), uA = suma(A, 'u'), uB = suma(B, 'u'), nA = cuenta(A), nB = cuenta(B);
-    const tile = (t, a, b, fmt, mal) => `<div class="kpi"><small>${t}</small><b>${fmt(a)}</b><span>${tbVar(a, b, mal)} ${f.b}: ${fmt(b)}</span></div>`;
+    const sel = tbSel(), anu = y => r.anual.find(x => String(x.anio) === String(y));
+    // una tarjeta: el año principal y, debajo, cada año elegido con el cambio del principal contra él
+    const tileM = (t, fx, fmt, mal) => { const v = sel.map(y => fx(anu(y))); return `<div class="kpi"><small>${t} · ${sel[0]}</small><b>${fmt(v[0])}</b><span class="tb-cmps">${sel.slice(1).map((y, i) => `<span>${tbVar(v[0], v[i + 1], mal)} vs ${y}: ${fmt(v[i + 1])}</span>`).join('') || '<span class="muted">elige otro año para comparar</span>'}</span></div>`; };
+    const tile = (t, a, b, fmt, mal, fx) => tileM(t, fx, fmt, mal);
     const per = corte ? `del 1 de enero al ${r.corte} de cada año` : 'año completo';
-    const html = `<div class="tarjeta"><h3>📅 ${f.a} contra ${f.b} <small class="muted">· ${per}</small></h3><div class="kpis" style="margin:0">
-        ${din ? tile('Ventas netas', vA, vB, $$) : tile('Notas de venta', nA, nB, nf)}
-        ${r.verUtil ? tile('Utilidad bruta', uA, uB, $$) + `<div class="kpi"><small>Margen bruto</small><b>${vA ? (uA / vA * 100).toFixed(1) + '%' : '—'}</b><span>${f.b}: ${vB ? (uB / vB * 100).toFixed(1) + '%' : '—'}</span></div>` : ''}
-        ${r.verCompras && din ? tile('Compras', suma(A, 'c'), suma(B, 'c'), $$, true) : ''}
-        ${din ? tile('Mermas', suma(A, 'mer'), suma(B, 'mer'), $$, true) : ''}
-        ${din ? tile('Notas de venta', nA, nB, nf) + tile('Ticket promedio', nA ? vA / nA : 0, nB ? vB / nB : 0, $$) : ''}
-        ${(() => { const ca = corte && A.fecha ? A.fecha.clientes : A.clientes, cb = !B ? 0 : corte && B.fecha ? B.fecha.clientes : B.clientes; return `<div class="kpi"><small>Clientes que compraron</small><b>${nf(ca)}</b><span>${tbVar(ca, cb)} ${f.b}: ${nf(cb)}</span></div>`; })()}
+    const cli = X => !X ? 0 : corte && X.fecha ? X.fecha.clientes : X.clientes;
+    const margenTile = () => { const m = sel.map(y => { const X = anu(y), v = suma(X, 'v'); return v ? suma(X, 'u') / v * 100 : null; });
+      return `<div class="kpi"><small>Margen bruto · ${sel[0]}</small><b>${m[0] !== null ? m[0].toFixed(1) + '%' : '—'}</b><span class="tb-cmps">${sel.slice(1).map((y, i) => { const d = m[0] !== null && m[i + 1] !== null ? m[0] - m[i + 1] : null; return `<span>${d === null ? '' : (Math.abs(d) < 0.05 ? '<span class="etq">= igual</span>' : `<span class="etq ${d >= 0 ? 'ok' : 'mal'}">${d >= 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(1)} pts</span>`)} vs ${y}: ${m[i + 1] !== null ? m[i + 1].toFixed(1) + '%' : '—'}</span>`; }).join('')}</span></div>`; };
+    const html = `<div class="tarjeta"><h3>📅 ${sel[0]}${sel.length > 1 ? ' contra ' + sel.slice(1).join(', ') : ''} <small class="muted">· ${per}</small></h3><div class="kpis" style="margin:0">
+        ${din ? tileM('Ventas netas', X => suma(X, 'v'), $$) : tileM('Notas de venta', X => cuenta(X), nf)}
+        ${r.verUtil ? tileM('Utilidad bruta', X => suma(X, 'u'), $$) + margenTile() : ''}
+        ${r.verCompras && din ? tileM('Compras', X => suma(X, 'c'), $$, true) : ''}
+        ${din ? tileM('Mermas', X => suma(X, 'mer'), $$, true) : ''}
+        ${din ? tileM('Notas de venta', X => cuenta(X), nf) + tileM('Ticket promedio', X => cuenta(X) ? suma(X, 'v') / cuenta(X) : 0, $$) : ''}
+        ${tileM('Clientes que compraron', cli, nf)}
       </div></div>
       <div class="rejilla-2"><div class="tarjeta"><h3>📈 Ventas mes a mes, año con año</h3><div class="grafica" style="height:300px"><canvas id="tbG1"></canvas></div></div>
         <div class="tarjeta"><h3>📊 Totales por año</h3><div class="grafica" style="height:300px"><canvas id="tbG2"></canvas></div></div></div>
@@ -6297,15 +6332,16 @@ const App = (() => {
       </tbody></table></div><p class="muted peq">El crecimiento compara año completo contra año completo; el año en curso todavía no está completo (arriba lo comparas a la misma fecha).</p></div>`;
     el.innerHTML = html;
     const anios = r.anual.map(x => x.anio), col = y => TB_COL[(anios.length - 1 - anios.indexOf(y)) % TB_COL.length];
-    const lineas = k => r.anual.map(x => ({ label: String(x.anio), data: x.meses.map((m, i) => x.anio === new Date().getFullYear() && i > new Date().getMonth() ? null : (k === 'margen' ? (m.v ? Math.round(m.u / m.v * 1000) / 10 : null) : m[k])),
+    const lineas = k => r.anual.filter(x => sel.indexOf(String(x.anio)) >= 0).map(x => ({ label: String(x.anio), data: x.meses.map((m, i) => x.anio === new Date().getFullYear() && i > new Date().getMonth() ? null : (k === 'margen' ? (m.v ? Math.round(m.u / m.v * 1000) / 10 : null) : m[k])),
       borderColor: col(x.anio), backgroundColor: col(x.anio), tension: .3, borderWidth: x.anio === +f.a ? 3.5 : 2, pointRadius: x.anio === +f.a ? 3 : 1.5, spanGaps: false }));
     const ejeY = k => ({ beginAtZero: true, ticks: { callback: k === 'margen' ? v => v + '%' : din ? tickMoneda : v => v } });
     const tip = k => ({ callbacks: { label: c => c.dataset.label + ': ' + (k === 'margen' ? c.parsed.y + '%' : din ? $$(c.parsed.y) : nf(c.parsed.y)) } });
     grafica('tbG1', { type: 'line', data: { labels: MES3, datasets: lineas(din ? 'v' : 'n') }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: tip('v') }, scales: { y: ejeY('v') } } });
-    const ds2 = [{ label: 'Ventas', data: r.anual.map(x => x.ventas), backgroundColor: '#1f6f4a' }];
-    if (r.verCompras) ds2.push({ label: 'Compras', data: r.anual.map(x => x.compras), backgroundColor: '#2a78d6' });
-    if (r.verUtil) ds2.push({ label: 'Utilidad', data: r.anual.map(x => x.utilidad), backgroundColor: '#c79a00' });
-    grafica('tbG2', { type: 'bar', data: { labels: anios.map(String), datasets: din ? ds2 : [{ label: 'Notas', data: r.anual.map(x => x.notas), backgroundColor: '#1f6f4a' }] }, options: { maintainAspectRatio: false, plugins: { tooltip: tip('v') }, scales: { y: ejeY('v') } } });
+    const anS = r.anual.filter(x => sel.indexOf(String(x.anio)) >= 0), totK = (x, k) => corte ? (x.fecha || {})[k] : x[k];
+    const ds2 = [{ label: 'Ventas', data: anS.map(x => totK(x, 'ventas')), backgroundColor: '#1f6f4a' }];
+    if (r.verCompras) ds2.push({ label: 'Compras', data: anS.map(x => totK(x, 'compras')), backgroundColor: '#2a78d6' });
+    if (r.verUtil) ds2.push({ label: 'Utilidad', data: anS.map(x => totK(x, 'utilidad')), backgroundColor: '#c79a00' });
+    grafica('tbG2', { type: 'bar', data: { labels: anS.map(x => String(x.anio) + (corte ? ' al ' + r.corte : '')), datasets: din ? ds2 : [{ label: 'Notas', data: anS.map(x => totK(x, 'notas')), backgroundColor: '#1f6f4a' }] }, options: { maintainAspectRatio: false, plugins: { tooltip: tip('v') }, scales: { y: ejeY('v') } } });
     if (r.verUtil) {
       grafica('tbG3', { type: 'line', data: { labels: MES3, datasets: lineas('u') }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: tip('u') }, scales: { y: ejeY('u') } } });
       grafica('tbG4', { type: 'line', data: { labels: MES3, datasets: lineas('margen') }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: tip('margen') }, scales: { y: { ticks: { callback: v => v + '%' } } } } });
@@ -6352,24 +6388,25 @@ const App = (() => {
         <label style="flex:2 1 220px">Buscar<input id="tbQ" value="${esc(f.q)}" placeholder="${nombre}${tab === 'productos' ? ', laboratorio o categoría' : ''}"></label>
         <label>Mostrar<select id="tbFil">${[['', 'Todos'], ['crecen', '▲ Crecen'], ['caen', '▼ Caen'], ['nuevos', '✨ Nuevos en ' + a], ['perdidos', '⚠️ Ya no en ' + a]].map(([k, t]) => `<option value="${k}" ${k === f.filtro ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         <button class="btn fijo" onclick="App.tbCsv('${tab}')">⬇️ Excel (CSV)</button></div>
-        <div class="kpis" style="margin:10px 0 0"><div class="kpi"><small>Total ${a}${tbCorte() ? ' al ' + r.corte : ''}</small><b>${fmt(totA)}</b><span>${tbVar(totA, totB, tab === 'proveedores')} ${b}: ${fmt(totB)}</span></div>
+        <div class="kpis" style="margin:10px 0 0"><div class="kpi"><small>Total ${a}${tbCorte() ? ' al ' + r.corte : ''}</small><b>${fmt(totA)}</b><span class="tb-cmps">${tbSel().slice(1).map(y => { const t = lista.reduce((s2, x) => s2 + tbVal(x, y, met), 0); return `<span>${tbVar(totA, t, tab === 'proveedores')} vs ${y}: ${fmt(t)}</span>`; }).join('')}</span></div>
           <div class="kpi"><small>${plural} con movimiento en ${a}${tbCorte() ? ' (al ' + r.corte + ')' : ''}</small><b>${nf(Object.keys(rA).length)}</b><span>${b}: ${nf(Object.keys(rB).length)}</span></div>
           <div class="kpi kpi-clic" onclick="App.tbFiltro('nuevos')"><small>✨ Nuevos en ${a}</small><b>${nf(nuevos)}</b><span>no estaban en ${b}</span></div>
           <div class="kpi kpi-clic" onclick="App.tbFiltro('perdidos')"><small>⚠️ Ya no aparecen en ${a}</small><b>${nf(perdidos)}</b><span>sí estaban en ${b}</span></div></div></div>
-      <div class="rejilla-2"><div class="tarjeta"><h3>🏆 Top 15 de ${a} contra ${b}</h3><div class="grafica" style="height:${Math.max(260, top.length * 26 + 60)}px"><canvas id="tbE1"></canvas></div></div>
+      <div class="rejilla-2"><div class="tarjeta"><h3>🏆 Top 15 de ${a}${tbSel().length > 1 ? ' contra ' + tbSel().slice(1).join(', ') : ''}</h3><div class="grafica" style="height:${Math.max(260, top.length * (10 + 11 * tbSel().length) + 60)}px"><canvas id="tbE1"></canvas></div></div>
         <div class="tarjeta"><h3>🥧 Participación en ${a}</h3><div class="grafica" style="height:${Math.max(260, top.length * 26 + 60)}px"><canvas id="tbE2"></canvas></div></div></div>
-      <div class="tarjeta"><div class="tabla-cont"><table class="tb-tabla"><thead><tr><th class="num">#</th>${th('n', nombre)}${th('a', a, 1)}${th('b', b, 1)}${th('dif', 'Diferencia', 1)}${th('pct', 'Cambio', 1)}<th class="num">Participación</th><th class="num">Lugar en ${b}</th></tr></thead><tbody>
+      <div class="tarjeta"><div class="tabla-cont"><table class="tb-tabla"><thead><tr><th class="num">#</th>${th('n', nombre)}${th('a', a, 1)}${tbSel().slice(1).map((y, i) => i === 0 ? th('b', y, 1) : `<th class="num">${y}</th>`).join('')}${th('dif', 'Diferencia vs ' + b, 1)}${th('pct', 'Cambio vs ' + b, 1)}<th class="num">Participación</th><th class="num">Lugar en ${b}</th></tr></thead><tbody>
         ${l.slice(0, 500).map(x => { const va = tbVal(x, a, met), vb = tbVal(x, b, met), d = va - vb;
           return `<tr class="clic" onclick="App.tbDetalle('${tab}','${esc(String(x.id)).replace(/'/g, '&#39;')}')"><td class="num muted">${rA[x.id] || '—'}</td><td><b>${esc(tab === 'productos' ? String(x.n).split(',')[0] : x.n)}</b>${tab === 'productos' ? `<small class="muted"> ${esc(String(x.n).split(',').slice(1).join(',').trim())}${x.cat ? ' · ' + esc(x.cat) : ''}</small>` : ''}</td>
-            <td class="num">${fmt(va)}</td><td class="num muted">${fmt(vb)}</td><td class="num ${d > 0 ? 'ok-txt' : d < 0 ? 'error' : ''}">${d > 0 ? '+' : ''}${fmt(d)}</td><td class="num">${tbVar(va, vb, tab === 'proveedores')}</td>
-            <td class="num">${totA ? (va / totA * 100).toFixed(1) + '%' : '—'}</td><td class="num muted">${rB[x.id] ? '#' + rB[x.id] : '—'}</td></tr>`; }).join('') || `<tr><td colspan="8" class="vacio">Sin resultados</td></tr>`}
+            <td class="num">${fmt(va)}</td>${tbSel().slice(1).map(y => `<td class="num muted">${fmt(tbVal(x, y, met))}</td>`).join('')}<td class="num ${d > 0 ? 'ok-txt' : d < 0 ? 'error' : ''}">${d > 0 ? '+' : ''}${fmt(d)}</td><td class="num">${tbVar(va, vb, tab === 'proveedores')}</td>
+            <td class="num">${totA ? (va / totA * 100).toFixed(1) + '%' : '—'}</td><td class="num muted">${rB[x.id] ? '#' + rB[x.id] : '—'}</td></tr>`; }).join('') || `<tr><td colspan="${7 + tbSel().length}" class="vacio">Sin resultados</td></tr>`}
       </tbody></table></div>${l.length > 500 ? `<p class="muted peq">Se muestran 500 de ${nf(l.length)}; usa el buscador o descarga el CSV.</p>` : ''}</div>`;
     if ($('#tbMet')) $('#tbMet').onchange = e => { f.met = e.target.value; pintarTablero(); };
     $('#tbQ').oninput = e => { f.q = e.target.value; clearTimeout(S.tbQT); S.tbQT = setTimeout(() => { pintarTablero(); const i = $('#tbQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); };
     $('#tbFil').onchange = e => { f.filtro = e.target.value; pintarTablero(); };
     const etq = x => { const t = tab === 'productos' ? String(x.n).split(',')[0] : x.n; return t.length > 28 ? t.slice(0, 27) + '…' : t; };
     const tipF = { callbacks: { label: c => c.dataset.label + ': ' + fmt(c.parsed.x !== undefined && c.chart.config.type === 'bar' ? c.parsed.x : c.parsed) } };
-    grafica('tbE1', { type: 'bar', data: { labels: top.map(etq), datasets: [{ label: a, data: top.map(x => tbVal(x, a, met)), backgroundColor: TB_COL[0] }, { label: b, data: top.map(x => tbVal(x, b, met)), backgroundColor: 'rgba(120,130,140,.45)' }] },
+    const colE = y => TB_COL[(r.anios.length - 1 - r.anios.indexOf(+y)) % TB_COL.length];
+    grafica('tbE1', { type: 'bar', data: { labels: top.map(etq), datasets: tbSel().map((y, i) => ({ label: y, data: top.map(x => tbVal(x, y, met)), backgroundColor: i === 0 ? colE(y) : colE(y) + 'aa' })) },
       options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { tooltip: tipF }, scales: { x: { beginAtZero: true, ticks: { callback: esDin ? tickMoneda : v => v } } }, onClick: (e, els) => { if (els[0]) tbDetalle(tab, top[els[0].index].id); } } });
     const ot = Math.max(0, totA - top.slice(0, 8).reduce((t, x) => t + tbVal(x, a, met), 0));
     grafica('tbE2', { type: 'doughnut', data: { labels: top.slice(0, 8).map(etq).concat(ot > 0 ? ['Otros'] : []), datasets: [{ data: top.slice(0, 8).map(x => tbVal(x, a, met)).concat(ot > 0 ? [ot] : []), backgroundColor: TB_COL.concat(['#9ca3af']) }] },
@@ -6387,7 +6424,7 @@ const App = (() => {
     let d; try { d = await pedir('analisis', { sucursal: f.suc, detalle: { tipo: tipo, id: id } }, true); } catch (e) { const c = $('#tbD1'); if (c) c.parentElement.innerHTML = '<div class="vacio">El detalle mes a mes necesita conexión.</div>'; return; }
     const k = tab === 'proveedores' ? 'c' : din ? 'v' : 'q', anios = d.anios, col = y => TB_COL[(anios.length - 1 - anios.indexOf(y)) % TB_COL.length], hoy = new Date();
     if (!$('#tbD1')) return;
-    grafica('tbD1', { type: 'line', data: { labels: MES3, datasets: d.serie.map(s => ({ label: String(s.anio), data: s.meses.map((m, i) => s.anio === hoy.getFullYear() && i > hoy.getMonth() ? null : m[k]), borderColor: col(s.anio), backgroundColor: col(s.anio), tension: .3, borderWidth: String(s.anio) === String(f.a) ? 3.5 : 2 })) },
+    grafica('tbD1', { type: 'line', data: { labels: MES3, datasets: d.serie.filter(s => tbSel().indexOf(String(s.anio)) >= 0).map(s => ({ label: String(s.anio), data: s.meses.map((m, i) => s.anio === hoy.getFullYear() && i > hoy.getMonth() ? null : m[k]), borderColor: col(s.anio), backgroundColor: col(s.anio), tension: .3, borderWidth: String(s.anio) === String(f.a) ? 3.5 : 2 })) },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + (k === 'q' ? nf(c.parsed.y) : $$(c.parsed.y)) } } }, scales: { y: { beginAtZero: true, ticks: { callback: k === 'q' ? v => v : tickMoneda } } } } });
   }
   function tbCsv(tab) {
@@ -7407,7 +7444,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
