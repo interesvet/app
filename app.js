@@ -6256,7 +6256,7 @@ const App = (() => {
   function comTab(t) { S.fCom.tab = t; V.comisiones(); }
   async function cargarComis(forzar) {
     if (S.comis && !forzar) return S.comis;
-    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (163).' : esc(e.message)}</div>`; throw e; }
+    try { S.comis = await pedir('comisionistas', {}, true); } catch (e) { if ($('#comRes')) $('#comRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message) ? '💼 Comisiones se activa en cuanto se publique la actualización del servidor (164).' : esc(e.message)}</div>`; throw e; }
     return S.comis;
   }
   const comPorId = id => ((S.comis || {}).comisionistas || []).find(c => c.id === id);
@@ -6456,11 +6456,49 @@ const App = (() => {
     return `<div class="com-tots">${fila('Base (sin IVA)', t.base)}${fila('Comisión', t.comision)}${t.devoluciones ? fila('Descuento por canceladas / devueltas', t.devoluciones) : ''}${fila('Subtotal', t.subtotal)}
       ${c && c.factura || t.iva ? fila('+ IVA', t.iva) + fila('− Retención ISR', t.retIsr) + fila('− Retención IVA', t.retIva) : ''}${fila('Total a pagar', t.total, 1)}</div>`;
   }
+  const lqClave = x => x.idCobro || (x.tipo === 'Devolución' ? 'dev:' : '') + x.idVenta;
   function pintarCalc() {
     const r = S.lqCalc, el = $('#lqRes'); if (!el || !r) return;
+    S.lqSel = S.lqSel || {};
     el.innerHTML = r.lineas.length ? `<div class="tarjeta">${comTotHtml(r.totales, r.comisionista)}
-        <div class="acciones"><button class="btn" onclick="App.comiPdf()">📄 Vista previa PDF</button><button class="btn primario" onclick="App.comiGuardarLiq()">💾 Guardar liquidación</button></div></div>
-      <div class="tarjeta">${comLineasHtml(r.lineas)}</div>` : '<div class="vacio">No hay nada pendiente de comisión en ese periodo.</div>';
+        <div class="acciones"><button class="btn" onclick="App.comiPdf()">📄 Vista previa PDF</button><button class="btn primario" onclick="App.comiGuardarLiq()">💾 Liquidar todo (${nf(r.lineas.length)})</button></div></div>
+      <div id="lqBarra" class="tarjeta com-barra oculto"></div>
+      <div class="tarjeta"><p class="muted peq" style="margin:0 0 8px">Paga <b>nota por nota</b> con <b>💵 Pagar</b>, o marca varias y págalas juntas. Con <b>✏️</b> cambias a mano lo que se le paga de esa nota. Cada pago queda como una liquidación con su comprobante, PDF y recibo.</p>
+        <div class="tabla-cont"><table><thead><tr><th><input type="checkbox" style="width:auto" aria-label="Todas" onchange="App.lqTodas(this.checked)"></th><th>Fecha</th><th>Nota</th><th>Cliente</th><th>Sucursal</th><th>Concepto / regla</th><th class="num">Base sin IVA</th><th class="num">% efectivo</th><th class="num">Comisión</th><th></th></tr></thead><tbody>
+      ${r.lineas.map((x, i) => `<tr${x.comision < 0 ? ' class="error"' : ''}><td><input type="checkbox" style="width:auto" class="lqChk" data-i="${i}" ${S.lqSel[lqClave(x)] ? 'checked' : ''} onchange="App.lqMarca(${i},this.checked)"></td><td>${esc(x.fecha)}</td><td>${esc(x.folio)}</td><td>${esc(x.cliente)}</td><td>${esc(sucNom(x.suc))}</td>
+        <td>${esc(x.tipo === 'Cobro' ? 'Cobro' : x.tipo === 'Venta' ? 'Venta' : '↩️ Cancelada / devuelta')}${x.regla ? `<br><small class="muted">${esc(x.regla)}</small>` : ''}</td><td class="num">${x.base ? $$(x.base) : ''}</td><td class="num">${x.pct ? nf(x.pct) + '%' : ''}</td><td class="num"><b>${$$(x.comision)}</b></td>
+        <td><div class="acciones izq" style="margin:0;flex-wrap:nowrap">${x.comision > 0 ? `<button class="btn chico primario" onclick="App.lqPagar([${i}])">💵 Pagar</button>` : ''}${x.tipo !== 'Devolución' && r.comisionista.tipo === 'Independiente' ? `<button class="btn chico" title="Cambiar a mano lo que se le paga de esta nota" onclick="App.lqAjustar(${i})">✏️</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div></div>`
+      : '<div class="vacio">No hay nada pendiente de comisión en ese periodo.</div>';
+    lqBarra();
+  }
+  function lqMarca(i, v) { const k = lqClave(S.lqCalc.lineas[i]); if (v) S.lqSel[k] = 1; else delete S.lqSel[k]; lqBarra(); }
+  function lqTodas(v) { S.lqSel = {}; if (v) S.lqCalc.lineas.forEach(x => S.lqSel[lqClave(x)] = 1); document.querySelectorAll('.lqChk').forEach(c => c.checked = v); lqBarra(); }
+  function lqBarra() {
+    const el = $('#lqBarra'); if (!el) return; const ix = S.lqCalc.lineas.map((x, i) => S.lqSel[lqClave(x)] ? i : -1).filter(i => i >= 0);
+    el.classList.toggle('oculto', !ix.length); if (!ix.length) return;
+    const t = ix.reduce((a, i) => a + S.lqCalc.lineas[i].comision, 0);
+    el.innerHTML = `<div class="fila"><b class="fijo">${nf(ix.length)} seleccionada${ix.length === 1 ? '' : 's'} · ${$$(t)} de comisión</b><button class="btn primario fijo" onclick="App.lqPagar([${ix.join(',')}])">💵 Pagar seleccionadas</button></div>`;
+  }
+  /** Guarda una liquidación SOLO con esos renglones y abre su registro de pago (comprobante, N/C, recibo). */
+  async function lqPagar(ix) {
+    const f = S.fCom, r = S.lqCalc, ls = ix.map(i => r.lineas[i]).filter(Boolean); if (!ls.length) return;
+    const tot = ls.reduce((a, x) => a + x.comision, 0);
+    if (!confirm('Registrar el pago de ' + (ls.length === 1 ? 'la nota ' + ls[0].folio : ls.length + ' notas') + ' a ' + r.comisionista.nombre + ' por ' + $$(tot) + (r.comisionista.factura ? ' (+ IVA − retenciones)' : '') + '?\nSe crea su liquidación y enseguida capturas el pago y el comprobante.')) return;
+    try { const g = await pedir('guardarLiquidacion', { id: f.id, desde: f.desde, hasta: f.hasta, solo: ls.map(lqClave) });
+      toast('✔ ' + g.folio + ' creada · captura el pago'); S.lqSel = {}; await cargarComis(true); comiCalcular(); liqAccion(g.id, 'pago'); }
+    catch (e) { if (/desconocida|solo/i.test(e.message || '')) toast('Se activa con el servidor 164', true); }
+  }
+  function lqAjustar(i) {
+    const x = S.lqCalc.lineas[i], c = S.lqCalc.comisionista;
+    modal('✏️ Comisión de la nota ' + x.folio, `<p class="muted">${esc(x.cliente)} · ${esc(x.fecha)} · hoy le toca ${$$(x.comision)}${x.tipo === 'Cobro' ? ' (de este cobro)' : ''}</p>
+      <label>Valor a pagar de esta nota completa $<input type="number" id="ajVal" min="0" step="0.01" placeholder="Ej. 1000"></label>
+      <p class="muted peq">Reemplaza su regla normal solo en esta nota.${c.base === 'Cobrado' ? ' Como su base es lo cobrado, se le paga en proporción a lo que el cliente haya pagado de la nota.' : ''}</p>
+      <div class="acciones"><button class="btn" onclick="App.lqAjustarOk(${i}, true)">Volver a su regla normal</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.lqAjustarOk(${i})">Guardar</button></div>`);
+  }
+  async function lqAjustarOk(i, quitar) {
+    const x = S.lqCalc.lineas[i], v = $('#ajVal').value;
+    if (!quitar && (v === '' || Number(v) < 0)) return toast('Captura el valor', true);
+    try { await pedir('asignarNotasComi', { ids: [x.idVenta], idCom: S.fCom.id, tipo: quitar ? 'Regla' : 'Monto', valor: v }); toast('✔ Guardado'); cerrarModal(); comiCalcular(); } catch (e) {}
   }
   async function comiGuardarLiq() {
     const f = S.fCom, r = S.lqCalc; if (!r) return;
@@ -6492,7 +6530,7 @@ const App = (() => {
     if (!f.nDe || !f.nA || f.nDe > f.nA) return toast('Revisa el periodo', true);
     $('#ntRes').innerHTML = '<div class="vacio">🧾 Buscando notas…</div>';
     let r; try { r = await pedir('notasComi', { desde: f.nDe, hasta: f.nA, com: f.nCom || '', suc: f.nSuc || '', q: f.nQ || '' }, true); }
-    catch (e) { $('#ntRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '🧾 Se activa en cuanto se publique la actualización del servidor (163).' : esc(e.message)}</div>`; return; }
+    catch (e) { $('#ntRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '🧾 Se activa en cuanto se publique la actualización del servidor (164).' : esc(e.message)}</div>`; return; }
     S.ntDatos = r; S.ntSel = {}; pintarNotasLista();
   }
   function pintarNotasLista() {
@@ -7987,7 +8025,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, comiRecibo, liqAccion, lpBuscarNC, lpSumaNC, comiPeriodo, comiPrecioAdd, comiPrecioQuitar, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, comiRecibo, liqAccion, lqMarca, lqTodas, lqPagar, lqAjustar, lqAjustarOk, lpBuscarNC, lpSumaNC, comiPeriodo, comiPrecioAdd, comiPrecioQuitar, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
