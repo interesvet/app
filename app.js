@@ -1014,7 +1014,7 @@ const App = (() => {
   const fmtK = (v, tipo) => tipo === 'n' ? nf(v) : tipo === '%' ? v + '%' : $$(v);
   async function cargarComparativo(p) {
     const el = $('#dashComp'); if (!el) return;
-    let r; try { r = await pedir('comparativo', p, true); } catch (e) { el.innerHTML = `<div class="vacio">${e.red ? 'El comparativo necesita conexión.' : esc(e.message)}</div>`; return; }
+    let r; try { r = await pedir('comparativo', p, true); } catch (e) { el.innerHTML = `<div class="vacio">${e.red ? 'El comparativo necesita conexión.' : /desconocida/i.test(e.message) ? '📅 El comparativo contra el año anterior se activa en cuanto se publique la actualización del servidor (155).' : esc(e.message)}</div>`; return; }
     if (!$('#dashComp')) return;
     S.comp = r; pintarComparativo();
   }
