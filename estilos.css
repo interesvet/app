@@ -886,6 +886,17 @@ small.ok { color: var(--ok); }
 .etq.destino { background: rgba(46,139,87,.16); color: #1f6f4a; font-weight: 600; }
 .etq.suc { background: rgba(31,111,74,.10); color: #1f6f4a; font-weight: 600; }
 @media (prefers-color-scheme: dark) { .etq.origen { color: #f2cf6b; } .etq.destino, .etq.suc { color: #7fd3a3; } }
+
+/* campos clave resaltados en toda la app: Sucursal (verde) y Cliente (azul); en traspasos Origen (amarillo) y Destino (verde) */
+label:has(> select[id$="Suc"]), label:has(> select[id$="SucSel"]), label:has(> select#trOri), label:has(> select#trDes),
+label:has(input[id$="Cli"]:not([type="checkbox"])) { font-weight: 600; }
+label:has(> select[id$="Suc"]) > select, label:has(> select[id$="SucSel"]) > select { border: 2px solid #1f6f4a; background-color: rgba(31,111,74,.08); font-weight: 600; }
+label:has(input[id$="Cli"]:not([type="checkbox"])) input[id$="Cli"] { border: 2px solid #2a6fb0; background-color: rgba(42,111,176,.08); font-weight: 600; }
+label:has(> select#ocProv), label:has(> select#anProv) { font-weight: 600; }
+label:has(> select#ocProv) > select, label:has(> select#anProv) > select { border: 2px solid #2a6fb0; background-color: rgba(42,111,176,.08); font-weight: 600; }
+label:has(> select#trOri) > select { border: 2px solid #d4a017; background-color: rgba(240,190,40,.16); font-weight: 600; }
+label:has(> select#trDes) > select { border: 2px solid #2e8b57; background-color: rgba(46,139,87,.13); font-weight: 600; }
+label:has(> select[id$="Suc"]) > select:focus, label:has(input[id$="Cli"]) input:focus { box-shadow: 0 0 0 3px rgba(31,111,74,.18); }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
