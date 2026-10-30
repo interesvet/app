@@ -1103,6 +1103,7 @@ const App = (() => {
     const fuera = (l, key, nom, f) => l.length ? `<p class="muted peq" style="margin:6px 0 0">Salieron del top 10 de ${yB}: ${l.map(x => `<b>${esc(nom(x))}</b> (#${x.rB} → ${x.rA ? '#' + x.rA : 'sin venta'})`).join(' · ')}</p>` : '';
     el.innerHTML = `<div class="cmp-cab"><h3 style="margin:0">📅 Contra el año anterior</h3><small class="muted">${esc(r.periodo.actual.desde)} – ${esc(r.periodo.actual.hasta)} <b>vs</b> ${esc(r.periodo.anterior.desde)} – ${esc(r.periodo.anterior.hasta)}</small></div>
       <div class="cmp-kpis">${r.kpi.map(k => `<div class="cmp-kpi"><small>${esc(k.t)}</small><b>${fmtK(k.a, k.tipo)}</b><span>${chipDelta(k.a, k.b, k.malSiSube, k.tipo)} <em>${yB}: ${fmtK(k.b, k.tipo)}</em></span></div>`).join('')}</div>
+      ${r.gastosAnt === 0 && r.gastosDesde ? `<p class="muted peq" style="margin:6px 0 0">⚠️ Los gastos de ${yB} salen en $0 porque tus facturas de gastos (hoja Egresos CFDI) empiezan el <b>${esc(r.gastosDesde)}</b>. Para comparar gastos y utilidad neta contra años anteriores, sube las facturas de esos años en Gastos › 📥 Subir facturas (o impórtalas a la hoja Egresos CFDI).</p>` : ''}
       <div class="grafica" style="height:240px;margin-top:10px"><canvas id="gComp"></canvas></div>
       <div class="rejilla-2" style="margin-top:12px">
         <div><h4 style="margin:4px 0 8px">🏷️ Top 10 productos</h4>${tablaTop(r.topProductos, x => x.impA, x => x.impB, x => x.nombre, 'Producto')}${fuera(salieron(r.topProductos, r.topProductosAnt, x => x.id), x => x.id, x => rdCorto(x.nombre))}</div>
@@ -4530,7 +4531,7 @@ const App = (() => {
     $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label>Buscar<input id="icoTxt" placeholder="Producto, clave, laboratorio"></label>
       <label>Mostrar<select id="icoVer"><option value="err">Solo con posible error</option><option value="">Todos con existencia</option></select></label>
       <label>Diferencia mayor a<select id="icoPct">${opts([['10', '10 %'], ['15', '15 %'], ['25', '25 %'], ['50', '50 %']], '15')}</select></label></div>
-      <p class="muted peq" style="margin-top:8px">Compara el <b>costo de lista</b> (Precio_Costo del catálogo) con el <b>costo real de compra</b> (lo pagado con descuentos ÷ piezas recibidas, incluidas bonificaciones, + flete, promedio de los últimos meses) y con el último costo. Marca posibles errores: sin costo, costo arriba del precio al público, o diferencia grande contra lo que realmente pagas. Con “Usar costo real” se corrige el catálogo.</p></div>
+      <p class="muted peq" style="margin-top:8px">Compara el <b>costo de lista</b> (Precio_Costo del catálogo) con el <b>costo real de compra</b> (lo pagado con descuentos ÷ piezas recibidas, incluidas las bonificadas a $0.01–$0.10, que entran sin costo, + flete, promedio de los últimos meses) y con el último costo. Marca posibles errores: sin costo, costo arriba del precio al público, o diferencia grande contra lo que realmente pagas. Con “Usar costo real” se corrige el catálogo.</p></div>
       <div class="espacio"></div><div id="icoRes"><div class="vacio">Calculando costos reales…</div></div>`;
     try { S.costosReales = await pedir('costosReales', {}); S.costosRealesT = Date.now(); } catch (e) { $('#icoRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     const CR = S.costosReales.productos || {}, conEx = {}; (D().stock || []).forEach(s => { if (s.q > 0) conEx[s.p] = (conEx[s.p] || 0) + s.q; });
@@ -4539,7 +4540,8 @@ const App = (() => {
       const l = (D().productos || []).filter(p => p.activo !== false && (!txt || coincide(p.id + ' ' + p.nombre + ' ' + (p.lab || ''), txt))).map(p => {
         const c = CR[p.id] || {}, real = c.costoReal || null, ult = c.ultimoCosto || null, ref = real || ult, lista = p.costo || 0, pub = (p.precios || {}).Publico || 0;
         const dif = ref && lista ? (lista - ref) / ref * 100 : null, mot = [];
-        if (!lista) mot.push('Sin costo de lista');
+        const simb = lista > 0 && lista < 0.105;
+        if (!lista) mot.push('Sin costo de lista'); else if (simb) mot.push('Costo simbólico de bonificación ($' + lista.toFixed(2) + ')');
         if (lista && pub && lista >= pub) mot.push('Costo ≥ precio al público');
         if (dif !== null && Math.abs(dif) > lim) mot.push((dif > 0 ? 'Lista ' : 'Lista ') + (dif > 0 ? 'arriba' : 'abajo') + ' del real ' + Math.abs(dif).toFixed(0) + ' %');
         if (!ref && conEx[p.id]) mot.push('Sin compras registradas');
@@ -4548,10 +4550,10 @@ const App = (() => {
       S.icoLista = l;
       $('#icoRes').innerHTML = `<p class="muted">${nf(l.length)} productos${err ? ' con posible error' : ''}.</p>` + tabla([{ t: '', h: (x, i) => x.ref && puede('productos_editar') ? `<input type="checkbox" class="icoChk" data-id="${esc(x.p.id)}" style="width:auto" onclick="event.stopPropagation()">` : '' },
         { t: 'Producto', h: x => `<b>${esc(x.p.nombre)}</b><br><small class="muted">${esc(x.p.id)} · ${esc(x.p.lab || '')}</small>` },
-        { t: 'Costo lista', num: 1, h: x => x.lista ? $$(x.lista) : '<span class="error">$0</span>' }, { t: 'Costo real', num: 1, h: x => x.real ? $$(x.real) : '—' },
+        { t: 'Costo lista', num: 1, h: x => x.lista ? $$(x.lista) : '<span class="error">$0</span>' }, { t: 'Costo real', num: 1, h: x => x.real ? $$(x.real) + (x.c.bonificadas ? `<br><small class="muted">${nf(x.c.piezas)} pzs, ${nf(x.c.bonificadas)} bonificadas</small>` : '') : (x.c.bonificadas ? '<small class="muted">solo bonificación</small>' : '—') },
         { t: 'Último costo', num: 1, cls: 'ocultar-movil', h: x => x.ult ? `${$$(x.ult)}<br><small class="muted">${esc(x.c.ultimaOC || '')} ${esc(x.c.ultimaCompra || '')}</small>` : '—' },
         { t: 'Público', num: 1, cls: 'ocultar-movil', h: x => x.pub ? $$(x.pub) : '—' }, { t: 'Existencia', num: 1, cls: 'ocultar-movil', h: x => nf(x.ex) },
-        { t: 'Revisar', h: x => x.mot.map(m => `<span class="etq ${/Sin costo|público/.test(m) ? 'mal' : 'av'}">${esc(m)}</span>`).join(' ') || '<span class="etq ok">OK</span>' },
+        { t: 'Revisar', h: x => x.mot.map(m => `<span class="etq ${/Sin costo|público|simbólico/.test(m) ? 'mal' : 'av'}">${esc(m)}</span>`).join(' ') || '<span class="etq ok">OK</span>' },
         { t: '', h: x => x.ref && puede('productos_editar') ? `<button class="btn chico" onclick="event.stopPropagation();App.invUsarReal('${esc(x.p.id)}')">Usar ${$$(x.ref)}</button>` : '' }], l.slice(0, 800), { vacio: 'Sin diferencias 👍' }) +
         (puede('productos_editar') && l.some(x => x.ref) ? `<div class="acciones"><button class="btn" onclick="App.invMarcarCostos()">Marcar todos</button><button class="btn primario" onclick="App.invUsarRealMarcados()">Usar costo real en los marcados</button></div>` : '');
     };
