@@ -1440,7 +1440,7 @@ const App = (() => {
         const r = await pedir('editarVenta', params);
         (r.avisos || []).forEach(a => toast(a, true));
         toast('✔ Nota ' + r.folio + ' actualizada. Total ' + $$(r.total) + ' · saldo ' + $$(r.saldo));
-        S.venta = ventaNueva(); guardarBorrador(); refrescarStock(); V.venta(); verVenta(r.ID_Venta);
+        S.venta = ventaNueva(); guardarBorrador(); refrescarStock(); S.tabVen = 'notas'; ir('ventas', true); verVenta(r.ID_Venta);
       } catch (e) { if (e.red) toast('Editar una nota requiere conexión', true); if ($('#vGuardar')) $('#vGuardar').disabled = false; }
       return;
     }
@@ -1450,7 +1450,7 @@ const App = (() => {
       (r.avisos || []).forEach(a => toast(a, true));
       toast('✔ Venta ' + r.folio + (r.estatus === 'Pendiente' ? ' guardada como Pendiente de entrega (no descontó inventario)' : ' guardada') + (r.cotPendiente && r.cotPendiente.folio ? ' · lo que faltó de la cotización pasó a la ' + r.cotPendiente.folio : ''));
       refrescarStock();
-      V.venta(); verVenta(r.ID_Venta, true);
+      S.tabVen = 'notas'; ir('ventas', true); verVenta(r.ID_Venta, true);   // al guardar: a Ventas para corroborar; otra venta con "Nueva venta"
     } catch (e) {
       if (e.red) {
         encolar('guardarVenta', params, 'Venta a ' + ((cliente(v.cli) || {}).razon || '') + ' por ' + $$(t.total));
@@ -1458,7 +1458,7 @@ const App = (() => {
         const nota = notaOffline(v, t, params);
         S.venta = ventaNueva(); guardarBorrador();
         toast('📴 Sin conexión: venta guardada en el dispositivo. Se enviará al reconectar.');
-        V.venta(); modal('Venta pendiente de sincronizar', nota);
+        S.tabVen = 'notas'; ir('ventas', true); modal('Venta pendiente de sincronizar', nota);
       } else { toast(e.message, true); $('#vGuardar').disabled = false; }
     }
   }
@@ -3735,7 +3735,7 @@ const App = (() => {
       try {
         const r = await pedir('editarCompra', { ID_O_Compra: o.editId, ID_Proveedor: o.prov, Fecha: o.fecha, D_credito: o.dias, descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete,
           actualizarCosto: o.actCosto, Observaciones: o.obs, Entregar_en: o.entregar || '', No_Nota: o.nota || '', lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: l.lote || '', F_Caducidad: l.cad || '' })) });
-        toast('✔ Orden ' + r.folio + ' actualizada'); S.oc = null; S.cacheTot = {}; if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista'); verCompra(r.ID_O_Compra);
+        toast('✔ Orden ' + r.folio + ' actualizada'); S.oc = null; S.cacheTot = {}; if (o.actCosto) refrescarDatos(true).catch(() => {}); ir('compras', true); verCompra(r.ID_O_Compra);
       } catch (e) {}
       return;
     }
@@ -3744,7 +3744,7 @@ const App = (() => {
         descEspecial: o.descEsp, descPP: o.descPP, Flete: o.flete, Recibido: o.recibido, actualizarCosto: o.actCosto, Observaciones: o.obs, Entregar_en: o.entregar || '',
         lineas: o.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, Lote: l.lote || '', F_Caducidad: l.cad || '' })), cfdiUuid: o.cfdi ? o.cfdi.uuid : '',
         pago: o.pago > 0 ? { monto: o.pago, forma: $('#ocForma').value, banco: $('#ocBanco').value } : null, ID_Requisicion: o.req ? o.req.id : '' });
-      toast('✔ Orden ' + r.folio + ' guardada' + (o.req ? ' · ligada a la requisición ' + o.req.folio : '')); S.oc = null; S.cacheTot = {}; refrescarStock(); if (o.actCosto) refrescarDatos(true).catch(() => {}); V.compras('lista');
+      toast('✔ Orden ' + r.folio + ' guardada' + (o.req ? ' · ligada a la requisición ' + o.req.folio : '')); S.oc = null; S.cacheTot = {}; refrescarStock(); if (o.actCosto) refrescarDatos(true).catch(() => {}); ir('compras', true); if (r && r.ID_O_Compra) verCompra(r.ID_O_Compra);   // al guardar: a la lista de órdenes y su detalle
     } catch (e) {}
   }
 
