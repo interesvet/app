@@ -1166,11 +1166,11 @@ const App = (() => {
     const paso = (t, v, cls, menos) => `<div class="un-paso ${cls || ''}"><small>${menos ? '− ' : ''}${t}</small><b>${menos ? $$(Math.abs(v)) : $$(v)}</b>${!menos ? `<span>${pct(v)} de ventas</span>` : ''}</div>`;
     const neta = R.utilidadNeta, est = neta < 0 ? 'mal' : (R.ventas && neta / R.ventas < 0.05 ? 'av' : 'ok');
     return `<div class="tarjeta un-card"><div class="un-cab"><div><h3 style="margin:0">💰 Utilidad neta del periodo</h3>
-        <p class="muted" style="margin:4px 0 0">Lo que realmente le queda a la empresa: ventas − costo de lo vendido − mermas − gastos de operación${R.comisiones ? ' − comisiones' : ''} − gastos financieros. Sin IVA. La depreciación va aparte.</p></div>
+        <p class="muted" style="margin:4px 0 0">Lo que realmente le queda a la empresa: ventas − costo de lo vendido − mermas${R.fletesVenta ? ' − fletes de venta' : ''} − gastos de operación${R.comisiones ? ' − comisiones' : ''} − gastos financieros. Sin IVA. La depreciación va aparte.</p></div>
         <div class="un-total ${est}"><small>Utilidad neta</small><b>${$$(neta)}</b><span>Margen neto ${pct(neta)}</span></div></div>
       <div class="un-flujo">
         ${paso('Ventas netas', R.ventas)}${paso('Costo de lo vendido', R.costo, 'resta', 1)}${paso('Utilidad bruta', R.utilidadBruta, 'sub')}
-        ${paso('Mermas', R.mermas, 'resta', 1)}${paso('Gastos de operación', R.gastosOperacion, 'resta', 1)}${R.comisiones || R.comi ? paso('Comisiones', R.comisiones || 0, 'resta', 1) : ''}
+        ${paso('Mermas', R.mermas, 'resta', 1)}${R.fletesVenta > 0 ? paso('Fletes de venta', R.fletesVenta, 'resta', 1) : R.fletesVenta < 0 ? paso('Fletes cobrados (neto)', -R.fletesVenta) : ''}${paso('Gastos de operación', R.gastosOperacion, 'resta', 1)}${R.comisiones || R.comi ? paso('Comisiones', R.comisiones || 0, 'resta', 1) : ''}
         ${paso('Utilidad de operación', R.utilidadOperacion, 'sub')}${paso('Gastos financieros', R.financieros, 'resta', 1)}${paso('Utilidad neta', neta, 'fin ' + est)}
       </div></div>` + htmlComisionesGasto(R) + htmlDepreciacion(R);
   }
@@ -1219,6 +1219,7 @@ const App = (() => {
         ${fila('Costo real de lo vendido', R.costo, { menos: 1, sangria: 1 })}
         ${fila('<b>Utilidad bruta</b>', R.utilidadBruta, { total: 1 })}
         ${fila('Mermas', R.mermas, { menos: 1, sangria: 1 })}
+        ${R.fletesPagados || R.fletesCobrados ? fila('Fletes de venta: pagados ' + $$(R.fletesPagados) + ' − cobrados ' + $$(R.fletesCobrados), R.fletesVenta, { menos: 1, sangria: 1 }) : ''}
         ${fila('Gastos de operación', R.gastosOperacion, { menos: 1, sangria: 1 })}
         ${R.comisiones ? fila('Comisiones', R.comisiones, { menos: 1, sangria: 1 }) : ''}
         ${fila('<b>Utilidad de operación</b>', R.utilidadOperacion, { total: 1 })}
@@ -1295,7 +1296,9 @@ const App = (() => {
           <label>Días de crédito<input type="number" id="vDias" value="${v.dias}" ${puede('precio_editar') ? '' : 'readonly'}></label>
           <label>Método de pago<select id="vMetodo">${opts(cat.metodosPago || [], v.metodo)}</select></label>
           <label>Desc. pronto pago %<input type="number" id="vPC" value="${v.descPC}" ${puede('precio_editar') ? '' : 'readonly'}></label>
-          <label>Flete $<input type="number" id="vFlete" value="${v.flete}"></label>
+          <label>Lo que te cobra la fletera $<input type="number" id="vFletePag" step="0.01" min="0" value="${v.fletePag || ''}" placeholder="Costo de la guía (no lo ve el cliente)"></label>
+          <label class="check fijo" style="align-self:end"><input type="checkbox" id="vCliPaga" ${v.clientePaga !== false ? 'checked' : ''} style="width:auto"> Cliente paga el flete</label>
+          <label id="vFleteLbl" ${v.clientePaga === false ? 'style="opacity:.45"' : ''}>Flete a cobrar al cliente $<input type="number" id="vFlete" step="0.01" min="0" value="${v.clientePaga === false ? 0 : v.flete}" ${v.clientePaga === false ? 'disabled' : ''}></label>
           ${ed ? '' : `<label>Cobrar ahora $<input type="number" id="vCobro" value="${esc(v.cobro.monto)}" placeholder="0.00"></label>
           <label>Forma de pago<select id="vForma">${opts(cat.formasPago || [], v.cobro.forma)}</select></label>
           <label>Cuenta / caja<select id="vBanco">${opts(cat.bancos || [], v.cobro.banco)}</select></label>`}
@@ -1310,7 +1313,14 @@ const App = (() => {
     buscador($('#vProd'), { fuente: q => fuenteProductos(v.suc, v.lista, true)(q), limpiar: true, alElegir: x => agregarLineaVenta(x.id) });
     const bind = (id, k, num, sub) => { if (!$(id)) return; $(id).oninput = e => { if (sub) v.cobro[k] = e.target.value; else v[k] = num ? Number(e.target.value) || 0 : e.target.value; guardarBorrador(); totalesVenta(); }; $(id).onchange = $(id).oninput; };
     bind('#vEstatus', 'estatus'); bind('#vEnvio', 'idFlete'); bind('#vGuia', 'guia');
-    bind('#vDias', 'dias', 1); bind('#vMetodo', 'metodo'); bind('#vPC', 'descPC', 1); bind('#vFlete', 'flete', 1);
+    bind('#vDias', 'dias', 1); bind('#vMetodo', 'metodo'); bind('#vPC', 'descPC', 1);
+    // flete: lo que te cobra la fletera (costo tuyo) y, si el cliente lo paga, lo que se le cobra (por defecto el mismo monto)
+    $('#vFletePag').oninput = e => { v.fletePag = Number(e.target.value) || 0; if (v.clientePaga !== false && (!v.flete || v.fleteAuto)) { v.flete = v.fletePag; v.fleteAuto = true; $('#vFlete').value = v.flete || 0; } guardarBorrador(); totalesVenta(); };
+    $('#vFlete').oninput = e => { v.flete = Number(e.target.value) || 0; v.fleteAuto = false; guardarBorrador(); totalesVenta(); };
+    $('#vCliPaga').onchange = e => { v.clientePaga = e.target.checked; const f = $('#vFlete');
+      if (v.clientePaga) { v.flete = v.flete || v.fletePag || 0; v.fleteAuto = true; f.disabled = false; f.value = v.flete; $('#vFleteLbl').style.opacity = ''; }
+      else { v.flete = 0; f.value = 0; f.disabled = true; $('#vFleteLbl').style.opacity = '.45'; }
+      guardarBorrador(); totalesVenta(); };
     bind('#vCobro', 'monto', 0, 1); bind('#vForma', 'forma', 0, 1); bind('#vBanco', 'banco', 0, 1); bind('#vCom', 'comentarios');
     if (!ed) mostrarFolio('vFolio', v.suc, 'Nota de Venta');
     pintarLineasVenta();
@@ -1376,7 +1386,7 @@ const App = (() => {
       sub += s; desc += d; iva += i; return r2(s - d + i);
     });
     const descPC = r2((sub - desc) * pc);
-    return { imps: imps, brutos: brutos, descs: descs, ivas: ivas, sub: r2(sub), desc: r2(desc), descPC: descPC, iva: r2(iva), flete: r2(v.flete), total: r2(sub - desc - descPC + iva + (Number(v.flete) || 0)) };
+    return { imps: imps, brutos: brutos, descs: descs, ivas: ivas, sub: r2(sub), desc: r2(desc), descPC: descPC, iva: r2(iva), flete: v.clientePaga === false ? 0 : r2(v.flete), total: r2(sub - desc - descPC + iva + (v.clientePaga === false ? 0 : Number(v.flete) || 0)) };
   }
   function totalesVenta() {
     const v = S.venta, t = calcVenta(v);
@@ -1385,7 +1395,7 @@ const App = (() => {
     $('#vTot').innerHTML = `<div><span>Subtotal</span><span>${$$(t.sub)}</span></div>
       ${t.desc ? `<div><span>Descuentos</span><span>−${$$(t.desc)}</span></div>` : ''}${t.descPC ? `<div><span>Pronto pago</span><span>−${$$(t.descPC)}</span></div>` : ''}
       <div><span>IVA</span><span>${$$(t.iva)}</span></div>${t.flete ? `<div><span>Flete</span><span>${$$(t.flete)}</span></div>` : ''}
-      <div class="gran"><span>Total</span><span>${$$(t.total)}</span></div>
+      <div class="gran"><span>Total</span><span>${$$(t.total)}</span></div>${v.clientePaga === false && v.fletePag ? `<div class="muted"><span>🚚 Flete que absorbes (no se le cobra)</span><span>${$$(v.fletePag)}</span></div>` : ''}
       <div class="muted"><span>Saldo a crédito</span><span>${$$(Math.max(0, t.total - (Number(v.cobro.monto) || 0)))}</span></div>`;
   }
   function limpiarVenta() {
@@ -1399,7 +1409,7 @@ const App = (() => {
     if (S.venta && S.venta.lineas.length && S.venta.editId !== id && !confirm('Tienes una venta en captura que se va a descartar. ¿Continuar?')) return;
     const listas = (D().catalogos || {}).listas || [];
     S.venta = { editId: d.id, editFolio: d.folio, suc: d.sucursal.id, cli: d.idCliente, lista: listas.indexOf(d.lista) >= 0 ? d.lista : 'Publico',
-      dias: d.dias, metodo: d.metodo || 'PUE', descPC: d.descPCPct || 0, flete: d.flete || 0, comentarios: d.comentarios || '',
+      dias: d.dias, metodo: d.metodo || 'PUE', descPC: d.descPCPct || 0, flete: d.flete || 0, fletePag: d.fletePagado || 0, clientePaga: d.clientePaga !== false, comentarios: d.comentarios || '',
       estatus: d.estatus === 'Pendiente' ? 'Pendiente' : 'Entregado', idFlete: d.idFlete || ENVIO_DEFAULT, guia: d.guia || '',
       cobro: { monto: '', forma: '1', banco: 'EFECTI10' },
       lineas: d.lineas.filter(l => l.cant > 0).map(l => ({ id: l.prod, cant: l.cant, precio: l.precio, desc: r2(l.descPct * 100), lote: l.k || '' })) };
@@ -1415,7 +1425,7 @@ const App = (() => {
     const cobro = Math.min(Number(v.cobro.monto) || 0, t.total);
     const params = {
       ID_Venta: uid(), ID_Sucursal: v.suc, ID_Cliente: v.cli, Lista_de_Precios: v.lista, Dias_de_credito: v.dias,
-      Metodo_de_pago: v.metodo, descPC: v.descPC, Costo_Flete: v.flete, Comentarios: v.comentarios, fecha: hoyISO(), ID_Cotizacion: v.desdeCot ? v.desdeCot.id : '',
+      Metodo_de_pago: v.metodo, descPC: v.descPC, Costo_Flete: v.clientePaga === false ? 0 : v.flete, Flete_Pagado: Number(v.fletePag) || 0, Cliente_Paga_Flete: v.clientePaga === false ? 'NO' : 'SI', Comentarios: v.comentarios, fecha: hoyISO(), ID_Cotizacion: v.desdeCot ? v.desdeCot.id : '',
       Estatus: v.estatus || 'Pendiente', ID_Flete: v.idFlete || ENVIO_DEFAULT, No_Guia: v.guia || '',
       ID_Visita: (v.ligar && v.ligar.visita) || '', ID_Receta: (v.ligar && v.ligar.receta) || '',
       lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, lote: l.lote })),
@@ -1512,7 +1522,7 @@ const App = (() => {
         ${d.cel ? `<a class="btn" target="_blank" href="${WA_BASE}52${String(d.cel).replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent('Interés Veterinario® — Nota ' + d.folio + '\nTotal: ' + $$(d.total) + '\nSaldo: ' + $$(d.saldo) + '\n¡Gracias por su compra!')}">💬 WhatsApp</a>` : ''}
         ${!offline && d.id && viva && !bloq && d.saldo > 0.009 && puede('ventas_editar') ? `<button class="btn" onclick="App.editarNota('${d.id}')">✏️ Editar nota</button>` : ''}
         ${!offline && d.id && d.estatus === 'Pendiente' && puede('ventas') ? `<button class="btn primario" onclick="App.entregarVenta('${d.id}')">📦 Marcar como entregado</button>` : ''}
-        ${!offline && d.id && d.estatus !== 'Cancelado' && puede('ventas') ? `<button class="btn" onclick="App.formEnvio('${d.id}')">🚚 Envío / guía</button>` : ''}
+        ${!offline && d.id && d.estatus !== 'Cancelado' && puede('ventas') ? `<button class="btn" onclick="App.formEnvio('${d.id}')">🚚 Envío / guía${d.fletePagadoReal || d.fletePagado ? ' · flete ' + $$(d.fletePagadoReal || d.fletePagado) + (d.clientePaga === false ? ' (lo absorbes)' : '') : ''}</button>` : ''}
         ${!offline && d.id && d.saldo > 0.009 && d.estatus !== 'Cancelado' && puede('cobranza') ? `<button class="btn" onclick="App.formCobro('${d.id}')">💵 Cobrar</button>` : ''}
         ${!offline && d.id && !bloq && viva && puede('ventas_cancelar') ? `<button class="btn peligro" onclick="App.cancelarVenta('${d.id}')">Cancelar toda la nota</button>` : ''}
         ${!offline && d.id && bloq && viva && puede('devoluciones') ? `<button class="btn peligro" onclick="App.nuevaDevolucion('${d.id}')">↩️ Devolución de la nota completa</button>` : ''}
@@ -1976,12 +1986,16 @@ const App = (() => {
     modal('Envío de la nota ' + d.folio, `<div class="rejilla">
       <label>Envío / flete<select id="enPaq">${opts(paqs, d.idFlete || ENVIO_DEFAULT)}</select></label>
       <label>No. de guía<input id="enGuia" value="${esc(d.guia || '')}"></label>
-      <label>Costo de flete $<input type="number" id="enCosto" step="0.01" value="${d.flete || 0}" ${pagadaNota(d) ? 'disabled' : ''}></label></div>
-      <p class="muted">${pagadaNota(d) ? '🔒 La nota está pagada al 100 %: solo puedes cambiar la paquetería y el número de guía.' : 'Si cambias el costo de flete, el total y el saldo de la nota se recalculan.'}</p>
+      <label>Lo que te cobra la fletera $<input type="number" id="enPag" step="0.01" min="0" value="${d.fletePagado || ''}" placeholder="Costo de la guía"></label>
+      <label class="check fijo" style="align-self:end"><input type="checkbox" id="enCli" ${d.clientePaga !== false ? 'checked' : ''} ${pagadaNota(d) ? 'disabled' : ''} style="width:auto" onchange="const c=document.getElementById('enCosto');c.disabled=!this.checked;if(!this.checked)c.value=0;else if(!+c.value)c.value=document.getElementById('enPag').value||0"> Cliente paga el flete</label>
+      <label>Flete a cobrar al cliente $<input type="number" id="enCosto" step="0.01" min="0" value="${d.clientePaga !== false ? d.flete || 0 : 0}" ${pagadaNota(d) || d.clientePaga === false ? 'disabled' : ''}></label></div>
+      ${d.fletePagadoReal ? `<p class="muted peq">🚚 Ya tiene factura de fletera ligada en Gastos: ${$$(d.fletePagadoReal)} (ese es el costo que cuenta).</p>` : ''}
+      <p class="muted">${pagadaNota(d) ? '🔒 La nota está pagada al 100 %: no se puede cambiar lo que se le cobra al cliente (sí la paquetería, la guía y lo que te cobra la fletera).' : 'Lo que te cobra la fletera es tu costo: se resta en la utilidad de la nota y el cliente no lo ve. Si el cliente paga, el flete a cobrar se suma al total de la nota; si no, va en $0 y el flete lo absorbes tú.'}</p>
       <div class="acciones"><button class="btn" onclick="App.verVentaId('${id}')">Volver</button><button class="btn primario" onclick="App.guardarEnvio('${id}')">Guardar</button></div>`);
   }
   async function guardarEnvio(id) {
-    try { const r = await pedir('editarEnvioVenta', { ID_Venta: id, ID_Flete: $('#enPaq').value, No_Guia: $('#enGuia').value, Costo_Flete: Number($('#enCosto').value) || 0 });
+    const cli = $('#enCli').checked;
+    try { const r = await pedir('editarEnvioVenta', { ID_Venta: id, ID_Flete: $('#enPaq').value, No_Guia: $('#enGuia').value, Costo_Flete: cli ? Number($('#enCosto').value) || 0 : 0, Flete_Pagado: Number($('#enPag').value) || 0, Cliente_Paga_Flete: cli ? 'SI' : 'NO' });
       toast('✔ Envío actualizado. Total ' + $$(r.total)); verVenta(id); if ($('#lVentas')) buscarVentas(); } catch (e) {}
   }
   async function cancelarVenta(id) {
@@ -2741,7 +2755,8 @@ const App = (() => {
         { t: 'Precio neto', num: 1, h: x => $$(x.precioNeto) }, { t: 'Costo real u.', num: 1, h: x => $$(x.costoU) + fuente[x.fuente] },
         { t: 'Venta', num: 1, h: x => $$(x.venta) }, { t: 'Costo', num: 1, h: x => $$(x.costo) },
         { t: 'Utilidad $', num: 1, h: x => `<b class="${x.utilidad < 0 ? 'error' : ''}">${$$(x.utilidad)}</b>` }, { t: 'Utilidad %', num: 1, h: x => `<span class="etq ${claseMg(x.margen)}">${x.margen.toFixed(1)}%</span>` }], d.lineas)}
-      <p class="muted" style="margin-top:8px">Costo real u. = costo de compra del lote vendido, con bonificaciones y ${(d.flete * 100).toFixed(0)}% de flete. <i>(prom.)</i> = promedio real del producto (lote sin compra registrada o nota pendiente de entrega); <i>(lista)</i> = sin compras, se usó el costo de lista.${d.fleteCobrado ? ' El flete cobrado al cliente (' + $$(d.fleteCobrado) + ') no se incluye.' : ''}</p>
+      ${d.fleteCobrado || d.fletePagado ? `<p style="margin-top:8px">🚚 <b>Flete:</b> cobrado al cliente ${$$(d.fleteCobrado || 0)} − pagado a la fletera ${$$(d.fletePagado || 0)} = <b class="${d.fleteNeto < 0 ? 'error' : ''}">${$$(d.fleteNeto || 0)}</b> (ya incluido en la utilidad).</p>` : ''}
+      <p class="muted" style="margin-top:8px">Costo real u. = costo de compra del lote vendido, con bonificaciones y el flete que pagaste al comprar. <i>(prom.)</i> = promedio real del producto (lote sin compra registrada o nota pendiente de entrega); <i>(lista)</i> = sin compras, se usó el costo de lista. Utilidad = venta − costo + flete cobrado − flete pagado.</p>
       <div class="acciones"><button class="btn" onclick="App.verVentaId('${d.id}')">Ver nota de venta</button></div>`);
   }
 
@@ -2792,7 +2807,7 @@ const App = (() => {
       ${kpi('Gastos financieros', $$(t.financiero), 'vs anterior ' + vari(t.financiero, t.anterior.financiero))}
       ${kpi('Total cargado a resultados', $$(cargado), pct(cargado) + ' de ventas (' + $$(r.ventas) + ')')}
       ${kpi('Inversiones del periodo', $$(t.inversion), 'activo fijo · no se cargan completas')}
-      ${kpi('Excluidos', $$(t.excluir), 'personales / no del negocio')}${t.fleteCosto ? kpi('🚚 Flete al costo', $$(t.fleteCosto), 'ligado a órdenes de compra: está en el costo de los productos') : ''}
+      ${kpi('Excluidos', $$(t.excluir), 'personales / no del negocio')}${t.fleteCosto ? kpi('🚚 Fletes ligados', $$(t.fleteCosto), 'a compras (costo de productos) o ventas (utilidad de la nota)') : ''}
       ${kpi('IVA acreditable', $$(t.iva), nf(t.facturas) + ' facturas')}</div>`;
     if (tab === 'resumen') {
       html += `<div class="rejilla-2"><div class="tarjeta"><h3>Estado de gastos · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3>
@@ -2832,8 +2847,8 @@ const App = (() => {
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
           { t: 'Sucursal', h: (x) => `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
           { t: 'PDF', h: x => `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>` },
-          { t: 'Flete', h: x => x.flete ? `<button class="btn chico" style="color:var(--ok);border-color:var(--ok)" title="Flete ligado a ${x.flete} orden(es) de compra: está en el costo de esos productos" onclick="App.fleteLigar('${esc(x.uuid)}')">🚚 ${x.flete} OC</button>`
-            : `<button class="btn chico" ${x.fleteSug ? 'title="Parece flete: ligarlo a sus órdenes de compra"' : 'style="opacity:.4" title="Si es un flete que pagaste, ligarlo a sus órdenes de compra"'} onclick="App.fleteLigar('${esc(x.uuid)}')">🚚${x.fleteSug ? ' Ligar' : ''}</button>` },
+          { t: 'Flete', h: x => x.flete ? `<button class="btn chico" style="color:var(--ok);border-color:var(--ok)" title="Flete ligado a ${x.flete} documento(s) (órdenes de compra / notas de venta)" onclick="App.fleteLigar('${esc(x.uuid)}')">🚚 ${x.flete}</button>`
+            : `<button class="btn chico" ${x.fleteSug ? 'title="Parece flete: ligarlo a sus compras o ventas"' : 'style="opacity:.4" title="Si es un flete que pagaste, ligarlo a sus compras o ventas"'} onclick="App.fleteLigar('${esc(x.uuid)}')">🚚${x.fleteSug ? ' Ligar' : ''}</button>` },
           { t: 'UUID', cls: 'ocultar-movil', h: x => `<small class="muted">${esc(String(x.uuid).slice(0, 8))}…</small>` }], r.facturas, { vacio: 'Sin facturas' }) + '</div>';
     } else if (tab === 'inversion') {
       const tl = r.activos.reduce((a, x) => a + x.libros, 0), tm = r.activos.reduce((a, x) => a + x.monto, 0), ta = r.activos.reduce((a, x) => a + x.acumulada, 0);
@@ -2865,13 +2880,18 @@ const App = (() => {
   async function fleteLigar(uuid) {
     let r; try { r = await pedir('fleteSugerencias', { uuid: uuid }); } catch (e) { return; }
     S.flete = r; const f = r.factura;
-    modal('🚚 Flete de compras', `<p><b>${esc(f.emisor)}</b> · ${esc(f.fecha)} · <b>${$$(f.monto)}</b> sin IVA <small class="muted">(${$$(f.total)} con IVA · ${esc(f.cat || '')})</small></p>
-      <p class="muted peq">Marca las órdenes de compra que viajaron en este flete. El monto sin IVA se reparte entre ellas según su valor y entra al <b>costo real</b> de sus productos; en el estado de resultados deja de contar como gasto de operación (su IVA sigue acreditable). Se muestran las órdenes de 60 días antes a 10 días después de la factura.</p>
+    modal('🚚 Factura de flete', `<p><b>${esc(f.emisor)}</b> · ${esc(f.fecha)} · <b>${$$(f.monto)}</b> sin IVA <small class="muted">(${$$(f.total)} con IVA · ${esc(f.cat || '')})</small></p>
+      <p class="muted peq">Marca lo que viajó en este flete: <b>órdenes de compra</b> (el flete entra al costo real de sus productos) y/o <b>notas de venta</b> (el flete se resta en la utilidad de esa venta, en lugar de lo capturado en la nota). El monto sin IVA se reparte según el valor de cada una. En el estado de resultados deja de contar como gasto de operación (su IVA sigue acreditable).</p>
       <label>Buscar<input id="flTxt" placeholder="Folio, proveedor, factura, destino…" oninput="App.fleteSuma()"></label>
       <div id="flLista" style="max-height:52vh;overflow:auto;margin-top:8px">${r.ocs.map(o => `<label class="check fl-oc" data-txt="${esc((o.folio + ' ' + o.proveedor + ' ' + o.factura + ' ' + o.entregar + ' ' + sucNom(o.suc)).toLowerCase())}" style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--borde)">
         <input type="checkbox" class="flChk" value="${esc(o.id)}" data-v="${o.valor}" ${o.ligada ? 'checked' : ''} onchange="App.fleteSuma()" style="width:auto;margin-top:3px">
         <span style="flex:1"><b>${esc(o.folio)}</b> · ${esc(o.fecha)} · ${esc(o.proveedor)}${o.factura ? ' · fact. ' + esc(o.factura) : ''}<br><small class="muted">${esc(sucNom(o.suc))}${o.entregar ? ' · entregar en: ' + esc(o.entregar) : ''}${o.fleteProv ? ' · el proveedor ya cobró ' + $$(o.fleteProv) + ' de flete' : ''}${o.otrosFletes ? ' · ya tiene ' + o.otrosFletes + ' flete(s) más' : ''}</small></span>
-        <span class="num"><b>${$$(o.valor)}</b><br><small class="muted fl-parte" data-id="${esc(o.id)}"></small></span></label>`).join('') || '<div class="vacio">No hay órdenes de compra en esas fechas</div>'}</div>
+        <span class="num"><b>${$$(o.valor)}</b><br><small class="muted fl-parte" data-id="${esc(o.id)}"></small></span></label>`).join('') || '<div class="vacio">No hay órdenes de compra en esas fechas</div>'}
+        <h4 style="margin:14px 0 4px">🛒 Notas de venta enviadas <small class="muted" style="font-weight:400">(30 días antes a 10 después; con paquetería, guía o flete)</small></h4>
+        ${(r.ventas || []).map(o => `<label class="check fl-oc" data-txt="${esc((o.folio + ' ' + o.cliente + ' ' + o.envio + ' ' + o.guia + ' ' + sucNom(o.suc)).toLowerCase())}" style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--borde)">
+        <input type="checkbox" class="flChk" value="${esc(o.id)}" data-v="${o.valor}" ${o.ligada ? 'checked' : ''} onchange="App.fleteSuma()" style="width:auto;margin-top:3px">
+        <span style="flex:1"><b>${esc(o.folio)}</b> · ${esc(o.fecha)} · ${esc(o.cliente)}<br><small class="muted">${esc(sucNom(o.suc))}${o.envio ? ' · ' + esc(o.envio) : ''}${o.guia ? ' · guía ' + esc(o.guia) : ''}${o.capturado ? ' · flete capturado ' + $$(o.capturado) : ''}${o.clientePaga ? (o.cobrado ? ' · se le cobró ' + $$(o.cobrado) : '') : ' · lo absorbes tú'}${o.otrosFletes ? ' · ya tiene ' + o.otrosFletes + ' flete(s) más' : ''}</small></span>
+        <span class="num"><b>${$$(o.valor)}</b><br><small class="muted fl-parte" data-id="${esc(o.id)}"></small></span></label>`).join('') || '<div class="vacio">No hay notas enviadas en esas fechas</div>'}</div>
       <p id="flRes" style="margin-top:8px"></p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button>${r.ligadas.length ? '<button class="btn peligro" onclick="App.fleteGuardar(true)">Desligar todo</button>' : ''}<button class="btn primario" onclick="App.fleteGuardar()">Guardar</button></div>`);
     fleteSuma();
@@ -2883,14 +2903,14 @@ const App = (() => {
     const sel = [...document.querySelectorAll('.flChk')].filter(x => x.checked), tot = sel.reduce((a, x) => a + (+x.dataset.v || 0), 0);
     document.querySelectorAll('.fl-parte').forEach(x => { x.textContent = ''; });
     sel.forEach(x => { const m = tot ? r.factura.monto * (+x.dataset.v || 0) / tot : r.factura.monto / sel.length; const t = document.querySelector('.fl-parte[data-id="' + x.value + '"]'); if (t) t.textContent = 'flete ' + $$(m) + (x.dataset.v > 0 ? ' (' + (m / x.dataset.v * 100).toFixed(1) + '%)' : ''); });
-    $('#flRes').innerHTML = sel.length ? `${sel.length} orden(es) · mercancía ${$$(tot)} · flete ${$$(r.factura.monto)} = <b>${tot ? (r.factura.monto / tot * 100).toFixed(1) : '—'}%</b> sobre su valor` : '<span class="muted">Marca al menos una orden.</span>';
+    $('#flRes').innerHTML = sel.length ? `${sel.length} documento(s) · mercancía ${$$(tot)} · flete ${$$(r.factura.monto)} = <b>${tot ? (r.factura.monto / tot * 100).toFixed(1) : '—'}%</b> sobre su valor` : '<span class="muted">Marca al menos una orden.</span>';
   }
   async function fleteGuardar(quitar) {
     const r = S.flete; if (!r) return;
     const ocs = quitar ? [] : [...document.querySelectorAll('.flChk')].filter(x => x.checked).map(x => x.value);
-    if (!quitar && !ocs.length) return toast('Marca al menos una orden de compra', true);
+    if (!quitar && !ocs.length) return toast('Marca al menos una orden de compra o nota de venta', true);
     if (quitar && !confirm('¿Desligar este flete de sus órdenes? Vuelve a contar como gasto.')) return;
-    try { await pedir('ligarFleteOC', { uuid: r.factura.uuid, ocs: ocs }); S.costosReales = null; S.datGasKey = ''; cerrarModal(); toast(quitar ? 'Flete desligado: vuelve a gastos' : '✔ Flete repartido en ' + ocs.length + ' orden(es): ya está en el costo real'); if (S.vista === 'gastos') cargarGastos(); } catch (e) {}
+    try { await pedir('ligarFleteOC', { uuid: r.factura.uuid, ocs: ocs }); S.costosReales = null; S.datGasKey = ''; cerrarModal(); toast(quitar ? 'Flete desligado: vuelve a gastos' : '✔ Flete repartido en ' + ocs.length + ' documento(s)'); if (S.vista === 'gastos') cargarGastos(); } catch (e) {}
   }
   async function asignarSucGastos(uuid, suc) {
     const uuids = uuid ? [uuid] : (S.listaFact || []).map(x => x.uuid);
@@ -3094,7 +3114,7 @@ const App = (() => {
       ${kpi('Inventario', $$(x.inventario), nf(x.piezas) + ' pzs · ' + nf(x.productos) + ' productos')}${kpi('Días de inventario', x.diasInventario === null ? '—' : nf(x.diasInventario), 'GMROI ' + (x.gmroi === null ? '—' : x.gmroi))}
       ${kpi('Traspasos', $$(x.traspasosRecibidos), 'recibidos · enviados ' + $$(x.traspasosEnviados))}</div>
       <div class="rejilla-2"><div><h4>Estado de resultados</h4><div class="tabla-cont"><table class="estado-res"><tbody>
-      ${fila('Ventas netas', x.ventas)}${fila('Costo real de lo vendido', x.costo, 1)}${fila('<b>Utilidad bruta</b>', x.utilidadBruta, 0, 1)}${fila('Mermas', x.mermas, 1)}${fila('Gastos de operación', x.operacion, 1)}
+      ${fila('Ventas netas', x.ventas)}${fila('Costo real de lo vendido', x.costo, 1)}${fila('<b>Utilidad bruta</b>', x.utilidadBruta, 0, 1)}${fila('Mermas', x.mermas, 1)}${x.fletesVenta ? fila('Fletes de venta (pagado − cobrado)', x.fletesVenta, 1) : ''}${fila('Gastos de operación', x.operacion, 1)}
       ${fila('<b>Contribución</b>', x.contribucion, 0, 1)}${fila('Gastos financieros', x.financiero, 1)}${fila('<b>Utilidad neta</b>', x.utilidadNeta, 0, 1)}</tbody></table></div>
       ${x.depreciacion ? `<p class="muted" style="margin-top:6px">Aparte (no se resta de la utilidad neta): depreciación estimada de sus inversiones ${$$(x.depreciacion)}.</p>` : ''}
       <p class="muted" style="margin-top:6px">Inventario por caducar ${$$(x.porCaducar)} · caducado ${$$(x.caducado)}.</p></div>
