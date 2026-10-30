@@ -2792,7 +2792,7 @@ const App = (() => {
       ${kpi('Gastos financieros', $$(t.financiero), 'vs anterior ' + vari(t.financiero, t.anterior.financiero))}
       ${kpi('Total cargado a resultados', $$(cargado), pct(cargado) + ' de ventas (' + $$(r.ventas) + ')')}
       ${kpi('Inversiones del periodo', $$(t.inversion), 'activo fijo · no se cargan completas')}
-      ${kpi('Excluidos', $$(t.excluir), 'personales / no del negocio')}
+      ${kpi('Excluidos', $$(t.excluir), 'personales / no del negocio')}${t.fleteCosto ? kpi('🚚 Flete al costo', $$(t.fleteCosto), 'ligado a órdenes de compra: está en el costo de los productos') : ''}
       ${kpi('IVA acreditable', $$(t.iva), nf(t.facturas) + ' facturas')}</div>`;
     if (tab === 'resumen') {
       html += `<div class="rejilla-2"><div class="tarjeta"><h3>Estado de gastos · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3>
@@ -2832,6 +2832,8 @@ const App = (() => {
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
           { t: 'Sucursal', h: (x) => `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
           { t: 'PDF', h: x => `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>` },
+          { t: 'Flete', h: x => x.flete ? `<button class="btn chico" style="color:var(--ok);border-color:var(--ok)" title="Flete ligado a ${x.flete} orden(es) de compra: está en el costo de esos productos" onclick="App.fleteLigar('${esc(x.uuid)}')">🚚 ${x.flete} OC</button>`
+            : `<button class="btn chico" ${x.fleteSug ? 'title="Parece flete: ligarlo a sus órdenes de compra"' : 'style="opacity:.4" title="Si es un flete que pagaste, ligarlo a sus órdenes de compra"'} onclick="App.fleteLigar('${esc(x.uuid)}')">🚚${x.fleteSug ? ' Ligar' : ''}</button>` },
           { t: 'UUID', cls: 'ocultar-movil', h: x => `<small class="muted">${esc(String(x.uuid).slice(0, 8))}…</small>` }], r.facturas, { vacio: 'Sin facturas' }) + '</div>';
     } else if (tab === 'inversion') {
       const tl = r.activos.reduce((a, x) => a + x.libros, 0), tm = r.activos.reduce((a, x) => a + x.monto, 0), ta = r.activos.reduce((a, x) => a + x.acumulada, 0);
@@ -2858,6 +2860,37 @@ const App = (() => {
         options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: x => x.dataset.label + ': ' + $$(x.raw) } } },
           scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: tickMoneda } } } } });
     }
+  }
+  /* ---------- Fletes que tú pagas → órdenes de compra ---------- */
+  async function fleteLigar(uuid) {
+    let r; try { r = await pedir('fleteSugerencias', { uuid: uuid }); } catch (e) { return; }
+    S.flete = r; const f = r.factura;
+    modal('🚚 Flete de compras', `<p><b>${esc(f.emisor)}</b> · ${esc(f.fecha)} · <b>${$$(f.monto)}</b> sin IVA <small class="muted">(${$$(f.total)} con IVA · ${esc(f.cat || '')})</small></p>
+      <p class="muted peq">Marca las órdenes de compra que viajaron en este flete. El monto sin IVA se reparte entre ellas según su valor y entra al <b>costo real</b> de sus productos; en el estado de resultados deja de contar como gasto de operación (su IVA sigue acreditable). Se muestran las órdenes de 60 días antes a 10 días después de la factura.</p>
+      <label>Buscar<input id="flTxt" placeholder="Folio, proveedor, factura, destino…" oninput="App.fleteSuma()"></label>
+      <div id="flLista" style="max-height:52vh;overflow:auto;margin-top:8px">${r.ocs.map(o => `<label class="check fl-oc" data-txt="${esc((o.folio + ' ' + o.proveedor + ' ' + o.factura + ' ' + o.entregar + ' ' + sucNom(o.suc)).toLowerCase())}" style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--borde)">
+        <input type="checkbox" class="flChk" value="${esc(o.id)}" data-v="${o.valor}" ${o.ligada ? 'checked' : ''} onchange="App.fleteSuma()" style="width:auto;margin-top:3px">
+        <span style="flex:1"><b>${esc(o.folio)}</b> · ${esc(o.fecha)} · ${esc(o.proveedor)}${o.factura ? ' · fact. ' + esc(o.factura) : ''}<br><small class="muted">${esc(sucNom(o.suc))}${o.entregar ? ' · entregar en: ' + esc(o.entregar) : ''}${o.fleteProv ? ' · el proveedor ya cobró ' + $$(o.fleteProv) + ' de flete' : ''}${o.otrosFletes ? ' · ya tiene ' + o.otrosFletes + ' flete(s) más' : ''}</small></span>
+        <span class="num"><b>${$$(o.valor)}</b><br><small class="muted fl-parte" data-id="${esc(o.id)}"></small></span></label>`).join('') || '<div class="vacio">No hay órdenes de compra en esas fechas</div>'}</div>
+      <p id="flRes" style="margin-top:8px"></p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button>${r.ligadas.length ? '<button class="btn peligro" onclick="App.fleteGuardar(true)">Desligar todo</button>' : ''}<button class="btn primario" onclick="App.fleteGuardar()">Guardar</button></div>`);
+    fleteSuma();
+  }
+  function fleteSuma() {
+    const r = S.flete; if (!r) return;
+    const q = ($('#flTxt') || {}).value ? $('#flTxt').value.toLowerCase() : '';
+    document.querySelectorAll('.fl-oc').forEach(el => { el.style.display = !q || el.dataset.txt.indexOf(q) >= 0 || el.querySelector('.flChk').checked ? '' : 'none'; });
+    const sel = [...document.querySelectorAll('.flChk')].filter(x => x.checked), tot = sel.reduce((a, x) => a + (+x.dataset.v || 0), 0);
+    document.querySelectorAll('.fl-parte').forEach(x => { x.textContent = ''; });
+    sel.forEach(x => { const m = tot ? r.factura.monto * (+x.dataset.v || 0) / tot : r.factura.monto / sel.length; const t = document.querySelector('.fl-parte[data-id="' + x.value + '"]'); if (t) t.textContent = 'flete ' + $$(m) + (x.dataset.v > 0 ? ' (' + (m / x.dataset.v * 100).toFixed(1) + '%)' : ''); });
+    $('#flRes').innerHTML = sel.length ? `${sel.length} orden(es) · mercancía ${$$(tot)} · flete ${$$(r.factura.monto)} = <b>${tot ? (r.factura.monto / tot * 100).toFixed(1) : '—'}%</b> sobre su valor` : '<span class="muted">Marca al menos una orden.</span>';
+  }
+  async function fleteGuardar(quitar) {
+    const r = S.flete; if (!r) return;
+    const ocs = quitar ? [] : [...document.querySelectorAll('.flChk')].filter(x => x.checked).map(x => x.value);
+    if (!quitar && !ocs.length) return toast('Marca al menos una orden de compra', true);
+    if (quitar && !confirm('¿Desligar este flete de sus órdenes? Vuelve a contar como gasto.')) return;
+    try { await pedir('ligarFleteOC', { uuid: r.factura.uuid, ocs: ocs }); S.costosReales = null; S.datGasKey = ''; cerrarModal(); toast(quitar ? 'Flete desligado: vuelve a gastos' : '✔ Flete repartido en ' + ocs.length + ' orden(es): ya está en el costo real'); if (S.vista === 'gastos') cargarGastos(); } catch (e) {}
   }
   async function asignarSucGastos(uuid, suc) {
     const uuids = uuid ? [uuid] : (S.listaFact || []).map(x => x.uuid);
@@ -3465,6 +3498,7 @@ const App = (() => {
       <div class="gran"><span>Total</span><span>${$$(d.total)}</span></div><div><span>Pagado</span><span>${$$(d.pagado)}</span></div><div><b>Saldo</b><b>${$$(d.saldo)}</b></div></div>
       ${tablaPagosOC(d)}</div></div>
       ${d.cancelada ? `<div class="tarjeta" style="margin-top:12px;border-color:var(--mal)"><b class="txt-mal">🚫 Orden cancelada.</b> <span class="muted">${esc(d.obs || '')}</span></div>` : ''}
+      ${puede('dueno') && (d.fletesPagados || []).length ? `<div class="tarjeta no-imprimir" style="margin-top:12px"><b>🚚 Flete que pagaste</b> <small class="muted">(se suma al costo real de estos productos, repartido por valor)</small>${d.fletesPagados.map(f => `<div class="peq" style="margin-top:4px">${esc(f.emisor)} · ${esc(f.fecha)} · factura ${$$(f.factura)} sin IVA${f.ordenes > 1 ? ', repartida entre ' + f.ordenes + ' órdenes' : ''} → a esta orden <b>${$$(f.monto)}</b> <a href="#" onclick="App.fleteLigar('${esc(f.uuid)}');return false">cambiar</a></div>`).join('')}</div>` : ''}
       ${pend.length && !d.cancelada && puede('compras') ? `<div class="tarjeta no-imprimir" style="margin-top:12px"><h3>Recibir mercancía en ${esc(sucNom(d.suc))}</h3><p class="muted peq" style="margin:0 0 8px">Captura el lote y la caducidad de cada producto, como vienen en la factura del proveedor.</p>
         ${pend.map(l => `<div class="fila" data-det="${esc(l.idDet)}" style="margin-bottom:6px"><div style="flex:2 1 200px"><b>${esc(l.nombre)}</b> × ${nf(l.cant)}</div>
           ${(prod(l.prod) || {}).usaLote === false ? '<small class="muted">Sin lote</small>' : `<label>Lote *<input data-k="Lote" value="${esc(l.lote === 'SIN LOTE' ? '' : l.lote)}"></label><label>Caducidad${(prod(l.prod) || {}).usaCad === false ? '' : ' *'}<input type="date" data-k="F_Caducidad" value="${isoDe(l.cad)}"></label>`}</div>`).join('')}
@@ -4530,38 +4564,40 @@ const App = (() => {
   async function invCostos() {
     $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label>Buscar<input id="icoTxt" placeholder="Producto, clave, laboratorio"></label>
       <label>Mostrar<select id="icoVer"><option value="err">Solo con posible error</option><option value="">Todos con existencia</option></select></label>
-      <label>Diferencia mayor a<select id="icoPct">${opts([['10', '10 %'], ['15', '15 %'], ['25', '25 %'], ['50', '50 %']], '15')}</select></label>
-      <label>Tu colchón financiero<input id="icoCol" type="number" min="0" max="200" step="0.5" value="${esc(String(invColchon()))}" style="max-width:110px"> <small class="muted">% sobre el costo real</small></label></div>
-      <p class="muted peq" style="margin-top:8px">Compara el <b>costo de lista</b> (Precio_Costo del catálogo) con el <b>costo real de compra</b> (lo pagado con descuentos ÷ piezas recibidas, incluidas las bonificadas a $0.01–$0.10, que entran sin costo, + flete, promedio de los últimos meses) y con el último costo. Tu costo de lista lleva un <b>colchón financiero</b>: la comparación es contra costo real + ese %, y el botón “Usar” pone en el catálogo el costo real + colchón. Marca posibles errores: sin costo, costo simbólico, costo arriba del precio al público, o diferencia grande. Las bonificaciones especiales (te regalan otro producto en la orden) reparten lo pagado entre lo comprado y lo regalado según su valor.</p></div>
+      <label>Diferencia mayor a<select id="icoPct">${opts([['10', '10 %'], ['15', '15 %'], ['25', '25 %'], ['50', '50 %']], '15')}</select></label></div>
+      <p class="muted peq" style="margin-top:8px">Compara el <b>costo de lista</b> (Precio_Costo del catálogo) con el <b>costo real de compra</b> (lo pagado con descuentos ÷ piezas recibidas, incluidas las bonificadas a $0.01–$0.10, que entran sin costo, + flete, promedio de los últimos meses) y con el último costo. Tu costo de lista (de la Matriz de precios) ya trae el colchón financiero de cada laboratorio, así que cada producto se compara contra el <b>colchón típico de su laboratorio</b> (la mediana de lista ÷ real de sus productos) y se marca el que se sale de ese rango. También marca: sin costo, costo simbólico ($0.01) y costo arriba del precio al público. El costo real incluye bonificaciones (también las de otro producto) y el flete que pagaste. Si corriges aquí, corrígelo también en la Matriz para que no se regrese al actualizar precios.</p></div>
       <div class="espacio"></div><div id="icoRes"><div class="vacio">Calculando costos reales…</div></div>`;
     try { S.costosReales = await pedir('costosReales', {}); S.costosRealesT = Date.now(); } catch (e) { $('#icoRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     const CR = S.costosReales.productos || {}, conEx = {}; (D().stock || []).forEach(s => { if (s.q > 0) conEx[s.p] = (conEx[s.p] || 0) + s.q; });
+    // colchón típico por laboratorio: mediana de (costo de lista ÷ costo real) de sus productos (mínimo 3)
+    const colLab = {}; { const rs = {}; (D().productos || []).forEach(p => { const c = CR[p.id] || {}, r0 = c.costoReal || c.ultimoCosto, l = p.costo || 0; if (r0 && l >= 0.105) (rs[p.lab || ''] = rs[p.lab || ''] || []).push(l / r0); });
+      Object.keys(rs).forEach(k => { const a = rs[k].sort((x, y) => x - y); if (a.length >= 3) colLab[k] = a.length % 2 ? a[(a.length - 1) / 2] : (a[a.length / 2 - 1] + a[a.length / 2]) / 2; }); }
     const pintar = () => {
-      const txt = $('#icoTxt').value, err = $('#icoVer').value === 'err', lim = +$('#icoPct').value, col = Math.max(0, +$('#icoCol').value || 0);
-      try { localStorage.setItem('ivColchon', String(col)); } catch (e) {}
+      const txt = $('#icoTxt').value, err = $('#icoVer').value === 'err', lim = +$('#icoPct').value;
       const l = (D().productos || []).filter(p => p.activo !== false && (!txt || coincide(p.id + ' ' + p.nombre + ' ' + (p.lab || ''), txt))).map(p => {
-        const c = CR[p.id] || {}, real = c.costoReal || null, ult = c.ultimoCosto || null, ref0 = real || ult, ref = ref0 ? Math.round(ref0 * (1 + col / 100) * 100) / 100 : null, lista = p.costo || 0, pub = (p.precios || {}).Publico || 0;
+        const c = CR[p.id] || {}, real = c.costoReal || null, ult = c.ultimoCosto || null, ref0 = real || ult, labR = colLab[p.lab || ''] || null, ref = ref0 ? Math.round(ref0 * (labR || 1) * 100) / 100 : null, lista = p.costo || 0, pub = (p.precios || {}).Publico || 0;
         const dif = ref && lista ? (lista - ref) / ref * 100 : null, mot = [];
         const simb = lista > 0 && lista < 0.105;
         if (!lista) mot.push('Sin costo de lista'); else if (simb) mot.push('Costo simbólico de bonificación ($' + lista.toFixed(2) + ')');
         if (lista && pub && lista >= pub) mot.push('Costo ≥ precio al público');
-        if (dif !== null && Math.abs(dif) > lim) mot.push((dif > 0 ? 'Lista ' : 'Lista ') + (dif > 0 ? 'arriba' : 'abajo') + ' del real ' + Math.abs(dif).toFixed(0) + ' %');
+        if (dif !== null && Math.abs(dif) > lim) mot.push(labR ? 'Fuera del colchón de su laboratorio (' + (dif > 0 ? '+' : '−') + Math.abs(dif).toFixed(0) + ' %)' : 'Lista ' + (dif > 0 ? 'arriba' : 'abajo') + ' del real ' + Math.abs(dif).toFixed(0) + ' %');
+        if (lista && ref0 && lista < ref0 && !simb) mot.push('Lista abajo de lo que pagas');
         if (!ref && conEx[p.id]) mot.push('Sin compras registradas');
-        return { p: p, real: real, ult: ult, ref: ref, lista: lista, pub: pub, dif: dif, mot: mot, ex: conEx[p.id] || 0, c: c };
+        return { p: p, real: real, ult: ult, ref: ref, labR: labR, lista: lista, pub: pub, dif: dif, mot: mot, ex: conEx[p.id] || 0, c: c };
       }).filter(x => err ? x.mot.length : x.ex > 0).sort((a, b) => (b.ex * Math.abs((b.lista || 0) - (b.ref || 0))) - (a.ex * Math.abs((a.lista || 0) - (a.ref || 0))));
       S.icoLista = l;
       $('#icoRes').innerHTML = `<p class="muted">${nf(l.length)} productos${err ? ' con posible error' : ''}.</p>` + tabla([{ t: '', h: (x, i) => x.ref && puede('productos_editar') ? `<input type="checkbox" class="icoChk" data-id="${esc(x.p.id)}" style="width:auto" onclick="event.stopPropagation()">` : '' },
         { t: 'Producto', h: x => `<b>${esc(x.p.nombre)}</b><br><small class="muted">${esc(x.p.id)} · ${esc(x.p.lab || '')}</small>` },
-        { t: 'Costo lista', num: 1, h: x => x.lista ? $$(x.lista) : '<span class="error">$0</span>' }, { t: 'Costo real', num: 1, h: x => x.real ? $$(x.real) + (x.c.bonificadas ? `<br><small class="muted">${nf(x.c.piezas)} pzs, ${nf(x.c.bonificadas)} bonificadas${x.c.bonifEspecial ? ' (' + nf(x.c.bonifEspecial) + ' regalo especial)' : ''}</small>` : '') + (col ? `<br><small class="muted">+${col}% = ${$$(x.ref)}</small>` : '') : (x.c.bonificadas ? '<small class="muted">solo bonificación</small>' : '—') },
+        { t: 'Costo lista', num: 1, h: x => (x.lista ? $$(x.lista) : '<span class="error">$0</span>') + (x.lista && x.real ? `<br><small class="muted">${x.lista >= x.real ? '+' : '−'}${Math.abs((x.lista / x.real - 1) * 100).toFixed(1)}% vs real</small>` : '') },
+        { t: 'Colchón típico lab.', num: 1, cls: 'ocultar-movil', h: x => x.labR ? '+' + ((x.labR - 1) * 100).toFixed(1) + '%' : '<span class="muted">—</span>' }, { t: 'Costo real', num: 1, h: x => x.real ? $$(x.real) + (x.c.bonificadas ? `<br><small class="muted">${nf(x.c.piezas)} pzs, ${nf(x.c.bonificadas)} bonificadas${x.c.bonifEspecial ? ' (' + nf(x.c.bonifEspecial) + ' regalo especial)' : ''}</small>` : '') + (x.c.flete ? `<br><small class="muted">incluye ${$$(x.c.flete)} de flete</small>` : '') : (x.c.bonificadas ? '<small class="muted">solo bonificación</small>' : '—') },
         { t: 'Último costo', num: 1, cls: 'ocultar-movil', h: x => x.ult ? `${$$(x.ult)}<br><small class="muted">${esc(x.c.ultimaOC || '')} ${esc(x.c.ultimaCompra || '')}</small>` : '—' },
         { t: 'Público', num: 1, cls: 'ocultar-movil', h: x => x.pub ? $$(x.pub) : '—' }, { t: 'Existencia', num: 1, cls: 'ocultar-movil', h: x => nf(x.ex) },
         { t: 'Revisar', h: x => x.mot.map(m => `<span class="etq ${/Sin costo|público|simbólico/.test(m) ? 'mal' : 'av'}">${esc(m)}</span>`).join(' ') || '<span class="etq ok">OK</span>' },
         { t: '', h: x => x.ref && puede('productos_editar') ? `<button class="btn chico" onclick="event.stopPropagation();App.invUsarReal('${esc(x.p.id)}')">Usar ${$$(x.ref)}</button>` : '' }], l.slice(0, 800), { vacio: 'Sin diferencias 👍' }) +
         (puede('productos_editar') && l.some(x => x.ref) ? `<div class="acciones"><button class="btn" onclick="App.invMarcarCostos()">Marcar todos</button><button class="btn primario" onclick="App.invUsarRealMarcados()">Usar costo real en los marcados</button></div>` : '');
     };
-    ['#icoTxt', '#icoVer', '#icoPct', '#icoCol'].forEach(x => enlazarFiltro(x, pintar)); pintar();
+    ['#icoTxt', '#icoVer', '#icoPct'].forEach(x => enlazarFiltro(x, pintar)); pintar();
   }
-  const invColchon = () => { try { return +localStorage.getItem('ivColchon') || 0; } catch (e) { return 0; } };
   const invRefCosto = id => { const x = (S.icoLista || []).find(y => y.p.id === id); return x ? x.ref : null; };
   async function invUsarReal(id) {
     const c = invRefCosto(id), p = prod(id); if (!c || !p) return;
@@ -5942,7 +5978,7 @@ const App = (() => {
     else if (!CR) { S.costosRealesT = Date.now(); try { CR = S.costosReales = await pedir('costosReales', {}); } catch (e) { CR = null; } }
     if (!CR) $('#pfBase').value = 'lista', $('#pfBase').disabled = true;
     $('#pNota').innerHTML = CR
-      ? `<p><b>Costo real</b> = lo pagado en compras (con descuentos) ÷ todas las piezas recibidas, incluidas las bonificadas (a $0, $0.01 … $0.10), + ${(CR.flete * 100).toFixed(0)}% de flete. Si en una orden te regalan otro producto, lo pagado se reparte entre lo comprado y lo regalado según su valor. No usa tu costo de lista. Promedio de los últimos ${CR.meses} meses, sin IVA.
+      ? `<p><b>Costo real</b> = lo pagado en compras (con descuentos) ÷ todas las piezas recibidas, incluidas las bonificadas (a $0, $0.01 … $0.10), + el flete que tú pagaste (el que cobra el proveedor en su factura y las facturas de flete ligadas en Gastos › Facturas › 🚚). Si en una orden te regalan otro producto, lo pagado se reparte entre lo comprado y lo regalado según su valor. No usa tu costo de lista. Promedio de los últimos ${CR.meses} meses, sin IVA.
          <b>Colchón</b> = cuánto está tu costo de lista arriba del costo real. Margen = (precio − costo) / precio. <span class="etq mal">rojo</span> &lt; 10% · <span class="etq av">ámbar</span> &lt; 20%.</p>`
       : (U().costoLista ? '<p>Margen calculado con el precio costo de la lista de precios.</p>' : '<p>Sin conexión: se muestra el margen con el costo de lista.</p>');
     const cr = p => CR && CR.productos[p.id] ? CR.productos[p.id] : null;
@@ -8755,7 +8791,7 @@ const App = (() => {
   /* ---------------- API pública (para onclick) ---------------- */
   return {
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, gastoACompra, asignarSucGastos, cargarSucursales, verSucursal,
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
