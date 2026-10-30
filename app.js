@@ -4530,15 +4530,17 @@ const App = (() => {
   async function invCostos() {
     $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label>Buscar<input id="icoTxt" placeholder="Producto, clave, laboratorio"></label>
       <label>Mostrar<select id="icoVer"><option value="err">Solo con posible error</option><option value="">Todos con existencia</option></select></label>
-      <label>Diferencia mayor a<select id="icoPct">${opts([['10', '10 %'], ['15', '15 %'], ['25', '25 %'], ['50', '50 %']], '15')}</select></label></div>
-      <p class="muted peq" style="margin-top:8px">Compara el <b>costo de lista</b> (Precio_Costo del catálogo) con el <b>costo real de compra</b> (lo pagado con descuentos ÷ piezas recibidas, incluidas las bonificadas a $0.01–$0.10, que entran sin costo, + flete, promedio de los últimos meses) y con el último costo. Marca posibles errores: sin costo, costo arriba del precio al público, o diferencia grande contra lo que realmente pagas. Con “Usar costo real” se corrige el catálogo.</p></div>
+      <label>Diferencia mayor a<select id="icoPct">${opts([['10', '10 %'], ['15', '15 %'], ['25', '25 %'], ['50', '50 %']], '15')}</select></label>
+      <label>Tu colchón financiero<input id="icoCol" type="number" min="0" max="200" step="0.5" value="${esc(String(invColchon()))}" style="max-width:110px"> <small class="muted">% sobre el costo real</small></label></div>
+      <p class="muted peq" style="margin-top:8px">Compara el <b>costo de lista</b> (Precio_Costo del catálogo) con el <b>costo real de compra</b> (lo pagado con descuentos ÷ piezas recibidas, incluidas las bonificadas a $0.01–$0.10, que entran sin costo, + flete, promedio de los últimos meses) y con el último costo. Tu costo de lista lleva un <b>colchón financiero</b>: la comparación es contra costo real + ese %, y el botón “Usar” pone en el catálogo el costo real + colchón. Marca posibles errores: sin costo, costo simbólico, costo arriba del precio al público, o diferencia grande. Las bonificaciones especiales (te regalan otro producto en la orden) reparten lo pagado entre lo comprado y lo regalado según su valor.</p></div>
       <div class="espacio"></div><div id="icoRes"><div class="vacio">Calculando costos reales…</div></div>`;
     try { S.costosReales = await pedir('costosReales', {}); S.costosRealesT = Date.now(); } catch (e) { $('#icoRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     const CR = S.costosReales.productos || {}, conEx = {}; (D().stock || []).forEach(s => { if (s.q > 0) conEx[s.p] = (conEx[s.p] || 0) + s.q; });
     const pintar = () => {
-      const txt = $('#icoTxt').value, err = $('#icoVer').value === 'err', lim = +$('#icoPct').value;
+      const txt = $('#icoTxt').value, err = $('#icoVer').value === 'err', lim = +$('#icoPct').value, col = Math.max(0, +$('#icoCol').value || 0);
+      try { localStorage.setItem('ivColchon', String(col)); } catch (e) {}
       const l = (D().productos || []).filter(p => p.activo !== false && (!txt || coincide(p.id + ' ' + p.nombre + ' ' + (p.lab || ''), txt))).map(p => {
-        const c = CR[p.id] || {}, real = c.costoReal || null, ult = c.ultimoCosto || null, ref = real || ult, lista = p.costo || 0, pub = (p.precios || {}).Publico || 0;
+        const c = CR[p.id] || {}, real = c.costoReal || null, ult = c.ultimoCosto || null, ref0 = real || ult, ref = ref0 ? Math.round(ref0 * (1 + col / 100) * 100) / 100 : null, lista = p.costo || 0, pub = (p.precios || {}).Publico || 0;
         const dif = ref && lista ? (lista - ref) / ref * 100 : null, mot = [];
         const simb = lista > 0 && lista < 0.105;
         if (!lista) mot.push('Sin costo de lista'); else if (simb) mot.push('Costo simbólico de bonificación ($' + lista.toFixed(2) + ')');
@@ -4550,15 +4552,16 @@ const App = (() => {
       S.icoLista = l;
       $('#icoRes').innerHTML = `<p class="muted">${nf(l.length)} productos${err ? ' con posible error' : ''}.</p>` + tabla([{ t: '', h: (x, i) => x.ref && puede('productos_editar') ? `<input type="checkbox" class="icoChk" data-id="${esc(x.p.id)}" style="width:auto" onclick="event.stopPropagation()">` : '' },
         { t: 'Producto', h: x => `<b>${esc(x.p.nombre)}</b><br><small class="muted">${esc(x.p.id)} · ${esc(x.p.lab || '')}</small>` },
-        { t: 'Costo lista', num: 1, h: x => x.lista ? $$(x.lista) : '<span class="error">$0</span>' }, { t: 'Costo real', num: 1, h: x => x.real ? $$(x.real) + (x.c.bonificadas ? `<br><small class="muted">${nf(x.c.piezas)} pzs, ${nf(x.c.bonificadas)} bonificadas</small>` : '') : (x.c.bonificadas ? '<small class="muted">solo bonificación</small>' : '—') },
+        { t: 'Costo lista', num: 1, h: x => x.lista ? $$(x.lista) : '<span class="error">$0</span>' }, { t: 'Costo real', num: 1, h: x => x.real ? $$(x.real) + (x.c.bonificadas ? `<br><small class="muted">${nf(x.c.piezas)} pzs, ${nf(x.c.bonificadas)} bonificadas${x.c.bonifEspecial ? ' (' + nf(x.c.bonifEspecial) + ' regalo especial)' : ''}</small>` : '') + (col ? `<br><small class="muted">+${col}% = ${$$(x.ref)}</small>` : '') : (x.c.bonificadas ? '<small class="muted">solo bonificación</small>' : '—') },
         { t: 'Último costo', num: 1, cls: 'ocultar-movil', h: x => x.ult ? `${$$(x.ult)}<br><small class="muted">${esc(x.c.ultimaOC || '')} ${esc(x.c.ultimaCompra || '')}</small>` : '—' },
         { t: 'Público', num: 1, cls: 'ocultar-movil', h: x => x.pub ? $$(x.pub) : '—' }, { t: 'Existencia', num: 1, cls: 'ocultar-movil', h: x => nf(x.ex) },
         { t: 'Revisar', h: x => x.mot.map(m => `<span class="etq ${/Sin costo|público|simbólico/.test(m) ? 'mal' : 'av'}">${esc(m)}</span>`).join(' ') || '<span class="etq ok">OK</span>' },
         { t: '', h: x => x.ref && puede('productos_editar') ? `<button class="btn chico" onclick="event.stopPropagation();App.invUsarReal('${esc(x.p.id)}')">Usar ${$$(x.ref)}</button>` : '' }], l.slice(0, 800), { vacio: 'Sin diferencias 👍' }) +
         (puede('productos_editar') && l.some(x => x.ref) ? `<div class="acciones"><button class="btn" onclick="App.invMarcarCostos()">Marcar todos</button><button class="btn primario" onclick="App.invUsarRealMarcados()">Usar costo real en los marcados</button></div>` : '');
     };
-    ['#icoTxt', '#icoVer', '#icoPct'].forEach(x => enlazarFiltro(x, pintar)); pintar();
+    ['#icoTxt', '#icoVer', '#icoPct', '#icoCol'].forEach(x => enlazarFiltro(x, pintar)); pintar();
   }
+  const invColchon = () => { try { return +localStorage.getItem('ivColchon') || 0; } catch (e) { return 0; } };
   const invRefCosto = id => { const x = (S.icoLista || []).find(y => y.p.id === id); return x ? x.ref : null; };
   async function invUsarReal(id) {
     const c = invRefCosto(id), p = prod(id); if (!c || !p) return;
@@ -5939,7 +5942,7 @@ const App = (() => {
     else if (!CR) { S.costosRealesT = Date.now(); try { CR = S.costosReales = await pedir('costosReales', {}); } catch (e) { CR = null; } }
     if (!CR) $('#pfBase').value = 'lista', $('#pfBase').disabled = true;
     $('#pNota').innerHTML = CR
-      ? `<p><b>Costo real</b> = lo pagado en compras (con descuentos) ÷ todas las piezas recibidas, incluidas las bonificadas (a $0, $0.01 … $0.10), + ${(CR.flete * 100).toFixed(0)}% de flete. Promedio de los últimos ${CR.meses} meses, sin IVA.
+      ? `<p><b>Costo real</b> = lo pagado en compras (con descuentos) ÷ todas las piezas recibidas, incluidas las bonificadas (a $0, $0.01 … $0.10), + ${(CR.flete * 100).toFixed(0)}% de flete. Si en una orden te regalan otro producto, lo pagado se reparte entre lo comprado y lo regalado según su valor. No usa tu costo de lista. Promedio de los últimos ${CR.meses} meses, sin IVA.
          <b>Colchón</b> = cuánto está tu costo de lista arriba del costo real. Margen = (precio − costo) / precio. <span class="etq mal">rojo</span> &lt; 10% · <span class="etq av">ámbar</span> &lt; 20%.</p>`
       : (U().costoLista ? '<p>Margen calculado con el precio costo de la lista de precios.</p>' : '<p>Sin conexión: se muestra el margen con el costo de lista.</p>');
     const cr = p => CR && CR.productos[p.id] ? CR.productos[p.id] : null;
@@ -5952,7 +5955,7 @@ const App = (() => {
       if (CR) cols.push(
         { t: 'Costo real', num: 1, h: p => { const c = cr(p); if (!c) return '<span class="muted">sin compras</span>';
           if (!c.costoReal) return '<span class="etq av">solo bonificación</span>';
-          return `<b>${$$(c.costoReal)}</b><br><small class="muted">últ. ${$$(c.ultimoCosto)} · ${esc(c.ultimaCompra)}${c.bonificadas ? '<br>' + nf(c.bonificadas) + ' de ' + nf(c.piezas) + ' pzs bonif.' : ''}</small>`; } },
+          return `<b>${$$(c.costoReal)}</b><br><small class="muted">últ. ${$$(c.ultimoCosto)} · ${esc(c.ultimaCompra)}${c.bonificadas ? '<br>' + nf(c.bonificadas) + ' de ' + nf(c.piezas) + ' pzs bonif.' + (c.bonifEspecial ? ' (' + nf(c.bonifEspecial) + ' regalo)' : '') : ''}</small>`; } },
         { t: 'Colchón', num: 1, h: p => { const c = cr(p); if (!c || !c.costoReal || !p.costo) return '<span class="muted">—</span>';
           const d = (p.costo - c.costoReal) / c.costoReal * 100; return `<span class="etq ${d < 0 ? 'mal' : 'ok'}">${d >= 0 ? '+' : ''}${d.toFixed(1)}%</span>`; } });
       $('#pRes').innerHTML = `<p class="muted">${l.length} productos</p>` + tabla(cols.concat(listas.map(x => ({ t: x, num: 1, h: p => { const m = mg(p, x); if (m === null) return '<span class="muted">—</span>';
