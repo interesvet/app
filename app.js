@@ -3880,10 +3880,10 @@ const App = (() => {
       $('#tCont').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
         <label>Desde<input type="date" id="ftDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="ftHasta" value="${f.hasta}"></label>
         ${U().todasSucursales ? `<label>Sucursal (origen o destino)<select id="ftSuc">${opts(todas, f.sucursal || '', 'Todas')}</select></label>` : ''}
-        <label>Origen<select id="ftOri">${opts(todas, f.origen, 'Todas')}</select></label><label>Destino<select id="ftDes">${opts(todas, f.destino, 'Todas')}</select></label>
+        <label class="f-origen">📤 Origen (envía)<select id="ftOri">${opts(todas, f.origen, 'Todas')}</select></label><label class="f-destino">📥 Destino (recibe)<select id="ftDes">${opts(todas, f.destino, 'Todas')}</select></label>
         <label>Buscar<input id="ftTxt" placeholder="Folio o quien recibió" value="${esc(f.texto)}"></label>
         <button class="btn primario fijo" onclick="App.cargarTraspasos()">Buscar</button>
-        <button class="btn fijo" onclick="App.pdfReporteTraspasos()">📄 Reporte PDF</button></div></div><div class="espacio"></div><div id="trRes"><div class="vacio">Cargando…</div></div>`;
+        ${puedeRep() ? `<button class="btn fijo" onclick="App.pdfReporteTraspasos()">📄 Reporte PDF</button><button class="btn fijo" onclick="App.excelTraspasos()">📊 Excel (por producto)</button>${puedeRepC() ? '<label class="check fijo"><input type="checkbox" id="ftCostos" style="width:auto"> Incluir costos</label>' : ''}` : ''}</div></div><div class="espacio"></div><div id="trRes"><div class="vacio">Cargando…</div></div>`;
       $('#ftTxt').onkeydown = e => { if (e.key === 'Enter') cargarTraspasos(); };
       agregarMesAnio('ftDesde', 'ftHasta', cargarTraspasos, 'traspasos');
       if ($('#ftSuc')) $('#ftSuc').onchange = cargarTraspasos;
@@ -3965,7 +3965,7 @@ const App = (() => {
     }
     S.lista = r.docs;
     $('#trRes').innerHTML = tot + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` },
-      { t: 'Origen', h: x => esc(sucNom(x.origen)) }, { t: 'Destino', h: x => esc(sucNom(x.destino)) }, { t: 'Renglones', num: 1, cls: 'ocultar-movil', h: x => nf(x.renglones) },
+      { t: 'Origen', h: x => `<span class="etq origen">${esc(sucNom(x.origen))}</span>` }, { t: 'Destino', h: x => `<span class="etq destino">${esc(sucNom(x.destino))}</span>` }, { t: 'Renglones', num: 1, cls: 'ocultar-movil', h: x => nf(x.renglones) },
       { t: 'Piezas', num: 1, h: x => nf(x.piezas) }].concat(imp ? [{ t: 'Valor', num: 1, h: x => $$(x.valor) }] : []).concat(verC ? [{ t: U().costoLista ? 'Costo lista' : 'Costo real', num: 1, cls: 'ocultar-movil', h: x => $$(x.costo) }] : [])
       .concat([{ t: 'Envío', cls: 'ocultar-movil', h: x => x.envio ? `${esc(x.envio)}${x.guia ? `<br><small class="muted">Guía ${esc(x.guia)}</small>` : ''}` : (x.editable ? '<span class="etq av">Sin capturar</span>' : '<span class="muted">—</span>') }])
       .concat(imp ? [{ t: 'Flete', num: 1, cls: 'ocultar-movil', h: x => x.flete !== null && x.flete !== undefined ? $$(x.flete) : '<span class="muted">—</span>' }] : [])
@@ -4055,17 +4055,18 @@ const App = (() => {
     const f = alDia(S.freq);
     $('#vista').innerHTML = barra + `<div class="tarjeta no-imprimir"><div class="fila">
       <label>Desde<input type="date" id="rqDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="rqHasta" value="${f.hasta}"></label>
-      ${U().todasSucursales ? `<label>Sucursal (solicita o surte)<select id="rqSuc">${opts(D().sucursales || [], f.sucursal || '', 'Todas')}</select></label>` : ''}
+      ${U().todasSucursales ? `<label class="f-origen">📤 Surte (envía)<select id="rqSur">${opts(D().sucursales || [], f.surte || '', 'Todas')}</select></label><label class="f-destino">📥 Solicita (recibe)<select id="rqSol">${opts(D().sucursales || [], f.solicita || '', 'Todas')}</select></label>` : ''}
       <label>Estado<select id="rqEst">${opts([['Abierta', 'Abiertas'], ['Surtida', 'Surtidas'], ['Surtida parcial', 'Surtidas en parte (pendiente en otra)'], ['Cerrada', 'Cerradas'], ['Cancelada', 'Canceladas']], f.estado, 'Todas')}</select></label>
       <label>Buscar<input id="rqTxt" placeholder="Folio, producto o comentario" value="${esc(f.texto)}"></label>
-      <button class="btn primario fijo" onclick="App.cargarReq()">Buscar</button></div></div><div class="espacio"></div><div id="lReq"><div class="vacio">Cargando…</div></div>`;
+      <button class="btn primario fijo" onclick="App.cargarReq()">Buscar</button>
+      ${puedeRep() ? `<button class="btn fijo" onclick="App.exportReq('pdf')">📄 PDF</button><button class="btn fijo" onclick="App.exportReq('xlsx')">📊 Excel</button>${puedeRepC() ? '<label class="check fijo"><input type="checkbox" id="rqCostos" style="width:auto"> Incluir costos</label>' : ''}` : ''}</div></div><div class="espacio"></div><div id="lReq"><div class="vacio">Cargando…</div></div>`;
     $('#rqTxt').onkeydown = e => { if (e.key === 'Enter') cargarReq(); };
-    $('#rqEst').onchange = cargarReq; if ($('#rqSuc')) $('#rqSuc').onchange = cargarReq;
+    $('#rqEst').onchange = cargarReq; ['#rqSur', '#rqSol'].forEach(x => { if ($(x)) $(x).onchange = cargarReq; });
     agregarMesAnio('rqDesde', 'rqHasta', cargarReq);
     cargarReq();
   };
   async function cargarReq() {
-    S.freq = marcarHoy({ desde: $('#rqDesde').value, hasta: $('#rqHasta').value, estado: $('#rqEst').value, texto: $('#rqTxt').value.trim(), sucursal: $('#rqSuc') ? $('#rqSuc').value : '' });
+    S.freq = marcarHoy({ desde: $('#rqDesde').value, hasta: $('#rqHasta').value, estado: $('#rqEst').value, texto: $('#rqTxt').value.trim(), surte: $('#rqSur') ? $('#rqSur').value : '', solicita: $('#rqSol') ? $('#rqSol').value : '' });
     let r; try { r = await pedir('listarRequisiciones', S.freq); } catch (e) { if ($('#lReq')) $('#lReq').innerHTML = '<div class="vacio">Consultar requisiciones requiere conexión.</div>'; return; }
     if (!$('#lReq')) return;
     S.lista = r.requisiciones; const k = r.kpi;
@@ -4073,7 +4074,7 @@ const App = (() => {
       <div class="kpi"><small>Requisiciones</small><b>${nf(k.total)}</b><span>${nf(k.surtidas)} surtidas</span></div>
       <div class="kpi"><small>Por surtir</small><b>${nf(k.abiertas + k.parciales)}</b><span>${nf(k.abiertas)} abiertas · ${nf(k.parciales)} en parte</span></div>
       <div class="kpi"><small>Piezas pendientes</small><b>${nf(k.pzsPendientes)}</b><span>de las requisiciones abiertas</span></div></div>` +
-      tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Solicita', h: x => esc(sucNom(x.solicita)) }, { t: 'Surte', h: x => esc(sucNom(x.surte)) },
+      tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Surte (envía)', h: x => `<span class="etq origen">${esc(sucNom(x.surte))}</span>` }, { t: 'Solicita (recibe)', h: x => `<span class="etq destino">${esc(sucNom(x.solicita))}</span>` },
         { t: 'Productos', num: 1, cls: 'ocultar-movil', h: x => nf(x.renglones) }, { t: 'Piezas', num: 1, h: x => nf(x.piezas) },
         { t: 'Pendiente', num: 1, h: x => x.pendiente ? `<b>${nf(x.pendiente)}</b>` : '—' }, { t: 'Estado', h: x => etqReq(x.estado) + (x.requerida && x.pendiente ? `<br><small class="muted">para el ${esc(x.requerida)}</small>` : '') },
         { t: 'Traspasos / OC', cls: 'ocultar-movil', h: x => esc([x.traspasos, x.ocs].filter(Boolean).join(' · ')) || '—' }], r.requisiciones, { clic: 'App.abrirReq', vacio: 'Sin requisiciones en el periodo' });
@@ -4178,6 +4179,59 @@ const App = (() => {
         ${(d.estado === 'Cerrada' || d.estado === 'Cancelada') && !d.continuaEn ? `<button class="btn" onclick="App.reabrirReq('${d.id}')">↩️ Reabrir</button>` : ''}${d.continuaEn && d.continuaId ? `<button class="btn primario" onclick="App.verReq('${esc(d.continuaId)}')">📑 Ver ${esc(d.continuaEn)} (pendiente)</button>` : ''}
         ${d.activa ? `<button class="btn peligro" onclick="App.cancelarReq('${d.id}')">${d.tot.surtido ? 'Cerrar (ya no surtir lo pendiente)' : 'Cancelar'}</button>` : ''}
       </div>`);
+  }
+  /* ---------- Reportes para sucursales (Excel / PDF): solo el dueño o a quien él autorice ---------- */
+  const puedeRep = () => puede('dueno') || puede('reportes_sucursales');
+  const puedeRepC = () => puede('dueno') || (puede('reportes_costos') && puede('ver_costos'));
+  const fTxt = f => [f.desde && f.hasta ? 'Del ' + fechaTxt(f.desde) + ' al ' + fechaTxt(f.hasta) : 'Todas las fechas'].concat(
+    f.surte ? ['Surte (envía): ' + sucNom(f.surte)] : [], f.solicita ? ['Solicita (recibe): ' + sucNom(f.solicita)] : [], f.origen ? ['Origen: ' + sucNom(f.origen)] : [], f.destino ? ['Destino: ' + sucNom(f.destino)] : [],
+    f.sucursal ? ['Sucursal: ' + sucNom(f.sucursal)] : [], f.estado ? ['Estado: ' + f.estado] : [], f.texto ? ['Búsqueda: ' + f.texto] : []).join(' · ');
+  async function exportReq(tipo) {
+    cargarReq(); const f = Object.assign({}, S.freq, { costos: !!($('#rqCostos') && $('#rqCostos').checked) });
+    toast('Armando ' + (tipo === 'pdf' ? 'PDF' : 'Excel') + '…');
+    let r; try { r = await pedir('exportRequisiciones', f); } catch (e) { return; }
+    const c = r.costos, nom = 'Requisiciones ' + (f.desde || '') + ' a ' + (f.hasta || '');
+    if (!r.filas.length) return toast('No hay requisiciones con esos filtros', true);
+    try {
+      if (tipo === 'xlsx') {
+        const blob = await excelLocal(nom, [
+          { nombre: 'Detalle por producto', titulo: 'Requisiciones de traspaso · detalle por producto', sub: [fTxt(f), 'Surte = sucursal que envía · Solicita = sucursal que recibe'],
+            resumen: [['Requisiciones', r.requisiciones.length, 'num'], ['Piezas solicitadas', r.filas.reduce((a, x) => a + x.cant, 0), 'num'], ['Surtidas', r.filas.reduce((a, x) => a + x.surtido, 0), 'num'], ['Pendientes', r.filas.reduce((a, x) => a + x.pendiente, 0), 'num']],
+            cols: [{ t: 'Fecha', w: 11 }, { t: 'Folio', w: 14 }, { t: 'Surte (envía)', w: 18 }, { t: 'Solicita (recibe)', w: 18 }, { t: 'Clave', w: 11 }, { t: 'Producto', w: 36 }, { t: 'Solicitado', w: 11, fmt: 'num', suma: 1 }, { t: 'Surtido', w: 10, fmt: 'num', suma: 1 }, { t: 'Pendiente', w: 10, fmt: 'num', suma: 1 }, { t: 'Estado', w: 12 }]
+              .concat(c ? [{ t: 'Costo u.', w: 11, fmt: 'mon' }, { t: 'Costo pendiente', w: 14, fmt: 'mon', suma: 1 }] : []).concat([{ t: 'Traspasos', w: 18 }, { t: 'Órdenes de compra', w: 16 }]),
+            filas: r.filas.map(x => ({ v: [x.fecha, x.folio, sucNom(x.surte), sucNom(x.solicita), x.prod, x.nombre, x.cant, x.surtido, x.pendiente, x.estado].concat(c ? [x.costoU, x.costoPend] : []).concat([x.traspasos, x.ocs]), tono: x.pendiente ? 'av' : '' })) },
+          { nombre: 'Requisiciones', titulo: 'Requisiciones de traspaso', sub: [fTxt(f)],
+            cols: [{ t: 'Fecha', w: 11 }, { t: 'Folio', w: 14 }, { t: 'Surte (envía)', w: 18 }, { t: 'Solicita (recibe)', w: 18 }, { t: 'Productos', w: 10, fmt: 'num' }, { t: 'Piezas', w: 10, fmt: 'num', suma: 1 }, { t: 'Pendiente', w: 10, fmt: 'num', suma: 1 }, { t: 'Estado', w: 12 }, { t: 'Para el', w: 11 }, { t: 'Traspasos', w: 18 }, { t: 'Comentarios', w: 30 }],
+            filas: r.requisiciones.map(x => ({ v: [x.fecha, x.folio, sucNom(x.surte), sucNom(x.solicita), x.renglones, x.piezas, x.pendiente, x.estado, x.requerida, x.traspasos, x.obs] })) }]);
+        entregarArchivo(blob, nom + '.xlsx', 'Excel de requisiciones');
+      } else {
+        const bytes = await pdfLocal({ titulo: 'REPORTE DE REQUISICIONES', folio: '', fecha: hoyISO().split('-').reverse().join('/'), extra: [fTxt(f)], izq: ['Requisiciones de traspaso', 'Surte = envía · Solicita = recibe'], der: [nf(r.requisiciones.length) + ' requisiciones', nf(r.filas.reduce((a, x) => a + x.pendiente, 0)) + ' piezas pendientes'],
+          cols: [{ t: 'Fecha', w: .08 }, { t: 'Folio', w: .1 }, { t: 'Surte', w: .12 }, { t: 'Solicita', w: .12 }, { t: 'Producto', w: c ? .26 : .34 }, { t: 'Solic.', w: .07, num: 1 }, { t: 'Surt.', w: .07, num: 1 }, { t: 'Pend.', w: .07, num: 1 }].concat(c ? [{ t: 'Costo pend.', w: .11, num: 1 }] : []).concat([{ t: 'Estado', w: .08 }]),
+          filas: r.filas.map(x => [x.fecha, x.folio, sucNom(x.surte), sucNom(x.solicita), x.nombre, nf(x.cant), nf(x.surtido), nf(x.pendiente)].concat(c ? [$$(x.costoPend)] : []).concat([x.estado])),
+          suma: ['', '', '', '', 'Total', nf(r.filas.reduce((a, x) => a + x.cant, 0)), nf(r.filas.reduce((a, x) => a + x.surtido, 0)), nf(r.filas.reduce((a, x) => a + x.pendiente, 0))].concat(c ? [$$(r.filas.reduce((a, x) => a + (x.costoPend || 0), 0))] : []).concat(['']), archivo: nom + '.pdf' });
+        verPdf(bytes, nom + '.pdf');
+      }
+    } catch (e) { toast('No se pudo armar el archivo: ' + (e.message || e), true); }
+  }
+  async function excelTraspasos() {
+    const f = Object.assign({}, leerFiltrosTr(), { costos: !!($('#ftCostos') && $('#ftCostos').checked) });
+    toast('Armando Excel…');
+    let r; try { r = await pedir('exportTraspasos', f); } catch (e) { return; }
+    if (!r.filas.length) return toast('No hay traspasos con esos filtros', true);
+    const c = r.costos, nom = 'Traspasos ' + (f.desde || '') + ' a ' + (f.hasta || '');
+    try {
+      const blob = await excelLocal(nom, [
+        { nombre: 'Detalle por producto', titulo: 'Traspasos entre sucursales · detalle por producto', sub: [fTxt(f), 'Origen = sucursal que envía · Destino = sucursal que recibe'],
+          resumen: [['Traspasos', r.docs.length, 'num'], ['Piezas', r.filas.reduce((a, x) => a + x.cant, 0), 'num']].concat(c ? [['Costo real', r.filas.reduce((a, x) => a + (x.costo || 0), 0), 'mon']] : []),
+          cols: [{ t: 'Fecha', w: 11 }, { t: 'Folio', w: 14 }, { t: 'Origen (envía)', w: 18 }, { t: 'Destino (recibe)', w: 18 }, { t: 'Clave', w: 11 }, { t: 'Producto', w: 36 }, { t: 'Lote', w: 12 }, { t: 'Caducidad', w: 11 }, { t: 'Piezas', w: 9, fmt: 'num', suma: 1 }]
+            .concat(c ? [{ t: 'Costo u.', w: 11, fmt: 'mon' }, { t: 'Costo', w: 13, fmt: 'mon', suma: 1 }] : []).concat([{ t: 'Envío', w: 16 }, { t: 'Guía', w: 14 }, { t: 'Recibió', w: 18 }]),
+          filas: r.filas.map(x => ({ v: [x.fecha, x.folio, sucNom(x.origen), sucNom(x.destino), x.prod, x.nombre, x.lote, x.cad, x.cant].concat(c ? [x.costoU, x.costo] : []).concat([x.envio, x.guia, x.recibio]) })) },
+        { nombre: 'Traspasos', titulo: 'Traspasos entre sucursales', sub: [fTxt(f)],
+          cols: [{ t: 'Fecha', w: 11 }, { t: 'Folio', w: 14 }, { t: 'Origen (envía)', w: 18 }, { t: 'Destino (recibe)', w: 18 }, { t: 'Productos', w: 10, fmt: 'num' }, { t: 'Piezas', w: 10, fmt: 'num', suma: 1 }]
+            .concat(c ? [{ t: 'Valor (lista destino)', w: 15, fmt: 'mon', suma: 1 }, { t: 'Costo real', w: 13, fmt: 'mon', suma: 1 }, { t: 'Flete', w: 11, fmt: 'mon', suma: 1 }] : []).concat([{ t: 'Envío', w: 16 }, { t: 'Guía', w: 14 }, { t: 'Recibió', w: 18 }]),
+          filas: r.docs.map(x => ({ v: [x.fecha, x.folio, sucNom(x.origen), sucNom(x.destino), x.renglones, x.piezas].concat(c ? [x.valor, x.costo, x.flete] : []).concat([x.envio, x.guia, x.recibio]) })) }]);
+      entregarArchivo(blob, nom + '.xlsx', 'Excel de traspasos');
+    } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
   }
   function pdfReq(id) { const d = S.ultimaReq || {}; generarPdf('pdfRequisicion', { id: id }, { asunto: 'Requisición ' + (d.folio || ''), texto: 'Interés Veterinario® — Requisición de traspaso ' + (d.folio || ''), volver: `App.verReq('${id}')` }); }
   function editarReq() {
@@ -4517,7 +4571,7 @@ const App = (() => {
   };
   function invExist() {
     const cats = [...new Set((D().productos || []).map(p => p.categoria).filter(Boolean))].sort();
-    $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label>Sucursal<select id="ieSuc">${U().todasSucursales ? optsSuc(sucFiltro(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
+    $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label class="f-clave">🏬 Sucursal<select id="ieSuc">${U().todasSucursales ? optsSuc(sucFiltro(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
       <label>Buscar<input id="ieTxt" placeholder="Producto, clave, laboratorio"></label><label>Categoría<select id="ieCat">${opts(cats.map(c => [c, c]), '', 'Todas')}</select></label>
       <label class="check fijo"><input type="checkbox" id="ieMin"> Bajo mínimo</label><button class="btn fijo" onclick="App.actualizarStock()">⟳ Actualizar</button><button class="btn fijo" onclick="App.excelInventario()">📊 Exportar a Excel</button></div></div><div class="espacio"></div><div id="ieRes"></div>`;
     ['#ieSuc', '#ieTxt', '#ieCat', '#ieMin'].forEach(s => enlazarFiltro(s, pintarExist));
@@ -4562,7 +4616,7 @@ const App = (() => {
         ${tarj('⏳', 'Por caducar (≤ ' + diasLim + ' días)', verC ? $$(prox.v) : nf(prox.q) + ' pzas', (verC ? nf(prox.q) + ' piezas · ' : '') + nf(prox.l.length) + ' lotes', prox.l.length ? "invVerCad('prox')" : '', 'av')}
       </div>
       <p class="muted peq">El valor de existencias cuenta solo las piezas que hay físicamente (lo que está en negativo no suma). Lo que está por llegar va aparte y no se suma a la existencia; lo requisitado sin orden de compra no cuenta.${neg ? ` · ⚠️ ${nf(neg)} productos con existencia negativa (revisa su kardex).` : ''}</p>` +
-      tabla([{ t: 'Clave', k: 'p' }, { t: 'Producto', h: x => esc(x.prod.nombre) }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(x.s ? sucNom(x.s) : 'Todas') },
+      tabla([{ t: 'Clave', k: 'p' }, { t: 'Producto', h: x => esc(x.prod.nombre) }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => x.s ? `<span class="etq suc">${esc(sucNom(x.s))}</span>` : '<span class="muted">Todas</span>' },
         { t: 'Lotes', num: 1, k: 'lotes' }, { t: 'Próx. caducidad', h: x => x.cad ? x.cad.toLocaleDateString('es-MX') : '—' },
         { t: 'Existencia', num: 1, h: x => `<b class="${x.q < 0 ? 'error' : ''}">${nf(x.q)}</b> ${x.prod.min && x.q < x.prod.min ? '<span class="etq av">Bajo mín.</span>' : ''}` }]
         .concat(verC ? [{ t: 'Costo u.', num: 1, cls: 'ocultar-movil', h: x => $$(invCosto(x.prod)) }, { t: 'Valor', num: 1, h: x => x.q > 0 ? $$(x.q * invCosto(x.prod)) : '—' }] : []), filas.slice(0, 1500), { clic: 'App.abrirExistencia' });
@@ -8823,7 +8877,7 @@ const App = (() => {
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
-    vistaReq: t => V.requisiciones(t), cargarReq, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
+    vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes, invVerPL, invVerCad, invUsarReal, invMarcarCostos, invUsarRealMarcados,

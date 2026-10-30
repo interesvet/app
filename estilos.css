@@ -876,6 +876,16 @@ small.ok { color: var(--ok); }
   .fab-rap button span { font-size: 18px; }
 }
 #btnCfg { font-size: 18px; }
+
+/* filtros y columnas destacados: sucursal, origen (amarillo) y destino (verde) */
+.f-clave select { border: 2px solid var(--primario, #1f6f4a); background: rgba(31,111,74,.08); font-weight: 600; }
+.f-origen select { border: 2px solid #d4a017; background: rgba(240,190,40,.16); font-weight: 600; }
+.f-destino select { border: 2px solid #2e8b57; background: rgba(46,139,87,.13); font-weight: 600; }
+.f-clave, .f-origen, .f-destino { font-weight: 600; }
+.etq.origen { background: rgba(240,190,40,.22); color: #7a5600; font-weight: 600; }
+.etq.destino { background: rgba(46,139,87,.16); color: #1f6f4a; font-weight: 600; }
+.etq.suc { background: rgba(31,111,74,.10); color: #1f6f4a; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .etq.origen { color: #f2cf6b; } .etq.destino, .etq.suc { color: #7fd3a3; } }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
