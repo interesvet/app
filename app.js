@@ -3136,28 +3136,52 @@ const App = (() => {
       <label>Desde<input type="date" id="cDesde" value="${ini}"></label><label>Hasta<input type="date" id="cHasta" value="${h}"></label>
       ${U().todasSucursales ? `<label>Sucursal<select id="cSuc">${optsSuc('', false, 'Todas')}</select></label>` : ''}
       <label>Forma de pago<select id="cForma">${opts((D().catalogos || {}).formasPago || [], '', 'Todas')}</select></label>
-      <label>Buscar<input id="cTxt" placeholder="Cliente o folio"></label><button class="btn primario fijo" onclick="App.buscarCobros()">Buscar</button></div>
-      <p class="muted" style="margin:10px 0 0;font-size:12.5px">Para ver lo que falta cobrar usa la pestaña Notas de venta › “Cuentas por cobrar”.</p></div>
+      <label>Facturación<select id="cFact">${opts([['facturado', '✔ Ya facturado'], ['pendiente', '⚠️ Por reportar (sin factura)'], ['parcial', '◐ Facturado en parte']], '', 'Todo')}</select></label>
+      <label>Buscar<input id="cTxt" placeholder="Cliente o folio"></label><button class="btn primario fijo" onclick="App.buscarCobros()">Buscar</button>
+      <button class="btn fijo" onclick="App.excelCobros()">📊 Excel para cierre</button></div>
+      <p class="muted" style="margin:10px 0 0;font-size:12.5px">Para el cierre fiscal del mes: cada cobro dice si su nota ya tiene factura. Lo <b>por reportar</b> es lo cobrado sin factura (va en tu factura global o falta facturarlo). Los cobros de facturas <b>PPD</b> necesitan su complemento de pago. Para ver lo que falta cobrar usa Notas de venta › “Cuentas por cobrar”.</p></div>
       <div class="espacio"></div><div id="lCob"></div>`;
-    agregarMesAnio('cDesde', 'cHasta', buscarCobros);
+    agregarMesAnio('cDesde', 'cHasta', buscarCobros); $('#cFact').onchange = buscarCobros;
     buscarCobros();
   };
   async function buscarCobros() {
     try {
-      const l = await pedir('listarCobros', { desde: $('#cDesde').value, hasta: $('#cHasta').value, sucursal: $('#cSuc') ? $('#cSuc').value : '', forma: $('#cForma').value, texto: $('#cTxt').value });
+      const l = await pedir('listarCobros', { desde: $('#cDesde').value, hasta: $('#cHasta').value, sucursal: $('#cSuc') ? $('#cSuc').value : '', forma: $('#cForma').value, texto: $('#cTxt').value, facturacion: $('#cFact').value });
       if (!$('#lCob')) return;
       S.lista = l;
       const tot = l.reduce((a, x) => a + x.monto, 0);
       const porForma = {};
       l.forEach(x => { const k = x.forma || 'Sin forma'; porForma[k] = (porForma[k] || 0) + x.monto; });
+      const fac = l.reduce((a, x) => a + (x.montoFac || 0), 0), pend = l.reduce((a, x) => a + (x.porReportar || 0), 0), sinM = l.filter(x => x.montoFac === null), ppd = l.filter(x => /PPD/.test(x.metodoFac || ''));
       $('#lCob').innerHTML = `<div class="kpis"><div class="kpi"><small>Total cobrado</small><b>${$$(tot)}</b><span>${l.length} ${l.length === 1 ? 'cobro' : 'cobros'}</span></div>
+        <div class="kpi" style="border-color:var(--ok)"><small>✔ Ya facturado</small><b>${$$(fac)}</b><span>${tot ? (fac / tot * 100).toFixed(1) + '% de lo cobrado' : ''}</span></div>
+        <div class="kpi" style="border-color:#c9473d"><small>⚠️ Por reportar (sin factura)</small><b>${$$(pend)}</b><span>${nf(l.filter(x => x.porReportar > 0).length)} cobros${sinM.length ? ' · ' + sinM.length + ' en parte sin montos (revisar)' : ''}</span></div>
+        ${ppd.length ? `<div class="kpi"><small>Cobros de facturas PPD</small><b>${$$(ppd.reduce((a, x) => a + x.monto, 0))}</b><span>${ppd.length} requieren complemento de pago</span></div>` : ''}
         ${Object.keys(porForma).sort((a, b) => porForma[b] - porForma[a]).map(k => `<div class="kpi"><small>${esc(k)}</small><b>${$$(porForma[k])}</b></div>`).join('')}</div>` + tabla([
         { t: 'Fecha', k: 'fecha' }, { t: 'Nota', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' },
         { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Forma de pago', k: 'forma' }, { t: 'Cuenta', cls: 'ocultar-movil', k: 'banco' },
-        { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }, { t: '📎', h: x => x.adj ? `<span title="${x.adj} comprobante(s)">📎${x.adj > 1 ? x.adj : ''}</span>` : '<span class="muted" title="Sin comprobante">—</span>' },
+        { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` },
+        { t: 'Facturación', h: x => (x.porReportar === 0 ? '<span class="etq ok">✔ Facturado</span>' : x.montoFac === 0 ? '<span class="etq mal">Por reportar</span>' : `<span class="etq av">En parte${x.porReportar ? ' · falta ' + $$(x.porReportar) : ''}</span>`)
+          + (x.facturas ? `<br><small class="muted">${esc(x.facturas)}${x.fechasFac ? ' · ' + esc(x.fechasFac) : ''}${x.metodoFac ? ' · ' + esc(x.metodoFac) : ''}${x.global ? ' · global' : ''}</small>` : '')
+          + (/PPD/.test(x.metodoFac || '') ? '<br><small class="txt-mal">PPD: emite su complemento de pago</small>' : '') },
+        { t: '📎', h: x => x.adj ? `<span title="${x.adj} comprobante(s)">📎${x.adj > 1 ? x.adj : ''}</span>` : '<span class="muted" title="Sin comprobante">—</span>' },
         { t: 'Nota del cobro', cls: 'ocultar-movil', k: 'nota' }
       ], l, { clic: 'App.abrirCobro', vacio: 'No hay cobros en ese periodo' });
     } catch (e) { if ($('#lCob')) $('#lCob').innerHTML = '<div class="vacio">Consultar cobros requiere conexión.</div>'; }
+  }
+  /** Excel de cobros con su facturación (para el contador / cierre fiscal del mes). */
+  async function excelCobros() {
+    const l = S.lista || []; if (!l.length || !('fact' in l[0])) return toast('Primero busca los cobros', true);
+    const f = { desde: $('#cDesde').value, hasta: $('#cHasta').value }, nom = 'Cobros y facturación ' + f.desde + ' a ' + f.hasta;
+    toast('Armando Excel…');
+    try {
+      const blob = await excelLocal(nom, [{ nombre: 'Cobros', titulo: 'Cobros del periodo y su facturación', sub: ['Del ' + fechaTxt(f.desde) + ' al ' + fechaTxt(f.hasta) + ($('#cSuc') && $('#cSuc').value ? ' · ' + sucNom($('#cSuc').value) : ''), 'Por reportar = cobrado sin factura (factura global o pendiente de facturar) · PPD = requiere complemento de pago'],
+        resumen: [['Total cobrado', l.reduce((a, x) => a + x.monto, 0), 'mon'], ['Ya facturado', l.reduce((a, x) => a + (x.montoFac || 0), 0), 'mon'], ['Por reportar', l.reduce((a, x) => a + (x.porReportar || 0), 0), 'mon'], ['Cobros', l.length, 'num']],
+        cols: [{ t: 'Fecha cobro', w: 12 }, { t: 'Nota', w: 14 }, { t: 'Cliente', w: 32 }, { t: 'Sucursal', w: 14 }, { t: 'Forma de pago', w: 18 }, { t: 'Cuenta', w: 16 }, { t: 'Cobrado', w: 13, fmt: 'mon', suma: 1 },
+          { t: 'Ya facturado', w: 13, fmt: 'mon', suma: 1 }, { t: 'Por reportar', w: 13, fmt: 'mon', suma: 1 }, { t: 'Estado', w: 16 }, { t: 'Factura(s)', w: 18 }, { t: 'Fecha factura', w: 13 }, { t: 'Método', w: 8 }],
+        filas: l.map(x => ({ v: [x.fecha, x.folio, x.cliente, sucNom(x.suc), x.forma, x.banco, x.monto, x.montoFac, x.porReportar, x.fact, x.facturas, x.fechasFac, x.metodoFac], tono: x.montoFac === 0 ? 'mal' : x.porReportar ? 'av' : '' })) }]);
+      entregarArchivo(blob, nom + '.xlsx', 'Excel de cobros');
+    } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
   }
   function formCobro(idVenta, saldo) {
     const cat = D().catalogos;
@@ -8879,7 +8903,7 @@ const App = (() => {
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
-    vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
+    vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, excelCobros, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes, invVerPL, invVerCad, invUsarReal, invMarcarCostos, invUsarRealMarcados,
