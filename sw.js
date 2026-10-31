@@ -1,5 +1,5 @@
-/* Service worker de la app instalable. Versión: 185.20261031-1615-1539dbde (la pone tools/construir.py) */
-const VERSION = '185.20261031-1615-1539dbde';
+/* Service worker de la app instalable. Versión: 186.20261031-1723-6a6be6cf (la pone tools/construir.py) */
+const VERSION = '186.20261031-1723-6a6be6cf';
 const CACHE = 'iv-app-' + VERSION, CACHE_EXT = 'iv-ext-v1';
 const ARCHIVOS = ["./", "index.html", "estilos.css", "app.js", "config.js", "shim.js", "pwa.js", "manifest.webmanifest", "logo.png", "icons/icon-192.png", "icons/icon-512.png", "icons/maskable-512.png", "icons/apple-touch-icon.png", "icons/favicon.png"];
 const EXTERNOS = /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com)\//;

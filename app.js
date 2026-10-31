@@ -2699,9 +2699,9 @@ const App = (() => {
       <div class="kpi"><small>Asignado a notas</small><b>${$$(d.asignado)}</b><span>${nf(d.notas.length)} notas</span></div>
       <div class="kpi"><small>Diferencia</small><b class="${dif !== null && Math.abs(dif) > 1 ? 'error' : ''}">${dif === null ? '—' : $$(dif)}</b><span>${dif === null ? 'falta el XML' : Math.abs(dif) <= 1 ? 'cuadra ✔' : dif > 0 ? 'falta asignar' : 'se asignó de más'}</span></div></div>
       <p>${esc(d.receptor || '')} ${d.rfc ? '· RFC ' + esc(d.rfc) : ''}${d.uuid ? '<br><small class="muted">UUID ' + esc(d.uuid) + '</small>' : ''}${d.comentarios ? '<br><small class="muted">' + esc(d.comentarios) + '</small>' : ''}</p>
-      <div class="acciones" style="justify-content:flex-start">${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}</div>
+      <div class="acciones" style="justify-content:flex-start">${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}</div>
       ${tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', h: x => esc(x.cliente) },
-        { t: 'Total nota', num: 1, h: x => $$(x.totalNota) }, { t: 'Monto en esta factura', num: 1, h: x => x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto) },
+        { t: 'Total nota', num: 1, h: x => $$(x.totalNota) }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
         { t: 'Otras facturas', h: x => esc(x.otras.join(', ')) },
         { t: '', h: x => `<button class="icono" title="Cambiar monto" onclick="event.stopPropagation();App.montoFactNota('${x.rel}', ${x.monto === null ? "''" : x.monto})">✏️</button><button class="icono" title="Quitar" onclick="event.stopPropagation();App.quitarFactNota('${x.rel}', '${esc(d.sf)}')">✕</button>` }], d.notas, { vacio: 'Sin notas ligadas' })}
       <div class="tarjeta" style="margin-top:10px"><div class="rejilla"><label>Agregar nota (folio)<input id="fdNota" placeholder="No/Rem-0622"></label>
@@ -3138,8 +3138,8 @@ const App = (() => {
       <label>Forma de pago<select id="cForma">${opts((D().catalogos || {}).formasPago || [], '', 'Todas')}</select></label>
       <label>Facturación<select id="cFact">${opts([['facturado', '✔ Ya facturado'], ['pendiente', '⚠️ Por reportar (sin factura)'], ['parcial', '◐ Facturado en parte']], '', 'Todo')}</select></label>
       <label>Buscar<input id="cTxt" placeholder="Cliente o folio"></label><button class="btn primario fijo" onclick="App.buscarCobros()">Buscar</button>
-      <button class="btn fijo" onclick="App.excelCobros()">📊 Excel para cierre</button></div>
-      <p class="muted" style="margin:10px 0 0;font-size:12.5px">Para el cierre fiscal del mes: cada cobro dice si su nota ya tiene factura. Lo <b>por reportar</b> es lo cobrado sin factura (va en tu factura global o falta facturarlo). Los cobros de facturas <b>PPD</b> necesitan su complemento de pago. Para ver lo que falta cobrar usa Notas de venta › “Cuentas por cobrar”.</p></div>
+      <button class="btn fijo" onclick="App.excelCobros()">📊 Excel para cierre</button>${puede('facturacion') ? '<button class="btn fijo" onclick="App.formGlobal()">🧾 Ligar a factura global</button>' : ''}</div>
+      <p class="muted" style="margin:10px 0 0;font-size:12.5px">Para el cierre fiscal del mes: cada cobro dice si su nota ya tiene factura. Lo <b>por reportar</b> es lo cobrado sin factura (va en tu factura global o falta facturarlo). Los cobros de facturas <b>PPD</b> necesitan su complemento de pago. Para ver lo que falta cobrar usa Notas de venta › “Cuentas por cobrar”.${puede('facturacion') ? ' Con <b>🧾 Ligar a factura global</b> amparas lo cobrado a público en general (aunque sea solo un abono de la nota) con tu factura global.' : ''}</p></div>
       <div class="espacio"></div><div id="lCob"></div>`;
     agregarMesAnio('cDesde', 'cHasta', buscarCobros); $('#cFact').onchange = buscarCobros;
     buscarCobros();
@@ -3182,6 +3182,57 @@ const App = (() => {
         filas: l.map(x => ({ v: [x.fecha, x.folio, x.cliente, sucNom(x.suc), x.forma, x.banco, x.monto, x.montoFac, x.porReportar, x.fact, x.facturas, x.fechasFac, x.metodoFac], tono: x.montoFac === 0 ? 'mal' : x.porReportar ? 'av' : '' })) }]);
       entregarArchivo(blob, nom + '.xlsx', 'Excel de cobros');
     } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
+  }
+  /* ---------- FACTURA GLOBAL POR ABONOS (público en general) ---------- */
+  async function formGlobal(idFac, desde, hasta) {
+    const f = { desde: desde || ($('#cDesde') ? $('#cDesde').value : ''), hasta: hasta || ($('#cHasta') ? $('#cHasta').value : hoyISO()) };
+    let gl, l;
+    toast('Buscando cobros por reportar…');
+    try { [gl, l] = await Promise.all([pedir('facturasGlobales', {}), pedir('listarCobros', { desde: f.desde, hasta: f.hasta, sucursal: !desde && $('#cSuc') ? $('#cSuc').value : '', forma: !desde && $('#cForma') ? $('#cForma').value : '', texto: '', facturacion: '' })]); } catch (e) { return; }
+    l = l.filter(x => x.porReportar > 0);
+    S.gl = { lista: l, globales: gl, f: f };
+    modal('🧾 Factura global · público en general', `<p class="muted peq">Liga lo <b>cobrado</b> del ${esc(fechaTxt(f.desde))} al ${esc(fechaTxt(f.hasta))} a una factura global. De cada abono se toma solo lo que falta reportar. Si la nota solo tiene un abono, queda <b>Parcial</b> y sus siguientes abonos van en la global del mes en que los cobres. El total de la factura <b>no tiene que coincidir</b>: verás la diferencia.</p>
+      <div class="rejilla"><label style="grid-column:1/-1">Factura global<select id="glFac" onchange="App.glSuma()">${opts([['', '➕ Nueva: capturar serie-folio y total'], ['xml', '📄 Nueva: subir su XML']].concat(gl.map(x => [x.id, x.sf + ' · ' + x.fecha + (x.total !== null ? ' · total ' + $$(x.total) : '') + (x.notas ? ' · ya ligado ' + $$(x.asignado) : '')])), idFac || '')}</select></label>
+        <label class="glN">Serie-folio<input id="glSF" placeholder="IV-300"></label><label class="glN">Fecha<input type="date" id="glFecha" value="${esc(f.hasta)}"></label><label class="glN">Total de la factura $<input type="number" step="0.01" id="glTot" oninput="App.glSuma()"></label>
+        <label class="glX">XML *<input type="file" id="glX" accept=".xml,text/xml"></label><label class="glX">PDF (opcional)<input type="file" id="glP" accept="application/pdf,.pdf"></label></div>
+      <div class="fila" style="margin-top:8px"><label>Buscar<input id="glTxt" placeholder="Nota, cliente o forma" oninput="App.glSuma()"></label><button class="btn fijo" onclick="App.glMarcar(1)">Marcar visibles</button><button class="btn fijo" onclick="App.glMarcar(0)">Desmarcar todo</button></div>
+      <div style="max-height:44vh;overflow:auto;margin-top:6px">${l.map((x, i) => `<label class="check gl-c" data-txt="${esc((x.folio + ' ' + x.cliente + ' ' + x.forma).toLowerCase())}" style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--borde)">
+        <input type="checkbox" class="glChk" value="${i}" ${x.idForma === '1' ? 'checked' : ''} onchange="App.glSuma()" style="width:auto;margin-top:3px">
+        <span style="flex:1"><b>${esc(x.folio)}</b> · ${esc(x.fecha)} · ${esc(x.cliente || '')}<br><small class="muted">${esc(x.forma || '')}${x.suc ? ' · ' + esc(sucNom(x.suc)) : ''}${x.porReportar < x.monto ? ' · abono de ' + $$(x.monto) + ', ya facturado ' + $$(x.montoFac) : ''}</small></span>
+        <span class="num"><b>${$$(x.porReportar)}</b></span></label>`).join('') || '<div class="vacio">No hay cobros por reportar en esas fechas</div>'}</div>
+      <p id="glRes" style="margin-top:8px"></p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.glGuardar()">Ligar a la factura</button></div>`);
+    glSuma();
+  }
+  function glSuma() {
+    const g = S.gl; if (!g || !$('#glFac')) return;
+    const fac = $('#glFac').value, ex = g.globales.find(x => x.id === fac);
+    document.querySelectorAll('.glN').forEach(x => x.style.display = fac === '' ? '' : 'none');
+    document.querySelectorAll('.glX').forEach(x => x.style.display = fac === 'xml' ? '' : 'none');
+    const q = ($('#glTxt').value || '').toLowerCase();
+    document.querySelectorAll('.gl-c').forEach(el => { el.style.display = !q || el.dataset.txt.indexOf(q) >= 0 || el.querySelector('.glChk').checked ? '' : 'none'; });
+    const sel = [...document.querySelectorAll('.glChk')].filter(x => x.checked).map(x => g.lista[+x.value]);
+    const suma = sel.reduce((a, x) => a + x.porReportar, 0), notas = new Set(sel.map(x => x.idVenta)).size;
+    const total = ex ? ex.total : fac === '' && $('#glTot').value ? +$('#glTot').value : null, previo = ex ? ex.asignado : 0;
+    const dif = total === null ? null : total - previo - suma;
+    $('#glRes').innerHTML = sel.length ? `${sel.length} cobro(s) de ${notas} nota(s) · seleccionado <b>${$$(suma)}</b>${previo ? ' · ya ligado antes ' + $$(previo) : ''}${total !== null ? ` · factura ${$$(total)} → diferencia <b class="${Math.abs(dif) > 1 ? 'txt-mal' : ''}">${$$(dif)}</b> ${Math.abs(dif) <= 1 ? '✔ cuadra' : dif > 0 ? '(la factura ampara más de lo marcado)' : '(marcaste más de lo que ampara la factura)'}` : ''}` : '<span class="muted">Marca los cobros que ampara la factura.</span>';
+  }
+  function glMarcar(si) { document.querySelectorAll('.gl-c').forEach(el => { if (!si || el.style.display !== 'none') el.querySelector('.glChk').checked = !!si; }); glSuma(); }
+  async function glGuardar() {
+    const g = S.gl; if (!g) return;
+    const cobros = [...document.querySelectorAll('.glChk')].filter(x => x.checked).map(x => g.lista[+x.value].id);
+    if (!cobros.length) return toast('Marca al menos un cobro', true);
+    const fac = $('#glFac').value, p = { cobros: cobros };
+    try {
+      if (fac === 'xml') { const fx = $('#glX').files[0], fp = $('#glP').files[0]; if (!fx) return toast('Elige el XML de la factura global', true); p.xml = await leerArchivo(fx, true); if (fp) p.pdf = await leerArchivo(fp); }
+      else if (fac === '') { p.serieFolio = $('#glSF').value.trim(); p.fecha = $('#glFecha').value; p.total = $('#glTot').value; if (!p.serieFolio) return toast('Escribe la serie-folio de la factura (ej. IV-300)', true); }
+      else p.ID_Factura = fac;
+      const r = await pedir('ligarGlobal', p);
+      cerrarModal();
+      toast('✔ ' + r.cobros + ' cobro(s) de ' + r.notas + ' nota(s) ligados a ' + r.sf + ' (' + $$(r.monto) + ')' + (r.dif !== null && Math.abs(r.dif) > 1 ? ' · diferencia ' + $$(r.dif) : ''));
+      if (r.avisos && r.avisos.length) modal('Factura ' + r.sf + ' · avisos', '<p>Se ligó lo demás. No se ligaron:</p><p class="muted">' + r.avisos.map(esc).join('<br>') + '</p><div class="acciones"><button class="btn primario" onclick="App.verFactura(\'' + r.id + '\')">Ver la factura</button></div>');
+      if ($('#lCob')) buscarCobros();
+    } catch (e) {}
   }
   function formCobro(idVenta, saldo) {
     const cat = D().catalogos;
@@ -8903,7 +8954,7 @@ const App = (() => {
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
-    vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, excelCobros, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
+    vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, excelCobros, formGlobal, glSuma, glMarcar, glGuardar, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes, invVerPL, invVerCad, invUsarReal, invMarcarCostos, invUsarRealMarcados,
