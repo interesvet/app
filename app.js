@@ -5736,15 +5736,29 @@ const App = (() => {
     BN.cola = [];
     modal('📥 Subir estados de cuenta', `<p>Elige uno o varios archivos: <b>PDF</b> (BBVA, Banorte; Liverpool se lee por OCR) o <b>Excel / CSV</b> descargado del banco.</p>
       <label>Archivos<input type="file" id="bnArch" multiple accept=".pdf,.xlsx,.xls,.csv,application/pdf"></label>
+      <label>… o una carpeta completa (con sus subcarpetas)<input type="file" id="bnCarp" webkitdirectory directory multiple></label>
+      <label>Solo estados con corte desde <small class="muted">(opcional; vacío = todos)</small><input type="date" id="bnDesde"></label>
       <div class="acciones"><button class="btn primario" id="bnLeerBtn" onclick="App.bnLeer()">🔎 Leer y revisar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>
       <div id="bnCola"></div>`);
   }
   const leerBuf = f => new Promise((ok, mal) => { const r = new FileReader(); r.onerror = mal; r.onload = () => ok(r.result); r.readAsArrayBuffer(f); });
   async function bnLeer() {
-    const fs = [...($('#bnArch').files || [])]; if (!fs.length) return toast('Elige al menos un archivo', true);
+    const vistos = {}, fs = [...($('#bnArch').files || []), ...(($('#bnCarp') || {}).files || [])]
+      .filter(f => /\.(pdf|xlsx|xls|csv)$/i.test(f.name) && !/^(\.|~\$)/.test(f.name))
+      .filter(f => { const k = f.name + '|' + f.size; if (vistos[k]) return false; vistos[k] = 1; return true; });   // el mismo archivo copiado en dos carpetas se lee una vez
+    if (!fs.length) return toast('Elige archivos o una carpeta con PDF / Excel', true);
+    const desde = ($('#bnDesde') || {}).value || '';
     $('#bnLeerBtn').disabled = true;
     try { await bnDatos(); } catch (e) {}
-    for (const f of fs) { const it = { nombre: f.name, file: f, estado: 'leyendo' }; BN.cola.push(it); await bnLeerUno(it); }
+    const cola = fs.map(f => ({ nombre: f.webkitRelativePath || f.name, file: f, estado: 'espera' })); BN.cola.push(...cola); bnPintarCola();
+    for (const it of cola) {
+      it.estado = 'leyendo'; await bnLeerUno(it);
+      if (desde && it.r && it.r.hasta && it.r.hasta < desde) { it.estado = 'omitido'; it.file = null; bnPintarCola(); }
+    }
+    // el mismo periodo de la misma cuenta en dos archivos distintos: se deja solo el primero
+    const per = {}; BN.cola.forEach(it => { if (!it.r || !['listo', 'revisar'].includes(it.estado)) return; const k = String(it.r.numero) + '|' + it.r.desde + '|' + it.r.hasta;
+      if (per[k]) { it.estado = 'duplicado'; it.error = 'mismo periodo que ' + per[k]; } else per[k] = it.nombre; });
+    bnPintarCola();
     if ($('#bnLeerBtn')) $('#bnLeerBtn').disabled = false;
   }
   async function bnLeerUno(it) {
@@ -5859,7 +5873,7 @@ const App = (() => {
       else if (it.estado === 'espera') est = '<span class="etq">En espera</span>';
       else if (it.estado === 'bajando') est = '<span class="etq">Descargando de Drive…</span>';
       else if (it.estado === 'omitido') est = '<span class="etq">⏭ Anterior a la fecha elegida (no se carga)</span>';
-      else if (it.estado === 'duplicado') est = `<span class="etq">↩︎ Ya estaba cargado</span> <small class="muted">${esc(it.error || '')}</small>`;
+      else if (it.estado === 'duplicado') est = `<span class="etq">↩︎ Repetido (ya está cargado)</span> <small class="muted">${esc(it.error || '')}</small>`;
       else if (it.estado === 'guardado') est = `<span class="etq ok">✔ Guardado en ${esc(it.guardadoEn || '')}</span>${(it.avisosSrv || []).map(a => `<br><small class="muted">⚠️ ${esc(a)}</small>`).join('')}`;
       else {
         est = (v.ok ? `<span class="etq ok">✔ Cuadra al centavo</span> <small class="muted">abonos ${$$(v.suma.abonos)} · cargos ${$$(v.suma.cargos)} · saldo final ${$$(r.resumen.saldoFinal)}</small>` : `<span class="etq mal">✖ No cuadra</span>${(v.errores || []).map(e => `<br><small class="txt-mal">${esc(e)}</small>`).join('')}`) +
