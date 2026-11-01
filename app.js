@@ -6158,6 +6158,7 @@ const App = (() => {
             : `${S.online ? `<button class="btn chico" onclick="App.bajarPortafolio('${esc(x.id)}')">📥 Guardar en el equipo</button>` : ''}${x.url ? `<a class="btn chico" href="${esc(x.url)}" target="_blank">Abrir en Drive</a>` : ''}`}
           ${x.url ? `<a class="btn chico" target="_blank" href="${WA_BASE}?text=${encodeURIComponent('Le comparto nuestro portafolio de productos Interés Veterinario®: ' + x.nombre + '\n' + x.url)}">💬 Enlace</a>` : ''}
           ${x.local ? `<button class="icono" title="Quitar de este equipo (sigue en Drive)" onclick="App.quitarPortafolioLocal('${esc(x.id)}')">✕</button>` : admin && S.online ? `<button class="icono" title="Quitar de la lista (se mueve a Archivos quitados)" onclick="App.quitarPortafolioDrive('${esc(x.id)}')">🗂️</button>` : ''}
+          ${admin && S.online ? `<button class="icono" title="Eliminar: de este equipo, de la lista y a la papelera de Drive" onclick="App.eliminarPortafolio('${esc(x.id)}')">🗑️</button>` : ''}
         </div></div>`).join('')}</div>` : ''}`;
     if (sincronizar && S.online) {
       try { const r = await pedir('listarPortafolios', {}, true); LS.set('portafoliosSrv', r.map(x => ({ id: x.id, nombre: x.nombre, fecha: x.fecha, tam: x.tam, url: x.url })));
@@ -6199,6 +6200,13 @@ const App = (() => {
   async function quitarPortafolioDrive(id) {
     if (!confirm('¿Quitar este portafolio de la lista? No se borra: se mueve a la carpeta "Archivos quitados" de Portafolios.')) return;
     try { await pedir('quitarPortafolio', { id: id }); LS.set('portafoliosSrv', LS.get('portafoliosSrv', []).filter(x => x.id !== id)); toast('Portafolio quitado de la lista'); pintarPortafolios(); } catch (e) {}
+  }
+  async function eliminarPortafolio(id) {
+    const x = LS.get('portafoliosSrv', []).find(o => o.id === id) || (await PDFDB.uno(id)) || {};
+    if (!confirm('¿Eliminar "' + (x.nombre || 'este portafolio') + '"?\n\nSe quita de este equipo y de la lista, y se manda a la papelera de tu Google Drive (ahí lo puedes recuperar durante 30 días).')) return;
+    try { await pedir('quitarPortafolio', { id: id, papelera: true }); } catch (e) { return; }
+    try { await PDFDB.quitar(id); } catch (e) {}
+    LS.set('portafoliosSrv', LS.get('portafoliosSrv', []).filter(o => o.id !== id)); toast('🗑️ Portafolio eliminado (está en la papelera de Drive)'); pintarPortafolios();
   }
   async function compartirPdfLocal() {
     const x = S.pdfLocal; if (!x) return;
@@ -9035,7 +9043,7 @@ const App = (() => {
     vistaCompras: t => V.compras(t), buscarCompras, actualizarApp, buscarPagosProv, verPagoProv, formEditarPago, guardarEdicionPago, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
     pdfCompra: (id, conCostos) => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', conCostos ? { ID_O_Compra: id, conCostos: true } : { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario® — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
-    bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive,
+    bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive, eliminarPortafolio,
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
