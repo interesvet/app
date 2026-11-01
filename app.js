@@ -2595,7 +2595,7 @@ const App = (() => {
       ${f.urlPdf ? `<a href="${esc(f.urlPdf)}" target="_blank">PDF</a>` : ''} ${f.urlXml ? `<a href="${esc(f.urlXml)}" target="_blank">XML</a>` : ''}
       <button class="icono" title="Cambiar monto" onclick="App.montoFactNota('${f.rel}', ${f.monto === null ? "''" : f.monto})">✏️</button><button class="icono" title="Quitar" onclick="App.quitarFactNota('${f.rel}', '${esc(f.sf)}')">✕</button></div>`;
     let h = `<h4>🧾 Facturación ${etqFact(r.estado)}</h4>
-      <p class="muted">Total de la nota ${$$(r.total)} · facturado ${$$(r.facturado)}${r.porFacturar ? ' · por facturar <b>' + $$(r.porFacturar) + '</b>' : ''}${!r.facturas.length && r.anotacion ? ' · anotación: ' + esc(r.anotacion) : ''}</p>
+      <p class="muted">Total de la nota ${$$(r.total)}${r.nc ? ` · nota de crédito −${$$(r.nc)} → <b>a facturar ${$$(r.facturable)}</b>` : ''} · facturado ${$$(r.facturado)}${r.porFacturar ? ' · por facturar <b>' + $$(r.porFacturar) + '</b>' : ''}${!r.facturas.length && r.anotacion ? ' · anotación: ' + esc(r.anotacion) : ''}</p>
       ${r.facturas.map(fila).join('') || '<p class="muted">Sin factura ligada.</p>'}
       ${r.piezas && r.piezas.length ? `<details style="margin-top:6px" ${r.piezas.some(x => x.pendientes > 0) && r.facturas.length ? 'open' : ''}><summary>🔢 Piezas facturadas: ${nf(r.piezas.reduce((a, x) => a + x.facturadas, 0))} de ${nf(r.piezas.reduce((a, x) => a + x.vendidas, 0))}${r.piezas.some(x => x.pendientes > 0) ? ' · <b class="txt-mal">faltan ' + nf(r.piezas.reduce((a, x) => a + x.pendientes, 0)) + '</b>' : ' ✔'}</summary>
         ${tabla([{ t: 'Producto', h: x => esc(x.nombre) }, { t: 'Vendidas', num: 1, h: x => nf(x.vendidas) }, { t: 'Facturadas', num: 1, h: x => nf(x.facturadas) }, { t: 'Sin facturar', num: 1, h: x => x.pendientes ? `<b class="txt-mal">${nf(x.pendientes)}</b>` : '✔' }, { t: 'Facturas', h: x => esc(x.facturas) }], r.piezas)}</details>` : ''}`;
@@ -2603,14 +2603,14 @@ const App = (() => {
       h += `<div class="tarjeta" style="margin-top:8px"><div class="rejilla">
         <label>Factura<select id="nfSel">${r.sugeridas.map(f => `<option value="${f.id}">${esc(f.sf)} · ${esc(f.fecha)}${f.global ? ' · GLOBAL' : ''}${f.libre !== null ? ' · libre ' + $$(f.libre) : ''}</option>`).join('')}<option value="">Otra: escribir serie-folio…</option></select></label>
         <label>Serie-folio<input id="nfSF" placeholder="IV-260"></label>
-        <label>Monto de esta nota $<input type="number" step="0.01" id="nfMonto" value="${r.porFacturar !== null && r.porFacturar !== undefined && r.porFacturar > 0 ? r.porFacturar : r.total}"></label></div>
-        <p class="muted">El monto es lo que esta factura cubre de la nota (con IVA). Si la factura cubre varias notas, asígnala en cada una.</p>
+        <label>Monto de esta nota $<input type="number" step="0.01" id="nfMonto" value="${r.porFacturar !== null && r.porFacturar !== undefined && r.porFacturar > 0 ? r.porFacturar : (r.facturable !== undefined ? r.facturable : r.total)}"></label></div>
+        <p class="muted">El monto es lo que esta factura cubre de la nota (con IVA)${r.nc ? ', sin las notas de crédito' : ''}. Si la factura cubre varias notas, asígnala en cada una.</p>
         <div class="acciones"><button class="btn" onclick="App.pintarFactNota()">Cancelar</button><button class="btn primario" onclick="App.asignarFactNota('${r.id}')">Asignar</button></div></div>`;
     } else if (form === 'xml') {
       h += `<div class="tarjeta" style="margin-top:8px"><div class="rejilla">
         <label>XML de la factura *<input type="file" id="nfXml" accept=".xml,text/xml"></label>
         <label>PDF (opcional)<input type="file" id="nfPdf" accept="application/pdf,.pdf"></label>
-        <label>Monto de esta nota $<input type="number" step="0.01" id="nfMontoX" value="${r.porFacturar !== null && r.porFacturar !== undefined && r.porFacturar > 0 ? r.porFacturar : r.total}"></label></div>
+        <label>Monto de esta nota $<input type="number" step="0.01" id="nfMontoX" value="${r.porFacturar !== null && r.porFacturar !== undefined && r.porFacturar > 0 ? r.porFacturar : (r.facturable !== undefined ? r.facturable : r.total)}"></label></div>
         <div class="acciones"><button class="btn" onclick="App.pintarFactNota()">Cancelar</button><button class="btn primario" onclick="App.subirXmlNota('${r.id}')">Subir y asignar</button></div></div>`;
     } else {
       h += `<div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.pintarFactNota('asignar')">🧾 Asignar factura</button><button class="btn" onclick="App.pintarFactNota('xml')">⬆️ Subir XML de la factura</button></div>`;
@@ -2690,7 +2690,7 @@ const App = (() => {
     $('#lFact').innerHTML = (S.tabFact === 'revisar' ? '<p class="muted">Notas con <b>Facturado? = SI</b> (o Parcial) pero sin una factura ligada. Ábrelas y asigna su factura.</p>' :
       `<div class="kpis"><div class="kpi"><small>Notas por facturar</small><b>${nf(r.totales.notas)}</b><span></span></div><div class="kpi"><small>Monto por facturar</small><b>${$$(r.totales.porFacturar)}</b><span>con IVA</span></div></div>`) +
       tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Nota', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', h: x => `${esc(x.cliente || '')}<br><small class="muted">${esc(x.rfc || '')}</small>` },
-        { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Facturado', num: 1, h: x => x.facturado ? $$(x.facturado) : '—' },
+        { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Total', num: 1, h: x => $$(x.total) + (x.nc ? `<br><small class="muted">N/C −${$$(x.nc)}</small>` : '') }, { t: 'Facturado', num: 1, h: x => x.facturado ? $$(x.facturado) : '—' },
         { t: 'Por facturar', num: 1, h: x => x.porFacturar === null ? '<span class="etq av">por definir</span>' : `<b>${$$(x.porFacturar)}</b>` }, { t: 'Estado', h: x => etqFact(x.estado) + (x.anotacion ? `<br><small class="muted">${esc(x.anotacion)}</small>` : '') }],
         r.notas, { clic: 'App.abrirVenta', vacio: S.tabFact === 'revisar' ? 'Todo en orden ✔' : 'Todo facturado ✔' });
   }
@@ -2740,7 +2740,7 @@ const App = (() => {
       <p>${esc(d.receptor || '')} ${d.rfc ? '· RFC ' + esc(d.rfc) : ''}${d.uuid ? '<br><small class="muted">UUID ' + esc(d.uuid) + '</small>' : ''}${d.comentarios ? '<br><small class="muted">' + esc(d.comentarios) + '</small>' : ''}</p>
       <div class="acciones" style="justify-content:flex-start">${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}</div>
       ${tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', h: x => esc(x.cliente) },
-        { t: 'Total nota', num: 1, h: x => $$(x.totalNota) }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
+        { t: 'Total nota', num: 1, h: x => $$(x.totalNota) + (x.nc ? `<br><small class="muted">N/C −${$$(x.nc)} → a facturar ${$$(x.facturable)}</small>` : '') }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
         { t: 'Otras facturas', h: x => esc(x.otras.join(', ')) },
         { t: '', h: x => `<button class="icono" title="Cambiar monto" onclick="event.stopPropagation();App.montoFactNota('${x.rel}', ${x.monto === null ? "''" : x.monto})">✏️</button><button class="icono" title="Quitar" onclick="event.stopPropagation();App.quitarFactNota('${x.rel}', '${esc(d.sf)}')">✕</button>` }], d.notas, { vacio: 'Sin notas ligadas' })}
       ${bloquePiezasFactura(d)}
@@ -3204,7 +3204,7 @@ const App = (() => {
       <label>Desde<input type="date" id="cDesde" value="${ini}"></label><label>Hasta<input type="date" id="cHasta" value="${h}"></label>
       ${U().todasSucursales ? `<label>Sucursal<select id="cSuc">${optsSuc('', false, 'Todas')}</select></label>` : ''}
       <label>Forma de pago<select id="cForma">${opts((D().catalogos || {}).formasPago || [], '', 'Todas')}</select></label>
-      <label>Facturación<select id="cFact">${opts([['facturado', '✔ Ya facturado'], ['pendiente', '⚠️ Por reportar (sin factura)'], ['parcial', '◐ Facturado en parte']], '', 'Todo')}</select></label>
+      <label>Facturación<select id="cFact">${opts([['facturado', '✔ Ya facturado'], ['pendiente', '⚠️ Por reportar (sin factura)'], ['parcial', '◐ Facturado en parte'], ['nc', 'Notas de crédito (no se facturan)']], '', 'Todo')}</select></label>
       <label>Buscar<input id="cTxt" placeholder="Cliente o folio"></label><button class="btn primario fijo" onclick="App.buscarCobros()">Buscar</button>
       <button class="btn fijo" onclick="App.excelCobros()">📊 Excel para cierre</button>${puede('facturacion') ? '<button class="btn fijo" onclick="App.formGlobal()">🧾 Ligar a factura global</button>' : ''}</div>
       <p class="muted" style="margin:10px 0 0;font-size:12.5px">Para el cierre fiscal del mes: cada cobro dice si su nota ya tiene factura. Lo <b>por reportar</b> es lo cobrado sin factura (va en tu factura global o falta facturarlo). Los cobros de facturas <b>PPD</b> necesitan su complemento de pago. Para ver lo que falta cobrar usa Notas de venta › “Cuentas por cobrar”.${puede('facturacion') ? ' Con <b>🧾 Ligar a factura global</b> amparas lo cobrado a público en general (aunque sea solo un abono de la nota) con tu factura global.' : ''}</p></div>
@@ -3220,16 +3220,17 @@ const App = (() => {
       const tot = l.reduce((a, x) => a + x.monto, 0);
       const porForma = {};
       l.forEach(x => { const k = x.forma || 'Sin forma'; porForma[k] = (porForma[k] || 0) + x.monto; });
-      const fac = l.reduce((a, x) => a + (x.montoFac || 0), 0), pend = l.reduce((a, x) => a + (x.porReportar || 0), 0), sinM = l.filter(x => x.montoFac === null), ppd = l.filter(x => /PPD/.test(x.metodoFac || ''));
+      const fac = l.reduce((a, x) => a + (x.montoFac || 0), 0), pend = l.reduce((a, x) => a + (x.porReportar || 0), 0), sinM = l.filter(x => x.montoFac === null), ppd = l.filter(x => /PPD/.test(x.metodoFac || '')), ncs = l.filter(x => x.nc), ncT = ncs.reduce((a, x) => a + x.monto, 0);
       $('#lCob').innerHTML = `<div class="kpis"><div class="kpi"><small>Total cobrado</small><b>${$$(tot)}</b><span>${l.length} ${l.length === 1 ? 'cobro' : 'cobros'}</span></div>
-        <div class="kpi" style="border-color:var(--ok)"><small>✔ Ya facturado</small><b>${$$(fac)}</b><span>${tot ? (fac / tot * 100).toFixed(1) + '% de lo cobrado' : ''}</span></div>
+        <div class="kpi" style="border-color:var(--ok)"><small>✔ Ya facturado</small><b>${$$(fac)}</b><span>${tot - ncT ? (fac / (tot - ncT) * 100).toFixed(1) + '% de lo cobrado (sin N/C)' : ''}</span></div>
         <div class="kpi" style="border-color:#c9473d"><small>⚠️ Por reportar (sin factura)</small><b>${$$(pend)}</b><span>${nf(l.filter(x => x.porReportar > 0).length)} cobros${sinM.length ? ' · ' + sinM.length + ' en parte sin montos (revisar)' : ''}</span></div>
+        ${ncs.length ? `<div class="kpi"><small>Notas de crédito</small><b>${$$(ncT)}</b><span>${ncs.length} · no son ingreso, no se facturan</span></div>` : ''}
         ${ppd.length ? `<div class="kpi"><small>Cobros de facturas PPD</small><b>${$$(ppd.reduce((a, x) => a + x.monto, 0))}</b><span>${ppd.length} requieren complemento de pago</span></div>` : ''}
         ${Object.keys(porForma).sort((a, b) => porForma[b] - porForma[a]).map(k => `<div class="kpi"><small>${esc(k)}</small><b>${$$(porForma[k])}</b></div>`).join('')}</div>` + tabla([
         { t: 'Fecha', k: 'fecha' }, { t: 'Nota', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' },
         { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Forma de pago', k: 'forma' }, { t: 'Cuenta', cls: 'ocultar-movil', k: 'banco' },
         { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` },
-        { t: 'Facturación', h: x => (x.porReportar === 0 ? '<span class="etq ok">✔ Facturado</span>' : x.montoFac === 0 ? '<span class="etq mal">Por reportar</span>' : `<span class="etq av">En parte${x.porReportar ? ' · falta ' + $$(x.porReportar) : ''}</span>`)
+        { t: 'Facturación', h: x => x.nc ? '<span class="etq">Nota de crédito</span><br><small class="muted">no se factura</small>' : (x.porReportar === 0 ? '<span class="etq ok">✔ Facturado</span>' : x.montoFac === 0 ? '<span class="etq mal">Por reportar</span>' : `<span class="etq av">En parte${x.porReportar ? ' · falta ' + $$(x.porReportar) : ''}</span>`)
           + (x.facturas ? `<br><small class="muted">${esc(x.facturas)}${x.fechasFac ? ' · ' + esc(x.fechasFac) : ''}${x.metodoFac ? ' · ' + esc(x.metodoFac) : ''}${x.global ? ' · global' : ''}</small>` : '')
           + (/PPD/.test(x.metodoFac || '') ? '<br><small class="txt-mal">PPD: emite su complemento de pago</small>' : '') },
         { t: '📎', h: x => x.adj ? `<span title="${x.adj} comprobante(s)">📎${x.adj > 1 ? x.adj : ''}</span>` : '<span class="muted" title="Sin comprobante">—</span>' },
@@ -3247,7 +3248,7 @@ const App = (() => {
         resumen: [['Total cobrado', l.reduce((a, x) => a + x.monto, 0), 'mon'], ['Ya facturado', l.reduce((a, x) => a + (x.montoFac || 0), 0), 'mon'], ['Por reportar', l.reduce((a, x) => a + (x.porReportar || 0), 0), 'mon'], ['Cobros', l.length, 'num']],
         cols: [{ t: 'Fecha cobro', w: 12 }, { t: 'Nota', w: 14 }, { t: 'Cliente', w: 32 }, { t: 'Sucursal', w: 14 }, { t: 'Forma de pago', w: 18 }, { t: 'Cuenta', w: 16 }, { t: 'Cobrado', w: 13, fmt: 'mon', suma: 1 },
           { t: 'Ya facturado', w: 13, fmt: 'mon', suma: 1 }, { t: 'Por reportar', w: 13, fmt: 'mon', suma: 1 }, { t: 'Estado', w: 16 }, { t: 'Factura(s)', w: 18 }, { t: 'Fecha factura', w: 13 }, { t: 'Método', w: 8 }],
-        filas: l.map(x => ({ v: [x.fecha, x.folio, x.cliente, sucNom(x.suc), x.forma, x.banco, x.monto, x.montoFac, x.porReportar, x.fact, x.facturas, x.fechasFac, x.metodoFac], tono: x.montoFac === 0 ? 'mal' : x.porReportar ? 'av' : '' })) }]);
+        filas: l.map(x => ({ v: [x.fecha, x.folio, x.cliente, sucNom(x.suc), x.forma, x.banco, x.monto, x.montoFac, x.porReportar, x.fact, x.facturas, x.fechasFac, x.metodoFac], tono: x.nc ? 'gris' : x.montoFac === 0 ? 'mal' : x.porReportar ? 'av' : '' })) }]);
       entregarArchivo(blob, nom + '.xlsx', 'Excel de cobros');
     } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
   }
