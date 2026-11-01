@@ -3161,7 +3161,7 @@ const App = (() => {
     let r; try { r = await pedir('gestionesSucursal', { suc: suc || S.gestSuc || '' }); } catch (e) { $('#modalCuerpo').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message || '') ? 'Se activa con el servidor 181.' : esc(e.message || 'Requiere conexión')}</div>`; return; }
     S.gest = r; S.gestSuc = r.suc;
     if (!r.suc) { $('#modalCuerpo').innerHTML = '<div class="vacio">No hay sucursales además de Matriz.</div>'; return; }
-    const e = r.estado, h = hoyISO(), act = (r.gestiones || []).find(g => g.estatus === 'Activa');
+    const e = r.estado, h = hoyISO(), act = (r.gestiones || []).find(g => g.estatus === 'Activa'), sucAct = r.sucursales.find(x => x.id === r.suc) || {};
     const usu = e.usuarios.filter(u => u.activo), inact = e.usuarios.filter(u => !u.activo);
     const otros = (r.otrosUsuarios || []).concat(inact.map(u => ({ id: u.id, nombre: u.nombre, suc: r.suc, activo: false })));
     const aviso = [];
@@ -3170,16 +3170,16 @@ const App = (() => {
     if (e.conteosAbiertos) aviso.push(`${nf(e.conteosAbiertos)} conteo(s) de inventario abiertos.`);
     $('#modalCuerpo').innerHTML = `
       <label>Sucursal<select id="geSuc" onchange="App.verGestiones(this.value)">${r.sucursales.map(x => `<option value="${esc(x.id)}" ${x.id === r.suc ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></label>
-      <p class="muted peq">La sucursal sigue siendo la misma (mismo histórico y mismos folios). Lo que cambia es la <b>gestión</b>: el nuevo personal ve sus ventas, cobranza, cartera y tablero <b>desde cero</b>, a partir de la fecha de inicio. Las notas con saldo de la gestión anterior las cobra Matriz; tú sigues viendo todo.</p>
+      <p class="muted peq">La sucursal sigue siendo la misma (mismo histórico y mismos folios). Lo que cambia es la <b>gestión</b>: el nuevo personal ve sus ventas, cobros y tablero <b>desde cero</b>, a partir de la fecha de inicio. La <b>cartera pendiente</b> de la gestión anterior la cobra el nuevo gerente (la puede cobrar y facturar, pero no modificar esas notas). Tú sigues viendo todo.</p>
       <div class="kpis">
         <div class="kpi"><small>Encargado actual</small><b style="font-size:1rem">${esc(act ? act.encargado : (r.sucursales.find(x => x.id === r.suc) || {}).responsable || usu.filter(u => u.rol === 'Gerente').map(u => u.nombre).join(', ') || '—')}</b><span>${act ? 'desde ' + esc(act.inicio) : 'sin cambios registrados'}</span></div>
         <div class="kpi"><small>Inventario en la sucursal</small><b>${$$(e.inventario)}</b><span>${nf(e.piezas)} piezas · ${nf(e.productos)} productos</span></div>
-        <div class="kpi"><small>Notas con saldo</small><b>${$$(e.notasTotal)}</b><span>${nf(e.notas.length)} notas · pasan a Matriz</span></div></div>
+        <div class="kpi"><small>Notas con saldo</small><b>${$$(e.notasTotal)}</b><span>${nf(e.notas.length)} notas · las cobra el nuevo gerente</span></div></div>
       ${aviso.length ? `<div class="aviso-cand">⚠️ ${aviso.join('<br>')}</div>` : ''}
       ${e.notas.length ? `<details><summary>Ver notas con saldo (${e.notas.length})</summary>${tabla([{ t: 'Nota', h: x => `<a href="#" onclick="App.geNota('${esc(x.id)}');return false">${esc(x.folio)}</a>` }, { t: 'Fecha', k: 'fecha' }, { t: 'Cliente', k: 'cliente' }, { t: 'Saldo', num: 1, h: x => $$(x.saldo) }], e.notas)}</details>` : ''}
       <h4 style="margin:14px 0 6px">1. Personal que se va</h4>
       ${usu.length ? usu.map(u => `<label class="check"><input type="checkbox" class="geBaja" value="${esc(u.id)}" ${u.rol === 'Gerente' ? 'checked' : ''}> ${esc(u.nombre)} <small class="muted">· ${esc(u.rolHoja || u.rol)} · ${nf(u.clientes)} clientes</small></label>`).join('') : '<p class="muted">No hay usuarios activos en esta sucursal.</p>'}
-      <p class="muted peq">Se desactiva su acceso (no se borran: su historial y sus notas quedan con su nombre). Sus clientes pasan al nuevo gerente.</p>
+      <p class="muted peq">Se desactiva su acceso (no se borran: su historial y sus notas quedan con su nombre). Sus clientes pasan al nuevo gerente. Los vendedores que <b>no</b> marques se quedan en la sucursal y le reportan al nuevo gerente.</p>
       <h4 style="margin:14px 0 6px">2. Nuevo gerente</h4>
       <label>¿Quién?<select id="geQuien" onchange="$('#geNuevo').classList.toggle('oculto', this.value !== '')"><option value="">➕ Dar de alta a alguien nuevo</option>
         ${otros.map(u => `<option value="${esc(u.id)}">${esc(u.nombre)}${u.activo ? '' : ' (inactivo)'}${u.suc && u.suc !== r.suc ? ' · ' + esc(sucNom(u.suc)) : ''}</option>`).join('')}</select></label>
@@ -3188,12 +3188,15 @@ const App = (() => {
         <div class="fila"><label>Correo (opcional)<input id="geMail" type="email" autocomplete="off"></label><label>Celular<input id="geCel" inputmode="tel"></label></div>
         <label>Contraseña inicial (mín. 6)<input id="geClave" type="text" autocomplete="off" placeholder="se la das a él para entrar"></label></div>
       <label>Perfil<select id="geRol"><option>Gerente Sucursal</option><option>Vendedor</option><option>Almacenista</option></select></label>
-      <h4 style="margin:14px 0 6px">3. Inicio de la nueva gestión</h4>
+      <h4 style="margin:14px 0 6px">3. Lista de precios de la sucursal</h4>
+      <label>Lista de precios<select id="geLista">${(r.listas || []).map(l => `<option ${l === sucAct.lista ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+      <p class="muted peq">Actual: <b>${esc(sucAct.lista || 'sin asignar')}</b>. Es la lista con la que Matriz le traspasa la mercancía (y con la que la sucursal regresa productos a Matriz).</p>
+      <h4 style="margin:14px 0 6px">4. Inicio de la nueva gestión</h4>
       <div class="fila"><label>Fecha de inicio<input type="date" id="geFecha" value="${h}"></label></div>
       <label>Comentarios<input id="geCom" placeholder="p. ej. Reapertura con nuevo gerente"></label>
       <div class="acciones"><button class="btn primario" id="geBtn" onclick="App.guardarCambioEncargado()">✅ Hacer el cambio</button><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>
       ${(r.gestiones || []).length ? `<h4 style="margin:18px 0 6px">Historial de gestiones</h4>` + tabla([
-        { t: 'Encargado', h: x => `<b>${esc(x.encargado)}</b>${x.estatus === 'Activa' ? ' <span class="etq ok">vigente</span>' : ''}<br><small class="muted">${esc(x.inicio)} – ${esc(x.fin || 'hoy')}</small>` },
+        { t: 'Encargado', h: x => `<b>${esc(x.encargado)}</b>${x.estatus === 'Activa' ? ' <span class="etq ok">vigente</span>' : ''}<br><small class="muted">${esc(x.inicio)} – ${esc(x.fin || 'hoy')}${x.lista ? ' · lista ' + esc(x.lista) : ''}</small>` },
         { t: 'Ventas', num: 1, h: x => x.estatus === 'Activa' ? '—' : $$(x.ventas) }, { t: 'Utilidad bruta', num: 1, h: x => x.estatus === 'Activa' ? '—' : $$(x.utilidad) },
         { t: 'Mermas', num: 1, h: x => x.estatus === 'Activa' ? '—' : $$(x.mermas) },
         { t: 'Al cierre', h: x => x.estatus === 'Activa' ? esc(x.comentarios || '') : `Cartera ${$$(x.cartera)} (${nf(x.notas)} notas) · Inventario ${$$(x.inventario)} · ${nf(x.clientes)} clientes pasados` }], r.gestiones) : ''}`;
@@ -3205,12 +3208,12 @@ const App = (() => {
     if (!quien && !nuevo.nombre) return toast('Escribe el nombre del nuevo gerente', true);
     if (!quien && !nuevo.usuario && !nuevo.correo) return toast('Escribe un usuario para que pueda entrar', true);
     if (!quien && nuevo.contrasena.length < 6) return toast('La contraseña inicial debe tener al menos 6 caracteres', true);
-    const nom = quien ? $('#geQuien').selectedOptions[0].textContent : nuevo.nombre, suc = sucNom(r.suc), f = $('#geFecha').value;
-    if (!confirm(`¿Hacer el cambio de encargado en ${suc}?\n\n• Se cierra la gestión actual al día anterior del ${f}.\n• ${bajas.length ? bajas.length + ' usuario(s) quedan sin acceso y sus clientes pasan al nuevo gerente.' : 'Nadie se da de baja.'}\n• Nuevo encargado: ${nom}, desde el ${f}.\n• ${r.estado.notas.length ? r.estado.notas.length + ' nota(s) con saldo (' + $$(r.estado.notasTotal) + ') quedan para que las cobre Matriz.' : 'No hay notas con saldo.'}`)) return;
+    const nom = quien ? $('#geQuien').selectedOptions[0].textContent : nuevo.nombre, suc = sucNom(r.suc), f = $('#geFecha').value, lista = $('#geLista') ? $('#geLista').value : '', listaAnt = (r.sucursales.find(x => x.id === r.suc) || {}).lista || '';
+    if (!confirm(`¿Hacer el cambio de encargado en ${suc}?\n\n• Se cierra la gestión actual al día anterior del ${f}.\n• ${bajas.length ? bajas.length + ' usuario(s) quedan sin acceso y sus clientes pasan al nuevo gerente.' : 'Nadie se da de baja.'}\n• Nuevo encargado: ${nom}, desde el ${f}.\n• ${r.estado.notas.length ? r.estado.notas.length + ' nota(s) con saldo (' + $$(r.estado.notasTotal) + ') las cobrará el nuevo gerente.' : 'No hay notas con saldo.'}\n• Lista de precios: ${lista && lista !== listaAnt ? (listaAnt || 'sin asignar') + ' → ' + lista : (lista || listaAnt || 'sin asignar') + ' (sin cambio)'}.`)) return;
     $('#geBtn').disabled = true;
     try {
-      const x = await pedir('cambioEncargado', { suc: r.suc, fecha: f, bajas: bajas, nuevo: nuevo, pasarClientes: true, comentarios: $('#geCom').value.trim() });
-      toast(`✅ ${x.nuevo} queda a cargo de ${suc} desde el ${x.inicio}` + (x.clientes ? ` · ${x.clientes} clientes reasignados` : ''));
+      const x = await pedir('cambioEncargado', { suc: r.suc, fecha: f, bajas: bajas, nuevo: nuevo, pasarClientes: true, lista: lista, comentarios: $('#geCom').value.trim() });
+      toast(`✅ ${x.nuevo} queda a cargo de ${suc} desde el ${x.inicio}` + (x.clientes ? ` · ${x.clientes} clientes reasignados` : '') + (x.listaCambio ? ` · lista ${x.lista}` : ''));
       verGestiones(r.suc);
     } catch (e) { if ($('#geBtn')) $('#geBtn').disabled = false; }
   }
