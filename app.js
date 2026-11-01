@@ -5739,10 +5739,10 @@ const App = (() => {
           <div class="kpi ${R.nSinIdentificar ? 'kpi-alerta' : ''}"><small>Depósitos sin identificar</small><b>${$$(R.sinIdentificar)}</b><span>${R.nSinIdentificar} por revisar</span></div>
           <div class="kpi ${R.avisos ? 'kpi-alerta' : ''}"><small>Avisos fiscales</small><b>${R.avisos}</b><span>PUE en otro mes · PPD sin complemento · cobros sin depósito</span></div>
         </div></div>
-      ${R.sugerencias ? `<div class="tarjeta"><h3>🔗 Depósitos que ya reconocí (${R.sugerencias})</h3><p class="muted peq">Mismo importe que un cobro registrado (±3 días). Confírmalos con un clic.</p>
+      ${R.sugerencias ? `<div class="tarjeta"><h3>🔗 Depósitos que ya reconocí (${R.sugerencias})</h3><p class="muted peq">Por la cuenta de donde pagó el cliente (cobros de ±60 días que suman el depósito) o por el mismo importe que un cobro (±3 días). Confírmalos con un clic.</p>
         ${R.seguras ? `<div class="acciones" style="justify-content:flex-start"><button class="btn primario" onclick="App.bnConcSeguras()">✔ Conciliar las ${R.seguras} seguras</button></div>` : ''}
         ${tabla([{ t: 'Depósito', h: d => `<b>${$$(d.abono)}</b> · ${esc(d.fecha)}<br><small class="muted">${esc(d.cuenta)} · ${esc(String(d.desc).slice(0, 60))}</small>` },
-          { t: 'Es el cobro…', h: d => d.sug.map((x, i) => `<div style="margin:2px 0">${x.segura ? '<span class="etq ok">seguro</span> ' : ''}${esc(x.texto)} <button class="btn chico" onclick="App.bnConcLigar('${d.id}', ${i})">✔ Es este</button></div>`).join('') },
+          { t: 'Es el cobro…', h: d => bnQuien(d, true) + d.sug.map((x, i) => `<div style="margin:2px 0">${x.segura ? '<span class="etq ok">seguro</span> ' : ''}${x.porCuenta ? '<span class="etq">por su cuenta</span> ' : ''}${esc(x.texto)} <button class="btn chico" onclick="App.bnConcLigar('${d.id}', ${i})">✔ Es este</button></div>`).join('') },
           { t: '', h: d => `<button class="btn chico" onclick="App.bnConcManual('${d.id}')">Otro…</button>` }], deps.filter(d => d.sug.length && !d.conciliado))}</div>` : ''}
       <div class="tarjeta"><h3>🧾 Facturas</h3>
         <div class="pestanas chicas">${[['todas', 'Todas'], ['avisos', '⚠️ Con avisos'], ['pend', 'Pendientes'], ['ok', 'Conciliadas']].map(t => `<button class="${fil === t[0] ? 'activo' : ''}" onclick="App.bnConcFil('${t[0]}')">${t[1]}</button>`).join('')}</div>
@@ -5758,11 +5758,18 @@ const App = (() => {
           { t: 'Fecha', k: 'fecha' }, { t: 'Cuenta', h: d => esc(d.cuenta) },
           { t: 'Descripción', h: d => esc(String(d.desc).slice(0, 80)) + (d.ref ? `<br><small class="muted">${esc(d.ref)}</small>` : '') },
           { t: 'Importe', num: 1, h: d => `<b>${$$(d.abono)}</b>` },
-          { t: 'Es…', h: d => d.conciliado ? `<span class="etq ok">✔ Cobro</span><br><small>${esc(d.liga)}</small>` : d.noVenta ? `<span class="etq">${esc(d.categoria)}</span>` : (d.categoria ? `<span class="etq">${esc(d.categoria)}</span> ` : '') + '<span class="etq mal">Sin identificar</span>' },
+          { t: 'Es…', h: d => d.conciliado ? `<span class="etq ok">✔ Cobro</span><br><small>${esc(d.liga)}</small>` : d.noVenta ? `<span class="etq">${esc(d.categoria)}</span>` : (d.categoria ? `<span class="etq">${esc(d.categoria)}</span> ` : '') + '<span class="etq mal">Sin identificar</span>' + bnQuien(d) },
           { t: '', h: d => d.conciliado ? `<button class="btn chico" title="Quitar la liga" onclick="App.bnConcQuitar('${d.id}')">✕</button>` : `<button class="btn chico" onclick="App.bnConcManual('${d.id}')">🔗 Cobro</button><select class="chico" onchange="App.bnConcCategoria('${d.id}', this.value)"><option value="">Otro concepto…</option>${r.categorias.filter(c => c !== 'Cobro a cliente').map(c => `<option ${c === d.categoria ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` }
         ], deps, { vacio: 'No hay estados de cuenta de este mes (súbelos en 📥 Estados de cuenta)' })}</div>`;
   }
   function bnConcFil(f) { BN.concFil = f; bnConc(); }
+  /** Quién pagó, según las cuentas conocidas de los clientes. */
+  function bnQuien(d, corto) {
+    if (d.propio) return `<br><small class="muted">↔ viene de una cuenta tuya</small> <button class="btn chico" onclick="App.bnConcCategoria('${d.id}', 'Traspaso entre cuentas propias')">Es traspaso</button>`;
+    const c = d.cliente; if (!c) return '';
+    if (c.ambiguo) return `<br><span class="etq av">Cuenta registrada a varios clientes</span> <small class="muted">${esc(c.opciones.map(o => o.nombre).join(' / '))}</small>`;
+    return (corto ? '' : '<br>') + `<span class="etq ok">👤 ${esc(c.nombre)}</span> <small class="muted">por ${esc(c.via)}</small>` + (corto ? '<br>' : '');
+  }
   async function bnConcLigar(mov, i, forzar) {
     const d = BN.conc.depositos.find(x => x.id === mov), s = d.sug[i];
     try { await pedir('conciliarMov', { mov: mov, cobros: s.ids, forzar: !!forzar }, true); toast('✔ Conciliado'); bnConc(); } catch (e) { toast(e.message, true); }
@@ -5779,12 +5786,14 @@ const App = (() => {
     try { await pedir('clasificarMovBanco', { ids: [mov], categoria: cat }, true); toast('✔ ' + cat); bnConc(); } catch (e) { toast(e.message, true); }
   }
   /** Ligar a mano: lista de cobros cercanos (importe más parecido primero), se pueden marcar varios. */
-  async function bnConcManual(mov, texto) {
+  async function bnConcManual(mov, texto, todos) {
     const d = BN.conc.depositos.find(x => x.id === mov); BN.ligMov = mov; BN.ligSel = BN.ligSel && BN.ligSelMov === mov ? BN.ligSel : {}; BN.ligSelMov = mov;
-    let l; try { l = await pedir('cobrosParaLigar', { mov: mov, texto: texto || '' }); } catch (e) { return toast(e.message, true); }
+    const cli = d.cliente && d.cliente.id && !todos ? d.cliente : null;
+    let l; try { l = await pedir('cobrosParaLigar', { mov: mov, texto: texto || '', idCliente: cli ? cli.id : '' }); } catch (e) { return toast(e.message, true); }
     BN.ligLista = l;
     modal('🔗 ¿Qué cobro es este depósito?', `<p><b>${$$(d.abono)}</b> · ${esc(d.fecha)} · ${esc(d.cuenta)}<br><small class="muted">${esc(d.desc)}</small></p>
-      <div class="fila"><input id="ligTxt" placeholder="Buscar nota, cliente o importe" value="${esc(texto || '')}" onkeydown="if(event.key==='Enter')App.bnConcManual('${mov}', this.value)"><button class="btn fijo" onclick="App.bnConcManual('${mov}', $('#ligTxt').value)">Buscar</button></div>
+      ${cli ? `<p><span class="etq ok">👤 ${esc(cli.nombre)}</span> <small class="muted">(por ${esc(cli.via)}) · cobros de ±60 días</small> <button class="btn chico" onclick="App.bnConcManual('${mov}', '', true)">Ver de todos los clientes</button></p>` : ''}
+      <div class="fila"><input id="ligTxt" placeholder="Buscar nota, cliente o importe" value="${esc(texto || '')}" onkeydown="if(event.key==='Enter')App.bnConcManual('${mov}', this.value, ${todos ? 'true' : 'false'})"><button class="btn fijo" onclick="App.bnConcManual('${mov}', $('#ligTxt').value, ${todos ? 'true' : 'false'})">Buscar</button></div>
       <div id="ligSuma" class="peq" style="margin:6px 0"></div>
       <div style="max-height:50vh;overflow:auto">${tabla([
         { t: '', h: x => `<input type="checkbox" ${BN.ligSel[x.id] ? 'checked' : ''} onchange="App.bnConcMarca('${x.id}', this.checked)">` },
@@ -6279,9 +6288,47 @@ const App = (() => {
         { t: 'Cuenta', h: c => `<b>${nomCta(c)}</b><br><small class="muted">${esc(c.numero)}${c.clabe ? ' · CLABE ' + esc(c.clabe) : ''}</small>` }, { t: 'Tipo', h: c => esc(c.tipo) },
         { t: 'Uso', h: c => `<span class="etq ${c.uso === 'Empresa' ? 'ok' : c.uso === 'Personal' ? '' : 'av'}">${esc(c.uso)}</span>` }, { t: 'Notas', h: c => esc(c.comentarios || '') },
         { t: '', h: c => `<button class="icono" onclick="App.bnFormCuenta('${c.id}')">✏️</button>` }], d.cuentas, { vacio: 'Aún no hay cuentas' }) + `</div>` +
-      (puede('dueno') ? `<div class="tarjeta"><h3>👤 Acceso del contador</h3><p class="muted peq">Perfil <b>Contador (administrador contable)</b>: ve Bancos, Cobranza, Estados de cuenta, Facturación, Devoluciones, Compras y Pagos a proveedores, con descargas a Excel. Es de <b>solo consulta</b> (puede trabajar facturación y bancos) y <b>no ve</b> gastos, comisiones ni utilidades. En cada pantalla tiene el botón 💬 para dejarte observaciones.</p>
+      '<div class="tarjeta" id="bnCtaCli"><h3>👤 Cuentas con las que pagan tus clientes</h3><div class="vacio">Cargando…</div></div>' +
+      (puede('dueno') ? `<div class="tarjeta"><h3>👤 Acceso del contador</h3><p class="muted peq">Perfil <b>Contador (administrador contable)</b>: ve Bancos, Cobranza, Estados de cuenta, Facturación, Devoluciones, Compras y Pagos a proveedores, con descargas a Excel. Es de <b>solo consulta</b> (puede trabajar facturación, bancos y conciliación), ve gastos con sus facturas y <b>no ve</b> comisiones, utilidades ni ventas sin factura. En cada pantalla tiene el botón 💬 para dejarte observaciones.</p>
         <div class="fila"><label>Nombre<input id="ctNom"></label><label>Usuario<input id="ctUsr" autocapitalize="off"></label><label>Correo<input id="ctMail" type="email"></label></div>
         <div class="fila"><label>Contraseña inicial (mín. 8)<input id="ctPass" type="text" autocomplete="off"></label><button class="btn primario fijo" onclick="App.bnAltaContador()">➕ Dar de alta</button></div></div>` : '');
+    bnCtaCli('', false);
+  }
+  /** Cuentas de clientes: se aprenden solas al conciliar; aquí se corrigen, se quitan o se agregan. */
+  async function bnCtaCli(idCliente, enModal) {
+    let l; try { l = await pedir('cuentasCliente', { idCliente: idCliente || '' }); } catch (e) { l = null; }
+    BN.ctaCli = l || [];
+    const html = `<p class="muted peq">Se aprenden solas cuando se concilia un depósito con el cobro de un cliente (número de cuenta, CLABE o tarjeta que trae el banco). Si alguna quedó mal (p. ej. era un folio del banco o es de otro cliente), corrígela o quítala. Las vistas una sola vez dicen "por confirmar".</p>
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.bnFormCtaCli('', '${esc(idCliente || '')}')">➕ Agregar cuenta</button></div>` +
+      (l === null ? '<div class="vacio">Requiere conexión</div>' : tabla([
+        ...(idCliente ? [] : [{ t: 'Cliente', h: x => `<b>${esc(x.cliente)}</b>` }]),
+        { t: 'Cuenta', h: x => `${esc(x.tipo)} <b>${x.tipo === 'Nombre' ? esc(x.valor) : '…' + esc(x.valor.slice(-4))}</b>${x.tipo !== 'Nombre' && x.valor.length > 4 ? `<br><small class="muted">${esc(x.valor)}</small>` : ''}` },
+        { t: 'Banco / titular', h: x => esc([x.banco, x.titular].filter(Boolean).join(' · ') || '—') },
+        { t: 'Origen', h: x => `${esc(x.origen)}${x.origen === 'Aprendida' && x.veces < 2 ? ' <span class="etq av">por confirmar</span>' : ''}<br><small class="muted">${x.veces ? nf(x.veces) + ' depósito(s) · último ' + esc(x.ultima) : esc(x.notas)}</small>` },
+        { t: '', h: x => (x.activa ? '' : '<span class="etq">inactiva</span> ') + `<button class="icono" title="Corregir" onclick="App.bnFormCtaCli('${x.id}')">✏️</button><button class="icono" title="Quitar" onclick="App.bnQuitarCtaCli('${x.id}', '${esc(idCliente || '')}')">🗑️</button>` }],
+        l, { vacio: 'Todavía no hay cuentas: se irán agregando al conciliar' }));
+    if (enModal) modal('🏦 Cuentas con las que paga', html + '<div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>');
+    else { const el = $('#bnCtaCli'); if (el) el.innerHTML = '<h3>👤 Cuentas con las que pagan tus clientes</h3>' + html; }
+    BN.ctaCliEn = { idCliente: idCliente || '', enModal: !!enModal };
+  }
+  function bnFormCtaCli(id, idCliente) {
+    const x = id ? (BN.ctaCli || []).find(c => c.id === id) : { idCliente: idCliente || '', tipo: 'Cuenta', valor: '', banco: '', titular: '', activa: true, notas: '' };
+    const clis = (D().clientes || []).slice().sort((a, b) => String(a.razon || a.nombre).localeCompare(String(b.razon || b.nombre)));
+    modal(id ? '✏️ Corregir cuenta' : '➕ Cuenta de cliente', `<label>Cliente<select id="ccCli"><option value="">— elige —</option>${x.idCliente && !clis.some(c => c.id === x.idCliente) ? `<option value="${esc(x.idCliente)}" selected>${esc(x.cliente || x.idCliente)}</option>` : ''}${clis.map(c => `<option value="${esc(c.id)}" ${c.id === x.idCliente ? 'selected' : ''}>${esc(c.razon || c.nombre)}${c.razon && c.nombre && c.razon !== c.nombre ? ' (' + esc(c.nombre) + ')' : ''}</option>`).join('')}</select></label>
+      <div class="fila"><label>Tipo<select id="ccTipo">${['Cuenta', 'CLABE', 'Tarjeta', 'Nombre'].map(t => `<option ${t === x.tipo ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label style="flex:2">Número (completo o últimos 4) o nombre del titular<input id="ccVal" value="${esc(x.valor)}"></label></div>
+      <div class="fila"><label>Banco<input id="ccBanco" value="${esc(x.banco)}"></label><label>Titular<input id="ccTit" value="${esc(x.titular)}"></label></div>
+      <label>Notas<input id="ccNotas" value="${esc(x.notas)}"></label>
+      <label class="check"><input type="checkbox" id="ccAct" ${x.activa ? 'checked' : ''}> Activa (se usa para reconocer depósitos)</label>
+      <div class="acciones"><button class="btn primario" onclick="App.bnGuardarCtaCli('${id || ''}')">💾 Guardar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
+  }
+  async function bnGuardarCtaCli(id) {
+    const p = { id: id, idCliente: $('#ccCli').value, tipo: $('#ccTipo').value, valor: $('#ccVal').value, banco: $('#ccBanco').value, titular: $('#ccTit').value, notas: $('#ccNotas').value, activa: $('#ccAct').checked };
+    try { await pedir('guardarCuentaCliente', p, true); toast('✔ Guardada'); cerrarModal(); const e = BN.ctaCliEn || {}; bnCtaCli(e.idCliente, e.enModal); } catch (e) { toast(e.message, true); }
+  }
+  async function bnQuitarCtaCli(id, idCliente) {
+    if (!confirm('¿Quitar esta cuenta? Ya no se usará para reconocer depósitos (las conciliaciones hechas no cambian).')) return;
+    try { await pedir('quitarCuentaCliente', { id: id }, true); const e = BN.ctaCliEn || {}; bnCtaCli(e.idCliente, e.enModal); } catch (e) { toast(e.message, true); }
   }
   function bnFormCuenta(id) {
     const c = id ? bnCta(id) : { banco: '', producto: '', tipo: 'Débito', numero: '', clabe: '', uso: 'Empresa', comentarios: '', activa: true }, d = BN.datos || {};
@@ -7549,6 +7596,7 @@ const App = (() => {
     modal(c ? (c.razon || c.nombre) : 'Nuevo cliente', `${bloqueado ? `<div class="aviso-cand">🔒 <b>Solo el administrador puede modificar clientes.</b> Si necesitas cambiar algún dato de este cliente, <b>solicita autorización</b> al administrador.</div>` : ''}<div class="arch-par">${c ? bloqueArch('cliFoto', c.id) + bloqueArch('cliCsf', c.id) : bloqueArchNuevo('cliFoto', 'cliFotoN') + bloqueArchNuevo('cliCsf', 'cliCsfN')}</div><div id="fCli">${formulario(campos, formVals)}</div>
       <div class="acciones">${c && puede('ventas') ? `<button class="btn" onclick="App.ventasDeCliente('${esc(c.id)}','${esc(String(c.razon || c.nombre || '').replace(/'/g, ''))}')">🧾 Ver sus ventas</button>` : ''}
       ${c && puede('ventas') ? `<button class="btn" onclick="App.venderA('${c.id}')">🛒 Venderle</button>` : ''}
+      ${c && puede('bancos') ? `<button class="btn" onclick="App.bnCtaCli('${esc(c.id)}', true)">🏦 Cuentas con las que paga</button>` : ''}
       <button class="btn" onclick="${c ? `App.verCliente(${i})` : 'App.cerrarModal()'}">${c ? '← Volver a la ficha' : 'Cancelar'}</button>${puede('clientes_editar') && !bloqueado ? `<button class="btn primario" onclick="App.guardarCliente()">Guardar</button>` : ''}</div>`);
   }
   /** Ficha de información del cliente (solo lectura). Editar: administrador. Eliminar: dueño. */
@@ -10243,7 +10291,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    bajarXmlGasto, zipGastos, vistaBancos: t => V.bancos(t), bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
