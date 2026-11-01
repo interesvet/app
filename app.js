@@ -6076,7 +6076,7 @@ const App = (() => {
   const EDOCTA = (() => {
     const MESES3 = { ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6, JUL: 7, AGO: 8, SEP: 9, SET: 9, OCT: 10, NOV: 11, DIC: 12, JAN: 1, APR: 4, AUG: 8, DEC: 12 };
     const MESL = { ENERO: 1, FEBRERO: 2, MARZO: 3, ABRIL: 4, MAYO: 5, JUNIO: 6, JULIO: 7, AGOSTO: 8, SEPTIEMBRE: 9, SETIEMBRE: 9, OCTUBRE: 10, NOVIEMBRE: 11, DICIEMBRE: 12 };
-    const MONEY = /^[+-]?\$?\s?-?\d{1,3}(,\d{3})*\.\d{2}-?$/;
+    const MONEY = /^([+-]?\$?\s?-?\d{1,3}(,\d{3})*|[+-]?\$|[+-])\.\d{2}-?$/;   // también "-$.01" (Banorte escribe así los centavos)
     const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
     const p2 = n => ('0' + n).slice(-2);
     const iso = (y, m, d) => y && m && d ? y + '-' + p2(m) + '-' + p2(d) : '';
@@ -6214,7 +6214,7 @@ const App = (() => {
         if (/^Total cargos/i.test(l.t)) break;
         const tj = l.t.match(/Tarjeta (titular|adicional)\s+X{4} X{4} X{4} (\d{4})/i); if (tj) { tarj = tj[2] + (/adicional/i.test(tj[1]) ? ' (adicional)' : ''); cur = null; continue; }
         const m = l.t.match(/^(\d{2}-[A-Z]{3}-\d{4})\s+(\d{2}-[A-Z]{3}-\d{4})\s+(.*)$/);
-        const imp = l.items.find(i => /^[+-]\$[\d,]+\.\d{2}$/.test(i.s.trim()));
+        const imp = l.items.find(i => /^[+-]\$[\d,]*\.\d{2}$/.test(i.s.trim()));   // "-$.01" también
         if (m && imp) {
           const d = dinero(imp.s);
           cur = { fecha: fecha(m[1]), fechaLiq: fecha(m[2]), desc: l.items.filter(i => i !== imp && i.x > 135).map(i => i.s).join(' ').trim(), ref: '', cargo: d.neg ? 0 : d.v, abono: d.neg ? d.v : 0, saldo: null, tarjeta: tarj };
@@ -6279,22 +6279,29 @@ const App = (() => {
       if (per) { r.desde = fecha(per[1]); r.hasta = fecha(per[2]); }
       const co = T.match(/FECHA\s*DE\s*CORTE\s*(\d{1,2}-[A-Z]{3}-\d{4})/i); r.corte = co ? fecha(co[1]) : r.hasta;
       if (!r.hasta && r.corte) r.hasta = r.corte;
+      const anio = x => Number(String(x || '').slice(0, 4)), ok = x => anio(x) >= 2015 && anio(x) <= new Date().getFullYear() + 1;
+      if (r.hasta && r.corte && !ok(r.hasta) && ok(r.corte)) r.hasta = r.corte;
+      if (r.corte && r.hasta && !ok(r.corte) && ok(r.hasta)) r.corte = r.hasta;
       if (!r.desde && r.hasta) { const h = r.hasta.split('-').map(Number), d = new Date(h[0], h[1] - 2, h[2] + 1); r.desde = iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); r.avisos.push('No pude leer el inicio del periodo; lo calculé (un mes antes del corte). Revísalo.'); }
       const ult = re => valor(L, re, { ultimo: true });
       const pagos = ult(/PAGOS\s*Y\s*ABONOS/i), compras = ult(/COMPRAS\s*Y\s*CARGOS/i), comis = ult(/^COMISIONES/i) || 0;
       r.resumen = { saldoInicial: ult(/SALDO\s*ANTERIOR/i), abonos: pagos, cargos: compras === null ? null : r2(compras + comis), saldoFinal: ult(/SALDO\s*ACTUAL/i) };
-      let hx = null, en = false;
+      let hx = null, en = false, adic = false;
       for (const l of L) {
-        if (/ETALLE\s*DE\s*MOVIMIENTOS/i.test(l.t)) { en = true; continue; }
+        if (/ETALLE\s*DE\s*MOVIMIENTOS/i.test(l.t)) { en = true; adic = /ADICIONAL/i.test(l.t); continue; }
         if (!en) continue;
         const ab = l.items.find(i => /^Abonos$/i.test(i.s)); if (ab) { hx = ab.x; continue; }
-        if (/^Sub\s*Total|^TOTAL/i.test(l.t)) { const ms = montosDe(l); r.subtotales = ms.map(i => dinero(i.s).v); break; }
-        const m = l.t.match(/^(\d{1,2}-[A-Z]{3})\b\s*(.*)$/i);
+        // cada sección (titular y tarjetas adicionales) cierra con "Sub Total"; el "TOTAL" cierra todo (después vienen los planes a meses)
+        if (/^TOTAL/i.test(l.t)) break;
+        if (/^Sub\s*Total/i.test(l.t)) { en = false; continue; }
+        // el OCR a veces lee el día con letras ("LO-MAR" = 10-MAR, "I9-FEB" = 19-FEB)
+        const t0 = l.t.replace(/^([0-9LIl|Oo]{1,2})-([A-Z]{3})\b/i, (x, a, b) => a.replace(/[LIl|]/g, '1').replace(/[Oo]/g, '0') + '-' + b);
+        const m = t0.match(/^(\d{1,2}-[A-Z]{3})\b\s*(.*)$/i);
         const ms = montosDe(l); if (!m || !ms.length) continue;
         const im = ms[ms.length - 1], d = dinero(im.s), neg = d.neg || /^[-—–]$/.test((l.items[l.items.indexOf(im) - 1] || {}).s || '');
         const esAbono = neg || (hx !== null && im.x >= hx - 60);
         const desc = l.items.filter(i => i !== im && !/^[-—–]$/.test(i.s) && i.x > l.items[0].r).map(i => i.s).join(' ').replace(/^\d{3}\s+/, '').trim();
-        r.movs.push({ fecha: fecha(m[1], { hasta: r.hasta || r.corte }), fechaLiq: '', desc: desc, ref: '', cargo: esAbono ? 0 : d.v, abono: esAbono ? d.v : 0, saldo: null });
+        r.movs.push({ fecha: fecha(m[1], { hasta: r.hasta || r.corte }), fechaLiq: '', desc: desc, ref: '', cargo: esAbono ? 0 : d.v, abono: esAbono ? d.v : 0, saldo: null, tarjeta: adic ? 'adicional' : '' });
       }
       if (r.resumen.saldoFinal === null && r.resumen.saldoInicial !== null && r.resumen.cargos !== null && r.resumen.abonos !== null) {
         r.resumen.saldoFinal = r2(r.resumen.saldoInicial + r.resumen.cargos - r.resumen.abonos); r.saldoCalculado = true; r.avisos.push('No pude leer el "saldo actual al corte"; lo calculé. Compáralo con tu estado.'); }
@@ -6409,7 +6416,8 @@ const App = (() => {
     }
     /** Palabras del OCR (Tesseract: { text, bbox: {x0, x1, y0, y1} }) → renglones con el mismo formato que el PDF. */
     function renglonesOcr(palabras) {
-      return renglones(palabras.filter(w => String(w.text).trim()).map(w => ({ x: w.bbox.x0, r: w.bbox.x1, y: -(w.bbox.y0 + w.bbox.y1) / 2, s: String(w.text).trim() })), 12);
+      return renglones(palabras.filter(w => String(w.text).trim()).map(w => ({ x: w.bbox.x0, r: w.bbox.x1, y: -(w.bbox.y0 + w.bbox.y1) / 2,
+        s: String(w.text).trim().replace(/^([-—–]?\$?)(\d{1,3})\.(\d{3})\.(\d{2})$/, '$1$2,$3.$4') })), 12);   // "-9.950.57" (OCR) = -9,950.57
     }
     return { preprocesar: preprocesar, renglonesOcr: renglonesOcr, renglones: renglones, leer: leer, validar: validar, detectar: detectar, mapaExcel: mapaExcel, excel: excel, textoTodo: textoTodo, dinero: dinero, fecha: fecha, esCredito: esCredito };
   })();
