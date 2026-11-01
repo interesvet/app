@@ -2913,7 +2913,7 @@ const App = (() => {
       html += `<div class="tarjeta"><div class="fila no-imprimir" style="margin-bottom:8px"><label>Asignar las ${nf(r.facturas.length)} facturas mostradas a<select id="gAsigTodas"><option value="">Elige sucursal…</option>${optSucG('')}</select></label>
         <button class="btn fijo" onclick="App.asignarSucGastos(null)">Aplicar</button></div>
         <p class="muted">${nf(r.facturas.length)} facturas · ${$$(r.facturas.reduce((a, x) => a + x.monto, 0))} sin IVA · ${$$(r.facturas.reduce((a, x) => a + x.total, 0))} con IVA${r.sucursal ? ' · montos ponderados para ' + esc(sucNom(r.sucursal)) : ''}</p>` +
-        tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Categoría', h: x => x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + `<br><small class="muted">${esc(x.grupo)}</small>` },
+        tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Categoría', h: x => x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + ` <button class="icono no-imprimir" title="Cambiar la categoría de esta factura" onclick="App.editarCatGasto('${esc(x.uuid)}')">✏️</button><br><small class="muted">${esc(x.grupo)}</small>` },
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
           { t: 'Sucursal', h: (x) => `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
           { t: 'PDF', h: x => `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>` },
@@ -3049,6 +3049,22 @@ const App = (() => {
     if (cat === '__nueva') { cat = (prompt('Nombre de la nueva categoría:') || '').trim().toUpperCase(); if (!cat) return; }
     const todas = confirm('¿Usar "' + cat + '" también para las demás facturas de ' + emisor + ' que estén por clasificar (y las que lleguen después)?');
     try { const r = await pedir('clasificarGasto', { uuid: uuid, categoria: cat, todasDelProveedor: todas }); toast('✔ ' + (r.cambiadas || 1) + ' factura(s) → ' + cat); S.datGasKey = ''; cargarGastos(); } catch (e) {}
+  }
+  /** Cambiar la categoría de una factura de gasto ya clasificada (p. ej. un equipo que quedó como ALIMENTOS). */
+  function editarCatGasto(uuid) {
+    const x = (S.listaFact || []).find(f => f.uuid === uuid); if (!x) return;
+    const base = ['EQUIPO DE OFICINA', 'EQUIPO DE COMPUTO', 'MOBILIARIO', 'HERRAMIENTA Y EQUIPO'];
+    const cats = [...new Set((S.catsGas || []).concat(base))].filter(c => c && c !== 'POR CLASIFICAR' && !/^FLETE DE (COMPRAS|VENTAS)/.test(c)).sort();
+    modal('Cambiar categoría', `<p><b>${esc(x.emisor)}</b> · ${esc(x.fecha)} · ${$$(x.monto)} sin IVA</p>
+      <p class="muted peq">Categoría actual: <b>${esc(x.cat)}</b> (${esc(x.grupo)}). Solo cambia esta factura. El grupo (Operación, Inversión, Financiero o Excluir) lo define la categoría en Configuración › Grupos de gasto; por ejemplo EQUIPO DE OFICINA y EQUIPO DE COMPUTO son Inversión y se deprecian en lugar de restarse en el mes.</p>
+      <div class="rejilla"><label>Nueva categoría<select id="ecCat" onchange="document.getElementById('ecOtraL').style.display = this.value === '__nueva' ? '' : 'none'">${cats.map(c => `<option ${c === x.cat ? 'selected' : ''}>${esc(c)}</option>`).join('')}<option value="__nueva">+ Otra categoría…</option></select></label>
+        <label id="ecOtraL" style="display:none">Nombre de la categoría<input id="ecOtra" placeholder="Ej. EQUIPO DE OFICINA"></label></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarCatGasto('${esc(uuid)}')">Guardar</button></div>`);
+  }
+  async function guardarCatGasto(uuid) {
+    let cat = $('#ecCat').value; if (cat === '__nueva') cat = ($('#ecOtra').value || '').trim().toUpperCase();
+    if (!cat) return toast('Escribe la categoría', true);
+    try { await pedir('clasificarGasto', { uuid: uuid, categoria: cat, todasDelProveedor: false }); cerrarModal(); toast('✔ Categoría cambiada a ' + cat); S.datGasKey = ''; cargarGastos(); } catch (e) {}
   }
   async function verPdfGasto(uuid) {
     toast('Abriendo PDF…');
@@ -9011,7 +9027,7 @@ const App = (() => {
   /* ---------------- API pública (para onclick) ---------------- */
   return {
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal,
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal,
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
