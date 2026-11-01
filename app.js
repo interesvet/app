@@ -2398,7 +2398,7 @@ const App = (() => {
 
   /* ---------- HISTORIAL DE VENTAS ---------- */
   V.ventas = (tab) => {
-    const tabs = (puede('ventas') ? [['notas', 'Notas de venta']] : []).concat(puede('cobranza') ? [['cobranza', '💵 Cobranza'], ['edocta', '📑 Estados de cuenta']] : [])
+    const tabs = (puede('ventas') || esContador() ? [['notas', esContador() ? 'Notas facturadas' : 'Notas de venta']] : []).concat(puede('cobranza') ? [['cobranza', '💵 Cobranza'], ['edocta', '📑 Estados de cuenta']] : [])
       .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('devoluciones') ? [['dev', '↩️ Devoluciones']] : []).concat(puede('dueno') ? [['util', '🔒 Utilidad por nota']] : []);
     tab = tab || S.tabVen || 'notas'; if (!tabs.some(x => x[0] === tab)) tab = tabs[0][0]; S.tabVen = tab;
     const h = hoyISO(), ini = h.slice(0, 8) + '01';   // mes en curso: del día 1 a hoy
@@ -2451,19 +2451,20 @@ const App = (() => {
       const tot = vivas.reduce((a, x) => a + x.total, 0), sal = vivas.reduce((a, x) => a + Math.max(0, x.saldo), 0), cob = vivas.reduce((a, x) => a + x.cobrado, 0);
       const conSal = vivas.filter(x => x.saldo > 0.009).length;
       $('#lVentas').innerHTML = `<div class="kpis">
-        <div class="kpi"><small>${S.ventasCli && !$('#fDesde').value && !$('#fHasta').value ? 'Ventas históricas del cliente' : 'Ventas del periodo'}</small><b>${$$(tot)}</b><span>${vivas.length} ${vivas.length === 1 ? 'nota' : 'notas'}${l.length > vivas.length ? ' · ' + (l.length - vivas.length) + ' canceladas' : ''}</span></div>
+        <div class="kpi"><small>${esContador() ? 'Notas facturadas del periodo' : S.ventasCli && !$('#fDesde').value && !$('#fHasta').value ? 'Ventas históricas del cliente' : 'Ventas del periodo'}</small><b>${$$(tot)}</b><span>${vivas.length} ${vivas.length === 1 ? 'nota' : 'notas'}${l.length > vivas.length ? ' · ' + (l.length - vivas.length) + ' canceladas' : ''}</span></div>
         <div class="kpi"><small>Cobrado de esas notas</small><b>${$$(cob)}</b><span>${tot > 0 ? Math.round(cob / tot * 100) + ' % del total' : '—'}</span></div>
         <div class="kpi"><small>Por cobrar del periodo</small><b>${$$(sal)}</b><span>${conSal} ${conSal === 1 ? 'nota' : 'notas'} con saldo</span></div>
-        ${puede('cobranza') ? `<div class="kpi kpi-clic" id="kCxC" onclick="App.verCxC()" title="Ver todas las notas con saldo"><small>Cuentas por cobrar (total)</small><b>…</b><span>calculando</span></div>` : ''}
-      </div>` + tabla([
+        ${puede('cobranza') && !esContador() ? `<div class="kpi kpi-clic" id="kCxC" onclick="App.verCxC()" title="Ver todas las notas con saldo"><small>Cuentas por cobrar (total)</small><b>…</b><span>calculando</span></div>` : ''}
+        ${esContador() ? `<div class="kpi"><small>Facturado de esas notas</small><b>${$$(vivas.reduce((a, x) => a + (x.montoFac || 0), 0))}</b><span>solo notas con factura ligada</span></div>` : ''}
+      </div>` + (esContador() ? '<p class="muted peq">Solo se muestran las notas que tienen factura fiscal (total o parcial).</p>' : '') + tabla([
         { t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) },
         { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Saldo', num: 1, h: x => x.saldo > 0.009 && x.estatus !== 'Cancelado' ? `<b>${$$(x.saldo)}</b>` : '—' },
         { t: 'Estatus', h: x => etqEstatus(x.estatus) },
         { t: 'Factura', cls: 'ocultar-movil', h: x => { const t = String(x.facturado || '').trim().toUpperCase(); if (x.estatus === 'Cancelado') return '—';
-          return (t === 'SI' ? '<span class="etq ok">Facturada</span>' : t === 'PARCIAL' ? '<span class="etq av">Parcial</span>' : '<span class="muted">Sin facturar</span>') + (x.factura ? `<br><small class="muted">${esc(x.factura)}</small>` : ''); } },
+          return (t === 'SI' ? '<span class="etq ok">Facturada</span>' : t === 'PARCIAL' ? '<span class="etq av">Parcial</span>' : '<span class="muted">Sin facturar</span>') + (x.montoFac !== undefined ? `<br><b>${$$(x.montoFac)}</b> facturado` : '') + (x.factura ? `<br><small class="muted">${esc(x.factura)}</small>` : ''); } },
         { t: 'Pago', h: x => x.estatus === 'Cancelado' || x.estatus === 'Devuelto' ? '—' : x.saldo > 0.009 ? '<span class="etq saldo">Con saldo</span>' : x.saldo < -0.009 ? '<span class="etq av">Saldo a favor</span>' : '<span class="etq ok">Pagada</span>' }
       ], l, { clic: 'App.abrirVenta' });
-      if (puede('cobranza')) totalCxC();
+      if (puede('cobranza') && !esContador()) totalCxC();
     } catch (e) { if (nq === S.qVentas && $('#lVentas')) $('#lVentas').innerHTML = `<div class="vacio">${e.red ? 'Consultar ventas requiere conexión.' : 'No se pudo consultar: ' + esc(e.message || '')}</div>`; }
   }
   /** Cuentas por cobrar de TODAS las fechas (no depende del periodo elegido). */
@@ -5684,12 +5685,166 @@ const App = (() => {
   const TESS_V = '5.1.1', TESS_URL = 'https:' + '//cdn.jsdelivr.net/npm/';
   const BN = { cola: [] };
   V.bancos = (tab) => {
-    tab = tab || S.tabBan || 'estados'; S.tabBan = tab;
-    const tabs = [['estados', '📥 Estados de cuenta'], ['movs', '📋 Movimientos'], ['cuentas', '🏦 Cuentas'], ['obs', '💬 Observaciones']];
+    tab = tab || S.tabBan || 'conc'; S.tabBan = tab;
+    const tabs = [['conc', '🧾 Conciliación'], ['estados', '📥 Estados de cuenta'], ['movs', '📋 Movimientos'], ['cuentas', '🏦 Cuentas'], ['obs', '💬 Observaciones']];
     const barra = `<div class="pestanas">${tabs.map(t => `<button class="${tab === t[0] ? 'activo' : ''}" onclick="App.vistaBancos('${t[0]}')">${t[1]}</button>`).join('')}</div>`;
     $('#vista').innerHTML = barra + '<div id="bnCont"><div class="vacio">Cargando…</div></div>';
-    ({ estados: bnEstados, movs: bnMovs, cuentas: bnCuentas, obs: bnObs })[tab]();
+    ({ conc: bnConc, estados: bnEstados, movs: bnMovs, cuentas: bnCuentas, obs: bnObs })[tab]();
   };
+
+  /* ---------- CONCILIACIÓN FISCAL: facturas ↔ cobros ↔ depósitos (pensada para el contador) ---------- */
+  const MESES_CONC = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const mesConc = m => { const [y, n] = String(m).split('-'); return MESES_CONC[Number(n) - 1] + ' ' + y; };
+  async function bnConc(mes) {
+    if (mes) BN.mes = mes;
+    if (!BN.mes) { const d = new Date(); d.setMonth(d.getMonth() - 1); BN.mes = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }   // por omisión, el mes pasado (el que se cierra)
+    const cont = $('#bnCont'); if (!cont) return;
+    cont.innerHTML = '<div class="vacio">Armando la conciliación…</div>';
+    let r; try { r = await pedir('conciliacion', { mes: BN.mes }); } catch (e) { cont.innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    BN.conc = r; const R = r.resumen;
+    const meses = []; { const d = new Date(); for (let i = 0; i < 18; i++) { meses.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); d.setMonth(d.getMonth() - 1); } }
+    const fil = BN.concFil || 'todas', deps = r.depositos, fs = r.facturas.filter(f => fil === 'todas' || (fil === 'avisos' ? f.avisos.length : fil === 'pend' ? f.estado !== 'Conciliada' : f.estado === 'Conciliada'));
+    const etqF = f => f.estado === 'Conciliada' ? '<span class="etq ok">✔ Conciliada</span>' : f.estado === 'Cobrada sin depósito' ? '<span class="etq av">Cobrada sin depósito</span>' : f.estado === 'Parcial' ? '<span class="etq av">Cobro parcial</span>' : '<span class="etq">Por cobrar</span>';
+    const sinId = deps.filter(d => !d.conciliado && !d.noVenta);
+    cont.innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:flex-end">
+        <label>Mes<select onchange="App.bnConc(this.value)">${meses.map(m => `<option value="${m}" ${m === r.mes ? 'selected' : ''}>${mesConc(m)}</option>`).join('')}</select></label>
+        <button class="btn fijo" onclick="App.bnExcelConc()">📊 Excel del mes</button>
+        <button class="btn fijo" onclick="App.bnFormRep()">⬆️ Subir complementos de pago (XML)</button></div>
+        <p class="muted peq">Se sigue cada <b>factura</b> hasta su dinero: factura → nota → cobro → depósito en el banco. Las facturas de meses anteriores aparecen si se cobraron en este mes.</p>
+        <div class="kpis">
+          <div class="kpi"><small>Facturado en ${esc(mesConc(r.mes))}</small><b>${$$(R.facturado)}</b><span>${R.facturas} facturas · ${R.conciliadas} conciliadas</span></div>
+          <div class="kpi"><small>Cobrado de esas facturas</small><b>${$$(R.cobradoFacturas)}</b><span>por cobrar ${$$(R.porCobrar)}</span></div>
+          <div class="kpi"><small>Depósitos del mes</small><b>${$$(R.depositos)}</b><span>${R.nDepositos} depósitos · conciliados ${$$(R.depConciliados)} · otros conceptos ${$$(R.depOtros)}</span></div>
+          <div class="kpi ${R.nSinIdentificar ? 'kpi-alerta' : ''}"><small>Depósitos sin identificar</small><b>${$$(R.sinIdentificar)}</b><span>${R.nSinIdentificar} por revisar</span></div>
+          <div class="kpi ${R.avisos ? 'kpi-alerta' : ''}"><small>Avisos fiscales</small><b>${R.avisos}</b><span>PUE en otro mes · PPD sin complemento · cobros sin depósito</span></div>
+        </div></div>
+      ${R.sugerencias ? `<div class="tarjeta"><h3>🔗 Depósitos que ya reconocí (${R.sugerencias})</h3><p class="muted peq">Mismo importe que un cobro registrado (±3 días). Confírmalos con un clic.</p>
+        ${R.seguras ? `<div class="acciones" style="justify-content:flex-start"><button class="btn primario" onclick="App.bnConcSeguras()">✔ Conciliar las ${R.seguras} seguras</button></div>` : ''}
+        ${tabla([{ t: 'Depósito', h: d => `<b>${$$(d.abono)}</b> · ${esc(d.fecha)}<br><small class="muted">${esc(d.cuenta)} · ${esc(String(d.desc).slice(0, 60))}</small>` },
+          { t: 'Es el cobro…', h: d => d.sug.map((x, i) => `<div style="margin:2px 0">${x.segura ? '<span class="etq ok">seguro</span> ' : ''}${esc(x.texto)} <button class="btn chico" onclick="App.bnConcLigar('${d.id}', ${i})">✔ Es este</button></div>`).join('') },
+          { t: '', h: d => `<button class="btn chico" onclick="App.bnConcManual('${d.id}')">Otro…</button>` }], deps.filter(d => d.sug.length && !d.conciliado))}</div>` : ''}
+      <div class="tarjeta"><h3>🧾 Facturas</h3>
+        <div class="pestanas chicas">${[['todas', 'Todas'], ['avisos', '⚠️ Con avisos'], ['pend', 'Pendientes'], ['ok', 'Conciliadas']].map(t => `<button class="${fil === t[0] ? 'activo' : ''}" onclick="App.bnConcFil('${t[0]}')">${t[1]}</button>`).join('')}</div>
+        ${tabla([
+          { t: 'Factura', h: f => `<b>${esc(f.sf)}</b> ${f.delMes ? '' : '<span class="etq">mes anterior</span>'}<br><small class="muted">${esc(f.fecha)} · ${esc(f.metodo || '—')}${f.global ? ' · global' : ''}</small>` },
+          { t: 'Cliente', h: f => esc(f.receptor) + `<br><small class="muted">${esc(f.rfc)}</small>` },
+          { t: 'Total', num: 1, h: f => $$(f.total) }, { t: 'Cobrado', num: 1, h: f => $$(f.cobrado) + (f.porCobrar > 1 ? `<br><small class="muted">falta ${$$(f.porCobrar)}</small>` : '') },
+          { t: 'Estado', h: f => etqF(f) + (/PPD/.test(f.metodo) ? `<br><small class="${f.cobrado - f.conRep > 1 ? 'txt-mal' : 'muted'}">complementos ${$$(f.conRep)}</small>` : '') },
+          { t: 'Avisos', h: f => f.avisos.map(a => `<div class="peq ${a.tipo === 'banco' ? 'muted' : 'txt-mal'}">⚠️ ${esc(a.txt)}</div>`).join('') }
+        ], fs, { clic: 'App.bnConcFactura', vacio: 'Sin facturas en ' + mesConc(r.mes) })}</div>
+      <div class="tarjeta"><h3>🏦 Depósitos del mes</h3><p class="muted peq">Cada depósito debe quedar como <b>cobro</b> (ligado a su nota/factura) o con su <b>concepto</b> (traspaso, préstamo, aportación, personal…). Los de tarjetas de crédito no se cuentan.</p>
+        ${tabla([
+          { t: 'Fecha', k: 'fecha' }, { t: 'Cuenta', h: d => esc(d.cuenta) },
+          { t: 'Descripción', h: d => esc(String(d.desc).slice(0, 80)) + (d.ref ? `<br><small class="muted">${esc(d.ref)}</small>` : '') },
+          { t: 'Importe', num: 1, h: d => `<b>${$$(d.abono)}</b>` },
+          { t: 'Es…', h: d => d.conciliado ? `<span class="etq ok">✔ Cobro</span><br><small>${esc(d.liga)}</small>` : d.noVenta ? `<span class="etq">${esc(d.categoria)}</span>` : (d.categoria ? `<span class="etq">${esc(d.categoria)}</span> ` : '') + '<span class="etq mal">Sin identificar</span>' },
+          { t: '', h: d => d.conciliado ? `<button class="btn chico" title="Quitar la liga" onclick="App.bnConcQuitar('${d.id}')">✕</button>` : `<button class="btn chico" onclick="App.bnConcManual('${d.id}')">🔗 Cobro</button><select class="chico" onchange="App.bnConcCategoria('${d.id}', this.value)"><option value="">Otro concepto…</option>${r.categorias.filter(c => c !== 'Cobro a cliente').map(c => `<option ${c === d.categoria ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` }
+        ], deps, { vacio: 'No hay estados de cuenta de este mes (súbelos en 📥 Estados de cuenta)' })}</div>`;
+  }
+  function bnConcFil(f) { BN.concFil = f; bnConc(); }
+  async function bnConcLigar(mov, i, forzar) {
+    const d = BN.conc.depositos.find(x => x.id === mov), s = d.sug[i];
+    try { await pedir('conciliarMov', { mov: mov, cobros: s.ids, forzar: !!forzar }, true); toast('✔ Conciliado'); bnConc(); } catch (e) { toast(e.message, true); }
+  }
+  async function bnConcSeguras() {
+    try { const x = await pedir('conciliarSeguras', { mes: BN.mes }, true); toast('✔ ' + x.n + ' depósitos conciliados'); bnConc(); } catch (e) { toast(e.message, true); }
+  }
+  async function bnConcQuitar(mov) {
+    if (!confirm('¿Quitar la liga de este depósito con sus cobros?')) return;
+    try { await pedir('desconciliarMov', { mov: mov }, true); bnConc(); } catch (e) { toast(e.message, true); }
+  }
+  async function bnConcCategoria(mov, cat) {
+    if (!cat) return;
+    try { await pedir('clasificarMovBanco', { ids: [mov], categoria: cat }, true); toast('✔ ' + cat); bnConc(); } catch (e) { toast(e.message, true); }
+  }
+  /** Ligar a mano: lista de cobros cercanos (importe más parecido primero), se pueden marcar varios. */
+  async function bnConcManual(mov, texto) {
+    const d = BN.conc.depositos.find(x => x.id === mov); BN.ligMov = mov; BN.ligSel = BN.ligSel && BN.ligSelMov === mov ? BN.ligSel : {}; BN.ligSelMov = mov;
+    let l; try { l = await pedir('cobrosParaLigar', { mov: mov, texto: texto || '' }); } catch (e) { return toast(e.message, true); }
+    BN.ligLista = l;
+    modal('🔗 ¿Qué cobro es este depósito?', `<p><b>${$$(d.abono)}</b> · ${esc(d.fecha)} · ${esc(d.cuenta)}<br><small class="muted">${esc(d.desc)}</small></p>
+      <div class="fila"><input id="ligTxt" placeholder="Buscar nota, cliente o importe" value="${esc(texto || '')}" onkeydown="if(event.key==='Enter')App.bnConcManual('${mov}', this.value)"><button class="btn fijo" onclick="App.bnConcManual('${mov}', $('#ligTxt').value)">Buscar</button></div>
+      <div id="ligSuma" class="peq" style="margin:6px 0"></div>
+      <div style="max-height:50vh;overflow:auto">${tabla([
+        { t: '', h: x => `<input type="checkbox" ${BN.ligSel[x.id] ? 'checked' : ''} onchange="App.bnConcMarca('${x.id}', this.checked)">` },
+        { t: 'Cobro', h: x => `<b>${esc(x.nota)}</b> · ${esc(x.fecha)}<br><small class="muted">${esc(x.cliente)} · ${esc(x.forma)}</small>` },
+        { t: 'Importe', num: 1, h: x => $$(x.monto) }, { t: 'Factura', h: x => x.factura ? esc(x.factura) : '<span class="etq av">sin factura</span>' }], l, { vacio: 'No encontré cobros cercanos; busca por cliente o nota' })}</div>
+      <label>Nota (opcional)<input id="ligNota" placeholder="p. ej. pagó dos notas en una transferencia"></label>
+      <div class="acciones"><button class="btn primario" onclick="App.bnConcGuardarManual()">✔ Conciliar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
+    bnConcSuma();
+  }
+  function bnConcMarca(id, v) { if (v) BN.ligSel[id] = 1; else delete BN.ligSel[id]; bnConcSuma(); }
+  function bnConcSuma() {
+    const d = BN.conc.depositos.find(x => x.id === BN.ligMov), ids = Object.keys(BN.ligSel), sum = (BN.ligLista || []).filter(x => BN.ligSel[x.id]).reduce((a, x) => a + x.monto, 0);
+    const el = $('#ligSuma'); if (el) el.innerHTML = ids.length ? `Marcados: <b>${$$(sum)}</b> de ${$$(d.abono)} ${Math.abs(sum - d.abono) < 0.01 ? '<span class="etq ok">✔ cuadra</span>' : '<span class="etq av">diferencia ' + $$(d.abono - sum) + '</span>'}` : 'Marca uno o varios cobros.';
+  }
+  async function bnConcGuardarManual() {
+    const ids = Object.keys(BN.ligSel || {}); if (!ids.length) return toast('Marca al menos un cobro', true);
+    const p = { mov: BN.ligMov, cobros: ids, nota: $('#ligNota').value };
+    try { await pedir('conciliarMov', p, true); }
+    catch (e) { if (!/de todos modos/.test(e.message) || !confirm(e.message)) return toast(e.message, true); try { await pedir('conciliarMov', Object.assign(p, { forzar: true }), true); } catch (e2) { return toast(e2.message, true); } }
+    BN.ligSel = {}; cerrarModal(); toast('✔ Conciliado'); bnConc();
+  }
+  /** Detalle de una factura: notas, cobros, depósitos y complementos. */
+  async function bnConcFactura(i) {
+    const f0 = (BN.conc.facturas.filter(f => (BN.concFil || 'todas') === 'todas' || ((BN.concFil === 'avisos') ? f.avisos.length : BN.concFil === 'pend' ? f.estado !== 'Conciliada' : f.estado === 'Conciliada')))[i]; if (!f0) return;
+    let f; try { f = await pedir('detalleConciliacion', { id: f0.id }); } catch (e) { return toast(e.message, true); }
+    BN.facConc = f;
+    modal('🧾 Factura ' + f.sf, `<p><b>${esc(f.receptor)}</b> · ${esc(f.rfc)}<br>${esc(f.fecha)} · ${esc(f.metodo || '—')} · forma ${esc(f.forma || '—')} · total <b>${$$(f.total)}</b>${f.url ? ` · <a target="_blank" href="${esc(f.url)}">ver factura</a>` : ''}<br><small class="muted">UUID ${esc(f.uuid)}</small></p>
+      ${f.avisos.map(a => `<div class="txt-mal peq">⚠️ ${esc(a.txt)}</div>`).join('')}
+      <h4>Notas que factura</h4>${f.notas.map(n => `<div class="peq">${esc(n.nota)} · ${n.monto === null ? 'toda la nota' : $$(n.monto)}</div>`).join('') || '<p class="muted">—</p>'}
+      <h4>Cobros (lo que le toca a esta factura)</h4>${tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Nota', k: 'nota' }, { t: 'Forma', k: 'forma' }, { t: 'Cobro', num: 1, h: c => $$(c.monto) }, { t: 'A esta factura', num: 1, h: c => $$(c.aplicado) },
+        { t: 'Depósito', h: c => c.mov ? `<span class="etq ok">✔</span> ${esc(c.mov.fecha)}<br><small class="muted">${esc(c.mov.cuenta)}</small>` : c.efectivo ? '<span class="etq">efectivo</span>' : '<span class="etq av">sin identificar</span>' }], f.cobros, { vacio: 'Sin cobros todavía' })}
+      ${/PPD/.test(f.metodo) || f.reps.length ? `<h4>Complementos de pago (REP)</h4>${tabla([{ t: 'Fecha pago', k: 'fecha' }, { t: 'UUID', h: r => `<small>${esc(r.uuid)}</small>` + (r.url ? ` <a target="_blank" href="${esc(r.url)}">XML</a>` : '') }, { t: 'Parc.', k: 'parc' }, { t: 'Monto', num: 1, h: r => $$(r.monto) },
+        { t: '', h: r => `<button class="icono" title="Quitar" onclick="App.bnQuitarRep('${r.id}')">✕</button>` }], f.reps, { vacio: 'Sin complementos' })}
+        <p class="peq">Cobrado ${$$(f.cobrado)} · con complemento ${$$(f.conRep)} ${f.cobrado - f.conRep > 1 ? '<span class="etq mal">faltan ' + $$(f.cobrado - f.conRep) + '</span>' : '<span class="etq ok">✔ completo</span>'}</p>
+        <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.bnFormRep()">⬆️ Subir XML</button><button class="btn" onclick="App.bnRepManual()">✏️ Capturar UUID a mano</button></div>` : ''}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  function bnFormRep() {
+    modal('⬆️ Complementos de pago (REP)', `<p>Sube los XML de los complementos de pago que emitiste a tus clientes (uno o varios). Se ligan solos a su factura por el UUID.</p>
+      <label>Archivos XML<input type="file" id="repArch" multiple accept=".xml,text/xml,application/xml"></label>
+      <div class="acciones"><button class="btn primario" onclick="App.bnSubirRep()">⬆️ Subir</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div><div id="repRes"></div>`);
+  }
+  async function bnSubirRep() {
+    const fs = [...($('#repArch').files || [])]; if (!fs.length) return toast('Elige los XML', true);
+    try {
+      const xmls = []; for (const f of fs) xmls.push(await leerArchivo(f, true));
+      const r = await pedir('subirRepVenta', { xmls: xmls }, true);
+      $('#repRes').innerHTML = `<p>✔ ${r.ok} pago(s) ligados${r.repetidos ? ' · ' + r.repetidos + ' ya estaban' : ''}</p>` + (r.sinFactura.length ? `<p class="txt-mal peq">No encontré estas facturas en la app: ${esc(r.sinFactura.join(', '))}</p>` : '') + r.errores.map(e => `<p class="txt-mal peq">✖ ${esc(e)}</p>`).join('');
+      if (S.tabBan === 'conc') bnConc();
+    } catch (e) { toast(e.message, true); }
+  }
+  async function bnRepManual() {
+    const f = BN.facConc; if (!f) return;
+    const uuid = prompt('UUID (folio fiscal) del complemento de pago:'); if (!uuid) return;
+    const monto = prompt('Monto pagado que ampara (de esta factura):', f.cobrado - f.conRep > 0 ? (f.cobrado - f.conRep).toFixed(2) : ''); if (!monto) return;
+    const fecha = prompt('Fecha del pago (aaaa-mm-dd):', '');
+    try { await pedir('guardarRepManual', { idFactura: f.id, uuid: uuid, monto: monto, fecha: fecha || '' }, true); toast('✔ Complemento registrado'); cerrarModal(); bnConc(); } catch (e) { toast(e.message, true); }
+  }
+  async function bnQuitarRep(id) {
+    if (!confirm('¿Quitar este complemento de la factura? (el XML se queda en Drive)')) return;
+    try { await pedir('quitarRep', { id: id }, true); cerrarModal(); bnConc(); } catch (e) { toast(e.message, true); }
+  }
+  /** Excel para el contador: resumen, facturas, cobros, depósitos y avisos. */
+  async function bnExcelConc() {
+    const r = BN.conc; if (!r) return;
+    const R = r.resumen, cob = [];
+    r.facturas.forEach(f => f.cobros.forEach(c => cob.push({ v: [f.sf, f.receptor, c.fecha, c.nota, c.forma, c.monto, c.aplicado, c.mov ? c.mov.fecha : '', c.mov ? c.mov.cuenta : (c.efectivo ? 'efectivo' : 'SIN IDENTIFICAR')], tono: c.mov || c.efectivo ? '' : 'av' })));
+    try {
+      const blob = await excelLocal('Conciliación ' + mesConc(r.mes), [
+        { nombre: 'Resumen', titulo: 'Conciliación fiscal · ' + mesConc(r.mes), sub: ['Factura → nota → cobro → depósito'], cols: [{ t: 'Concepto', w: 44 }, { t: 'Importe', w: 18, fmt: 'mon' }, { t: 'Cantidad', w: 12, fmt: 'num' }],
+          filas: [['Facturado en el mes', R.facturado, R.facturas], ['Cobrado de esas facturas', R.cobradoFacturas, ''], ['Por cobrar de esas facturas', R.porCobrar, ''], ['Facturas conciliadas', '', R.conciliadas],
+            ['Depósitos del mes (débito/cheques)', R.depositos, R.nDepositos], ['Depósitos conciliados con cobros', R.depConciliados, ''], ['Depósitos de otros conceptos', R.depOtros, ''], ['Depósitos sin identificar', R.sinIdentificar, R.nSinIdentificar], ['Avisos fiscales', '', R.avisos]].map(v => ({ v: v })) },
+        { nombre: 'Facturas', titulo: 'Facturas · ' + mesConc(r.mes), cols: [{ t: 'Factura', w: 12 }, { t: 'UUID', w: 38 }, { t: 'Fecha', w: 11 }, { t: 'Cliente', w: 34 }, { t: 'RFC', w: 15 }, { t: 'Método', w: 8 }, { t: 'Forma', w: 7 },
+          { t: 'Total', w: 14, fmt: 'mon', suma: 1 }, { t: 'Cobrado', w: 14, fmt: 'mon', suma: 1 }, { t: 'Por cobrar', w: 14, fmt: 'mon', suma: 1 }, { t: 'Con complemento', w: 14, fmt: 'mon' }, { t: 'Estado', w: 20 }, { t: 'Del mes', w: 8 }, { t: 'Avisos', w: 70 }],
+          filas: r.facturas.map(f => ({ v: [f.sf, f.uuid, f.fecha, f.receptor, f.rfc, f.metodo, f.forma, f.total, f.cobrado, f.porCobrar, f.conRep, f.estado, f.delMes ? 'SI' : 'NO', f.avisos.map(a => a.txt).join(' | ')], tono: f.avisos.length ? 'av' : '' })) },
+        { nombre: 'Cobros', titulo: 'Cobros de las facturas', cols: [{ t: 'Factura', w: 12 }, { t: 'Cliente', w: 32 }, { t: 'Fecha cobro', w: 11 }, { t: 'Nota', w: 12 }, { t: 'Forma', w: 16 }, { t: 'Cobro', w: 14, fmt: 'mon' }, { t: 'A la factura', w: 14, fmt: 'mon', suma: 1 }, { t: 'Fecha depósito', w: 12 }, { t: 'Cuenta', w: 30 }], filas: cob },
+        { nombre: 'Depósitos', titulo: 'Depósitos · ' + mesConc(r.mes), cols: [{ t: 'Fecha', w: 11 }, { t: 'Cuenta', w: 30 }, { t: 'Descripción', w: 50 }, { t: 'Referencia', w: 18 }, { t: 'Importe', w: 14, fmt: 'mon', suma: 1 }, { t: 'Es', w: 26 }, { t: 'Ligado a', w: 60 }],
+          filas: r.depositos.map(d => ({ v: [d.fecha, d.cuenta, d.desc, d.ref, d.abono, d.conciliado ? 'Cobro' : d.categoria || 'SIN IDENTIFICAR', d.liga], tono: d.conciliado || d.noVenta ? '' : 'mal' })) }]);
+      entregarArchivo(blob, 'Conciliación ' + r.mes + '.xlsx', 'Excel de conciliación');
+    } catch (e) { toast(e.message || 'No se pudo armar el Excel', true); }
+  }
   async function bnDatos(forzar) {
     if (!forzar && BN.datos && Date.now() - BN.t < 60000) return BN.datos;
     BN.datos = await pedir('bancos', { anio: BN.anio || new Date().getFullYear() }); BN.t = Date.now(); return BN.datos;
@@ -10067,7 +10222,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    vistaBancos: t => V.bancos(t), bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    vistaBancos: t => V.bancos(t), bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),

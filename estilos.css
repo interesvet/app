@@ -899,6 +899,10 @@ label:has(> select#ocProv) > select, label:has(> select#anProv) > select { borde
 label:has(> select#trOri) > select { border: 2px solid #d4a017; background-color: rgba(240,190,40,.16); font-weight: 600; }
 label:has(> select#trDes) > select { border: 2px solid #2e8b57; background-color: rgba(46,139,87,.13); font-weight: 600; }
 label:has(> select[id$="Suc"]) > select:focus, label:has(input[id$="Cli"]) input:focus { box-shadow: 0 0 0 3px rgba(31,111,74,.18); }
+  /* conciliación */
+  .kpi-alerta b { color: #b42318; }
+  .pestanas.chicas button { font-size: .85em; padding: 4px 10px; }
+  select.chico { width: auto; padding: 2px 4px; font-size: .85em; margin-left: 4px; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
