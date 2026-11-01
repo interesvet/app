@@ -2596,7 +2596,9 @@ const App = (() => {
       <button class="icono" title="Cambiar monto" onclick="App.montoFactNota('${f.rel}', ${f.monto === null ? "''" : f.monto})">✏️</button><button class="icono" title="Quitar" onclick="App.quitarFactNota('${f.rel}', '${esc(f.sf)}')">✕</button></div>`;
     let h = `<h4>🧾 Facturación ${etqFact(r.estado)}</h4>
       <p class="muted">Total de la nota ${$$(r.total)} · facturado ${$$(r.facturado)}${r.porFacturar ? ' · por facturar <b>' + $$(r.porFacturar) + '</b>' : ''}${!r.facturas.length && r.anotacion ? ' · anotación: ' + esc(r.anotacion) : ''}</p>
-      ${r.facturas.map(fila).join('') || '<p class="muted">Sin factura ligada.</p>'}`;
+      ${r.facturas.map(fila).join('') || '<p class="muted">Sin factura ligada.</p>'}
+      ${r.piezas && r.piezas.length ? `<details style="margin-top:6px" ${r.piezas.some(x => x.pendientes > 0) && r.facturas.length ? 'open' : ''}><summary>🔢 Piezas facturadas: ${nf(r.piezas.reduce((a, x) => a + x.facturadas, 0))} de ${nf(r.piezas.reduce((a, x) => a + x.vendidas, 0))}${r.piezas.some(x => x.pendientes > 0) ? ' · <b class="txt-mal">faltan ' + nf(r.piezas.reduce((a, x) => a + x.pendientes, 0)) + '</b>' : ' ✔'}</summary>
+        ${tabla([{ t: 'Producto', h: x => esc(x.nombre) }, { t: 'Vendidas', num: 1, h: x => nf(x.vendidas) }, { t: 'Facturadas', num: 1, h: x => nf(x.facturadas) }, { t: 'Sin facturar', num: 1, h: x => x.pendientes ? `<b class="txt-mal">${nf(x.pendientes)}</b>` : '✔' }, { t: 'Facturas', h: x => esc(x.facturas) }], r.piezas)}</details>` : ''}`;
     if (form === 'asignar') {
       h += `<div class="tarjeta" style="margin-top:8px"><div class="rejilla">
         <label>Factura<select id="nfSel">${r.sugeridas.map(f => `<option value="${f.id}">${esc(f.sf)} · ${esc(f.fecha)}${f.global ? ' · GLOBAL' : ''}${f.libre !== null ? ' · libre ' + $$(f.libre) : ''}</option>`).join('')}<option value="">Otra: escribir serie-folio…</option></select></label>
@@ -2647,14 +2649,14 @@ const App = (() => {
     const h = hoyISO(), ini = h.slice(0, 8) + '01';
     S.tabFact = S.tabFact || 'facturas';
     const sb = (id, n) => `<button class="${S.tabFact === id ? 'activo' : ''}" onclick="App.subFact('${id}')">${n}</button>`;
-    $('#vista').innerHTML = barra + `<div class="pestanas">${sb('facturas', 'Facturas')}${sb('pend', 'Por facturar')}${sb('revisar', 'Marcadas SI sin factura')}</div>
+    $('#vista').innerHTML = barra + `<div class="pestanas">${sb('facturas', 'Facturas')}${sb('pend', 'Por facturar')}${sb('piezas', '🔢 Piezas sin facturar')}${sb('revisar', 'Marcadas SI sin factura')}</div>
       <div class="tarjeta no-imprimir"><div class="fila">
       <label>Desde<input type="date" id="fDesde" value="${ini}"></label><label>Hasta<input type="date" id="fHasta" value="${h}"></label>
       ${U().todasSucursales ? `<label>Sucursal<select id="fSuc">${optsSuc('', false, 'Todas')}</select></label>` : ''}
       <label>Buscar<input id="fTxt" placeholder="Factura, nota, RFC o cliente"></label>
       ${S.tabFact === 'facturas' ? `<label>Cuadre<select id="fCuadre">${opts([['cuadra', 'Cuadra'], ['falta asignar', 'Falta asignar'], ['excede', 'Excede'], ['por definir', 'Montos por definir'], ['sin XML', 'Sin XML'], ['sin notas', 'Sin notas']], '', 'Todos')}</select></label>` : ''}
       <button class="btn primario fijo" onclick="App.cargarFacturacion()">Buscar</button>
-      ${S.tabFact === 'facturas' ? `<button class="btn fijo" onclick="App.formSubirFactura()">⬆️ Subir XML</button>` : ''}
+      ${S.tabFact === 'facturas' ? `<button class="btn fijo" onclick="App.formSubirFactura()">⬆️ Subir XML</button>` : ''}${S.tabFact === 'piezas' ? `<button class="btn fijo" onclick="App.excelPiezas()">📊 Excel</button>` : ''}
       ${S.tabFact === 'facturas' && U().rol === 'Administrador' ? `<button class="btn fijo" onclick="App.importarFacturas()">🔄 Importar de AppSheet</button>` : ''}</div></div>
       <div class="espacio"></div><div id="lFact"><div class="vacio">Cargando…</div></div>`;
     $('#fTxt').onkeydown = e => { if (e.key === 'Enter') cargarFacturacion(); };
@@ -2681,6 +2683,7 @@ const App = (() => {
           r.facturas, { clic: 'App.abrirFactura', vacio: 'Sin facturas en el periodo' });
       return;
     }
+    if (S.tabFact === 'piezas') return cargarPiezas(p);
     let r; try { r = await pedir('porFacturar', Object.assign(p, { revisar: S.tabFact === 'revisar' })); } catch (e) { if ($('#lFact')) $('#lFact').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     if (!$('#lFact')) return;
     S.lista = r.notas;
@@ -2691,9 +2694,45 @@ const App = (() => {
         { t: 'Por facturar', num: 1, h: x => x.porFacturar === null ? '<span class="etq av">por definir</span>' : `<b>${$$(x.porFacturar)}</b>` }, { t: 'Estado', h: x => etqFact(x.estado) + (x.anotacion ? `<br><small class="muted">${esc(x.anotacion)}</small>` : '') }],
         r.notas, { clic: 'App.abrirVenta', vacio: S.tabFact === 'revisar' ? 'Todo en orden ✔' : 'Todo facturado ✔' });
   }
+  async function cargarPiezas(p) {
+    let r; try { r = await pedir('piezasPorFacturar', p); } catch (e) { if ($('#lFact')) $('#lFact').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    if (!$('#lFact')) return;
+    S.lista = r.filas; S.piezasRep = r;
+    const t = r.totales;
+    $('#lFact').innerHTML = `<div class="kpis"><div class="kpi"><small>Piezas vendidas</small><b>${nf(t.vendidas)}</b><span>notas del periodo desde el ${esc(fechaTxt(r.desde))}</span></div>
+      <div class="kpi" style="border-color:var(--ok)"><small>✔ Facturadas</small><b>${nf(t.facturadas)}</b><span>${t.vendidas ? (t.facturadas / t.vendidas * 100).toFixed(1) + '%' : ''}</span></div>
+      <div class="kpi" style="border-color:#c9473d"><small>⚠️ Sin facturar</small><b>${nf(t.pendientes)}</b><span>${nf(t.notas)} notas</span></div>
+      ${t.sobran ? `<div class="kpi" style="border-color:#d99a1e"><small>Facturadas sin nota</small><b>${nf(t.sobran)}</b><span>sobran en facturas del periodo</span></div>` : ''}</div>
+      <h4 style="margin:6px 0">Por producto</h4>` + tabla([{ t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.id)}</small>` }, { t: 'Vendidas', num: 1, h: x => nf(x.vendidas) }, { t: 'Facturadas', num: 1, h: x => nf(x.facturadas) },
+        { t: 'Sin facturar', num: 1, h: x => x.pendientes ? `<b class="txt-mal">${nf(x.pendientes)}</b>` : '✔' }], r.productos, { vacio: 'Sin ventas en el periodo' }) +
+      `<h4 style="margin:14px 0 6px">Notas con piezas sin facturar</h4>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Nota', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) },
+        { t: 'Producto', h: x => esc(x.nombre) }, { t: 'Vendidas', num: 1, h: x => nf(x.vendidas) }, { t: 'Facturadas', num: 1, h: x => nf(x.facturadas) }, { t: 'Sin facturar', num: 1, h: x => `<b class="txt-mal">${nf(x.pendientes)}</b>` },
+        { t: 'Facturas', cls: 'ocultar-movil', k: 'facturas' }], r.filas, { clic: 'App.abrirPiezaNota', vacio: 'Todas las piezas están facturadas ✔' }) +
+      (r.sobran.length ? `<h4 style="margin:14px 0 6px">Piezas facturadas que no caben en sus notas</h4>` + tabla([{ t: 'Factura', h: x => `<b>${esc(x.factura)}</b><br><small class="muted">${esc(x.fecha)}</small>` },
+        { t: 'Producto', h: x => esc(x.nombre) + (x.tipo === 'Sin producto' ? ' <span class="etq av">sin reconocer</span>' : '') }, { t: 'Piezas', num: 1, h: x => `<b>${nf(x.piezas)}</b>` }], r.sobran, { clic: 'App.abrirPiezaFactura' }) : '');
+  }
+  async function excelPiezas() {
+    const r = S.piezasRep; if (!r) return toast('Primero busca', true);
+    const nom = 'Piezas sin facturar ' + $('#fDesde').value + ' a ' + $('#fHasta').value;
+    try {
+      const blob = await excelLocal(nom, [
+        { nombre: 'Por producto', titulo: 'Piezas vendidas vs facturadas por producto', sub: ['Del ' + fechaTxt($('#fDesde').value) + ' al ' + fechaTxt($('#fHasta').value)],
+          resumen: [['Vendidas', r.totales.vendidas, 'num'], ['Facturadas', r.totales.facturadas, 'num'], ['Sin facturar', r.totales.pendientes, 'num'], ['Facturadas sin nota', r.totales.sobran, 'num']],
+          cols: [{ t: 'Clave', w: 12 }, { t: 'Producto', w: 40 }, { t: 'Vendidas', w: 11, fmt: 'num', suma: 1 }, { t: 'Facturadas', w: 11, fmt: 'num', suma: 1 }, { t: 'Sin facturar', w: 11, fmt: 'num', suma: 1 }],
+          filas: r.productos.map(x => ({ v: [x.id, x.nombre, x.vendidas, x.facturadas, x.pendientes], tono: x.pendientes ? 'mal' : '' })) },
+        { nombre: 'Por nota', titulo: 'Notas con piezas sin facturar', sub: [],
+          cols: [{ t: 'Fecha', w: 12 }, { t: 'Nota', w: 14 }, { t: 'Cliente', w: 30 }, { t: 'Sucursal', w: 14 }, { t: 'Clave', w: 12 }, { t: 'Producto', w: 36 }, { t: 'Vendidas', w: 10, fmt: 'num', suma: 1 }, { t: 'Facturadas', w: 10, fmt: 'num', suma: 1 }, { t: 'Sin facturar', w: 11, fmt: 'num', suma: 1 }, { t: 'Facturas', w: 18 }],
+          filas: r.filas.map(x => ({ v: [x.fecha, x.folio, x.cliente, sucNom(x.suc), x.id, x.nombre, x.vendidas, x.facturadas, x.pendientes, x.facturas] })) },
+        { nombre: 'Sobrantes', titulo: 'Piezas facturadas que no caben en sus notas', sub: [],
+          cols: [{ t: 'Factura', w: 12 }, { t: 'Fecha', w: 12 }, { t: 'Producto', w: 40 }, { t: 'Tipo', w: 14 }, { t: 'Piezas', w: 10, fmt: 'num', suma: 1 }],
+          filas: r.sobran.map(x => ({ v: [x.factura, x.fecha, x.nombre, x.tipo, x.piezas] })) }]);
+      entregarArchivo(blob, nom + '.xlsx', 'Excel de piezas');
+    } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
+  }
   async function verFactura(id) {
     S.facDet = id;
     let d; try { d = await pedir('detalleFactura', { id: id }); } catch (e) { return; }
+    S.facDetData = d;
     const dif = d.total === null ? null : d.total - d.asignado;
     modal('Factura ' + d.sf, `<div class="kpis"><div class="kpi"><small>Total factura</small><b>${d.total === null ? '—' : $$(d.total)}</b><span>${esc(d.fecha || '')}${d.global ? ' · Global' : ''}</span></div>
       <div class="kpi"><small>Asignado a notas</small><b>${$$(d.asignado)}</b><span>${nf(d.notas.length)} notas</span></div>
@@ -2704,9 +2743,38 @@ const App = (() => {
         { t: 'Total nota', num: 1, h: x => $$(x.totalNota) }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
         { t: 'Otras facturas', h: x => esc(x.otras.join(', ')) },
         { t: '', h: x => `<button class="icono" title="Cambiar monto" onclick="event.stopPropagation();App.montoFactNota('${x.rel}', ${x.monto === null ? "''" : x.monto})">✏️</button><button class="icono" title="Quitar" onclick="event.stopPropagation();App.quitarFactNota('${x.rel}', '${esc(d.sf)}')">✕</button>` }], d.notas, { vacio: 'Sin notas ligadas' })}
+      ${bloquePiezasFactura(d)}
       <div class="tarjeta" style="margin-top:10px"><div class="rejilla"><label>Agregar nota (folio)<input id="fdNota" placeholder="No/Rem-0622"></label>
         <label>Monto $<input type="number" step="0.01" id="fdMonto" placeholder="${dif !== null && dif > 0 ? dif.toFixed(2) : 'total de la nota'}"></label></div>
         <div class="acciones"><button class="btn primario" onclick="App.agregarNotaFactura('${d.id}')">➕ Agregar nota</button></div></div>`);
+  }
+  /** Piezas de la factura (XML) contra las piezas vendidas en sus notas. */
+  function bloquePiezasFactura(d) {
+    const z = d.piezas; if (!z) return '';
+    if (!z.aplica) return `<p class="muted peq" style="margin-top:10px">🔢 El cuadre de piezas aplica a facturas desde el ${esc(fechaTxt(z.desde))}.</p>`;
+    if (!z.xml) return '<p class="muted peq" style="margin-top:10px">🔢 Sube el XML de esta factura para cuadrar sus piezas contra las notas.</p>';
+    const t = z.totales, n = x => nf(x);
+    const prods = (D().productos || []);
+    return `<div class="tarjeta" style="margin-top:10px"><h4 style="margin:0 0 6px">🔢 Piezas facturadas vs vendidas</h4>
+      <div class="kpis"><div class="kpi"><small>Piezas en la factura</small><b>${n(t.piezas)}</b></div><div class="kpi" style="border-color:var(--ok)"><small>✔ En notas</small><b>${n(t.enNotas)}</b></div>
+        <div class="kpi" style="border-color:${t.sinNota ? '#c9473d' : 'var(--borde)'}"><small>⚠️ Sin nota (sobran)</small><b>${n(t.sinNota)}</b><span>no caben en las notas ligadas</span></div>
+        ${t.sinProducto ? `<div class="kpi" style="border-color:#d99a1e"><small>❓ Sin reconocer</small><b>${n(t.sinProducto)}</b><span>confirma el producto abajo</span></div>` : ''}</div>
+      <p class="muted peq">Se reparten primero en las notas <b>pagadas al 100 %</b> (de la más antigua a la más nueva) y lo que sobra en las que tienen <b>abonos</b>. Nunca más piezas de las que vendió cada nota.</p>
+      ${tabla([{ t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.desc)}${/Parecido/.test(x.como) ? ' · <span class="etq av">reconocido por parecido</span>' : ''}</small>` },
+        { t: 'Factura', num: 1, h: x => n(x.factura) }, { t: 'En notas', num: 1, h: x => n(x.enNotas) }, { t: 'Sin nota', num: 1, h: x => x.sinNota ? `<b class="txt-mal">${n(x.sinNota)}</b>` : '—' },
+        { t: 'Repartidas en', h: x => x.notas.map(m => `<a href="#" onclick="event.preventDefault();App.cerrarModal();App.verVentaId('${esc(m.id)}')">${esc(m.folio)}</a>: ${n(m.piezas)}`).join(' · ') || '<span class="muted">—</span>' }], z.productos, { vacio: z.cuadrada ? 'Sin productos reconocidos' : 'Aún sin cuadrar' })}
+      ${z.sinProducto.length ? `<h4 style="margin:12px 0 4px">❓ Conceptos sin reconocer</h4><p class="muted peq">Elige a qué producto corresponde; la app lo recuerda para las siguientes facturas.</p>
+        <datalist id="pzProds">${prods.map(p => `<option value="${esc(p.id + ' · ' + p.nombre)}">`).join('')}</datalist>
+        ${z.sinProducto.map((x, i) => `<div class="fila" style="align-items:flex-end;border-bottom:1px solid var(--borde);padding:6px 0"><span style="flex:1"><b>${esc(x.desc)}</b> · ${n(x.piezas)} pzas</span>
+          <label style="flex:1">Producto<input id="pzEq${i}" list="pzProds" placeholder="Clave o nombre"></label><button class="btn fijo" onclick="App.confirmarEquiv('${d.id}', ${i})">Confirmar</button></div>`).join('')}` : ''}
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.cuadrarPiezas('${d.id}')">🔄 Volver a cuadrar piezas</button></div></div>`;
+  }
+  async function cuadrarPiezas(id) { try { await pedir('cuadrarPiezas', { id: id }); toast('✔ Piezas cuadradas'); verFactura(id); } catch (e) {} }
+  async function confirmarEquiv(id, i) {
+    const d = S.facDetData, x = d && d.piezas.sinProducto[i]; if (!x) return;
+    const v = $('#pzEq' + i).value.trim(), idp = v.split(' · ')[0].trim();
+    if (!prod(idp)) return toast('Elige un producto de la lista', true);
+    try { await pedir('equivCfdi', { id: id, desc: x.desc, ID_Producto: idp }); toast('✔ Guardado: ' + x.desc + ' = ' + prod(idp).nombre); verFactura(id); } catch (e) {}
   }
   async function agregarNotaFactura(id) {
     const folio = $('#fdNota').value.trim(); if (!folio) return toast('Escribe el folio de la nota', true);
@@ -8954,7 +9022,7 @@ const App = (() => {
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
-    vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, excelCobros, formGlobal, glSuma, glMarcar, glGuardar, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
+    vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, excelCobros, excelPiezas, cuadrarPiezas, confirmarEquiv, abrirPiezaNota: i => verVenta(S.lista[i].idVenta), abrirPiezaFactura: i => verFactura(S.piezasRep.sobran[i].idFactura), formGlobal, glSuma, glMarcar, glGuardar, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes, invVerPL, invVerCad, invUsarReal, invMarcarCostos, invUsarRealMarcados,
