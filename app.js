@@ -2583,7 +2583,8 @@ const App = (() => {
   /* ---------- FACTURACIÓN: facturas (CFDI) ligadas a las notas ---------- */
   const etqFact = e => /^Facturada|^SI/.test(e) ? `<span class="etq ok">${esc(e)}</span>` : /Parcial/.test(e) ? `<span class="etq av">${esc(e)}</span>` : `<span class="etq mal">${esc(e)}</span>`;
   const etqCuadre = c => ({ 'cuadra': '<span class="etq ok">Cuadra</span>', 'falta asignar': '<span class="etq av">Falta asignar</span>', 'excede': '<span class="etq mal">Excede</span>',
-    'por definir': '<span class="etq av">Montos por definir</span>', 'sin XML': '<span class="etq">Sin XML</span>', 'sin notas': '<span class="etq mal">Sin notas</span>' })[c] || esc(c);
+    'por definir': '<span class="etq av">Montos por definir</span>', 'sin XML': '<span class="etq">Sin XML</span>', 'sin notas': '<span class="etq mal">Sin notas</span>',
+    'cancelada': '<span class="etq mal">🚫 Cancelada · falta la nueva</span>', 'sustituida': '<span class="etq">🚫 Cancelada · sustituida</span>' })[c] || esc(c);
   async function cargarFactNota(id) {
     const el = $('#notaFact'); if (!el) return;
     let r; try { r = await pedir('facturasNota', { ID_Venta: id }, true); } catch (e) { el.innerHTML = '<span class="muted">Facturación: requiere conexión.</span>'; return; }
@@ -2591,7 +2592,7 @@ const App = (() => {
   }
   function pintarFactNota(form) {
     const r = S.factNota, el = $('#notaFact'); if (!r || !el) return;
-    const fila = f => `<div class="fact-fila"><b>${esc(f.sf)}</b> <span class="muted">${esc(f.fecha || '')}</span> · ${f.monto === null ? '<span class="etq av">monto por definir</span>' : $$(f.monto)}${f.total !== null ? ' <small class="muted">de ' + $$(f.total) + '</small>' : ''}
+    const fila = f => f.estado === 'Cancelada' ? `<div class="fact-fila"><s>${esc(f.sf)}</s> <span class="etq mal">Cancelada</span> <small class="muted">ya no cuenta; ${f.monto === null ? '' : $$(f.monto) + ' · '}<a href="#" onclick="event.preventDefault();App.verFactura('${esc(f.id)}')">ver factura</a></small></div>` : `<div class="fact-fila"><b>${esc(f.sf)}</b> <span class="muted">${esc(f.fecha || '')}</span> · ${f.monto === null ? '<span class="etq av">monto por definir</span>' : $$(f.monto)}${f.total !== null ? ' <small class="muted">de ' + $$(f.total) + '</small>' : ''}
       ${f.urlPdf ? `<a href="${esc(f.urlPdf)}" target="_blank">PDF</a>` : ''} ${f.urlXml ? `<a href="${esc(f.urlXml)}" target="_blank">XML</a>` : ''}
       <button class="icono" title="Cambiar monto" onclick="App.montoFactNota('${f.rel}', ${f.monto === null ? "''" : f.monto})">✏️</button><button class="icono" title="Quitar" onclick="App.quitarFactNota('${f.rel}', '${esc(f.sf)}')">✕</button></div>`;
     let h = `<h4>🧾 Facturación ${etqFact(r.estado)}</h4>
@@ -2654,7 +2655,7 @@ const App = (() => {
       <label>Desde<input type="date" id="fDesde" value="${ini}"></label><label>Hasta<input type="date" id="fHasta" value="${h}"></label>
       ${U().todasSucursales ? `<label>Sucursal<select id="fSuc">${optsSuc('', false, 'Todas')}</select></label>` : ''}
       <label>Buscar<input id="fTxt" placeholder="Factura, nota, RFC o cliente"></label>
-      ${S.tabFact === 'facturas' ? `<label>Cuadre<select id="fCuadre">${opts([['cuadra', 'Cuadra'], ['falta asignar', 'Falta asignar'], ['excede', 'Excede'], ['por definir', 'Montos por definir'], ['sin XML', 'Sin XML'], ['sin notas', 'Sin notas']], '', 'Todos')}</select></label>` : ''}
+      ${S.tabFact === 'facturas' ? `<label>Cuadre<select id="fCuadre">${opts([['cuadra', 'Cuadra'], ['falta asignar', 'Falta asignar'], ['excede', 'Excede'], ['por definir', 'Montos por definir'], ['sin XML', 'Sin XML'], ['sin notas', 'Sin notas'], ['cancelada', 'Canceladas sin sustituir'], ['sustituida', 'Canceladas y sustituidas']], '', 'Todos')}</select></label>` : ''}
       <button class="btn primario fijo" onclick="App.cargarFacturacion()">Buscar</button>
       ${S.tabFact === 'facturas' ? `<button class="btn fijo" onclick="App.formSubirFactura()">⬆️ Subir XML</button>` : ''}${S.tabFact === 'piezas' ? `<button class="btn fijo" onclick="App.excelPiezas()">📊 Excel</button>` : ''}
       ${S.tabFact === 'facturas' && U().rol === 'Administrador' ? `<button class="btn fijo" onclick="App.importarFacturas()">🔄 Importar de AppSheet</button>` : ''}</div></div>
@@ -2737,8 +2738,11 @@ const App = (() => {
     modal('Factura ' + d.sf, `<div class="kpis"><div class="kpi"><small>Total factura</small><b>${d.total === null ? '—' : $$(d.total)}</b><span>${esc(d.fecha || '')}${d.global ? ' · Global' : ''}</span></div>
       <div class="kpi"><small>Asignado a notas</small><b>${$$(d.asignado)}</b><span>${nf(d.notas.length)} notas</span></div>
       <div class="kpi"><small>Diferencia</small><b class="${dif !== null && Math.abs(dif) > 1 ? 'error' : ''}">${dif === null ? '—' : $$(dif)}</b><span>${dif === null ? 'falta el XML' : Math.abs(dif) <= 1 ? 'cuadra ✔' : dif > 0 ? 'falta asignar' : 'se asignó de más'}</span></div></div>
+      ${d.estado === 'Cancelada' ? `<div class="aviso-cand">🚫 <b>Cancelada ante el SAT${d.fechaCancelacion ? ' el ' + esc(d.fechaCancelacion) : ''}</b>${d.urlAcuse ? ` · <a href="${esc(d.urlAcuse)}" target="_blank">ver acuse</a>` : ''}<br>
+        ${d.sustituidaPor ? `Sustituida por <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituidaPor)}')"><b>${esc(d.sustituidaPor)}</b></a>: sus notas pasaron a esa factura.` : `Sus notas quedaron <b>por facturar</b> hasta que subas la factura nueva.<div class="acciones" style="justify-content:flex-start;margin-top:6px"><button class="btn primario" onclick="App.formSustituir('${d.id}')">🔁 Subir la factura que la sustituye</button></div>`}</div>` : ''}
+      ${d.sustituye ? `<p class="muted peq">🔁 Sustituye a <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituye)}')">${esc(d.sustituye)}</a> (cancelada).</p>` : ''}${d.avisoSust ? `<div class="aviso-cand">⚠️ ${esc(d.avisoSust)}</div>` : ''}
       <p>${esc(d.receptor || '')} ${d.rfc ? '· RFC ' + esc(d.rfc) : ''}${d.uuid ? '<br><small class="muted">UUID ' + esc(d.uuid) + '</small>' : ''}${d.comentarios ? '<br><small class="muted">' + esc(d.comentarios) + '</small>' : ''}</p>
-      <div class="acciones" style="justify-content:flex-start">${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}</div>
+      <div class="acciones" style="justify-content:flex-start">${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
       ${tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', h: x => esc(x.cliente) },
         { t: 'Total nota', num: 1, h: x => $$(x.totalNota) + (x.nc ? `<br><small class="muted">N/C −${$$(x.nc)} → a facturar ${$$(x.facturable)}</small>` : '') }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
         { t: 'Otras facturas', h: x => esc(x.otras.join(', ')) },
@@ -2768,6 +2772,53 @@ const App = (() => {
         ${z.sinProducto.map((x, i) => `<div class="fila" style="align-items:flex-end;border-bottom:1px solid var(--borde);padding:6px 0"><span style="flex:1"><b>${esc(x.desc)}</b> · ${n(x.piezas)} pzas</span>
           <label style="flex:1">Producto<input id="pzEq${i}" list="pzProds" placeholder="Clave o nombre"></label><button class="btn fijo" onclick="App.confirmarEquiv('${d.id}', ${i})">Confirmar</button></div>`).join('')}` : ''}
       <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.cuadrarPiezas('${d.id}')">🔄 Volver a cuadrar piezas</button></div></div>`;
+  }
+  /* ---------- Factura cancelada (acuse del SAT) y sustituida por otra (nuevo UUID) ---------- */
+  function formCancelarFactura(id) {
+    const d = S.facDetData || {};
+    modal('🚫 Cancelación de ' + (d.sf || 'la factura'), `<p>Primero sube el <b>acuse de cancelación del SAT</b> (PDF o XML). La app revisa que sea el folio fiscal de esta factura${d.uuid ? ' (<small>' + esc(d.uuid) + '</small>)' : ''} y que diga <b>Cancelado</b>.</p>
+      <label>Acuse de cancelación (PDF o XML)<input type="file" id="caAcuse" accept=".pdf,.xml,application/pdf,text/xml"></label>
+      <h4 style="margin:14px 0 6px">Factura nueva (si ya la tienes)</h4>
+      <p class="muted peq">Si todavía no te la mandan, déjalo vacío: las notas quedan por facturar y después la subes desde esta misma factura.</p>
+      <div class="fila"><label>XML de la factura nueva<input type="file" id="caXml" accept=".xml,text/xml"></label><label>PDF (opcional)<input type="file" id="caPdf" accept=".pdf,application/pdf"></label></div>
+      <label class="check"><input type="checkbox" id="caForzar"> Es correcto aunque la factura nueva sea para otro RFC</label>
+      <div class="acciones"><button class="btn primario" id="caBtn" onclick="App.guardarCancelarFactura('${id}')">🚫 Registrar cancelación</button><button class="btn" onclick="App.verFactura('${id}')">Volver</button></div>`);
+  }
+  /** Texto de un PDF (para leer el acuse del SAT en el equipo). */
+  async function textoDePdf(file) {
+    const L = await cargarPdfJs(), doc = await L.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
+    let t = ''; for (let i = 1; i <= Math.min(doc.numPages, 3); i++) { const c = await (await doc.getPage(i)).getTextContent(); t += c.items.map(x => x.str).join(' ') + '\n'; }
+    return t;
+  }
+  async function guardarCancelarFactura(id) {
+    const fa = $('#caAcuse').files[0], fx = $('#caXml').files[0], fp = $('#caPdf').files[0];
+    if (!fa) return toast('Sube el acuse de cancelación del SAT', true);
+    $('#caBtn').disabled = true; $('#caBtn').textContent = 'Revisando acuse…';
+    try {
+      const p = { id: id, forzar: $('#caForzar').checked };
+      if (/\.xml$/i.test(fa.name) || /xml/.test(fa.type)) p.acuseXml = await leerArchivo(fa, true);
+      else { p.acusePdf = await leerArchivo(fa); try { p.acuseTexto = await textoDePdf(fa); } catch (e) { $('#caBtn').disabled = false; $('#caBtn').textContent = '🚫 Registrar cancelación'; return toast('No pude leer el PDF del acuse (necesita conexión la primera vez). Intenta con el XML del acuse.', true); } }
+      if (fx) { p.xml = await leerArchivo(fx, true); if (fp) p.pdf = await leerArchivo(fp); }
+      const r = await pedir('cancelarFactura', p);
+      toast(fx ? '✔ Cancelada y sustituida por ' + r.sf : '✔ Cancelación registrada; las notas quedaron por facturar');
+      S.facDetData = r; verFactura(r.id); if ($('#lFact')) cargarFacturacion();
+    } catch (e) { if ($('#caBtn')) { $('#caBtn').disabled = false; $('#caBtn').textContent = '🚫 Registrar cancelación'; } }
+  }
+  function formSustituir(id) {
+    const d = S.facDetData || {};
+    modal('🔁 Factura que sustituye a ' + (d.sf || ''), `<p>Sube el XML de la <b>factura nueva</b> (nuevo UUID). Las notas${d.notas && d.notas.length ? ' (' + d.notas.length + ')' : ''} y abonos de ${esc(d.sf || 'la cancelada')} pasan a la nueva con los mismos montos.</p>
+      <div class="fila"><label>XML de la factura nueva<input type="file" id="suXml" accept=".xml,text/xml"></label><label>PDF (opcional)<input type="file" id="suPdf" accept=".pdf,application/pdf"></label></div>
+      <label class="check"><input type="checkbox" id="suForzar"> Es correcto aunque la factura nueva sea para otro RFC</label>
+      <div class="acciones"><button class="btn primario" id="suBtn" onclick="App.guardarSustituir('${id}')">🔁 Sustituir</button><button class="btn" onclick="App.verFactura('${id}')">Volver</button></div>`);
+  }
+  async function guardarSustituir(id) {
+    const fx = $('#suXml').files[0], fp = $('#suPdf').files[0];
+    if (!fx) return toast('Sube el XML de la factura nueva', true);
+    $('#suBtn').disabled = true;
+    try {
+      const r = await pedir('sustituirFactura', { id: id, xml: await leerArchivo(fx, true), pdf: fp ? await leerArchivo(fp) : '', forzar: $('#suForzar').checked });
+      toast('✔ ' + r.sf + ' sustituye a la cancelada'); S.facDetData = r; verFactura(r.id); if ($('#lFact')) cargarFacturacion();
+    } catch (e) { if ($('#suBtn')) $('#suBtn').disabled = false; }
   }
   async function cuadrarPiezas(id) { try { await pedir('cuadrarPiezas', { id: id }); toast('✔ Piezas cuadradas'); verFactura(id); } catch (e) {} }
   async function confirmarEquiv(id, i) {
@@ -9115,7 +9166,7 @@ const App = (() => {
     excelInventario, excelConteo, compartirArchivo, pdfNotaOffline: () => S.notaOff && pdfDeDatos('pdfNota', S.notaOff), pdfCotOffline: () => S.cotOff && pdfDeDatos('pdfCotizacion', S.cotOff),
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
-    vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, excelCobros, excelPiezas, cuadrarPiezas, confirmarEquiv, abrirPiezaNota: i => verVenta(S.lista[i].idVenta), abrirPiezaFactura: i => verFactura(S.piezasRep.sobran[i].idFactura), formGlobal, glSuma, glMarcar, glGuardar, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
+    vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, excelCobros, excelPiezas, cuadrarPiezas, confirmarEquiv, formCancelarFactura, guardarCancelarFactura, formSustituir, guardarSustituir, abrirPiezaNota: i => verVenta(S.lista[i].idVenta), abrirPiezaFactura: i => verFactura(S.piezasRep.sobran[i].idFactura), formGlobal, glSuma, glMarcar, glGuardar, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
     vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes, invVerPL, invVerCad, invUsarReal, invMarcarCostos, invUsarRealMarcados,
