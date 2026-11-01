@@ -2898,7 +2898,8 @@ const App = (() => {
     if (tab === 'clasificar') return vistaPorClasificar(true);
     const h = hoyISO(), f = alDia(S.fgas || (S.fgas = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, grupo: '', categoria: '', texto: '' }));
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
-    $('#vista').innerHTML = `<div class="pestanas">${tb('resumen', 'Estado de gastos')}${tb('mes', 'Por mes')}${tb('facturas', 'Facturas')}${tb('inversion', 'Inversiones')}${tb('emisores', 'Proveedores')}${lect ? '' : tb('clasificar', '🏷️ Por clasificar')}</div>
+    if (tab === 'reglas') return vistaReglasGasto();
+    $('#vista').innerHTML = `<div class="pestanas">${pestanasGas(tab)}</div>
       <div class="tarjeta no-imprimir"><div class="fila">
         <label>Desde<input type="date" id="gDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="gHasta" value="${f.hasta}"></label>
         <label>Sucursal<select id="gSuc">${opts(D().sucursales || [], f.sucursal || '', 'Todas')}</select></label>
@@ -2914,6 +2915,51 @@ const App = (() => {
     $('#gTxt').onkeydown = e => { if (e.key === 'Enter') cargarGastos(); };
     if (S.datGas && S.datGasKey === JSON.stringify(f)) pintarGastos(); else cargarGastos();
   };
+  /** Dueño y contador: categorías, reglas de grupo y depreciación. */
+  const editaGas = () => puede('dueno') || (puede('ver_gastos') && puede('clasificar_gastos'));
+  function pestanasGas(tab) {
+    const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
+    return tb('resumen', 'Estado de gastos') + tb('mes', 'Por mes') + tb('facturas', 'Facturas') + tb('inversion', 'Inversiones') + tb('emisores', 'Proveedores') +
+      (editaGas() ? tb('clasificar', '🏷️ Por clasificar') + tb('reglas', '⚙️ Reglas y depreciación') : '');
+  }
+  /** Pestaña de reglas: grupo de cada categoría / proveedor, tasa de depreciación, meses a repartir y criterios generales de depreciación. */
+  async function vistaReglasGasto() {
+    S.tabGas = 'reglas';
+    $('#vista').innerHTML = `<div class="pestanas">${pestanasGas('reglas')}</div>
+      <div class="tarjeta"><h3>🏗️ Criterios generales de depreciación</h3>
+        <p class="muted">Se aplican a todas las inversiones (activo fijo). Cada activo se puede ajustar aparte en la pestaña <b>Inversiones</b> (✏️).</p>
+        <div id="gDepCfg"><div class="vacio">Cargando…</div></div></div>
+      <div class="tarjeta"><h3>🗂️ Grupo de cada categoría y proveedor</h3>
+        <p class="muted">Define en qué grupo cae cada factura: <b>Operación</b> (se resta cada mes), <b>Financiero</b> (intereses, seguros, créditos), <b>Inversión</b> (activo fijo: se deprecia) o <b>Excluir</b> (personal / no es del negocio).
+        Las reglas por <b>Emisor</b> (el nombre del proveedor contiene…) tienen prioridad sobre las de <b>Categoría</b>. "Depreciación % anual" vacía = la sugerida (vehículos 25 %, cómputo 30 %, mobiliario y equipo 10 %).</p>
+        <div id="cfGrupos"><div class="vacio">Cargando…</div></div></div>`;
+    cargarGrupos();
+    let c; try { c = await pedir('configDepreciacion', {}); } catch (e) { $('#gDepCfg').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    $('#gDepCfg').innerHTML = `<div class="fila" style="align-items:flex-end">
+        <label>Empieza a depreciarse<select id="dcIni">${opts([['siguiente', 'El mes siguiente a la compra (criterio fiscal)'], ['mismo', 'El mismo mes de la compra']], c.inicio)}</select></label>
+        <label>Tope de automóviles (monto máximo depreciable, sin IVA)<input type="number" id="dcTope" min="0" step="1000" value="${c.topeAutos || ''}" placeholder="0 = sin tope (p. ej. 175000)"></label>
+        <button class="btn primario fijo" onclick="App.guardarCfgDepr()">Guardar</button></div>
+      <p class="muted peq">Método: línea recta sobre el monto sin IVA (o el monto depreciable / tope), tasa anual ÷ 12 cada mes hasta llegar al 100 %. El tope solo se aplica a las inversiones que parecen vehículos (proveedor o categoría de autos); a otro activo se le pone tope con su ✏️.</p>`;
+  }
+  async function guardarCfgDepr() {
+    try { await pedir('guardarConfigDepreciacion', { inicio: $('#dcIni').value, topeAutos: Number($('#dcTope').value) || 0 }); toast('✔ Criterios de depreciación guardados'); S.datGasKey = ''; } catch (e) {}
+  }
+  /** Ajuste de un activo: tasa, monto depreciable, mes de inicio, depreciar sí/no. */
+  function editarActivo(i) {
+    const a = (S.datGas.activos || [])[i]; if (!a) return; const aj = a.ajuste || {};
+    modal('✏️ Depreciación de este activo', `<p><b>${esc(a.emisor)}</b> · ${esc(a.cat)} · ${esc(a.fecha)} · ${$$(a.monto)} sin IVA${a.vehiculo ? ' · <span class="etq">vehículo</span>' : ''}</p>
+      <p class="muted peq">Tasa por regla: ${a.tasaRegla}% anual. Deja un campo vacío para usar la regla / el criterio general.${aj.usuario ? ' Último ajuste: ' + esc(aj.usuario) + ' · ' + esc(aj.fecha) : ''}</p>
+      <div class="rejilla"><label>Tasa % anual<input type="number" id="daTasa" min="0" max="100" step="0.01" value="${aj.tasa === '' || aj.tasa === undefined ? '' : aj.tasa}" placeholder="${a.tasaRegla}"></label>
+        <label>Monto depreciable (sin IVA)<input type="number" id="daBase" min="0" step="0.01" value="${aj.base || ''}" placeholder="${a.base}"></label>
+        <label>Mes en que empieza<input type="month" id="daIni" value="${esc(aj.inicio || '')}" placeholder="${esc(a.inicio)}"></label>
+        <label>¿Se deprecia?<select id="daDep">${opts([['si', 'Sí'], ['no', 'No (terreno, no deducible, etc.)']], aj.depreciar === false ? 'no' : 'si')}</select></label></div>
+      <label>Nota<input id="daNota" value="${esc(aj.notas || '')}" placeholder="p. ej. tope deducible LISR art. 36"></label>
+      <div class="acciones">${a.ajuste ? `<button class="btn" onclick="App.guardarActivo('${esc(a.uuid)}', true)">↺ Quitar ajuste</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarActivo('${esc(a.uuid)}')">Guardar</button></div>`);
+  }
+  async function guardarActivo(uuid, quitar) {
+    const p = quitar ? { uuid: uuid, quitar: true } : { uuid: uuid, tasa: $('#daTasa').value, base: $('#daBase').value, inicio: $('#daIni').value, depreciar: $('#daDep').value !== 'no', notas: $('#daNota').value };
+    try { await pedir('guardarAjusteActivo', p); cerrarModal(); toast(quitar ? '✔ Ajuste quitado' : '✔ Depreciación ajustada'); S.datGasKey = ''; cargarGastos(); } catch (e) {}
+  }
   function leerFiltrosGas() { S.fgas = marcarHoy({ desde: $('#gDesde').value, hasta: $('#gHasta').value, sucursal: $('#gSuc').value, grupo: $('#gGrupo').value, categoria: $('#gCat').value, texto: $('#gTxt').value.trim() }); return S.fgas; }
   async function cargarGastos() {
     const f = leerFiltrosGas();
@@ -2955,7 +3001,7 @@ const App = (() => {
           { t: 'Depreciación', num: 1, cls: 'ocultar-movil', h: x => $$(x.depreciacion) }, { t: 'Financieros', num: 1, cls: 'ocultar-movil', h: x => $$(x.financiero) },
           { t: 'Total cargado', num: 1, h: x => `<b>${$$(x.cargado)}</b>` }, { t: '% de sus ventas', num: 1, h: x => x.pctVentas === null ? '—' : x.pctVentas.toFixed(1) + '%' },
           { t: '% del gasto total', num: 1, h: x => { const t = r.porSucursal.reduce((a, y) => a + y.cargado, 0); return t ? (x.cargado / t * 100).toFixed(1) + '%' : '—'; } }], r.porSucursal, { vacio: 'Sin datos' }) + `</div>
-        <p class="muted">Toca una categoría para ver solo sus facturas. Los grupos y tasas de depreciación se ajustan en Configuración › Grupos de gasto.</p>`;
+        <p class="muted">Toca una categoría para ver solo sus facturas. Los grupos y tasas de depreciación se ajustan en ⚙️ Reglas y depreciación.</p>`;
     } else if (tab === 'mes') {
       const tm = Array(12).fill(0); r.porMes.forEach(x => x.meses.forEach((v, i) => { if (x.grupo !== 'Excluir' && x.grupo !== 'Inversión') tm[i] += v; }));
       html += `<div class="tarjeta"><h3>Gastos por mes · ${r.periodo.anio}</h3><div class="grafica"><canvas id="gcMes"></canvas></div></div>
@@ -2972,7 +3018,7 @@ const App = (() => {
       html += `<div class="tarjeta">${lect ? `<div class="fila no-imprimir" style="margin-bottom:8px"><button class="btn primario fijo" onclick="App.zipGastos()">⬇️ Descargar XML y PDF de estas ${nf(r.facturas.length)} facturas (ZIP)</button></div>` : `<div class="fila no-imprimir" style="margin-bottom:8px"><label>Asignar las ${nf(r.facturas.length)} facturas mostradas a<select id="gAsigTodas"><option value="">Elige sucursal…</option>${optSucG('')}</select></label>
         <button class="btn fijo" onclick="App.asignarSucGastos(null)">Aplicar</button><button class="btn fijo" onclick="App.zipGastos()">⬇️ XML y PDF (ZIP)</button></div>`}
         <p class="muted">${nf(r.facturas.length)} facturas · ${$$(r.facturas.reduce((a, x) => a + x.monto, 0))} sin IVA · ${$$(r.facturas.reduce((a, x) => a + x.total, 0))} con IVA${r.sucursal ? ' · montos ponderados para ' + esc(sucNom(r.sucursal)) : ''}</p>` +
-        tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Categoría', h: x => lect ? esc(x.cat) + `<br><small class="muted">${esc(x.grupo || '')}</small>` : x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + ` <button class="icono no-imprimir" title="Cambiar la categoría de esta factura" onclick="App.editarCatGasto('${esc(x.uuid)}')">✏️</button><br><small class="muted">${esc(x.grupo)}</small>` },
+        tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Categoría', h: x => !editaGas() ? esc(x.cat) + `<br><small class="muted">${esc(x.grupo || '')}</small>` : x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + ` <button class="icono no-imprimir" title="Cambiar la categoría de esta factura" onclick="App.editarCatGasto('${esc(x.uuid)}')">✏️</button><br><small class="muted">${esc(x.grupo)}</small>` },
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
           { t: 'Sucursal', h: (x) => lect ? esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) : `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
           { t: 'Factura', h: x => `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>${x.xml ? `<button class="btn chico" title="Descargar el XML" onclick="App.bajarXmlGasto('${esc(x.uuid)}')">XML</button>` : ''}` },
@@ -2982,11 +3028,14 @@ const App = (() => {
     } else if (tab === 'inversion') {
       const tl = r.activos.reduce((a, x) => a + x.libros, 0), tm = r.activos.reduce((a, x) => a + x.monto, 0), ta = r.activos.reduce((a, x) => a + x.acumulada, 0);
       html += `<div class="tarjeta"><h3>Activo fijo y depreciación al ${esc(r.periodo.corte)}</h3>
-        <p class="muted">Línea recta desde el mes siguiente a la compra. Tasas: vehículos 25 %, equipo de cómputo 30 %, mobiliario y equipo 10 % (ajustables en Configuración). Cálculo gerencial: los topes fiscales (p. ej. automóviles) los aplica tu contador.</p>
+        <p class="muted">Línea recta desde el mes siguiente a la compra. Tasas: vehículos 25 %, equipo de cómputo 30 %, mobiliario y equipo 10 %. Cálculo gerencial${editaGas() ? '; los criterios generales (inicio, tope de automóviles) están en ⚙️ Reglas y depreciación y cada activo se ajusta con ✏️' : ''}.</p>
         <div class="kpis">${kpi('Monto original', $$(tm), nf(r.activos.length) + ' facturas')}${kpi('Depreciación acumulada', $$(ta), '')}${kpi('Valor en libros', $$(tl), '')}${kpi('Depreciación del periodo', $$(t.depreciacion), 'se resta en resultados')}</div>` +
         tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.cat)}</small>` }, { t: 'Monto', num: 1, h: x => $$(x.monto) },
-          { t: 'Tasa', num: 1, h: x => x.tasa + '%' }, { t: 'Mensual', num: 1, cls: 'ocultar-movil', h: x => $$(x.mensual) }, { t: 'Del periodo', num: 1, h: x => $$(x.periodo) },
-          { t: 'Acumulada', num: 1, cls: 'ocultar-movil', h: x => $$(x.acumulada) }, { t: 'Valor en libros', num: 1, h: x => `<b>${$$(x.libros)}</b>` }], r.activos, { vacio: 'Sin inversiones registradas' }) + '</div>';
+          { t: 'Depreciable', num: 1, cls: 'ocultar-movil', h: x => x.base !== undefined && Math.abs(x.base - x.monto) > 0.01 ? `${$$(x.base)}<br><small class="muted">${x.vehiculo && !(x.ajuste && x.ajuste.base) ? 'tope autos' : 'ajustado'}</small>` : '<small class="muted">el monto</small>' },
+          { t: 'Tasa', num: 1, h: x => x.tasa + '%' + (x.tasaRegla !== undefined && x.tasa !== x.tasaRegla ? `<br><small class="muted">regla ${x.tasaRegla}%</small>` : '') },
+          { t: 'Inicia', cls: 'ocultar-movil', h: x => esc(x.inicio || '') }, { t: 'Mensual', num: 1, cls: 'ocultar-movil', h: x => $$(x.mensual) }, { t: 'Del periodo', num: 1, h: x => $$(x.periodo) },
+          { t: 'Acumulada', num: 1, cls: 'ocultar-movil', h: x => $$(x.acumulada) }, { t: 'Valor en libros', num: 1, h: x => `<b>${$$(x.libros)}</b>` },
+          ...(editaGas() ? [{ t: '', h: x => `<button class="icono" title="Ajustar la depreciación de este activo" onclick="App.editarActivo(${r.activos.indexOf(x)})">✏️</button>${x.ajuste ? '<br><small class="etq">ajustado</small>' : ''}` }] : [])], r.activos, { vacio: 'Sin inversiones registradas' }) + '</div>';
     } else {
       html += `<div class="tarjeta"><h3>Proveedores de gastos del periodo</h3>` + tabla([{ t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` },
         { t: 'Categorías', k: 'cats', cls: 'ocultar-movil' }, { t: 'Grupo', k: 'grupo' }, { t: 'Facturas', num: 1, h: x => nf(x.n) }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }], r.emisores) + '</div>';
@@ -3052,7 +3101,7 @@ const App = (() => {
   async function vistaPorClasificar(conPestanas) {
     S.tabGas = 'clasificar';
     const tb = (id, n) => `<button class="${id === 'clasificar' ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
-    $('#vista').innerHTML = (conPestanas ? `<div class="pestanas">${tb('resumen', 'Estado de gastos')}${tb('mes', 'Por mes')}${tb('facturas', 'Facturas')}${tb('inversion', 'Inversiones')}${tb('emisores', 'Proveedores')}${tb('clasificar', '🏷️ Por clasificar')}</div>` : '') +
+    $('#vista').innerHTML = (conPestanas ? `<div class="pestanas">${pestanasGas('clasificar')}</div>` : '') +
       `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>🏷️ Facturas de gastos por clasificar</b><br><small class="muted">Llegaron de proveedores nuevos (por correo o subidas) y no se les pudo poner categoría. Elige la categoría de cada una; si marcas "todas del proveedor", también se usa para las que lleguen después de ese mismo RFC. Mientras no tengan categoría cuentan como gastos de operación. Si es una <b>compra</b> a un proveedor (mercancía), toca "🧾 Es compra": se pasa a Compras y deja de contar como gasto.</small></div>
         <label>Buscar<input id="pcTxt" placeholder="Proveedor o RFC"></label></div></div><div class="espacio"></div><div id="pcRes"><div class="vacio">Cargando…</div></div>`;
     let r; try { r = S.porClasif = await pedir('gastosPorClasificar', {}); } catch (e) { if ($('#pcRes')) $('#pcRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
@@ -9690,7 +9739,7 @@ const App = (() => {
   }
   function agregarGrupo() { S.grupos.filas.push({ tipo: 'Emisor', valor: '', grupo: 'Operación', nota: '' }); pintarGrupos(); }
   async function guardarGrupos() {
-    try { const r = await pedir('guardarGruposGasto', { filas: S.grupos.filas }); toast('✔ ' + r.reglas + ' reglas guardadas'); cargarGrupos(); } catch (e) {}
+    try { const r = await pedir('guardarGruposGasto', { filas: S.grupos.filas }); toast('✔ ' + r.reglas + ' reglas guardadas'); S.datGasKey = ''; cargarGrupos(); } catch (e) {}
   }
   async function repararRegistros(aplicar) {
     if (aplicar && !confirm('¿Marcar estos renglones como ya registrados? No se crea ningún movimiento nuevo.')) return;
@@ -10304,7 +10353,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    bajarXmlGasto, zipGastos, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
