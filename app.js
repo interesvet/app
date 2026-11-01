@@ -5707,6 +5707,7 @@ const App = (() => {
     $('#bnCont').innerHTML = `<div class="tarjeta"><div class="fila">
         <label>Año<select id="bnAnio" onchange="App.bnAnio(this.value)">${anios.map(y => `<option ${y === d.anio ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
         <button class="btn primario fijo" onclick="App.bnSubir()">📥 Subir estados de cuenta</button>
+        ${puede('dueno') ? '<button class="btn fijo" onclick="App.bnDrive()">📂 Desde Drive</button>' : ''}
         <button class="btn fijo" onclick="App.bnExcelEstados()">📊 Excel</button></div>
         <p class="muted peq">Sube los PDF (BBVA, Banorte, Liverpool) o el Excel/CSV del banco; puedes subir varios a la vez. Solo se guardan si <b>cuadran al centavo</b> y siguen al estado anterior.</p></div>
       ${d.cuentas.length ? `<div class="tarjeta"><h3>Cuentas · ${d.anio}</h3>` + tabla([
@@ -5743,16 +5744,62 @@ const App = (() => {
     const fs = [...($('#bnArch').files || [])]; if (!fs.length) return toast('Elige al menos un archivo', true);
     $('#bnLeerBtn').disabled = true;
     try { await bnDatos(); } catch (e) {}
-    for (const f of fs) {
-      const it = { nombre: f.name, file: f, estado: 'leyendo' }; BN.cola.push(it); bnPintarCola();
-      try {
-        if (/\.(xlsx|xls|csv)$/i.test(f.name)) it.r = await bnLeerExcel(f, it);
-        else it.r = await bnLeerPdf(f, it);
-        bnCasarCuenta(it); it.v = EDOCTA.validar(it.r); it.estado = it.v.ok && !it.r.revisar && it.cuenta ? 'listo' : 'revisar';
-      } catch (e) { it.estado = 'error'; it.error = e.message || String(e); }
-      bnPintarCola();
-    }
+    for (const f of fs) { const it = { nombre: f.name, file: f, estado: 'leyendo' }; BN.cola.push(it); await bnLeerUno(it); }
     if ($('#bnLeerBtn')) $('#bnLeerBtn').disabled = false;
+  }
+  async function bnLeerUno(it) {
+    bnPintarCola();
+    try {
+      if (/\.(xlsx|xls|csv)$/i.test(it.nombre)) it.r = await bnLeerExcel(it.file, it);
+      else it.r = await bnLeerPdf(it.file, it);
+      bnCasarCuenta(it); it.v = EDOCTA.validar(it.r); it.estado = it.v.ok && !it.r.revisar && it.cuenta ? 'listo' : 'revisar';
+    } catch (e) { it.estado = 'error'; it.error = e.message || String(e); }
+    bnPintarCola();
+  }
+
+  /* ---------- Importar una carpeta de Drive completa (solo el dueño): lee cada archivo, deja fuera lo anterior a la fecha y guarda lo que cuadra ---------- */
+  function bnDrive() {
+    let ult = ''; try { ult = localStorage.getItem('iv_bn_drive') || ''; } catch (e) {}
+    BN.cola = [];
+    modal('📂 Importar estados de cuenta desde Drive', `<p>Pega el link de la carpeta donde guardas los estados de cuenta (puede tener una subcarpeta por banco). Se leen todos los PDF y Excel; los que <b>cuadran al centavo</b> se guardan solos y los repetidos se saltan.</p>
+      <label>Carpeta de Drive<input id="bnDrLink" value="${esc(ult)}" placeholder="https://drive.google.com/drive/folders/…"></label>
+      <label>Solo estados con corte desde<input type="date" id="bnDrDesde" value="${(BN.anio || new Date().getFullYear())}-01-01"></label>
+      <div class="acciones"><button class="btn primario" id="bnDrBtn" onclick="App.bnDriveIniciar()">📂 Importar</button><button class="btn" onclick="App.cerrarModal();App.vistaBancos('estados')">Cerrar</button></div>
+      <div id="bnDrRes"></div><div id="bnCola"></div>`);
+  }
+  async function bnDriveIniciar() {
+    const link = $('#bnDrLink').value.trim(), desde = $('#bnDrDesde').value || '2000-01-01';
+    if (!link) return toast('Pega el link de la carpeta', true);
+    try { localStorage.setItem('iv_bn_drive', link); } catch (e) {}
+    $('#bnDrBtn').disabled = true; BN.cola = [];
+    const res = t => { const el = $('#bnDrRes'); if (el) el.innerHTML = t; };
+    try {
+      res('<span class="etq">Buscando archivos…</span>');
+      const L = await pedir('archivosDriveBanco', { carpeta: link }, true);
+      try { await bnDatos(true); } catch (e) {}
+      L.archivos.forEach(a => BN.cola.push({ nombre: (a.ruta ? a.ruta + ' › ' : '') + a.nombre, archivo: a.nombre, driveId: a.id, auto: true, estado: 'espera' }));
+      bnPintarCola();
+      for (let i = 0; i < BN.cola.length; i++) {
+        const it = BN.cola[i];
+        res(`<span class="etq">Leyendo ${i + 1} de ${BN.cola.length}…</span>`);
+        try {
+          it.estado = 'bajando'; bnPintarCola();
+          const a = await pedir('archivoDriveBanco', { id: it.driveId }, true);
+          const blob = await (await fetch(a.uri)).blob(); it.file = new File([blob], it.archivo, { type: blob.type });
+          it.estado = 'leyendo'; await bnLeerUno(it);
+          if (it.r && it.r.hasta && it.r.hasta < desde) { it.estado = 'omitido'; it.file = null; }
+        } catch (e) { it.estado = 'error'; it.error = e.message || String(e); }
+        bnPintarCola();
+      }
+      // guarda en orden (cuenta y fecha) para que la continuidad se revise mes con mes
+      const listos = BN.cola.map((it, i) => [it, i]).filter(x => x[0].estado === 'listo')
+        .sort((a, b) => String((a[0].r || {}).numero).localeCompare(String((b[0].r || {}).numero)) || String(a[0].r.desde).localeCompare(String(b[0].r.desde)));
+      for (let k = 0; k < listos.length; k++) { res(`<span class="etq">Guardando ${k + 1} de ${listos.length}…</span>`); await bnGuardar(listos[k][1], true); }
+      const n = e => BN.cola.filter(x => x.estado === e).length;
+      res(`<div class="tarjeta"><b>Resultado:</b> ✔ ${n('guardado')} guardados · ↩︎ ${n('duplicado')} ya estaban · ⏭ ${n('omitido')} anteriores a ${esc(fechaTxt(desde))} · ✏️ ${n('revisar')} por revisar · ✖ ${n('error')} con error</div>`);
+      BN.t = 0;
+    } catch (e) { res(`<span class="etq mal">✖ ${esc(e.message || String(e))}</span>`); }
+    if ($('#bnDrBtn')) $('#bnDrBtn').disabled = false;
   }
   async function bnLeerPdf(f, it) {
     const L = await cargarPdfJs(), doc = await L.getDocument({ data: new Uint8Array(await leerBuf(f)), isEvalSupported: false }).promise, pags = [];
@@ -5809,6 +5856,10 @@ const App = (() => {
       if (it.estado === 'leyendo') est = '<span class="etq">Leyendo…</span>';
       else if (it.estado === 'ocr') est = `<span class="etq av">Leyendo imagen (OCR) pág. ${it.pag || 1}${it.prog !== undefined ? ' · ' + it.prog + ' %' : ''}…</span>`;
       else if (it.estado === 'error') est = `<span class="etq mal">✖ ${esc(it.error)}</span>`;
+      else if (it.estado === 'espera') est = '<span class="etq">En espera</span>';
+      else if (it.estado === 'bajando') est = '<span class="etq">Descargando de Drive…</span>';
+      else if (it.estado === 'omitido') est = '<span class="etq">⏭ Anterior a la fecha elegida (no se carga)</span>';
+      else if (it.estado === 'duplicado') est = `<span class="etq">↩︎ Ya estaba cargado</span> <small class="muted">${esc(it.error || '')}</small>`;
       else if (it.estado === 'guardado') est = `<span class="etq ok">✔ Guardado en ${esc(it.guardadoEn || '')}</span>${(it.avisosSrv || []).map(a => `<br><small class="muted">⚠️ ${esc(a)}</small>`).join('')}`;
       else {
         est = (v.ok ? `<span class="etq ok">✔ Cuadra al centavo</span> <small class="muted">abonos ${$$(v.suma.abonos)} · cargos ${$$(v.suma.cargos)} · saldo final ${$$(r.resumen.saldoFinal)}</small>` : `<span class="etq mal">✖ No cuadra</span>${(v.errores || []).map(e => `<br><small class="txt-mal">${esc(e)}</small>`).join('')}`) +
@@ -5829,17 +5880,18 @@ const App = (() => {
     const p = { origen: r.origen || 'PDF', desde: r.desde, hasta: r.hasta, corte: r.corte, resumen: r.resumen, movs: r.movs,
       cuenta: it.cuenta === 'nueva' ? { banco: r.banco, producto: r.producto, tipo: r.tipo || 'Débito', numero: r.numero, clabe: r.clabe, uso: it.uso, formato: r.formato } : { id: it.cuenta, formato: r.formato } };
     try {
-      p.archivo = { nombre: it.nombre, datos: await leerArchivo(it.file) };
+      p.archivo = it.driveId ? { nombre: it.archivo, driveId: it.driveId } : { nombre: it.nombre, datos: await leerArchivo(it.file) };
       let x;
       try { x = await pedir('importarEstadoBanco', p, true); }
       catch (e) {
-        if (/estado anterior|estado siguiente/.test(e.message || '') && confirm(e.message + '\n\n¿Guardarlo de todos modos? (queda marcado como "continuidad forzada" para que el contador lo revise)')) {
+        if (!it.auto && /estado anterior|estado siguiente/.test(e.message || '') && confirm(e.message + '\n\n¿Guardarlo de todos modos? (queda marcado como "continuidad forzada" para que el contador lo revise)')) {
           const nota = prompt('Nota para el contador (por qué no sigue al anterior):', '') || 'sin nota'; x = await pedir('importarEstadoBanco', Object.assign(p, { forzarContinuidad: true, nota: nota }), true);
         } else throw e;
       }
       it.estado = 'guardado'; it.guardadoEn = x.cuenta; it.avisosSrv = x.avisos; BN.t = 0;
       if (!sin) toast('✔ ' + x.cuenta + ': ' + x.movs + ' movimientos guardados');
-    } catch (e) { it.estado = 'error'; it.error = e.message || String(e); if (!sin) toast(it.error, true); }
+    } catch (e) { it.error = e.message || String(e); it.estado = /Ya está cargado/.test(it.error) ? 'duplicado' : 'error'; if (!sin) toast(it.error, true); }
+    if (it.estado === 'guardado' && it.auto) it.file = null;
     bnPintarCola();
   }
   async function bnGuardarTodos() { for (let i = 0; i < BN.cola.length; i++) if (BN.cola[i].estado === 'listo') await bnGuardar(i, true); toast('Listo'); }
@@ -9830,7 +9882,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    vistaBancos: t => V.bancos(t), bnAnio, bnSubir, bnLeer, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    vistaBancos: t => V.bancos(t), bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
