@@ -868,6 +868,8 @@ small.ok { color: var(--ok); }
 @media (max-width: 760px) { .crm-kanban { grid-template-columns: repeat(6, 78vw); scroll-snap-type: x mandatory; } .crm-col { scroll-snap-align: start; } }
 /* Acciones rápidas (solo celular, en Inicio) */
 .fab-rap { display: none !important; }
+.fab-obs { position: fixed; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 45; width: 52px; height: 52px; border-radius: 50%; border: 0; font-size: 24px;
+  background: var(--marca); color: #fff; box-shadow: 0 6px 18px rgba(0,0,0,.25); cursor: pointer; }
 @media (max-width: 760px) {
   .fab-rap { display: flex !important; position: fixed; right: 14px; bottom: calc(16px + env(safe-area-inset-bottom)); flex-direction: column; gap: 10px; z-index: 40; }
   .fab-rap[style*="none"] { display: none !important; }

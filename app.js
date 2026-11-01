@@ -654,6 +654,7 @@ const App = (() => {
     { id: 'reclamaciones', t: 'Reclamaciones', i: '📣', p: ['ventas', 'compras', 'inventario'] },
     { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos'] },
     { id: 'comisiones', t: 'Comisiones', i: '💼', p: 'dueno' },
+    { id: 'bancos', t: 'Bancos', i: '🏦', p: 'bancos' },
     { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'requisiciones', 'ajustes', 'mermas', 'inventario_fisico'] },
     { id: 'traspasos', t: 'Traspasos', i: '🚚', p: 'traspasos', oculto: 1 },
     { id: 'requisiciones', t: 'Requisiciones de traspaso', i: '📑', p: 'requisiciones', oculto: 1 },
@@ -673,7 +674,7 @@ const App = (() => {
   function pintarMenu() {
     const u = U();
     $('#menu').innerHTML = `<div class="cab">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : '<b>🐾 Interés Veterinario®</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
-      <nav>${MENU.filter(m => !m.oculto && puede(m.p)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
+      <nav>${MENU.filter(m => !m.oculto && puede(m.p) && !(esContador() && OCULTO_CONTADOR.indexOf(m.id) >= 0)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
         return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(e.t)}</button>`; }).join('')}</nav>
       <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
       <div class="fila" style="gap:6px"><button class="btn chico" onclick="App.ir('config')">${puede('dueno') ? '⚙️ Configuración' : '👤 Mi cuenta y sincronización'}</button><button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div><div class="ver-app"></div></div>`;
@@ -704,7 +705,10 @@ const App = (() => {
       { v: 'matriz', t: '🔄 Actualizar desde Matriz', p: 'productos_editar' }] }
   };
   const grupoDe = v => Object.keys(GRUPOS).find(g => GRUPOS[g].tabs.some(t => t.v === v)) || null;
-  const tabsGrupo = g => GRUPOS[g].tabs.filter(t => puede(t.p));
+  /** Perfil Contador: solo lo que le sirve (consulta, facturación y bancos). */
+  const esContador = () => U().rol === 'Contador';
+  const OCULTO_CONTADOR = ['mapa', 'pedido', 'anCompras', 'reclamaciones', 'seguimiento', 'cotizaciones'];
+  const tabsGrupo = g => GRUPOS[g].tabs.filter(t => puede(t.p) && !(esContador() && OCULTO_CONTADOR.indexOf(t.v) >= 0));
   const argVista = v => v === 'productos' ? (S.tabProd || 'cat') : undefined;
   const claveTab = t => t.v + (t.a ? ':' + t.a : '');
   function pintarSubnav() {
@@ -730,8 +734,8 @@ const App = (() => {
       if (t) { v = t.v; if (t.v === 'productos' && t.a) S.tabProd = t.a; }
     }
     const g = grupoDe(v), spec = g ? GRUPOS[g].tabs.find(t => t.v === v) : null;
-    let m = MENU.find(x => x.id === v && puede(spec ? spec.p : x.p));
-    if (!m) m = MENU[0];
+    let m = MENU.find(x => x.id === v && puede(spec ? spec.p : x.p) && !(esContador() && OCULTO_CONTADOR.indexOf(x.id) >= 0));
+    if (!m) m = esContador() ? MENU.find(x => x.id === 'bancos') : MENU[0];
     if (m.id !== 'ventas') S.ventasCli = null;
     if (m.id !== 'compras') S.comprasProv = null;
     S.vista = m.id; LS.set('vista', m.id);
@@ -741,7 +745,7 @@ const App = (() => {
     $('#vista').innerHTML = ''; quitarAvisoCache();
     (V[m.id] || V.inicio)();
     if (m.id === 'config' && !puede('dueno')) $('#titulo').textContent = 'Mi cuenta';
-    pintarFab(m.id);
+    pintarFab(m.id); botonObservaciones();
     window.scrollTo(0, 0);
   }
   /** Acciones rápidas (solo en celular, en Inicio): nueva cotización y registrar visita. */
@@ -755,7 +759,7 @@ const App = (() => {
   function fabCot() { S.tabCot = 'nueva'; ir('cotizaciones', true); }
   /* ---------- BIENVENIDA (solo celulares y tabletas: iPhone, iPad, Android) ---------- */
   const esMovil = () => { try { return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) || window.innerWidth <= 820; } catch (e) { return window.innerWidth <= 820; } };
-  const SUB_MENU = { reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
+  const SUB_MENU = { bancos: 'Estados de cuenta y movimientos', reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
     seguimiento: 'Clientes por atender y visitas', comisiones: 'Comisionistas y liquidaciones', compras: 'Órdenes de compra y pedido sugerido', gastos: 'Gastos del negocio', sucursales: 'Inventario, traspasos y requisiciones',
     productos: 'Catálogo, portafolio y precios', clientes: 'Cartera de clientes', mapa: 'Dónde están tus clientes: casa y rancho', proveedores: 'Laboratorios y distribuidores', config: 'Folios, permisos y ajustes' };
   function saludo() { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; }
@@ -989,6 +993,7 @@ const App = (() => {
   /* ---------- INICIO / DASHBOARD ---------- */
   V.inicio = () => {
     if (puede('dashboard')) return V.dashboard();
+    if (esContador()) return ir('bancos');
     const suc = sucTrabajo();
     const dias = (D().config || {}).diasCaducidad || 120;
     const alerta = (D().stock || []).filter(s => s.s === suc && s.q > 0 && diasA(s.c) !== null && diasA(s.c) <= dias).sort((a, b) => diasA(a.c) - diasA(b.c));
@@ -5674,13 +5679,685 @@ const App = (() => {
   }
 
   /* =====================================================================================
+   *  🏦 BANCOS: estados de cuenta (PDF, Excel, OCR), movimientos y observaciones del contador
+   * ===================================================================================== */
+  const TESS_V = '5.1.1', TESS_URL = 'https:' + '//cdn.jsdelivr.net/npm/';
+  const BN = { cola: [] };
+  V.bancos = (tab) => {
+    tab = tab || S.tabBan || 'estados'; S.tabBan = tab;
+    const tabs = [['estados', '📥 Estados de cuenta'], ['movs', '📋 Movimientos'], ['cuentas', '🏦 Cuentas'], ['obs', '💬 Observaciones']];
+    const barra = `<div class="pestanas">${tabs.map(t => `<button class="${tab === t[0] ? 'activo' : ''}" onclick="App.vistaBancos('${t[0]}')">${t[1]}</button>`).join('')}</div>`;
+    $('#vista').innerHTML = barra + '<div id="bnCont"><div class="vacio">Cargando…</div></div>';
+    ({ estados: bnEstados, movs: bnMovs, cuentas: bnCuentas, obs: bnObs })[tab]();
+  };
+  async function bnDatos(forzar) {
+    if (!forzar && BN.datos && Date.now() - BN.t < 60000) return BN.datos;
+    BN.datos = await pedir('bancos', { anio: BN.anio || new Date().getFullYear() }); BN.t = Date.now(); return BN.datos;
+  }
+  const bnCta = id => ((BN.datos || {}).cuentas || []).find(c => c.id === id) || {};
+  const nomCta = c => esc([c.banco, c.producto].filter(Boolean).join(' ')) + ' …' + esc(c.ult4 || String(c.numero || '').slice(-4));
+  const MES_C = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+  /* ---------- Estados de cuenta: resumen por cuenta, lista y carga ---------- */
+  async function bnEstados() {
+    let d; try { d = await bnDatos(true); } catch (e) { $('#bnCont').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    let es; try { es = await pedir('estadosBanco', { anio: d.anio }); } catch (e) { es = []; }
+    BN.estados = es;
+    const anios = []; for (let y = new Date().getFullYear(); y >= 2024; y--) anios.push(y);
+    $('#bnCont').innerHTML = `<div class="tarjeta"><div class="fila">
+        <label>Año<select id="bnAnio" onchange="App.bnAnio(this.value)">${anios.map(y => `<option ${y === d.anio ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
+        <button class="btn primario fijo" onclick="App.bnSubir()">📥 Subir estados de cuenta</button>
+        <button class="btn fijo" onclick="App.bnExcelEstados()">📊 Excel</button></div>
+        <p class="muted peq">Sube los PDF (BBVA, Banorte, Liverpool) o el Excel/CSV del banco; puedes subir varios a la vez. Solo se guardan si <b>cuadran al centavo</b> y siguen al estado anterior.</p></div>
+      ${d.cuentas.length ? `<div class="tarjeta"><h3>Cuentas · ${d.anio}</h3>` + tabla([
+        { t: 'Cuenta', h: c => `<b>${nomCta(c)}</b><br><small class="muted">${esc(c.tipo)} · ${esc(c.uso)}</small>` },
+        { t: 'Estados', num: 1, h: c => nf(c.estados) }, { t: 'Último corte', h: c => esc(c.ultimoHasta || '—') },
+        { t: 'Saldo', num: 1, h: c => c.saldo === null ? '—' : $$(c.saldo) },
+        { t: `Faltan (${d.anio})`, h: c => c.faltan.length ? `<span class="etq av">${c.faltan.map(m => MES_C[m]).join(', ')}</span>` : '<span class="etq ok">completo</span>' },
+        { t: 'Sin clasificar', num: 1, h: c => c.sinClasificar ? `<a href="#" onclick="event.preventDefault();App.bnVerMovs('${c.id}','-')">${nf(c.sinClasificar)}</a>` : '0' }], d.cuentas) + '</div>' : ''}
+      <div class="tarjeta"><h3>Estados cargados · ${d.anio}</h3>${tabla([
+        { t: 'Cuenta', h: e => `<b>${esc(e.cuenta)}</b><br><small class="muted">${esc(e.uso || '')} · ${esc(e.origen)}</small>` }, { t: 'Periodo', h: e => esc(e.desde) + '<br>' + esc(e.hasta) },
+        { t: 'Saldo inicial', num: 1, h: e => $$(e.saldoInicial) }, { t: 'Abonos', num: 1, h: e => $$(e.abonos) + `<br><small class="muted">${nf(e.nAbonos)}</small>` },
+        { t: 'Cargos', num: 1, h: e => $$(e.cargos) + `<br><small class="muted">${nf(e.nCargos)}</small>` }, { t: 'Saldo final', num: 1, h: e => `<b>${$$(e.saldoFinal)}</b>` },
+        { t: 'Cuadre', h: e => '<span class="etq ok">✔ cuadra</span>' + (e.continuidad !== 'OK' ? `<br><span class="etq av" title="${esc(e.continuidad)}">continuidad forzada</span>` : '') + (e.avisos ? `<br><small class="muted">${esc(e.avisos)}</small>` : '') },
+        { t: '', h: e => (e.url ? `<a class="btn chico" target="_blank" href="${esc(e.url)}">📄</a>` : '') + `<button class="btn chico" onclick="App.bnVerMovs('${e.idCuenta}','','${esc(e.desde)}','${esc(e.hasta)}')">📋</button>` + (puede('dueno') ? `<button class="icono" title="Quitar este estado" onclick="App.bnQuitarEstado('${e.id}')">🗑️</button>` : '') }],
+        es, { vacio: 'Aún no hay estados de cuenta cargados en ' + d.anio })}</div>`;
+  }
+  function bnAnio(y) { BN.anio = Number(y); bnEstados(); }
+  async function bnQuitarEstado(id) {
+    const e = (BN.estados || []).find(x => x.id === id) || {};
+    if (!confirm('¿Quitar el estado de ' + (e.cuenta || '') + ' del ' + e.desde + ' al ' + e.hasta + ' y sus ' + ((e.nAbonos || 0) + (e.nCargos || 0)) + ' movimientos?\n\nEl PDF se queda en tu Drive; lo puedes volver a subir.')) return;
+    try { await pedir('eliminarEstadoBanco', { id: id }); toast('Estado de cuenta quitado'); bnEstados(); } catch (e) {}
+  }
+
+  /* ---------- Subir: lee en el equipo, valida y muestra el resultado de cada archivo ---------- */
+  function bnSubir() {
+    BN.cola = [];
+    modal('📥 Subir estados de cuenta', `<p>Elige uno o varios archivos: <b>PDF</b> (BBVA, Banorte; Liverpool se lee por OCR) o <b>Excel / CSV</b> descargado del banco.</p>
+      <label>Archivos<input type="file" id="bnArch" multiple accept=".pdf,.xlsx,.xls,.csv,application/pdf"></label>
+      <div class="acciones"><button class="btn primario" id="bnLeerBtn" onclick="App.bnLeer()">🔎 Leer y revisar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>
+      <div id="bnCola"></div>`);
+  }
+  const leerBuf = f => new Promise((ok, mal) => { const r = new FileReader(); r.onerror = mal; r.onload = () => ok(r.result); r.readAsArrayBuffer(f); });
+  async function bnLeer() {
+    const fs = [...($('#bnArch').files || [])]; if (!fs.length) return toast('Elige al menos un archivo', true);
+    $('#bnLeerBtn').disabled = true;
+    try { await bnDatos(); } catch (e) {}
+    for (const f of fs) {
+      const it = { nombre: f.name, file: f, estado: 'leyendo' }; BN.cola.push(it); bnPintarCola();
+      try {
+        if (/\.(xlsx|xls|csv)$/i.test(f.name)) it.r = await bnLeerExcel(f, it);
+        else it.r = await bnLeerPdf(f, it);
+        bnCasarCuenta(it); it.v = EDOCTA.validar(it.r); it.estado = it.v.ok && !it.r.revisar && it.cuenta ? 'listo' : 'revisar';
+      } catch (e) { it.estado = 'error'; it.error = e.message || String(e); }
+      bnPintarCola();
+    }
+    if ($('#bnLeerBtn')) $('#bnLeerBtn').disabled = false;
+  }
+  async function bnLeerPdf(f, it) {
+    const L = await cargarPdfJs(), doc = await L.getDocument({ data: new Uint8Array(await leerBuf(f)), isEvalSupported: false }).promise, pags = [];
+    let chars = 0;
+    for (let i = 1; i <= doc.numPages; i++) {
+      const c = await (await doc.getPage(i)).getTextContent(); chars += c.items.reduce((s, x) => s + (String(x.str).match(/[A-Za-z0-9]/g) || []).length, 0);   // solo letras legibles (hay PDF escaneados con texto ilegible)
+      pags.push(EDOCTA.renglones(c.items.map(x => ({ x: x.transform[4], r: x.transform[4] + x.width, y: x.transform[5], s: x.str }))));
+    }
+    if (chars > 300 && EDOCTA.detectar(EDOCTA.textoTodo(pags))) return EDOCTA.leer(pags);
+    // escaneado (imagen): OCR página por página hasta encontrar el total del detalle
+    it.estado = 'ocr'; bnPintarCola();
+    const T = await cargarTesseract(), w = await T.createWorker('spa', 1, { workerPath: TESS_URL + 'tesseract.js@' + TESS_V + '/dist/worker.min.js', corePath: TESS_URL + 'tesseract.js-core@' + TESS_V,
+      langPath: TESS_URL + '@tesseract.js-data/spa/4.0.0', gzip: true, logger: m => { if (m.status === 'recognizing text') { it.prog = Math.round(m.progress * 100); bnPintarCola(); } } });
+    const po = [];
+    try {
+      for (let i = 1; i <= Math.min(doc.numPages, 4); i++) {
+        it.pag = i; bnPintarCola();
+        const pg = await doc.getPage(i), vp = pg.getViewport({ scale: 200 / 72 }), cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+        const cx = cv.getContext('2d'); await pg.render({ canvasContext: cx, viewport: vp }).promise;
+        const img = cx.getImageData(0, 0, cv.width, cv.height); EDOCTA.preprocesar(img); cx.putImageData(img, 0, 0);
+        const { data } = await w.recognize(cv); po.push(EDOCTA.renglonesOcr(data.words));
+        if (i >= 2 && po.some(p => p.some(l => /^Sub\s*Total/i.test(l.t)))) break;
+      }
+    } finally { try { await w.terminate(); } catch (e) {} }
+    return EDOCTA.leer(po);
+  }
+  function cargarTesseract() {
+    if (window.Tesseract) return Promise.resolve(window.Tesseract);
+    return BN.tessP || (BN.tessP = new Promise((ok, mal) => { const s = document.createElement('script'); s.src = TESS_URL + 'tesseract.js@' + TESS_V + '/dist/tesseract.min.js';
+      s.onload = () => window.Tesseract ? ok(window.Tesseract) : mal(new Error('No se pudo cargar el lector de imágenes (OCR)')); s.onerror = () => { BN.tessP = null; mal(new Error('El OCR necesita conexión a internet')); }; document.head.appendChild(s); }));
+  }
+  async function bnLeerExcel(f, it) {
+    const X = await libLocal('xlsx'), wb = X.read(await leerBuf(f), { type: 'array', cellDates: true }), hoja = wb.Sheets[wb.SheetNames[0]];
+    const filas = X.utils.sheet_to_json(hoja, { header: 1, raw: true, defval: '' });
+    const mp = EDOCTA.mapaExcel(filas); if (!mp) throw new Error('No encontré los encabezados (Fecha, Descripción, Cargo/Abono o Importe) en la primera hoja');
+    const r = EDOCTA.excel(filas, mp); r.formato = 'excel'; r.revisar = true;
+    const txt = filas.slice(0, mp.inicio).map(x => x.join(' ')).join(' ');
+    const n = (txt.match(/\b(\d{10,18})\b/) || [])[1]; if (n) r.numero = n;
+    const b = (txt.match(/BBVA|BANORTE|SANTANDER|BANAMEX|CITIBANAMEX|HSBC|SCOTIABANK|INBURSA|AZTECA|BANREGIO|AFIRME|BAJIO|LIVERPOOL|AMERICAN EXPRESS/i) || [])[0]; if (b) r.banco = b.toUpperCase() === 'BANORTE' ? 'Banorte' : b;
+    return r;
+  }
+  function bnCasarCuenta(it) {
+    const r = it.r, ctas = ((BN.datos || {}).cuentas || []), num = String(r.numero || '').replace(/\D/g, '');
+    const c = num ? ctas.find(x => String(x.numero).replace(/\D/g, '') === num) || (num.length >= 4 ? ctas.find(x => x.ult4 === num.slice(-4) && (!r.banco || String(x.banco).toUpperCase() === String(r.banco).toUpperCase())) : null) : null;
+    it.cuenta = c ? c.id : (r.banco && num ? 'nueva' : ''); it.uso = it.uso || 'Empresa';
+    if (c && !r.tipo) r.tipo = c.tipo;
+  }
+  function bnPintarCola() {
+    const el = $('#bnCola'); if (!el) return;
+    el.innerHTML = BN.cola.map((it, i) => {
+      const r = it.r || {}, v = it.v || {};
+      const cab = `<b>${esc(it.nombre)}</b>` + (r.banco ? `<br>${esc(r.banco)} ${esc(r.producto || '')} ${r.numero ? '…' + esc(String(r.numero).slice(-4)) : ''} · ${esc(fechaTxt(r.desde || ''))} al ${esc(fechaTxt(r.hasta || ''))} · ${nf((r.movs || []).length)} movimientos (${esc(r.origen || '')})` : '');
+      let est = '';
+      if (it.estado === 'leyendo') est = '<span class="etq">Leyendo…</span>';
+      else if (it.estado === 'ocr') est = `<span class="etq av">Leyendo imagen (OCR) pág. ${it.pag || 1}${it.prog !== undefined ? ' · ' + it.prog + ' %' : ''}…</span>`;
+      else if (it.estado === 'error') est = `<span class="etq mal">✖ ${esc(it.error)}</span>`;
+      else if (it.estado === 'guardado') est = `<span class="etq ok">✔ Guardado en ${esc(it.guardadoEn || '')}</span>${(it.avisosSrv || []).map(a => `<br><small class="muted">⚠️ ${esc(a)}</small>`).join('')}`;
+      else {
+        est = (v.ok ? `<span class="etq ok">✔ Cuadra al centavo</span> <small class="muted">abonos ${$$(v.suma.abonos)} · cargos ${$$(v.suma.cargos)} · saldo final ${$$(r.resumen.saldoFinal)}</small>` : `<span class="etq mal">✖ No cuadra</span>${(v.errores || []).map(e => `<br><small class="txt-mal">${esc(e)}</small>`).join('')}`) +
+          (v.avisos || []).map(a => `<br><small class="muted">⚠️ ${esc(a)}</small>`).join('') +
+          `<div class="fila" style="align-items:flex-end;margin-top:6px"><label style="flex:2">Cuenta<select onchange="App.bnCuentaCola(${i}, this.value)">${!it.cuenta ? '<option value="">— elige —</option>' : ''}${r.banco && r.numero ? `<option value="nueva" ${it.cuenta === 'nueva' ? 'selected' : ''}>➕ Nueva: ${esc(r.banco + ' ' + (r.producto || ''))} …${esc(String(r.numero).slice(-4))}</option>` : ''}${((BN.datos || {}).cuentas || []).map(c => `<option value="${c.id}" ${it.cuenta === c.id ? 'selected' : ''}>${nomCta(c)}</option>`).join('')}</select></label>
+            ${it.cuenta === 'nueva' ? `<label>Uso<select onchange="App.bnUsoCola(${i}, this.value)">${['Empresa', 'Personal', 'Mixta'].map(u => `<option ${it.uso === u ? 'selected' : ''}>${u}</option>`).join('')}</select></label>` : ''}
+            <button class="btn fijo" onclick="App.bnRevisar(${i})">✏️ Revisar</button>
+            <button class="btn primario fijo" ${v.ok && it.cuenta ? '' : 'disabled'} onclick="App.bnGuardar(${i})">💾 Guardar</button></div>` +
+          (r.revisar && v.ok ? '<small class="muted">Revisa los movimientos (✏️) antes de guardar: este archivo no trae todos los controles del banco.</small>' : '');
+      }
+      return `<div class="tarjeta" style="margin-top:8px">${cab}<div style="margin-top:4px">${est}</div></div>`;
+    }).join('') + (BN.cola.filter(x => x.estado === 'listo').length > 1 ? `<div class="acciones"><button class="btn primario" onclick="App.bnGuardarTodos()">💾 Guardar todos los que cuadran</button></div>` : '');
+  }
+  function bnCuentaCola(i, v) { const it = BN.cola[i]; it.cuenta = v; const c = bnCta(v); if (c.tipo && !it.r.tipo) it.r.tipo = c.tipo; it.v = EDOCTA.validar(it.r); bnPintarCola(); }
+  function bnUsoCola(i, v) { BN.cola[i].uso = v; }
+  async function bnGuardar(i, sin) {
+    const it = BN.cola[i], r = it.r; if (!it.v || !it.v.ok || !it.cuenta) return;
+    const p = { origen: r.origen || 'PDF', desde: r.desde, hasta: r.hasta, corte: r.corte, resumen: r.resumen, movs: r.movs,
+      cuenta: it.cuenta === 'nueva' ? { banco: r.banco, producto: r.producto, tipo: r.tipo || 'Débito', numero: r.numero, clabe: r.clabe, uso: it.uso, formato: r.formato } : { id: it.cuenta, formato: r.formato } };
+    try {
+      p.archivo = { nombre: it.nombre, datos: await leerArchivo(it.file) };
+      let x;
+      try { x = await pedir('importarEstadoBanco', p, true); }
+      catch (e) {
+        if (/estado anterior|estado siguiente/.test(e.message || '') && confirm(e.message + '\n\n¿Guardarlo de todos modos? (queda marcado como "continuidad forzada" para que el contador lo revise)')) {
+          const nota = prompt('Nota para el contador (por qué no sigue al anterior):', '') || 'sin nota'; x = await pedir('importarEstadoBanco', Object.assign(p, { forzarContinuidad: true, nota: nota }), true);
+        } else throw e;
+      }
+      it.estado = 'guardado'; it.guardadoEn = x.cuenta; it.avisosSrv = x.avisos; BN.t = 0;
+      if (!sin) toast('✔ ' + x.cuenta + ': ' + x.movs + ' movimientos guardados');
+    } catch (e) { it.estado = 'error'; it.error = e.message || String(e); if (!sin) toast(it.error, true); }
+    bnPintarCola();
+  }
+  async function bnGuardarTodos() { for (let i = 0; i < BN.cola.length; i++) if (BN.cola[i].estado === 'listo') await bnGuardar(i, true); toast('Listo'); }
+
+  /* ---------- Revisión / corrección manual (Excel sin saldos, OCR, o lo que no cuadre) ---------- */
+  function bnRevisar(i) {
+    const it = BN.cola[i], r = it.r; BN.rev = i;
+    const R = r.resumen || (r.resumen = {}), inp = (k, v) => `<input type="number" step="0.01" id="bnR_${k}" value="${v === null || v === undefined ? '' : v}" oninput="App.bnRecalc()">`;
+    modal('✏️ Revisar ' + it.nombre, `<div class="fila"><label>Del<input type="date" id="bnR_desde" value="${esc(r.desde || '')}" oninput="App.bnRecalc()"></label><label>Al<input type="date" id="bnR_hasta" value="${esc(r.hasta || '')}" oninput="App.bnRecalc()"></label>
+        <label>Tipo<select id="bnR_tipo" onchange="App.bnRecalc()">${['Débito', 'Cheques', 'Crédito', 'Departamental'].map(t => `<option ${r.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label></div>
+      <div class="fila"><label>Saldo inicial${EDOCTA.esCredito(r) ? ' (adeudo anterior)' : ''}${inp('si', R.saldoInicial)}</label><label>Saldo final${inp('sf', R.saldoFinal)}</label>
+        <label>Total abonos (del estado)${inp('ab', R.abonos)}</label><label>Total cargos (del estado)${inp('ca', R.cargos)}</label></div>
+      <p class="muted peq">Copia los totales tal como vienen en el estado de cuenta: la app los compara contra la suma de los movimientos.</p>
+      <div id="bnRchk"></div>
+      <div class="tabla-cont" style="max-height:48vh;overflow:auto"><table><thead><tr><th>Fecha</th><th>Descripción</th><th class="num">Cargo</th><th class="num">Abono</th><th></th></tr></thead><tbody id="bnRmovs">
+        ${r.movs.map((m, j) => bnFilaRev(m, j)).join('')}</tbody></table></div>
+      <div class="acciones" style="justify-content:space-between"><button class="btn" onclick="App.bnRevAgregar()">➕ Movimiento</button>
+        <span><button class="btn primario" onclick="App.bnRevListo()">✔ Aplicar</button><button class="btn" onclick="App.bnVolverCola()">Volver</button></span></div>`);
+    bnRecalc();
+  }
+  const bnFilaRev = (m, j) => `<tr><td><input type="date" value="${esc(m.fecha || '')}" style="width:140px" oninput="App.bnRevCampo(${j},'fecha',this.value)"></td>
+    <td><input value="${esc(m.desc || '')}" oninput="App.bnRevCampo(${j},'desc',this.value)"></td>
+    <td><input type="number" step="0.01" style="width:110px" value="${m.cargo || ''}" oninput="App.bnRevCampo(${j},'cargo',this.value)"></td>
+    <td><input type="number" step="0.01" style="width:110px" value="${m.abono || ''}" oninput="App.bnRevCampo(${j},'abono',this.value)"></td>
+    <td><button class="icono" title="Quitar" onclick="App.bnRevQuitar(${j})">✕</button></td></tr>`;
+  function bnRevCampo(j, k, v) { const m = BN.cola[BN.rev].r.movs[j]; m[k] = k === 'cargo' || k === 'abono' ? Math.abs(Number(v) || 0) : v; if (k === 'cargo' && m.cargo) m.abono = 0; if (k === 'abono' && m.abono) m.cargo = 0; bnRecalc(); }
+  function bnRevQuitar(j) { const r = BN.cola[BN.rev].r; r.movs.splice(j, 1); $('#bnRmovs').innerHTML = r.movs.map((m, k) => bnFilaRev(m, k)).join(''); bnRecalc(); }
+  function bnRevAgregar() { const r = BN.cola[BN.rev].r; r.movs.push({ fecha: r.hasta || '', desc: '', ref: '', cargo: 0, abono: 0, saldo: null }); $('#bnRmovs').innerHTML = r.movs.map((m, k) => bnFilaRev(m, k)).join(''); bnRecalc(); }
+  function bnRecalc() {
+    const it = BN.cola[BN.rev], r = it.r, R = r.resumen, n = id => { const v = $('#bnR_' + id).value; return v === '' ? null : Math.round(Number(v) * 100) / 100; };
+    r.desde = $('#bnR_desde').value; r.hasta = $('#bnR_hasta').value; r.tipo = $('#bnR_tipo').value;
+    R.saldoInicial = n('si'); R.saldoFinal = n('sf'); R.abonos = n('ab'); R.cargos = n('ca'); if (r.resumen.nAbonos) delete R.nAbonos; if (R.nCargos) delete R.nCargos;
+    it.v = EDOCTA.validar(r);
+    $('#bnRchk').innerHTML = it.v.ok ? `<div class="aviso-cand" style="background:#e5f2eb;border-color:#9fd3b4;color:#14432d">✔ Cuadra: abonos ${$$(it.v.suma.abonos)} · cargos ${$$(it.v.suma.cargos)}</div>` : `<div class="aviso-cand">✖ ${it.v.errores.map(esc).join('<br>')}</div>`;
+  }
+  function bnRevListo() { const it = BN.cola[BN.rev]; it.r.revisar = false; it.estado = it.v.ok && it.cuenta ? 'listo' : 'revisar'; bnVolverCola(); }
+  function bnVolverCola() { modal('📥 Subir estados de cuenta', '<div id="bnCola"></div><div class="acciones"><button class="btn" onclick="App.bnSubir()">➕ Subir otros</button><button class="btn" onclick="App.cerrarModal();App.vistaBancos(\'estados\')">Cerrar</button></div>'); bnPintarCola(); }
+
+  /* ---------- Movimientos ---------- */
+  async function bnMovs() {
+    let d; try { d = await bnDatos(); } catch (e) { $('#bnCont').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    const f = BN.fm || (BN.fm = { cuenta: '', desde: hoyISO().slice(0, 4) + '-01-01', hasta: hoyISO(), categoria: '', tipo: '', texto: '' });
+    $('#bnCont').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
+        <label>Cuenta<select id="bmCta"><option value="">Todas</option>${d.cuentas.map(c => `<option value="${c.id}" ${f.cuenta === c.id ? 'selected' : ''}>${nomCta(c)}</option>`).join('')}</select></label>
+        <label>Desde<input type="date" id="bmDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="bmHasta" value="${f.hasta}"></label></div>
+      <div class="fila"><label>Categoría<select id="bmCat"><option value="">Todas</option><option value="-" ${f.categoria === '-' ? 'selected' : ''}>❓ Sin clasificar</option>${d.categorias.map(c => `<option ${f.categoria === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+        <label>Tipo<select id="bmTipo"><option value="">Cargos y abonos</option><option value="abono" ${f.tipo === 'abono' ? 'selected' : ''}>Solo abonos (entradas)</option><option value="cargo" ${f.tipo === 'cargo' ? 'selected' : ''}>Solo cargos (salidas)</option></select></label>
+        <label>Buscar<input id="bmTxt" value="${esc(f.texto)}" placeholder="concepto, referencia, importe"></label>
+        <button class="btn primario fijo" onclick="App.bnBuscarMovs()">Buscar</button><button class="btn fijo" onclick="App.bnExcelMovs()">📊 Excel</button></div></div>
+      <div id="bmRes"><div class="vacio">Cargando…</div></div>`;
+    bnBuscarMovs();
+  }
+  function bnVerMovs(cta, cat, desde, hasta) { BN.fm = Object.assign(BN.fm || {}, { cuenta: cta || '', categoria: cat || '', tipo: '', texto: '' }); if (desde) { BN.fm.desde = isoDeTxt(desde); BN.fm.hasta = isoDeTxt(hasta); } else { BN.fm.desde = (BN.anio || new Date().getFullYear()) + '-01-01'; BN.fm.hasta = hoyISO(); } cerrarModal(); V.bancos('movs'); }
+  const isoDeTxt = t => { const m = String(t || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? m[3] + '-' + m[2] + '-' + m[1] : t; };
+  async function bnBuscarMovs() {
+    const f = BN.fm = { cuenta: $('#bmCta').value, desde: $('#bmDesde').value, hasta: $('#bmHasta').value, categoria: $('#bmCat').value, tipo: $('#bmTipo').value, texto: $('#bmTxt').value.trim() };
+    $('#bmRes').innerHTML = '<div class="vacio">Cargando…</div>';
+    let r; try { r = await pedir('movimientosBanco', f); } catch (e) { $('#bmRes').innerHTML = '<div class="vacio">Requiere conexión</div>'; return; }
+    BN.movs = r; BN.sel = {};
+    const cats = (BN.datos || {}).categorias || [];
+    $('#bmRes').innerHTML = `<div class="kpis"><div class="kpi"><small>Abonos (entradas)</small><b>${$$(r.totales.abonos)}</b></div><div class="kpi"><small>Cargos (salidas)</small><b>${$$(r.totales.cargos)}</b></div>
+        <div class="kpi"><small>Movimientos</small><b>${nf(r.totales.n)}</b><span>${nf(r.totales.sinClasificar)} sin clasificar</span></div></div>
+      <div class="tarjeta fila no-imprimir" style="align-items:flex-end"><span class="muted peq" style="flex:1">Marca movimientos para clasificarlos juntos.</span>
+        <label>Clasificar marcados como<select id="bmNuevaCat"><option value="">—</option>${cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></label><button class="btn fijo" onclick="App.bnClasificarSel()">Aplicar</button></div>` +
+      tabla([{ t: '', h: m => `<input type="checkbox" style="width:auto" onchange="App.bnMarcar('${m.id}', this.checked)">` }, { t: 'Fecha', h: m => esc(m.fecha) },
+        { t: 'Cuenta', cls: 'ocultar-movil', h: m => `<small>${esc(m.cuenta)}</small>` }, { t: 'Descripción', h: m => `${esc(m.desc)}${m.ref ? `<br><small class="muted">Ref. ${esc(m.ref)}</small>` : ''}${m.tarjeta ? `<br><small class="muted">Tarjeta ${esc(m.tarjeta)}</small>` : ''}${m.notas ? `<br><small>📝 ${esc(m.notas)}</small>` : ''}` },
+        { t: 'Cargo', num: 1, h: m => m.cargo ? `<span class="txt-mal">${$$(m.cargo)}</span>` : '' }, { t: 'Abono', num: 1, h: m => m.abono ? `<b>${$$(m.abono)}</b>` : '' },
+        { t: 'Categoría', h: m => `<select onchange="App.bnClasificar('${m.id}', this.value)" style="min-width:150px"><option value="">❓ Sin clasificar</option>${cats.map(c => `<option ${m.categoria === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` },
+        { t: '', h: m => `<button class="icono" title="Nota" onclick="App.bnNota('${m.id}')">📝</button>` }], r.movs, { vacio: 'Sin movimientos con esos filtros' });
+  }
+  function bnMarcar(id, v) { BN.sel = BN.sel || {}; if (v) BN.sel[id] = 1; else delete BN.sel[id]; }
+  async function bnClasificar(id, cat) { try { await pedir('clasificarMovBanco', { ids: [id], categoria: cat }, true); const m = BN.movs.movs.find(x => x.id === id); if (m) m.categoria = cat; toast('✔ Clasificado'); } catch (e) { toast(e.message, true); } }
+  async function bnClasificarSel() {
+    const ids = Object.keys(BN.sel || {}), cat = $('#bmNuevaCat').value; if (!ids.length || !cat) return toast('Marca movimientos y elige la categoría', true);
+    try { await pedir('clasificarMovBanco', { ids: ids, categoria: cat }); toast('✔ ' + ids.length + ' movimientos clasificados'); bnBuscarMovs(); } catch (e) {}
+  }
+  async function bnNota(id) {
+    const m = BN.movs.movs.find(x => x.id === id) || {}, t = prompt('Nota para este movimiento (' + m.fecha + ' · ' + (m.cargo ? '-' + m.cargo : '+' + m.abono) + '):', m.notas || ''); if (t === null) return;
+    try { await pedir('clasificarMovBanco', { ids: [id], notas: t }); m.notas = t; bnBuscarMovs(); } catch (e) {}
+  }
+  async function bnExcelMovs() {
+    const r = BN.movs, f = BN.fm || {}; if (!r) return toast('Primero busca', true);
+    const nom = 'Movimientos bancarios ' + f.desde + ' a ' + f.hasta + (f.cuenta ? ' ' + (bnCta(f.cuenta).banco || '') + ' ' + (bnCta(f.cuenta).ult4 || '') : '');
+    try {
+      const blob = await excelLocal(nom, [{ nombre: 'Movimientos', titulo: 'Movimientos bancarios', sub: ['Del ' + fechaTxt(f.desde) + ' al ' + fechaTxt(f.hasta) + (f.cuenta ? ' · ' + bnCta(f.cuenta).banco + ' ' + (bnCta(f.cuenta).producto || '') + ' …' + bnCta(f.cuenta).ult4 : ' · todas las cuentas')],
+        resumen: [['Abonos', r.totales.abonos, 'mon'], ['Cargos', r.totales.cargos, 'mon'], ['Movimientos', r.totales.n, 'num'], ['Sin clasificar', r.totales.sinClasificar, 'num']],
+        cols: [{ t: 'Cuenta', w: 30 }, { t: 'Uso', w: 10 }, { t: 'Fecha', w: 11 }, { t: 'Fecha liq.', w: 11 }, { t: 'Descripción', w: 55 }, { t: 'Referencia', w: 22 }, { t: 'Cargo', w: 13, fmt: 'mon', suma: 1 }, { t: 'Abono', w: 13, fmt: 'mon', suma: 1 },
+          { t: 'Saldo', w: 13, fmt: 'mon' }, { t: 'Tarjeta', w: 14 }, { t: 'Categoría', w: 24 }, { t: 'Estado', w: 12 }, { t: 'Notas', w: 30 }],
+        filas: r.movs.map(m => ({ v: [m.cuenta, m.uso, m.fecha, m.fechaLiq, m.desc, m.ref, m.cargo || '', m.abono || '', m.saldo === null ? '' : m.saldo, m.tarjeta, m.categoria, m.estado, m.notas], tono: m.categoria ? '' : 'av' })) }]);
+      entregarArchivo(blob, nom + '.xlsx', 'Excel de movimientos bancarios');
+    } catch (e) { toast(e.message || 'No se pudo armar el Excel', true); }
+  }
+  async function bnExcelEstados() {
+    const es = BN.estados || [], y = (BN.datos || {}).anio;
+    try {
+      const blob = await excelLocal('Estados de cuenta ' + y, [{ nombre: 'Estados de cuenta', titulo: 'Estados de cuenta bancarios ' + y, sub: ['Todos cuadran al centavo: saldo inicial + abonos − cargos = saldo final (tarjetas: + cargos − abonos)'],
+        cols: [{ t: 'Cuenta', w: 34 }, { t: 'Uso', w: 10 }, { t: 'Tipo', w: 12 }, { t: 'Desde', w: 11 }, { t: 'Hasta', w: 11 }, { t: 'Saldo inicial', w: 14, fmt: 'mon' }, { t: 'Abonos', w: 14, fmt: 'mon', suma: 1 }, { t: '# abonos', w: 9, fmt: 'num' },
+          { t: 'Cargos', w: 14, fmt: 'mon', suma: 1 }, { t: '# cargos', w: 9, fmt: 'num' }, { t: 'Saldo final', w: 14, fmt: 'mon' }, { t: 'Origen', w: 8 }, { t: 'Continuidad', w: 18 }, { t: 'Archivo', w: 50 }],
+        filas: es.map(e => ({ v: [e.cuenta, e.uso, e.tipo, e.desde, e.hasta, e.saldoInicial, e.abonos, e.nAbonos, e.cargos, e.nCargos, e.saldoFinal, e.origen, e.continuidad, e.url], tono: e.continuidad !== 'OK' ? 'av' : '' })) }]);
+      entregarArchivo(blob, 'Estados de cuenta ' + y + '.xlsx', 'Excel de estados de cuenta');
+    } catch (e) { toast(e.message || 'No se pudo armar el Excel', true); }
+  }
+
+  /* ---------- Cuentas (catálogo) y acceso del contador ---------- */
+  async function bnCuentas() {
+    let d; try { d = await bnDatos(true); } catch (e) { $('#bnCont').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    $('#bnCont').innerHTML = `<div class="tarjeta"><div class="fila"><span style="flex:1" class="muted peq">Las cuentas se dan de alta solas al subir su primer estado de cuenta; aquí puedes corregirlas o marcar si son de la empresa o personales.</span>
+      <button class="btn fijo" onclick="App.bnFormCuenta('')">➕ Cuenta</button></div>` + tabla([
+        { t: 'Cuenta', h: c => `<b>${nomCta(c)}</b><br><small class="muted">${esc(c.numero)}${c.clabe ? ' · CLABE ' + esc(c.clabe) : ''}</small>` }, { t: 'Tipo', h: c => esc(c.tipo) },
+        { t: 'Uso', h: c => `<span class="etq ${c.uso === 'Empresa' ? 'ok' : c.uso === 'Personal' ? '' : 'av'}">${esc(c.uso)}</span>` }, { t: 'Notas', h: c => esc(c.comentarios || '') },
+        { t: '', h: c => `<button class="icono" onclick="App.bnFormCuenta('${c.id}')">✏️</button>` }], d.cuentas, { vacio: 'Aún no hay cuentas' }) + `</div>` +
+      (puede('dueno') ? `<div class="tarjeta"><h3>👤 Acceso del contador</h3><p class="muted peq">Perfil <b>Contador (administrador contable)</b>: ve Bancos, Cobranza, Estados de cuenta, Facturación, Devoluciones, Compras y Pagos a proveedores, con descargas a Excel. Es de <b>solo consulta</b> (puede trabajar facturación y bancos) y <b>no ve</b> gastos, comisiones ni utilidades. En cada pantalla tiene el botón 💬 para dejarte observaciones.</p>
+        <div class="fila"><label>Nombre<input id="ctNom"></label><label>Usuario<input id="ctUsr" autocapitalize="off"></label><label>Correo<input id="ctMail" type="email"></label></div>
+        <div class="fila"><label>Contraseña inicial (mín. 8)<input id="ctPass" type="text" autocomplete="off"></label><button class="btn primario fijo" onclick="App.bnAltaContador()">➕ Dar de alta</button></div></div>` : '');
+  }
+  function bnFormCuenta(id) {
+    const c = id ? bnCta(id) : { banco: '', producto: '', tipo: 'Débito', numero: '', clabe: '', uso: 'Empresa', comentarios: '', activa: true }, d = BN.datos || {};
+    modal(id ? '✏️ Cuenta ' + nomCta(c) : '➕ Cuenta bancaria', `<div class="fila"><label>Banco<input id="bcBan" value="${esc(c.banco)}"></label><label>Producto<input id="bcPro" value="${esc(c.producto || '')}" placeholder="p. ej. Maestra PyME"></label></div>
+      <div class="fila"><label>Tipo<select id="bcTipo">${(d.tipos || []).map(t => `<option ${c.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label><label>Uso<select id="bcUso">${(d.usos || []).map(t => `<option ${c.uso === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label></div>
+      <div class="fila"><label>Número de cuenta / tarjeta<input id="bcNum" value="${esc(c.numero)}"></label><label>CLABE<input id="bcClabe" value="${esc(c.clabe || '')}"></label></div>
+      <label>Notas<input id="bcCom" value="${esc(c.comentarios || '')}"></label>
+      <div class="acciones"><button class="btn primario" onclick="App.bnGuardarCuenta('${id}')">Guardar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
+  }
+  async function bnGuardarCuenta(id) {
+    try { await pedir('guardarCuentaBanco', { id: id, banco: $('#bcBan').value, producto: $('#bcPro').value, tipo: $('#bcTipo').value, uso: $('#bcUso').value, numero: $('#bcNum').value, clabe: $('#bcClabe').value, comentarios: $('#bcCom').value, formato: id ? bnCta(id).formato : '' });
+      cerrarModal(); toast('✔ Cuenta guardada'); BN.t = 0; bnCuentas(); } catch (e) {}
+  }
+  async function bnAltaContador() {
+    try { const r = await pedir('altaContador', { nombre: $('#ctNom').value, usuario: $('#ctUsr').value, correo: $('#ctMail').value, contrasena: $('#ctPass').value });
+      toast('✔ ' + r.nombre + ' ya puede entrar como contador'); ['ctNom', 'ctUsr', 'ctMail', 'ctPass'].forEach(k => $('#' + k).value = ''); } catch (e) {}
+  }
+
+  /* ---------- Observaciones del contador (solo las ve el dueño) ---------- */
+  async function bnObs() {
+    let r; try { r = await pedir('observaciones', {}); } catch (e) { $('#bnCont').innerHTML = '<div class="vacio">Requiere conexión</div>'; return; }
+    const due = puede('dueno');
+    $('#bnCont').innerHTML = `<div class="tarjeta"><p class="muted peq">${due ? 'Sugerencias que deja el contador desde cualquier pantalla (botón 💬). Solo tú las ves; revísalas y, si procede, me las pasas para hacer el cambio.' : 'Tus sugerencias de diseño o de cálculo. Solo las ve el dueño.'}</p>
+      ${!due ? `<button class="btn primario" onclick="App.formObservacion()">💬 Nueva observación</button>` : ''}</div>` + tabla([
+        { t: 'Fecha', h: o => esc(o.fecha) + (due ? `<br><small class="muted">${esc(o.usuario)}</small>` : '') }, { t: 'Pantalla', h: o => esc(o.vista) },
+        { t: 'Observación', h: o => esc(o.texto).replace(/\n/g, '<br>') + (o.respuesta ? `<br><small>↪️ <b>Respuesta:</b> ${esc(o.respuesta)}</small>` : '') },
+        { t: 'Estado', h: o => `<span class="etq ${o.estado === 'Hecha' ? 'ok' : o.estado === 'Nueva' ? 'av' : ''}">${esc(o.estado)}</span>` + (due ? `<br><button class="btn chico" onclick="App.responderObs('${o.id}')">Responder</button>` : '') }], r.lista, { vacio: 'Sin observaciones' });
+  }
+  function formObservacion() {
+    const vista = (MENU.find(m => m.id === S.vista) || {}).t + (S.vista === 'bancos' ? ' › ' + S.tabBan : S.vista === 'ventas' ? ' › ' + S.tabVen : '');
+    modal('💬 Observación para el dueño', `<p class="muted peq">Pantalla: <b>${esc(vista)}</b>. Sugiere cambios de diseño, columnas, cálculos o reportes; el dueño la revisa.</p>
+      <label>Observación<textarea id="obsTxt" rows="5" placeholder="p. ej. En Movimientos agregar una columna con el RFC del proveedor"></textarea></label>
+      <div class="acciones"><button class="btn primario" onclick="App.guardarObservacion('${esc(vista)}')">Enviar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
+  }
+  async function guardarObservacion(vista) { try { await pedir('guardarObservacion', { vista: vista, texto: $('#obsTxt').value }); cerrarModal(); toast('✔ Observación enviada al dueño'); } catch (e) {} }
+  async function responderObs(id) {
+    const est = prompt('Estado (Nueva, En revisión, Hecha, No procede):', 'En revisión'); if (est === null) return;
+    const resp = prompt('Respuesta para el contador (opcional):', '') || '';
+    try { await pedir('responderObservacion', { id: id, estado: est.trim(), respuesta: resp }); bnObs(); } catch (e) {}
+  }
+  /** Botón flotante 💬 en todas las pantallas del contador. */
+  function botonObservaciones() {
+    let b = $('#fabObs'); const es = U().rol === 'Contador';
+    if (!es) { if (b) b.remove(); return; }
+    if (!b) { document.body.insertAdjacentHTML('beforeend', '<button id="fabObs" class="fab-obs" title="Dejar una observación al dueño" onclick="App.formObservacion()">💬</button>'); }
+  }
+
+  /*EDOCTA-INI*/
+  /* =====================================================================================
+   *  LECTOR DE ESTADOS DE CUENTA BANCARIOS (BBVA, Banorte débito, Banorte tarjeta, Liverpool por OCR, Excel/CSV)
+   *  Trabaja con "renglones": [{ y, items: [{ x, r, s }] , t: texto }] por página (x = inicio, r = fin del texto).
+   *  Regresa { banco, producto, tipo, numero, clabe, desde, hasta, corte, resumen, movs, avisos } y valida el cuadre.
+   * ===================================================================================== */
+  const EDOCTA = (() => {
+    const MESES3 = { ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6, JUL: 7, AGO: 8, SEP: 9, SET: 9, OCT: 10, NOV: 11, DIC: 12, JAN: 1, APR: 4, AUG: 8, DEC: 12 };
+    const MESL = { ENERO: 1, FEBRERO: 2, MARZO: 3, ABRIL: 4, MAYO: 5, JUNIO: 6, JULIO: 7, AGOSTO: 8, SEPTIEMBRE: 9, SETIEMBRE: 9, OCTUBRE: 10, NOVIEMBRE: 11, DICIEMBRE: 12 };
+    const MONEY = /^[+-]?\$?\s?-?\d{1,3}(,\d{3})*\.\d{2}-?$/;
+    const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+    const p2 = n => ('0' + n).slice(-2);
+    const iso = (y, m, d) => y && m && d ? y + '-' + p2(m) + '-' + p2(d) : '';
+    /** "$1,234.56" / "-15,000.00" / "+$2,498.33" / "370.00-" → { v: 1234.56, neg } */
+    function dinero(s) {
+      s = String(s || '').replace(/\s/g, '');
+      if (!/\d/.test(s)) return null;
+      const neg = /^-|^\+?-|-\$|-$/.test(s) || /^\(.*\)$/.test(s);
+      const v = Number(s.replace(/[^\d.]/g, ''));
+      return isNaN(v) ? null : { v: r2(v), neg: neg, pos: /^\+/.test(s) };
+    }
+    const esDinero = s => MONEY.test(String(s || '').replace(/\s/g, '').replace(/^([+-])\$/, '$1'));
+    /** dd/MMM, dd-MMM-yyyy, dd-MMM-yy, dd/mm/yyyy, dd/Mes/yyyy */
+    function fecha(s, ctx) {
+      s = String(s || '').trim().toUpperCase().replace(/\s+/g, '');
+      let m = s.match(/^(\d{1,2})[\/-]([A-ZÁÉÍÓÚ]{3,10})[\/-]?(\d{2,4})?$/);
+      if (m) {
+        const mes = MESES3[m[2].slice(0, 3)] || MESL[m[2]] || 0; if (!mes) return '';
+        let y = m[3] ? Number(m[3].length === 2 ? '20' + m[3] : m[3]) : anioDe(mes, ctx);
+        return iso(y, mes, Number(m[1]));
+      }
+      m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+      if (m) return iso(Number(m[3].length === 2 ? '20' + m[3] : m[3]), Number(m[2]), Number(m[1]));
+      m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return iso(Number(m[1]), Number(m[2]), Number(m[3]));
+      return '';
+    }
+    /** Año de un movimiento "dd/MMM" según el periodo del estado (cruce de año: dic → ene). */
+    function anioDe(mes, ctx) {
+      if (!ctx || !ctx.hasta) return new Date().getFullYear();
+      const yh = Number(ctx.hasta.slice(0, 4)), mh = Number(ctx.hasta.slice(5, 7));
+      return mes > mh + 1 ? yh - 1 : yh;
+    }
+    /** Junta los textos de un renglón (sin espacio entre letras partidas: "Dep" "ó" "sitos"). */
+    function textoRenglon(items) {
+      let t = '', prev = null;
+      items.forEach(it => { t += (prev && it.x - prev.r > 1.5 ? ' ' : '') + it.s; prev = it; });
+      return t.replace(/\s+/g, ' ').trim();
+    }
+    /** items [{x, r, y, s}] de una página → renglones (agrupa por altura con tolerancia). */
+    function renglones(items, tol) {
+      tol = tol || 3;
+      const ord = items.filter(i => String(i.s).trim()).sort((a, b) => b.y - a.y || a.x - b.x), out = [];
+      ord.forEach(it => {
+        const l = out.find(x => Math.abs(x.y - it.y) <= tol);
+        if (l) l.items.push(it); else out.push({ y: it.y, items: [it] });
+      });
+      out.forEach(l => { l.items.sort((a, b) => a.x - b.x); l.t = textoRenglon(l.items); });
+      return out.sort((a, b) => b.y - a.y);
+    }
+    const todos = pags => pags.reduce((a, p, i) => a.concat(p.map(l => Object.assign({ pag: i + 1 }, l))), []);
+    const textoTodo = pags => todos(pags).map(l => l.t).join('\n');
+    const montosDe = l => l.items.filter(i => esDinero(i.s));
+    /** Primer importe que aparece en el renglón que contiene `re` (o en uno a ±dy de altura en la misma página). */
+    function valor(L, re, opc) {
+      opc = opc || {};
+      for (let i = 0; i < L.length; i++) {
+        if (!re.test(L[i].t)) continue;
+        let ms = montosDe(L[i]).filter(m => !opc.xmin || m.x >= opc.xmin);
+        if (!ms.length) { const cerca = L.filter(o => o !== L[i] && o.pag === L[i].pag && Math.abs(o.y - L[i].y) <= (opc.dy || 6)); cerca.forEach(o => ms = ms.concat(montosDe(o).filter(m => !opc.xmin || m.x >= opc.xmin))); }
+        if (ms.length) { const m = opc.ultimo ? ms[ms.length - 1] : ms[0]; const d = dinero(m.s); return d ? d.v : null; }
+      }
+      return null;
+    }
+    const entero = (l, xmin, xmax) => { const it = l.items.find(i => /^\d{1,4}$/.test(i.s.trim()) && i.x >= (xmin || 0) && i.x <= (xmax || 1e9)); return it ? Number(it.s) : null; };
+
+    /* ----------------------------- BBVA ----------------------------- */
+    function bbva(pags) {
+      const L = todos(pags), T = L.map(l => l.t).join('\n'), r = { banco: 'BBVA', movs: [], avisos: [] };
+      const ix = L.findIndex(l => /^Estado de Cuenta$/i.test(l.t));
+      r.producto = ix >= 0 && L[ix + 1] ? L[ix + 1].t.replace(/PAGINA.*$/i, '').trim() : 'Cuenta';
+      r.tipo = /PYME|MAESTRA|EMPRESA|NEGOCIO/i.test(r.producto) ? 'Cheques' : 'Débito';
+      const per = T.match(/DEL\s+(\d{2}\/\d{2}\/\d{4})\s+AL\s+(\d{2}\/\d{2}\/\d{4})/i);
+      if (per) { r.desde = fecha(per[1]); r.hasta = fecha(per[2]); }
+      const co = T.match(/Fecha de Corte\s+(\d{2}\/\d{2}\/\d{4})/i); r.corte = co ? fecha(co[1]) : r.hasta;
+      const nc = T.match(/No\. de Cuenta\s+(\d{6,})/i); r.numero = nc ? nc[1] : '';
+      const cl = T.match(/CLABE\s+([\d ]{18,24})/i); r.clabe = cl ? cl[1].replace(/\D/g, '') : '';
+      const lin = re => L.find(l => re.test(l.t));
+      const lAb = lin(/Dep.sitos\s*\/\s*Abonos/i), lCa = lin(/Retiros\s*\/\s*Cargos/i);
+      r.resumen = { saldoInicial: valor(L, /Saldo Anterior/i, { ultimo: true }), saldoFinal: valor(L, /^Saldo Final/i, { ultimo: true }),
+        abonos: lAb ? (dinero((montosDe(lAb).pop() || {}).s) || {}).v : null, cargos: lCa ? (dinero((montosDe(lCa).pop() || {}).s) || {}).v : null,
+        nAbonos: lAb ? entero(lAb, 380) : null, nCargos: lCa ? entero(lCa, 380) : null };
+      // columnas
+      let cR = null, aR = null;
+      const hdr = L.find(l => l.items.some(i => /^CARGOS$/.test(i.s.trim())) && l.items.some(i => /^ABONOS/.test(i.s.trim())));
+      if (hdr) hdr.items.forEach(i => {
+        if (/^CARGOS$/.test(i.s.trim())) cR = i.r;
+        if (/^ABONOS/.test(i.s.trim())) aR = i.s.trim().length > 6 ? i.x + (i.r - i.x) * 6 / i.s.trim().length : i.r;
+      });
+      if (cR === null || aR === null) throw new Error('No encontré las columnas CARGOS / ABONOS del estado BBVA');
+      let en = false, cur = null;
+      const STOP = /Total de Movimientos|^TOTAL IMPORTE|Cuadro resumen/i, NADA = /BBVA MEXICO|PAGINA \d|^Estado de Cuenta|No\. de Cuenta|No\. de Cliente|^FECHA|^OPER|La GAT|Av\. Paseo|MAESTRA PYME|Libret/i;
+      for (const l of L) {
+        if (!en) { if (/^OPER\b/.test(l.t) && /LIQ/.test(l.t)) en = true; continue; }
+        if (STOP.test(l.t)) break;
+        const m = l.t.match(/^(\d{2}\/[A-Z]{3})\s+(\d{2}\/[A-Z]{3})\s*(.*)$/);
+        if (m) {
+          const ctx = { hasta: r.hasta };
+          cur = { fecha: fecha(m[1], ctx), fechaLiq: fecha(m[2], ctx), desc: '', ref: '', cargo: 0, abono: 0, saldo: null };
+          const txt = l.items.filter(i => !esDinero(i.s)).map(i => i.s).join(' ').replace(/^\d{2}\/[A-Z]{3}\s+\d{2}\/[A-Z]{3}\s*/, '').trim();
+          cur.desc = txt;
+          montosDe(l).forEach(i => {
+            const v = dinero(i.s).v;
+            if (i.r > aR + 30) { if (cur.saldo === null) cur.saldo = v; return; }
+            if (Math.abs(i.r - cR) < Math.abs(i.r - aR)) cur.cargo = r2(cur.cargo + v); else cur.abono = r2(cur.abono + v);
+          });
+          r.movs.push(cur); continue;
+        }
+        if (cur && !NADA.test(l.t) && !montosDe(l).length) {
+          l.items.forEach(i => { if (/^Referencia/i.test(i.s)) cur.ref = i.s.replace(/^Referencia\s*/i, '').trim(); else cur.desc += ' ' + i.s; });
+          cur.desc = cur.desc.replace(/\s+/g, ' ').trim();
+        }
+      }
+      return r;
+    }
+
+    /* ------------------------- BANORTE TARJETA ------------------------- */
+    function banorteTdc(pags) {
+      const L = todos(pags), T = L.map(l => l.t).join('\n'), r = { banco: 'Banorte', tipo: 'Crédito', movs: [], avisos: [] };
+      const pr = T.match(/Estado de Cuenta\s+([A-Za-zÁÉÍÓÚáéíóú ]+?)\s*$/m); r.producto = pr ? pr[1].trim() : 'Tarjeta de crédito';
+      const nc = T.match(/Número de Cuenta:\s*([\dX-]{12,})/i); r.numero = nc ? nc[1].replace(/\D/g, '') : '';
+      const cl = T.match(/CLABE:\s*(\d{18})/i); r.clabe = cl ? cl[1] : '';
+      const per = T.match(/Periodo:\s*(\d{2}-[A-Z]{3}-\d{4})\s*al\s*(\d{2}-[A-Z]{3}-\d{4})/i);
+      if (per) { r.desde = fecha(per[1]); r.hasta = fecha(per[2]); }
+      const co = T.match(/Fecha de corte:\s*(\d{2}-[A-Z]{3}-\d{4})/i); r.corte = co ? fecha(co[1]) : r.hasta;
+      const tc = valor(L, /^Total cargos/i), ta = valor(L, /^Total abonos/i), ant = valor(L, /Adeudo del periodo anterior/i);
+      r.resumen = { saldoInicial: ant, cargos: tc, abonos: ta, saldoFinal: ant !== null && tc !== null && ta !== null ? r2(ant + tc - ta) : null };
+      const png = valor(L, /^PAGO PARA NO GENERAR INTERESES/i);
+      if (png !== null && r.resumen.saldoFinal !== null && Math.abs(png - r.resumen.saldoFinal) > 0.01) r.avisos.push('El "pago para no generar intereses" ($' + png + ') es distinto del saldo calculado ($' + r.resumen.saldoFinal + '); puede deberse a compras a meses.');
+      let en = false, cur = null, tarj = '';
+      const NADA = /^Fecha de|^la operación|^Descripción|Número de Cuenta|^Página|^Notas:|CARGOS, ABONOS|^Monto$/i;
+      for (const l of L) {
+        if (/CARGOS, ABONOS Y COMPRAS REGULARES/i.test(l.t)) { en = true; cur = null; continue; }
+        if (!en) continue;
+        if (/^Total cargos/i.test(l.t)) break;
+        const tj = l.t.match(/Tarjeta (titular|adicional)\s+X{4} X{4} X{4} (\d{4})/i); if (tj) { tarj = tj[2] + (/adicional/i.test(tj[1]) ? ' (adicional)' : ''); cur = null; continue; }
+        const m = l.t.match(/^(\d{2}-[A-Z]{3}-\d{4})\s+(\d{2}-[A-Z]{3}-\d{4})\s+(.*)$/);
+        const imp = l.items.find(i => /^[+-]\$[\d,]+\.\d{2}$/.test(i.s.trim()));
+        if (m && imp) {
+          const d = dinero(imp.s);
+          cur = { fecha: fecha(m[1]), fechaLiq: fecha(m[2]), desc: l.items.filter(i => i !== imp && i.x > 135).map(i => i.s).join(' ').trim(), ref: '', cargo: d.neg ? 0 : d.v, abono: d.neg ? d.v : 0, saldo: null, tarjeta: tarj };
+          r.movs.push(cur); continue;
+        }
+        if (cur && !m && !imp && !NADA.test(l.t) && l.items[0].x > 120) cur.desc = (cur.desc + ' ' + l.t).trim();
+        else if (!m) cur = null;
+      }
+      return r;
+    }
+
+    /* ------------------------- BANORTE DÉBITO ------------------------- */
+    function banorteDeb(pags) {
+      const L = todos(pags), T = L.map(l => l.t).join('\n'), r = { banco: 'Banorte', movs: [], avisos: [] };
+      const ix = L.findIndex(l => /^Producto\b/i.test(l.t) && /CLABE/i.test(l.t));
+      const pl = ix >= 0 ? L[ix + 1] : null, pm = pl ? pl.t.match(/^(.+?)\s+(\d{10,11})\s+(\d{3}\s?\d{3}\s?\d{11}\s?\d)/) : null;
+      r.producto = pm ? pm[1].trim() : (T.match(/ESTADO DE CUENTA \/ ([A-ZÁÉÍÓÚ ]+)/i) || [])[1] || 'Cuenta';
+      r.numero = pm ? pm[2] : ''; r.clabe = pm ? pm[3].replace(/\D/g, '') : '';
+      r.tipo = /ENLACE|PYME|EMPRESA|NEGOCIO|CHEQUES/i.test(r.producto) ? 'Cheques' : 'Débito';
+      const per = T.match(/Periodo\s+Del\s+(\d{1,2}\/[A-Za-zÁÉÍÓÚáéíóú]+\/\d{4})\s+al\s+(\d{1,2}\/[A-Za-zÁÉÍÓÚáéíóú]+\/\d{4})/i);
+      if (per) { r.desde = fecha(per[1]); r.hasta = fecha(per[2]); }
+      const co = T.match(/Fecha de corte\s+(\d{1,2}\/[A-Za-zÁÉÍÓÚáéíóú]+\/\d{4})/i); r.corte = co ? fecha(co[1]) : r.hasta;
+      const o = { xmin: 200, dy: 7 };
+      r.resumen = { saldoInicial: valor(L, /Saldo inicial del periodo/i, o), abonos: valor(L, /Total de dep.sitos/i, o), cargos: valor(L, /Total de retiros/i, o), saldoFinal: valor(L, /^Saldo actual/i, o) };
+      const com = valor(L, /Total de comisiones Cobradas/i, o), ivc = valor(L, /IVA sobre comisiones/i, o), int = valor(L, /Intereses Netos Ganados/i, o);
+      if (com) r.resumen.cargos = r2((r.resumen.cargos || 0) + com); if (ivc) r.resumen.cargos = r2((r.resumen.cargos || 0) + ivc); if (int) r.resumen.abonos = r2((r.resumen.abonos || 0) + int);
+      let dR = null, rR = null, sR = null;
+      L.forEach(l => l.items.forEach(i => { const s = i.s.trim().toUpperCase();
+        if (/^MONTO DEL DEP/.test(s) && dR === null) dR = i.r; if (/^MONTO DEL RETIRO/.test(s) && rR === null) rR = i.r; if (s === 'SALDO' && sR === null && dR !== null) sR = i.r; }));
+      if (dR === null || rR === null) throw new Error('No encontré las columnas de depósito / retiro del estado Banorte');
+      let en = false, cur = null;
+      const STOP = /Cargos Objetados|Ganancia Anual Total|^OTROS|^DETALLE (?!DE MOV)/i, NADA = /^FECHA\b|DESCRIPCI.N \/ ESTABLECIMIENTO|DETALLE DE MOVIMIENTOS|ESTADO DE CUENTA|^P.gina|Sumanomina$/i;
+      for (const l of L) {
+        if (!en) { if (/DESCRIPCI.N \/ ESTABLECIMIENTO/i.test(l.t)) en = true; continue; }
+        if (STOP.test(l.t) && !/^\d{2}-/.test(l.t)) break;
+        const m = l.t.match(/^(\d{2}-[A-Z]{3}-\d{2})\s*(.*)$/);
+        if (m) {
+          if (/SALDO ANTERIOR/i.test(m[2])) { cur = null; continue; }
+          cur = { fecha: fecha(m[1]), fechaLiq: '', desc: l.items.filter(i => !esDinero(i.s)).map(i => i.s).join(' ').replace(/^\d{2}-[A-Z]{3}-\d{2}\s*/, '').trim(), ref: '', cargo: 0, abono: 0, saldo: null };
+          r.movs.push(cur);
+        } else if (cur && !NADA.test(l.t)) {
+          const tx = l.items.filter(i => !esDinero(i.s)).map(i => i.s).join(' ').trim(); if (tx) cur.desc = (cur.desc + ' ' + tx).trim();
+        }
+        if (!cur) continue;
+        montosDe(l).forEach(i => {
+          const v = dinero(i.s).v, d = [['a', Math.abs(i.r - dR)], ['c', Math.abs(i.r - rR)], ['s', sR === null ? 1e9 : Math.abs(i.r - sR)]].sort((a, b) => a[1] - b[1])[0][0];
+          if (d === 's') cur.saldo = v; else if (d === 'a') cur.abono = r2(cur.abono + v); else cur.cargo = r2(cur.cargo + v);
+        });
+      }
+      r.movs.forEach(mv => { const rf = mv.desc.match(/(?:CVE RAST:?|RASTREO\s*:?)\s*([A-Z0-9]{10,})/i); if (rf) mv.ref = rf[1]; });
+      return r;
+    }
+
+    /* ------------------------- LIVERPOOL (OCR) ------------------------- */
+    function liverpool(pags) {
+      const L = todos(pags), T = L.map(l => l.t).join('\n'), r = { banco: 'Liverpool', movs: [], revisar: true, avisos: ['Leído por OCR (imagen): revisa los movimientos antes de guardar.'] };
+      const nc = T.match(/NO\.?\s*DE\s*CUENTA\s*([\d-]{10,})/i); r.numero = nc ? nc[1].replace(/\D/g, '') : '';
+      r.tipo = /^4\d{15}$/.test(r.numero) || /VISA/.test(T.slice(0, 800)) && /^4/.test(r.numero) ? 'Crédito' : 'Departamental';
+      r.producto = r.tipo === 'Crédito' ? 'Liverpool Visa' : 'Tarjeta Liverpool';
+      const cl = T.match(/CLABE\s*SPEI\s*([\d ]{17,22})/i); r.clabe = cl ? cl[1].replace(/\D/g, '').slice(0, 18) : '';
+      const per = T.match(/MOVIMIENTOS\s+DEL\s+(\d{1,2}-[A-Z]{3}-\d{4})\s+AL\s+(\d{1,2}-[A-Z]{3}-\d{4})/i);
+      if (per) { r.desde = fecha(per[1]); r.hasta = fecha(per[2]); }
+      const co = T.match(/FECHA\s*DE\s*CORTE\s*(\d{1,2}-[A-Z]{3}-\d{4})/i); r.corte = co ? fecha(co[1]) : r.hasta;
+      if (!r.hasta && r.corte) r.hasta = r.corte;
+      if (!r.desde && r.hasta) { const h = r.hasta.split('-').map(Number), d = new Date(h[0], h[1] - 2, h[2] + 1); r.desde = iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); r.avisos.push('No pude leer el inicio del periodo; lo calculé (un mes antes del corte). Revísalo.'); }
+      const ult = re => valor(L, re, { ultimo: true });
+      const pagos = ult(/PAGOS\s*Y\s*ABONOS/i), compras = ult(/COMPRAS\s*Y\s*CARGOS/i), comis = ult(/^COMISIONES/i) || 0;
+      r.resumen = { saldoInicial: ult(/SALDO\s*ANTERIOR/i), abonos: pagos, cargos: compras === null ? null : r2(compras + comis), saldoFinal: ult(/SALDO\s*ACTUAL/i) };
+      let hx = null, en = false;
+      for (const l of L) {
+        if (/ETALLE\s*DE\s*MOVIMIENTOS/i.test(l.t)) { en = true; continue; }
+        if (!en) continue;
+        const ab = l.items.find(i => /^Abonos$/i.test(i.s)); if (ab) { hx = ab.x; continue; }
+        if (/^Sub\s*Total|^TOTAL/i.test(l.t)) { const ms = montosDe(l); r.subtotales = ms.map(i => dinero(i.s).v); break; }
+        const m = l.t.match(/^(\d{1,2}-[A-Z]{3})\b\s*(.*)$/i);
+        const ms = montosDe(l); if (!m || !ms.length) continue;
+        const im = ms[ms.length - 1], d = dinero(im.s), neg = d.neg || /^[-—–]$/.test((l.items[l.items.indexOf(im) - 1] || {}).s || '');
+        const esAbono = neg || (hx !== null && im.x >= hx - 60);
+        const desc = l.items.filter(i => i !== im && !/^[-—–]$/.test(i.s) && i.x > l.items[0].r).map(i => i.s).join(' ').replace(/^\d{3}\s+/, '').trim();
+        r.movs.push({ fecha: fecha(m[1], { hasta: r.hasta || r.corte }), fechaLiq: '', desc: desc, ref: '', cargo: esAbono ? 0 : d.v, abono: esAbono ? d.v : 0, saldo: null });
+      }
+      if (r.resumen.saldoFinal === null && r.resumen.saldoInicial !== null && r.resumen.cargos !== null && r.resumen.abonos !== null) {
+        r.resumen.saldoFinal = r2(r.resumen.saldoInicial + r.resumen.cargos - r.resumen.abonos); r.saldoCalculado = true; r.avisos.push('No pude leer el "saldo actual al corte"; lo calculé. Compáralo con tu estado.'); }
+      return r;
+    }
+
+    /* ----------------------------- EXCEL / CSV ----------------------------- */
+    const COLS = { fecha: /^fecha( de)?( (la )?operaci[oó]n| movimiento| aplicaci[oó]n)?$|^fecha$|^d[ií]a$|^date$/i, desc: /descrip|concepto|movimiento|detalle|establecimiento/i,
+      ref: /referencia|^ref|rastreo|folio/i, cargo: /cargo|retiro|debe|d[eé]bito|salida/i, abono: /abono|dep[oó]sito|haber|cr[eé]dito|entrada/i, importe: /^importe|^monto|^cantidad/i, saldo: /^saldo/i };
+    /** filas: arreglo de arreglos (primera hoja). Devuelve { mapa, inicio } o null. */
+    function mapaExcel(filas) {
+      for (let i = 0; i < Math.min(filas.length, 40); i++) {
+        const f = filas[i].map(c => String(c === null || c === undefined ? '' : c).trim()), m = {};
+        f.forEach((c, j) => { if (!c) return; Object.keys(COLS).forEach(k => { if (m[k] === undefined && COLS[k].test(c) && !(k === 'fecha' && m.fecha !== undefined)) m[k] = j; }); });
+        if (m.fecha !== undefined && (m.cargo !== undefined || m.abono !== undefined || m.importe !== undefined)) {
+          if (m.cargo !== undefined && m.cargo === m.abono) delete m.abono;
+          return { mapa: m, inicio: i + 1, encabezados: f };
+        }
+      }
+      return null;
+    }
+    function fechaExcel(v) {
+      if (v instanceof Date) return iso(v.getFullYear(), v.getMonth() + 1, v.getDate());
+      if (typeof v === 'number' && v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 864e5)); return iso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+      return fecha(String(v || '').replace(/\s.*$/, ''));
+    }
+    const numExcel = v => typeof v === 'number' ? v : (() => { const d = dinero(v); return d ? (d.neg ? -d.v : d.v) : 0; })();
+    function excel(filas, mp) {
+      const m = mp.mapa, r = { banco: '', producto: '', tipo: '', numero: '', clabe: '', movs: [], avisos: [], origen: 'Excel' };
+      for (let i = mp.inicio; i < filas.length; i++) {
+        const f = filas[i]; if (!f || !f.length) continue;
+        const fe = fechaExcel(f[m.fecha]); if (!fe) continue;
+        let cargo = m.cargo !== undefined ? Math.abs(numExcel(f[m.cargo])) : 0, abono = m.abono !== undefined ? Math.abs(numExcel(f[m.abono])) : 0;
+        if (m.importe !== undefined && m.cargo === undefined && m.abono === undefined) { const v = numExcel(f[m.importe]); if (v < 0) cargo = -v; else abono = v; }
+        if (!cargo && !abono) continue;
+        r.movs.push({ fecha: fe, fechaLiq: '', desc: String(f[m.desc] || '').trim(), ref: m.ref !== undefined ? String(f[m.ref] || '').trim() : '', cargo: r2(cargo), abono: r2(abono), saldo: m.saldo !== undefined && f[m.saldo] !== '' && f[m.saldo] !== null ? r2(numExcel(f[m.saldo])) : null });
+      }
+      if (!r.movs.length) throw new Error('No encontré movimientos en el archivo');
+      // orden cronológico (muchos bancos exportan del más nuevo al más viejo)
+      const asc = r.movs[0].fecha <= r.movs[r.movs.length - 1].fecha; if (!asc) r.movs.reverse();
+      r.desde = r.movs[0].fecha; r.hasta = r.movs[r.movs.length - 1].fecha; r.corte = r.hasta;
+      const conS = r.movs.filter(x => x.saldo !== null);
+      r.resumen = { abonos: r2(r.movs.reduce((s, x) => s + x.abono, 0)), cargos: r2(r.movs.reduce((s, x) => s + x.cargo, 0)), saldoInicial: null, saldoFinal: null, deExcel: true };
+      if (conS.length === r.movs.length) {   // con columna de saldo: el saldo inicial sale del primer renglón
+        const a = r.movs[0], b = r.movs[r.movs.length - 1];
+        r.resumen.saldoInicial = r2(a.saldo - a.abono + a.cargo); r.resumen.saldoFinal = b.saldo;
+        // si es tarjeta (el saldo sube con los cargos) se detecta porque no cuadra al revés
+        const ok = (sg) => r.movs.every((x, i) => i === 0 || Math.abs(r.movs[i - 1].saldo + sg * (x.abono - x.cargo) - x.saldo) < 0.011);
+        if (!ok(1) && ok(-1)) { r.resumen.saldoInicial = r2(a.saldo + a.abono - a.cargo); r.tipoSaldo = 'credito'; }
+      } else r.avisos.push('El archivo no trae columna de saldo: escribe el saldo inicial y final del estado de cuenta para validar.');
+      return r;
+    }
+
+    /* ----------------------------- DETECTAR Y VALIDAR ----------------------------- */
+    function detectar(T) {
+      if (/BBVA MEXICO/i.test(T) && /No\. de Cuenta/i.test(T) && /DEL \d{2}\/\d{2}\/\d{4} AL/i.test(T)) return 'bbva';
+      if (/Adeudo del periodo anterior/i.test(T) && /CARGOS, ABONOS Y COMPRAS REGULARES/i.test(T)) return 'banorte_tdc';
+      if (/MONTO DEL DEP.SITO/i.test(T) && /MONTO DEL RETIRO/i.test(T)) return 'banorte_deb';
+      if (/Liverpool/i.test(T) || /ETALLE\s*DE\s*MOVIMIENTOS\s*DEL/i.test(T)) return 'liverpool';
+      return null;
+    }
+    const PARSERS = { bbva: bbva, banorte_tdc: banorteTdc, banorte_deb: banorteDeb, liverpool: liverpool };
+    function leer(pags) {
+      const f = detectar(textoTodo(pags));
+      if (!f) throw new Error('No reconozco el formato de este estado de cuenta (por ahora: BBVA, Banorte y Liverpool). Si lo tienes en Excel, súbelo así.');
+      const r = PARSERS[f](pags); r.formato = f; if (!r.origen) r.origen = f === 'liverpool' ? 'OCR' : 'PDF'; return r;
+    }
+    const esCredito = r => /Cr.dito|Departamental/i.test(r.tipo || '') || r.tipoSaldo === 'credito';
+    /** Revisa que TODO cuadre. Regresa { ok, errores, avisos, suma }. */
+    function validar(r) {
+      const e = [], a = (r.avisos || []).slice(), R = r.resumen || {}, M = r.movs || [];
+      const ab = r2(M.reduce((s, x) => s + (x.abono || 0), 0)), ca = r2(M.reduce((s, x) => s + (x.cargo || 0), 0));
+      const nA = M.filter(x => x.abono).length, nC = M.filter(x => x.cargo).length;
+      const dif = (x, y) => Math.abs(r2(x) - r2(y)) > 0.005;
+      if (!M.length) e.push('No se encontraron movimientos');
+      if (!r.desde || !r.hasta) e.push('Falta el periodo del estado de cuenta');
+      if (M.some(x => !x.fecha)) e.push(M.filter(x => !x.fecha).length + ' movimiento(s) sin fecha');
+      if (M.some(x => x.cargo && x.abono)) e.push('Hay movimientos con cargo y abono a la vez');
+      if (!esCredito(r) && M.some(x => x.fecha && r.desde && r.hasta && (x.fecha < r.desde || x.fecha > r.hasta))) a.push('Hay movimientos con fecha fuera del periodo (revisa el año).');
+      if (R.abonos !== null && R.abonos !== undefined && dif(ab, R.abonos)) e.push('Abonos: los movimientos suman $' + ab.toFixed(2) + ' y el estado dice $' + Number(R.abonos).toFixed(2));
+      if (R.cargos !== null && R.cargos !== undefined && dif(ca, R.cargos)) e.push('Cargos: los movimientos suman $' + ca.toFixed(2) + ' y el estado dice $' + Number(R.cargos).toFixed(2));
+      if (R.nAbonos && nA !== R.nAbonos) e.push('Número de abonos: ' + nA + ' leídos y el estado dice ' + R.nAbonos);
+      if (R.nCargos && nC !== R.nCargos) e.push('Número de cargos: ' + nC + ' leídos y el estado dice ' + R.nCargos);
+      if (R.saldoInicial === null || R.saldoInicial === undefined || R.saldoFinal === null || R.saldoFinal === undefined) e.push('Falta el saldo inicial o el final');
+      else {
+        const fin = esCredito(r) ? r2(R.saldoInicial + ca - ab) : r2(R.saldoInicial + ab - ca);
+        if (dif(fin, R.saldoFinal)) e.push('Saldo: ' + R.saldoInicial.toFixed(2) + (esCredito(r) ? ' + cargos − abonos' : ' + abonos − cargos') + ' = ' + fin.toFixed(2) + ', pero el saldo final es ' + Number(R.saldoFinal).toFixed(2));
+      }
+      if (r.subtotales && r.subtotales.length) { const s = r.subtotales.map(r2); if (s.indexOf(ca) < 0 && ca) a.push('El subtotal de cargos del estado no coincide con lo leído.'); }
+      // saldos renglón por renglón (cuando el banco los trae)
+      if (!esCredito(r) && R.saldoInicial !== null && R.saldoInicial !== undefined) {
+        let s = R.saldoInicial, malos = 0; M.forEach(x => { s = r2(s + (x.abono || 0) - (x.cargo || 0)); if (x.saldo !== null && x.saldo !== undefined && dif(s, x.saldo) && !r.saldoLiq) malos++; });
+        if (malos) e.push(malos + ' saldo(s) renglón por renglón no coinciden');
+      }
+      return { ok: !e.length, errores: e, avisos: a, suma: { abonos: ab, cargos: ca, nAbonos: nA, nCargos: nC } };
+    }
+    /** Mejora la imagen de una página escaneada para el OCR (texto blanco sobre color → oscuro sobre blanco; más contraste).
+     *  img: { data (RGBA), width, height }. Se modifica en el mismo arreglo. */
+    function preprocesar(img) {
+      const W = img.width, H = img.height, d = img.data, g = new Uint8ClampedArray(W * H), T = 48;
+      for (let i = 0, j = 0; j < g.length; i += 4, j++) g[j] = Math.min(d[i], d[i + 1], d[i + 2]);
+      for (let ty = 0; ty < H; ty += T) for (let tx = 0; tx < W; tx += T) {
+        let s = 0, n = 0, lo = 255, hi = 0;
+        for (let y = ty; y < Math.min(H, ty + T); y += 2) for (let x = tx; x < Math.min(W, tx + T); x += 2) { const v = g[y * W + x]; s += v; n++; if (v < lo) lo = v; if (v > hi) hi = v; }
+        const inv = n && s / n < 110, est = hi - lo > 40;
+        for (let y = ty; y < Math.min(H, ty + T); y++) for (let x = tx; x < Math.min(W, tx + T); x++) {
+          let v = g[y * W + x]; if (est) v = (v - lo) * 255 / (hi - lo); if (inv) v = 255 - v;
+          const k = (y * W + x) * 4; d[k] = d[k + 1] = d[k + 2] = v; d[k + 3] = 255;
+        }
+      }
+      return img;
+    }
+    /** Palabras del OCR (Tesseract: { text, bbox: {x0, x1, y0, y1} }) → renglones con el mismo formato que el PDF. */
+    function renglonesOcr(palabras) {
+      return renglones(palabras.filter(w => String(w.text).trim()).map(w => ({ x: w.bbox.x0, r: w.bbox.x1, y: -(w.bbox.y0 + w.bbox.y1) / 2, s: String(w.text).trim() })), 12);
+    }
+    return { preprocesar: preprocesar, renglonesOcr: renglonesOcr, renglones: renglones, leer: leer, validar: validar, detectar: detectar, mapaExcel: mapaExcel, excel: excel, textoTodo: textoTodo, dinero: dinero, fecha: fecha, esCredito: esCredito };
+  })();
+  /*EDOCTA-FIN*/
+
+  /* =====================================================================================
    *  DOCUMENTOS EN EL EQUIPO (sin conexión): PDF con jsPDF y Excel con ExcelJS.
    *  Las librerías se bajan una vez con señal y quedan guardadas en el equipo (IndexedDB).
    * ===================================================================================== */
   const CDN = 'https:' + '//cdnjs.cloudflare.com/ajax/libs/';
   const LIBS = {
     jspdf: { url: CDN + 'jspdf/2.5.1/jspdf.umd.min.js', ok: () => window.jspdf && window.jspdf.jsPDF ? window.jspdf : null },
-    exceljs: { url: CDN + 'exceljs/4.4.0/exceljs.min.js', ok: () => window.ExcelJS || null }
+    exceljs: { url: CDN + 'exceljs/4.4.0/exceljs.min.js', ok: () => window.ExcelJS || null },
+    xlsx: { url: CDN + 'xlsx/0.18.5/xlsx.full.min.js', ok: () => window.XLSX || null }
   };
   async function textoLib(n) {
     const L = LIBS[n];
@@ -9153,6 +9830,8 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
+    vistaBancos: t => V.bancos(t), bnAnio, bnSubir, bnLeer, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
