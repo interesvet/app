@@ -6203,10 +6203,16 @@ const App = (() => {
   }
   async function eliminarPortafolio(id) {
     const x = LS.get('portafoliosSrv', []).find(o => o.id === id) || (await PDFDB.uno(id)) || {};
-    if (!confirm('¿Eliminar "' + (x.nombre || 'este portafolio') + '"?\n\nSe quita de este equipo y de la lista, y se manda a la papelera de tu Google Drive (ahí lo puedes recuperar durante 30 días).')) return;
-    try { await pedir('quitarPortafolio', { id: id, papelera: true }); } catch (e) { return; }
+    const soloEquipo = /^local-/.test(String(id));   // copia que nunca se subió a Drive (se generó sin conexión o falló la subida)
+    if (!confirm('¿Eliminar "' + (x.nombre || 'este portafolio') + '"?\n\n' + (soloEquipo ? 'Esta copia solo está en este equipo (no está en tu Drive); se borra de aquí.' : 'Se quita de este equipo y de la lista, y se manda a la papelera de tu Google Drive (ahí lo puedes recuperar durante 30 días).'))) return;
+    let enDrive = !soloEquipo;
+    if (!soloEquipo) { cargando(true); try { await pedir('quitarPortafolio', { id: id, papelera: true }, true); } catch (e) {
+      // si el archivo ya no existe en Drive, se deja quitar del equipo de todos modos
+      if (!/no v[aá]lido|not found|no se encontr|no existe/i.test(String(e && e.message || e))) { cargando(false); return toast(e.message, true); }
+      enDrive = false;
+    } cargando(false); }
     try { await PDFDB.quitar(id); } catch (e) {}
-    LS.set('portafoliosSrv', LS.get('portafoliosSrv', []).filter(o => o.id !== id)); toast('🗑️ Portafolio eliminado (está en la papelera de Drive)'); pintarPortafolios();
+    LS.set('portafoliosSrv', LS.get('portafoliosSrv', []).filter(o => o.id !== id)); toast(enDrive ? '🗑️ Portafolio eliminado (está en la papelera de Drive)' : '🗑️ Portafolio eliminado de este equipo'); pintarPortafolios();
   }
   async function compartirPdfLocal() {
     const x = S.pdfLocal; if (!x) return;
