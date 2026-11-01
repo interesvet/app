@@ -3259,7 +3259,7 @@ const App = (() => {
       ${usu.length ? usu.map(u => `<label class="check"><input type="checkbox" class="geBaja" value="${esc(u.id)}" ${u.rol === 'Gerente' ? 'checked' : ''}> ${esc(u.nombre)} <small class="muted">· ${esc(u.rolHoja || u.rol)} · ${nf(u.clientes)} clientes</small></label>`).join('') : '<p class="muted">No hay usuarios activos en esta sucursal.</p>'}
       <p class="muted peq">Se desactiva su acceso (no se borran: su historial y sus notas quedan con su nombre). Sus clientes pasan al nuevo gerente. Los vendedores que <b>no</b> marques se quedan en la sucursal y le reportan al nuevo gerente.</p>
       <h4 style="margin:14px 0 6px">2. Nuevo gerente</h4>
-      <label>¿Quién?<select id="geQuien" onchange="$('#geNuevo').classList.toggle('oculto', this.value !== '')"><option value="">➕ Dar de alta a alguien nuevo</option>
+      <label>¿Quién?<select id="geQuien" onchange="document.getElementById('geNuevo').classList.toggle('oculto', this.value !== '')"><option value="">➕ Dar de alta a alguien nuevo</option>
         ${otros.map(u => `<option value="${esc(u.id)}">${esc(u.nombre)}${u.activo ? '' : ' (inactivo)'}${u.suc && u.suc !== r.suc ? ' · ' + esc(sucNom(u.suc)) : ''}</option>`).join('')}</select></label>
       <div id="geNuevo"><div class="fila">
         <label>Nombre completo<input id="geNom" autocomplete="off"></label><label>Usuario para entrar<input id="geUsr" autocomplete="off" autocapitalize="off" placeholder="p. ej. pedro"></label></div>
@@ -5786,34 +5786,47 @@ const App = (() => {
     try { await pedir('clasificarMovBanco', { ids: [mov], categoria: cat }, true); toast('✔ ' + cat); bnConc(); } catch (e) { toast(e.message, true); }
   }
   /** Ligar a mano: lista de cobros cercanos (importe más parecido primero), se pueden marcar varios. */
-  async function bnConcManual(mov, texto, todos) {
-    const d = BN.conc.depositos.find(x => x.id === mov); BN.ligMov = mov; BN.ligSel = BN.ligSel && BN.ligSelMov === mov ? BN.ligSel : {}; BN.ligSelMov = mov;
-    const cli = d.cliente && d.cliente.id && !todos ? d.cliente : null;
-    let l; try { l = await pedir('cobrosParaLigar', { mov: mov, texto: texto || '', idCliente: cli ? cli.id : '' }); } catch (e) { return toast(e.message, true); }
-    BN.ligLista = l;
+  /** Ligar a mano un depósito con cobros: busca en el histórico de cobranza (1 mes … todo), por importe o por fecha. */
+  async function bnConcManual(mov, texto, todos, opt) {
+    if (BN.ligSelMov !== mov) { BN.ligSel = {}; BN.ligMontos = {}; BN.ligOpt = { dias: 90, orden: 'importe' }; }
+    BN.ligMov = mov; BN.ligSelMov = mov; BN.ligOpt = Object.assign(BN.ligOpt || { dias: 90, orden: 'importe' }, opt || {});
+    BN.ligTodos = !!todos; BN.ligTexto = texto || '';
+    const d0 = ((BN.conc || {}).depositos || []).find(x => x.id === mov), o = BN.ligOpt;
+    const cli0 = d0 ? d0.cliente : null, idCli = !todos && cli0 && cli0.id ? cli0.id : '';
+    let r; try { r = await pedir('cobrosParaLigar', { mov: mov, texto: texto || '', idCliente: idCli, dias: o.dias, orden: o.orden, det: true }); } catch (e) { return toast(e.message, true); }
+    if (Array.isArray(r)) r = { lista: r, total: r.length, dias: o.dias, mov: d0 };   // servidor anterior
+    const d = Object.assign({}, r.mov || {}, d0 || {}), cli = !todos && d.cliente && d.cliente.id ? d.cliente : null, l = r.lista;
+    BN.ligDep = d; BN.ligLista = l; BN.ligMontos = BN.ligMontos || {}; l.forEach(x => { if (BN.ligSel[x.id]) BN.ligMontos[x.id] = x.monto; });
+    const per = [[30, '1 mes'], [90, '3 meses'], [180, '6 meses'], [365, '1 año'], ['todo', 'Todo el histórico']];
+    const re = (extra) => `App.bnConcManual('${mov}', document.getElementById('ligTxt').value, ${todos ? 'true' : 'false'}${extra ? ', ' + extra : ''})`;
+    const hace = x => x.dias > 0 ? `${x.dias} día${x.dias === 1 ? '' : 's'} antes` : x.dias < 0 ? `${-x.dias} día${x.dias === -1 ? '' : 's'} después` : 'mismo día';
+    const atras = x => x.dias > 31 ? ' <span class="etq av">' + Math.floor(x.dias / 30) + ' mes' + (Math.floor(x.dias / 30) > 1 ? 'es' : '') + ' antes</span>' : '';
     modal('🔗 ¿Qué cobro es este depósito?', `<p><b>${$$(d.abono)}</b> · ${esc(d.fecha)} · ${esc(d.cuenta)}<br><small class="muted">${esc(d.desc)}</small></p>
-      ${cli ? `<p><span class="etq ok">👤 ${esc(cli.nombre)}</span> <small class="muted">(por ${esc(cli.via)}) · cobros de ±60 días</small> <button class="btn chico" onclick="App.bnConcManual('${mov}', '', true)">Ver de todos los clientes</button></p>` : ''}
-      <div class="fila"><input id="ligTxt" placeholder="Buscar nota, cliente o importe" value="${esc(texto || '')}" onkeydown="if(event.key==='Enter')App.bnConcManual('${mov}', this.value, ${todos ? 'true' : 'false'})"><button class="btn fijo" onclick="App.bnConcManual('${mov}', $('#ligTxt').value, ${todos ? 'true' : 'false'})">Buscar</button></div>
+      ${cli ? `<p><span class="etq ok">👤 ${esc(cli.nombre)}</span> <small class="muted">(por ${esc(cli.via)})</small> <button class="btn chico" onclick="App.bnConcManual('${mov}', '', true)">Ver de todos los clientes</button></p>` : todos && cli0 && cli0.id ? `<p><button class="btn chico" onclick="App.bnConcManual('${mov}', '', false)">👤 Solo de ${esc(cli0.nombre)}</button></p>` : ''}
+      <div class="fila" style="align-items:flex-end"><label>Cobros de<select class="chico" onchange="${re("{ dias: this.value === 'todo' ? 'todo' : Number(this.value) }")}">${per.map(([v, t]) => `<option value="${v}" ${String(o.dias) === String(v) ? 'selected' : ''}>${t}${v === 'todo' ? '' : ' (±)'}</option>`).join('')}</select></label>
+        <label>Ordenar<select class="chico" onchange="${re("{ orden: this.value }")}"><option value="importe" ${o.orden === 'importe' ? 'selected' : ''}>Importe más parecido</option><option value="fecha" ${o.orden === 'fecha' ? 'selected' : ''}>Por fecha (recientes primero)</option></select></label></div>
+      <div class="fila"><input id="ligTxt" placeholder="Buscar nota, cliente o importe (busca en todo el histórico)" value="${esc(texto || '')}" onkeydown="if(event.key==='Enter')${re()}"><button class="btn fijo" onclick="${re()}">Buscar</button></div>
+      <div class="peq muted">${texto && r.dias === 0 ? 'Buscando en todo el histórico' : r.dias ? 'Cobros de ' + r.dias + ' días antes o después del depósito' : 'Todo el histórico'} · ${nf(r.total)} cobro(s) sin depósito${r.total > l.length ? ', muestro ' + l.length + ' (busca por cliente o nota para acotar)' : ''}</div>
       <div id="ligSuma" class="peq" style="margin:6px 0"></div>
       <div style="max-height:50vh;overflow:auto">${tabla([
         { t: '', h: x => `<input type="checkbox" ${BN.ligSel[x.id] ? 'checked' : ''} onchange="App.bnConcMarca('${x.id}', this.checked)">` },
-        { t: 'Cobro', h: x => `<b>${esc(x.nota)}</b> · ${esc(x.fecha)}<br><small class="muted">${esc(x.cliente)} · ${esc(x.forma)}</small>` },
-        { t: 'Importe', num: 1, h: x => $$(x.monto) }, { t: 'Factura', h: x => x.factura ? esc(x.factura) : '<span class="etq av">sin factura</span>' }], l, { vacio: 'No encontré cobros cercanos; busca por cliente o nota' })}</div>
+        { t: 'Cobro', h: x => `<b>${esc(x.nota)}</b> · ${esc(x.fecha)}${atras(x)}<br><small class="muted">${esc(x.cliente)} · ${esc(x.forma)}${x.dias !== undefined ? ' · ' + hace(x) : ''}</small>` },
+        { t: 'Importe', num: 1, h: x => $$(x.monto) }, { t: 'Factura', h: x => x.factura ? esc(x.factura) : '<span class="etq av">sin factura</span>' }], l, { vacio: r.dias ? 'No hay cobros sin depósito en ese periodo. Amplía a "1 año" o "Todo el histórico", o busca por cliente o nota.' : 'No encontré cobros; busca por cliente o nota' })}</div>
       <label>Nota (opcional)<input id="ligNota" placeholder="p. ej. pagó dos notas en una transferencia"></label>
       <div class="acciones"><button class="btn primario" onclick="App.bnConcGuardarManual()">✔ Conciliar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
     bnConcSuma();
   }
-  function bnConcMarca(id, v) { if (v) BN.ligSel[id] = 1; else delete BN.ligSel[id]; bnConcSuma(); }
+  function bnConcMarca(id, v) { BN.ligMontos = BN.ligMontos || {}; if (v) { BN.ligSel[id] = 1; const x = (BN.ligLista || []).find(c => c.id === id); if (x) BN.ligMontos[id] = x.monto; } else { delete BN.ligSel[id]; delete BN.ligMontos[id]; } bnConcSuma(); }
   function bnConcSuma() {
-    const d = BN.conc.depositos.find(x => x.id === BN.ligMov), ids = Object.keys(BN.ligSel), sum = (BN.ligLista || []).filter(x => BN.ligSel[x.id]).reduce((a, x) => a + x.monto, 0);
-    const el = $('#ligSuma'); if (el) el.innerHTML = ids.length ? `Marcados: <b>${$$(sum)}</b> de ${$$(d.abono)} ${Math.abs(sum - d.abono) < 0.01 ? '<span class="etq ok">✔ cuadra</span>' : '<span class="etq av">diferencia ' + $$(d.abono - sum) + '</span>'}` : 'Marca uno o varios cobros.';
+    const d = BN.ligDep || {}, ids = Object.keys(BN.ligSel), sum = ids.reduce((a, id) => a + ((BN.ligMontos || {})[id] || 0), 0);
+    const el = $('#ligSuma'); if (el) el.innerHTML = ids.length ? `Marcados (${ids.length}): <b>${$$(sum)}</b> de ${$$(d.abono)} ${Math.abs(sum - d.abono) < 0.01 ? '<span class="etq ok">✔ cuadra</span>' : '<span class="etq av">diferencia ' + $$(d.abono - sum) + '</span>'}` : 'Marca uno o varios cobros (puedes cambiar el periodo o buscar sin perder lo marcado).';
   }
   async function bnConcGuardarManual() {
     const ids = Object.keys(BN.ligSel || {}); if (!ids.length) return toast('Marca al menos un cobro', true);
     const p = { mov: BN.ligMov, cobros: ids, nota: $('#ligNota').value };
     try { await pedir('conciliarMov', p, true); }
     catch (e) { if (!/de todos modos/.test(e.message) || !confirm(e.message)) return toast(e.message, true); try { await pedir('conciliarMov', Object.assign(p, { forzar: true }), true); } catch (e2) { return toast(e2.message, true); } }
-    BN.ligSel = {}; cerrarModal(); toast('✔ Conciliado'); bnConc();
+    BN.ligSel = {}; BN.ligMontos = {}; BN.ligSelMov = null; cerrarModal(); toast('✔ Conciliado'); if ($('#bmRes')) bnBuscarMovs(); else bnConc();
   }
   /** Detalle de una factura: notas, cobros, depósitos y complementos. */
   async function bnConcFactura(i) {
@@ -6245,7 +6258,7 @@ const App = (() => {
         { t: 'Cuenta', cls: 'ocultar-movil', h: m => `<small>${esc(m.cuenta)}</small>` }, { t: 'Descripción', h: m => `${esc(m.desc)}${m.ref ? `<br><small class="muted">Ref. ${esc(m.ref)}</small>` : ''}${m.tarjeta ? `<br><small class="muted">Tarjeta ${esc(m.tarjeta)}</small>` : ''}${m.notas ? `<br><small>📝 ${esc(m.notas)}</small>` : ''}` },
         { t: 'Cargo', num: 1, h: m => m.cargo ? `<span class="txt-mal">${$$(m.cargo)}</span>` : '' }, { t: 'Abono', num: 1, h: m => m.abono ? `<b>${$$(m.abono)}</b>` : '' },
         { t: 'Categoría', h: m => `<select onchange="App.bnClasificar('${m.id}', this.value)" style="min-width:150px"><option value="">❓ Sin clasificar</option>${cats.map(c => `<option ${m.categoria === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` },
-        { t: '', h: m => `<button class="icono" title="Nota" onclick="App.bnNota('${m.id}')">📝</button>` }], r.movs, { vacio: 'Sin movimientos con esos filtros' });
+        { t: '', h: m => `${m.abono && m.estado !== 'Conciliado' && (!m.categoria || m.categoria === 'Cobro a cliente') && puede('bancos') ? `<button class="btn chico" title="Buscar el cobro en la cobranza (meses anteriores incluidos)" onclick="App.bnConcManual('${m.id}')">🔗 Cobro</button> ` : m.estado === 'Conciliado' && m.liga ? `<small class="etq ok" title="${esc(m.liga)}">✔ ligado</small> ` : ''}<button class="icono" title="Nota" onclick="App.bnNota('${m.id}')">📝</button>` }], r.movs, { vacio: 'Sin movimientos con esos filtros' });
   }
   function bnMarcar(id, v) { BN.sel = BN.sel || {}; if (v) BN.sel[id] = 1; else delete BN.sel[id]; }
   async function bnClasificar(id, cat) { try { await pedir('clasificarMovBanco', { ids: [id], categoria: cat }, true); const m = BN.movs.movs.find(x => x.id === id); if (m) m.categoria = cat; toast('✔ Clasificado'); } catch (e) { toast(e.message, true); } }
@@ -7941,7 +7954,7 @@ const App = (() => {
     const m = v.meta || {}, hist = v.historia.filter(h => h.mes < r.mesActual && h.venta).slice(-3);
     const sug = hist.length ? Math.round(hist.reduce((t, h) => t + h.venta, 0) / hist.length * 1.1 / 1000) * 1000 : 0;
     modal('🏆 Meta de ' + v.nombre, `<div class="rejilla-2" style="gap:10px">
-        <label>Meta de venta del mes (sin IVA)<input type="number" id="fmVenta" min="0" step="1000" value="${m.venta || ''}" placeholder="${sug || ''}">${sug ? `<small class="muted">Sugerida: ${$$(sug)} (promedio de ${hist.length} mes${hist.length === 1 ? '' : 'es'} + 10 %) · <a href="#" onclick="$('#fmVenta').value=${sug};return false">usar</a></small>` : ''}</label>
+        <label>Meta de venta del mes (sin IVA)<input type="number" id="fmVenta" min="0" step="1000" value="${m.venta || ''}" placeholder="${sug || ''}">${sug ? `<small class="muted">Sugerida: ${$$(sug)} (promedio de ${hist.length} mes${hist.length === 1 ? '' : 'es'} + 10 %) · <a href="#" onclick="document.getElementById('fmVenta').value=${sug};return false">usar</a></small>` : ''}</label>
         <label>Meta de clientes que le compran<input type="number" id="fmCli" min="0" step="1" value="${m.clientes || ''}"></label>
         <label>Comisión %<input type="number" id="fmCom" min="0" max="50" step="0.1" value="${m.comision !== undefined && m.comision !== null ? m.comision : ''}" placeholder="Ej. 3"></label>
         <label>Se calcula sobre<select id="fmBase"><option value="Vendido" ${m.base !== 'Cobrado' ? 'selected' : ''}>Lo vendido en el mes</option><option value="Cobrado" ${m.base === 'Cobrado' ? 'selected' : ''}>Lo cobrado en el mes (sin IVA)</option></select></label>
