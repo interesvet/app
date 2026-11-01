@@ -5708,7 +5708,8 @@ const App = (() => {
         <label>Año<select id="bnAnio" onchange="App.bnAnio(this.value)">${anios.map(y => `<option ${y === d.anio ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
         <button class="btn primario fijo" onclick="App.bnSubir()">📥 Subir estados de cuenta</button>
         ${puede('dueno') ? '<button class="btn fijo" onclick="App.bnDrive()">📂 Desde Drive</button>' : ''}
-        <button class="btn fijo" onclick="App.bnExcelEstados()">📊 Excel</button></div>
+        <button class="btn fijo" onclick="App.bnExcelEstados()">📊 Excel</button>
+        <button class="btn fijo" onclick="App.bnZipEstados()">⬇️ PDFs (ZIP)</button></div>
         <p class="muted peq">Sube los PDF (BBVA, Banorte, Liverpool) o el Excel/CSV del banco; puedes subir varios a la vez. Solo se guardan si <b>cuadran al centavo</b> y siguen al estado anterior.</p></div>
       ${d.cuentas.length ? `<div class="tarjeta"><h3>Cuentas · ${d.anio}</h3>` + tabla([
         { t: 'Cuenta', h: c => `<b>${nomCta(c)}</b><br><small class="muted">${esc(c.tipo)} · ${esc(c.uso)}</small>` },
@@ -5721,8 +5722,64 @@ const App = (() => {
         { t: 'Saldo inicial', num: 1, h: e => $$(e.saldoInicial) }, { t: 'Abonos', num: 1, h: e => $$(e.abonos) + `<br><small class="muted">${nf(e.nAbonos)}</small>` },
         { t: 'Cargos', num: 1, h: e => $$(e.cargos) + `<br><small class="muted">${nf(e.nCargos)}</small>` }, { t: 'Saldo final', num: 1, h: e => `<b>${$$(e.saldoFinal)}</b>` },
         { t: 'Cuadre', h: e => '<span class="etq ok">✔ cuadra</span>' + (e.continuidad !== 'OK' ? `<br><span class="etq av" title="${esc(e.continuidad)}">continuidad forzada</span>` : '') + (e.avisos ? `<br><small class="muted">${esc(e.avisos)}</small>` : '') },
-        { t: '', h: e => (e.url ? `<a class="btn chico" target="_blank" href="${esc(e.url)}">📄</a>` : '') + `<button class="btn chico" onclick="App.bnVerMovs('${e.idCuenta}','','${esc(e.desde)}','${esc(e.hasta)}')">📋</button>` + (puede('dueno') ? `<button class="icono" title="Quitar este estado" onclick="App.bnQuitarEstado('${e.id}')">🗑️</button>` : '') }],
-        es, { vacio: 'Aún no hay estados de cuenta cargados en ' + d.anio })}</div>`;
+        { t: '', h: e => (e.url ? `<button class="btn chico" title="Descargar el PDF original" onclick="App.bnBajarEstado('${e.id}')">⬇️</button>` : '') + (e.url && puede('dueno') ? `<a class="btn chico" title="Abrir en Drive" target="_blank" href="${esc(e.url)}">📄</a>` : '') + `<button class="btn chico" onclick="App.bnVerMovs('${e.idCuenta}','','${esc(e.desde)}','${esc(e.hasta)}')">📋</button>` + (puede('dueno') ? `<button class="icono" title="Quitar este estado" onclick="App.bnQuitarEstado('${e.id}')">🗑️</button>` : '') }],
+        es, { vacio: 'Aún no hay estados de cuenta cargados en ' + d.anio })}</div>
+      <div class="tarjeta" id="bnNp"><h3>📂 No procesados (por revisar)</h3><div class="vacio">Cargando…</div></div>`;
+    bnNoProc();
+  }
+  /* ---------- No procesados: los que no se pudieron leer o no cuadraron; quedan en Drive › Estados de cuenta bancarios › No procesados ---------- */
+  async function bnNoProc() {
+    let l; try { l = await pedir('noProcesados', {}); } catch (e) { l = null; }
+    BN.np = l || [];
+    const el = $('#bnNp'); if (!el) return;
+    el.innerHTML = '<h3>📂 No procesados (por revisar)</h3><p class="muted peq">Estados de cuenta que no se pudieron leer solos (escaneos borrosos, formatos nuevos). Se pueden descargar, volver a leer o capturar a mano con ✏️ Revisar. Al guardarlos pasan a "Resueltos".</p>' +
+      (l === null ? '<div class="vacio">Requiere conexión</div>' : tabla([
+        { t: 'Archivo', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.motivo)}</small>` }, { t: 'Fecha', h: x => esc(x.fecha) },
+        { t: '', h: x => `<button class="btn chico" title="Descargar" onclick="App.bnBajarNp('${x.id}')">⬇️</button><button class="btn chico" title="Leer de nuevo / capturar" onclick="App.bnNpLeer('${x.id}')">🔁</button><button class="btn chico" title="Ya quedó (pasa a Resueltos)" onclick="App.bnNpResuelto('${x.id}')">✔</button>` }],
+        l, { vacio: 'Nada pendiente 👍' }));
+  }
+  async function bnBajarArchivo(p) {
+    try { toast('Descargando…'); const a = await pedir('descargarArchivoBanco', p, true); const b = await (await fetch(a.uri)).blob(); entregarArchivo(b, a.nombre, 'Estado de cuenta'); }
+    catch (e) { toast(e.message || 'No se pudo descargar', true); }
+  }
+  function bnBajarEstado(id) { return bnBajarArchivo({ estado: id }); }
+  function bnBajarNp(id) { return bnBajarArchivo({ id: id }); }
+  async function bnZipEstados() {
+    const es = (BN.estados || []).filter(e => e.url); if (!es.length) return toast('No hay PDFs guardados en este año', true);
+    try {
+      const Z = await libLocal('jszip'), zip = new Z();
+      for (let i = 0; i < es.length; i++) {
+        toast('Descargando ' + (i + 1) + ' de ' + es.length + '…');
+        const a = await pedir('descargarArchivoBanco', { estado: es[i].id }, true), b = await (await fetch(a.uri)).blob();
+        zip.file(String(es[i].cuenta).replace(/[\\/:*?"<>|…]+/g, ' ').trim() + '/' + a.nombre, b);
+      }
+      entregarArchivo(await zip.generateAsync({ type: 'blob' }), 'Estados de cuenta ' + ((BN.datos || {}).anio || '') + '.zip', 'PDFs de estados de cuenta');
+    } catch (e) { toast(e.message || 'No se pudo armar el ZIP', true); }
+  }
+  async function bnNpLeer(id) {
+    try {
+      toast('Descargando…'); const a = await pedir('descargarArchivoBanco', { id: id }, true), b = await (await fetch(a.uri)).blob();
+      BN.cola = []; bnVolverCola(); try { await bnDatos(); } catch (e) {}
+      const it = { nombre: a.nombre, file: new File([b], a.nombre, { type: b.type }), estado: 'leyendo', npId: id }; BN.cola.push(it); await bnLeerUno(it);
+    } catch (e) { toast(e.message || 'No se pudo leer', true); }
+  }
+  async function bnNpResuelto(id) {
+    if (!confirm('¿Ya quedó cargado (o no hace falta)? El archivo pasa a "No procesados › Resueltos" (no se borra).')) return;
+    try { await pedir('resolverNoProcesado', { id: id }, true); toast('✔ Resuelto'); bnNoProc(); } catch (e) { toast(e.message, true); }
+  }
+  /** Al terminar de leer un lote: los que no se pudieron leer o no cuadran se guardan en "No procesados" para revisarlos después. */
+  async function bnMandarNoProc(auto) {
+    const malos = BN.cola.filter(it => (it.estado === 'error' || (it.estado === 'revisar' && !(it.v && it.v.ok))) && !it.npId && !it.npOk && (it.file || it.driveId));   // los que cuadran pero piden revisión (Excel) no
+    if (!malos.length) { if (!auto) toast('No hay pendientes'); return 0; }
+    let n = 0;
+    for (const it of malos) {
+      try {
+        const motivo = it.estado === 'error' ? 'No se pudo leer: ' + (it.error || '') : 'No cuadra: ' + ((it.v && it.v.errores) || []).join('; ');
+        const x = await pedir('guardarNoProcesado', { archivo: it.driveId ? { driveId: it.driveId, nombre: it.archivo } : { nombre: String(it.nombre).split('/').pop(), datos: await leerArchivo(it.file) }, motivo: motivo }, true);
+        it.npOk = true; it.npId = x.id; n++;
+      } catch (e) {}
+    }
+    bnPintarCola(); toast('📂 ' + n + ' archivo(s) quedaron en "No procesados" para revisarlos'); return n;
   }
   function bnAnio(y) { BN.anio = Number(y); bnEstados(); }
   async function bnQuitarEstado(id) {
@@ -5755,10 +5812,11 @@ const App = (() => {
       it.estado = 'leyendo'; await bnLeerUno(it);
       if (desde && it.r && it.r.hasta && it.r.hasta < desde) { it.estado = 'omitido'; it.file = null; bnPintarCola(); }
     }
-    // el mismo periodo de la misma cuenta en dos archivos distintos: se deja solo el primero
+    // el mismo periodo de la misma cuenta en dos archivos distintos: se deja solo el primero (lo repetido no va a "No procesados")
     const per = {}; BN.cola.forEach(it => { if (!it.r || !['listo', 'revisar'].includes(it.estado)) return; const k = String(it.r.numero) + '|' + it.r.desde + '|' + it.r.hasta;
       if (per[k]) { it.estado = 'duplicado'; it.error = 'mismo periodo que ' + per[k]; } else per[k] = it.nombre; });
     bnPintarCola();
+    if (cola.length > 1) await bnMandarNoProc(true);
     if ($('#bnLeerBtn')) $('#bnLeerBtn').disabled = false;
   }
   async function bnLeerUno(it) {
@@ -5809,6 +5867,7 @@ const App = (() => {
       const listos = BN.cola.map((it, i) => [it, i]).filter(x => x[0].estado === 'listo')
         .sort((a, b) => String((a[0].r || {}).numero).localeCompare(String((b[0].r || {}).numero)) || String(a[0].r.desde).localeCompare(String(b[0].r.desde)));
       for (let k = 0; k < listos.length; k++) { res(`<span class="etq">Guardando ${k + 1} de ${listos.length}…</span>`); await bnGuardar(listos[k][1], true); }
+      await bnMandarNoProc(true);
       const n = e => BN.cola.filter(x => x.estado === e).length;
       res(`<div class="tarjeta"><b>Resultado:</b> ✔ ${n('guardado')} guardados · ↩︎ ${n('duplicado')} ya estaban · ⏭ ${n('omitido')} anteriores a ${esc(fechaTxt(desde))} · ✏️ ${n('revisar')} por revisar · ✖ ${n('error')} con error</div>`);
       BN.t = 0;
@@ -5816,29 +5875,53 @@ const App = (() => {
     if ($('#bnDrBtn')) $('#bnDrBtn').disabled = false;
   }
   async function bnLeerPdf(f, it) {
-    const L = await cargarPdfJs(), doc = await L.getDocument({ data: new Uint8Array(await leerBuf(f)), isEvalSupported: false }).promise, pags = [];
-    let chars = 0;
+    const L = await cargarPdfJs(), doc = await L.getDocument({ data: new Uint8Array(await leerBuf(f)), isEvalSupported: false }).promise, pags = [], letras = [];
     for (let i = 1; i <= doc.numPages; i++) {
-      const c = await (await doc.getPage(i)).getTextContent(); chars += c.items.reduce((s, x) => s + (String(x.str).match(/[A-Za-z0-9]/g) || []).length, 0);   // solo letras legibles (hay PDF escaneados con texto ilegible)
+      const c = await (await doc.getPage(i)).getTextContent();
+      letras.push(c.items.reduce((s, x) => s + (String(x.str).match(/[A-Za-z0-9]/g) || []).length, 0));   // solo letras legibles (hay PDF escaneados con texto ilegible)
       pags.push(EDOCTA.renglones(c.items.map(x => ({ x: x.transform[4], r: x.transform[4] + x.width, y: x.transform[5], s: x.str }))));
     }
-    if (chars > 300 && EDOCTA.detectar(EDOCTA.textoTodo(pags))) return EDOCTA.leer(pags);
-    // escaneado (imagen): OCR página por página hasta encontrar el total del detalle
+    // 1) PDF con texto (descargado del banco): se lee directo. Una hoja publicitaria (imagen) al inicio no estorba: se ignora.
+    let rTxt = null;
+    const chars = letras.reduce((a, b) => a + b, 0);
+    if (chars > 300 && EDOCTA.detectar(EDOCTA.textoTodo(pags))) {
+      try { rTxt = EDOCTA.leer(pags); if (EDOCTA.validar(rTxt).ok) return rTxt; } catch (e) { rTxt = null; }
+    }
+    // 2) escaneado (imagen), o con hojas sin texto: OCR. Varias lecturas a distinta resolución; si ninguna cuadra sola, se combinan.
+    const soloImg = rTxt ? letras.map((n, k) => n < 80 ? k + 1 : 0).filter(Boolean) : null;   // con texto: solo las hojas que son imagen
+    if (rTxt && !soloImg.length) return rTxt;
     it.estado = 'ocr'; bnPintarCola();
     const T = await cargarTesseract(), w = await T.createWorker('spa', 1, { workerPath: TESS_URL + 'tesseract.js@' + TESS_V + '/dist/worker.min.js', corePath: TESS_URL + 'tesseract.js-core@' + TESS_V,
       langPath: TESS_URL + '@tesseract.js-data/spa/4.0.0', gzip: true, logger: m => { if (m.status === 'recognizing text') { it.prog = Math.round(m.progress * 100); bnPintarCola(); } } });
-    const po = [];
+    const lecturas = [], ESCALAS = [200, 250, 300];
     try {
-      for (let i = 1; i <= Math.min(doc.numPages, 4); i++) {
-        it.pag = i; bnPintarCola();
-        const pg = await doc.getPage(i), vp = pg.getViewport({ scale: 200 / 72 }), cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
-        const cx = cv.getContext('2d'); await pg.render({ canvasContext: cx, viewport: vp }).promise;
-        const img = cx.getImageData(0, 0, cv.width, cv.height); EDOCTA.preprocesar(img); cx.putImageData(img, 0, 0);
-        const { data } = await w.recognize(cv); po.push(EDOCTA.renglonesOcr(data.words));
-        if (i >= 2 && po.some(p => p.some(l => /^Sub\s*Total/i.test(l.t)))) break;
+      for (let k = 0; k < ESCALAS.length; k++) {
+        it.pasada = k + 1; it.pasadas = ESCALAS.length; const po = [];
+        for (let i = 1; i <= Math.min(doc.numPages, 8); i++) {
+          if (soloImg && soloImg.indexOf(i) < 0) { po.push(pags[i - 1]); continue; }   // hoja con texto: se usa tal cual
+          it.pag = i; bnPintarCola();
+          const pg = await doc.getPage(i), vp = pg.getViewport({ scale: ESCALAS[k] / 72 }), cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+          const cx = cv.getContext('2d'); await pg.render({ canvasContext: cx, viewport: vp }).promise;
+          const img = cx.getImageData(0, 0, cv.width, cv.height); EDOCTA.preprocesar(img); cx.putImageData(img, 0, 0);
+          const { data } = await w.recognize(cv); const rg = EDOCTA.renglonesOcr(data.words); po.push(rg);
+          // las hojas publicitarias no tienen el detalle: se sigue leyendo hasta encontrar el TOTAL de los movimientos
+          if (i >= 2 && rg.some(l => /^TOTAL\b/i.test(l.t)) && po.some(p => p.some(l => /^Sub\s*Total/i.test(l.t)))) break;
+        }
+        let r = null; try { r = EDOCTA.leer(po); } catch (e) {}
+        // se acepta en cuanto cuadra con los totales leídos del estado (si el saldo final se tuvo que calcular, se intenta otra lectura)
+        if (r) { lecturas.push(r); if (EDOCTA.validar(r).ok && !r.saldoCalculado) { r.lecturas = k + 1; return bnMarcarOcr(r); } }
+        if (lecturas.length >= 2) { const c = EDOCTA.combinar(lecturas); if (c && EDOCTA.validar(c).ok && !c.saldoCalculado) return bnMarcarOcr(c); }
       }
     } finally { try { await w.terminate(); } catch (e) {} }
-    return EDOCTA.leer(po);
+    if (!lecturas.length) { if (rTxt) return rTxt; throw new Error('No pude leer este estado de cuenta (ni como texto ni como imagen)'); }
+    { const c = EDOCTA.combinar(lecturas); if (c && EDOCTA.validar(c).ok) return bnMarcarOcr(c); const ok1 = lecturas.find(r => EDOCTA.validar(r).ok); if (ok1) return bnMarcarOcr(ok1); }
+    const c = EDOCTA.combinar(lecturas) || lecturas[0]; c.revisar = true; return c;
+  }
+  /** OCR que cuadra al centavo contra los totales DEL ESTADO (no calculados): se puede guardar sin revisión manual. */
+  function bnMarcarOcr(r) {
+    r.revisar = !!r.saldoCalculado;
+    r.avisos = (r.avisos || []).filter(a => !/revisa los movimientos antes de guardar/i.test(a)).concat(['Leído por OCR (imagen)' + (r.lecturas > 1 ? ' en ' + r.lecturas + ' lecturas' : '') + ': cuadra al centavo con los totales del estado.']);
+    return r;
   }
   function cargarTesseract() {
     if (window.Tesseract) return Promise.resolve(window.Tesseract);
@@ -5868,7 +5951,7 @@ const App = (() => {
       const cab = `<b>${esc(it.nombre)}</b>` + (r.banco ? `<br>${esc(r.banco)} ${esc(r.producto || '')} ${r.numero ? '…' + esc(String(r.numero).slice(-4)) : ''} · ${esc(fechaTxt(r.desde || ''))} al ${esc(fechaTxt(r.hasta || ''))} · ${nf((r.movs || []).length)} movimientos (${esc(r.origen || '')})` : '');
       let est = '';
       if (it.estado === 'leyendo') est = '<span class="etq">Leyendo…</span>';
-      else if (it.estado === 'ocr') est = `<span class="etq av">Leyendo imagen (OCR) pág. ${it.pag || 1}${it.prog !== undefined ? ' · ' + it.prog + ' %' : ''}…</span>`;
+      else if (it.estado === 'ocr') est = `<span class="etq av">Leyendo imagen (OCR)${it.pasada > 1 ? ' · lectura ' + it.pasada + ' de ' + it.pasadas : ''} · pág. ${it.pag || 1}${it.prog !== undefined ? ' · ' + it.prog + ' %' : ''}…</span>`;
       else if (it.estado === 'error') est = `<span class="etq mal">✖ ${esc(it.error)}</span>`;
       else if (it.estado === 'espera') est = '<span class="etq">En espera</span>';
       else if (it.estado === 'bajando') est = '<span class="etq">Descargando de Drive…</span>';
@@ -5884,8 +5967,10 @@ const App = (() => {
             <button class="btn primario fijo" ${v.ok && it.cuenta ? '' : 'disabled'} onclick="App.bnGuardar(${i})">💾 Guardar</button></div>` +
           (r.revisar && v.ok ? '<small class="muted">Revisa los movimientos (✏️) antes de guardar: este archivo no trae todos los controles del banco.</small>' : '');
       }
+      if (it.npOk && it.estado !== 'guardado') est += '<br><small class="muted">📂 Guardado en "No procesados" para revisarlo después.</small>';
       return `<div class="tarjeta" style="margin-top:8px">${cab}<div style="margin-top:4px">${est}</div></div>`;
-    }).join('') + (BN.cola.filter(x => x.estado === 'listo').length > 1 ? `<div class="acciones"><button class="btn primario" onclick="App.bnGuardarTodos()">💾 Guardar todos los que cuadran</button></div>` : '');
+    }).join('') + (BN.cola.filter(x => x.estado === 'listo').length > 1 ? `<div class="acciones"><button class="btn primario" onclick="App.bnGuardarTodos()">💾 Guardar todos los que cuadran</button></div>` : '') +
+      (BN.cola.some(x => (x.estado === 'error' || (x.estado === 'revisar' && !(x.v && x.v.ok))) && !x.npOk && !x.npId) && !BN.cola.some(x => ['espera', 'leyendo', 'ocr', 'bajando'].includes(x.estado)) ? `<div class="acciones"><button class="btn" onclick="App.bnMandarNoProc()">📂 Mandar a "No procesados" los que no se pudieron leer</button></div>` : '');
   }
   function bnCuentaCola(i, v) { const it = BN.cola[i]; it.cuenta = v; const c = bnCta(v); if (c.tipo && !it.r.tipo) it.r.tipo = c.tipo; it.v = EDOCTA.validar(it.r); bnPintarCola(); }
   function bnUsoCola(i, v) { BN.cola[i].uso = v; }
@@ -5903,6 +5988,7 @@ const App = (() => {
         } else throw e;
       }
       it.estado = 'guardado'; it.guardadoEn = x.cuenta; it.avisosSrv = x.avisos; BN.t = 0;
+      if (it.npId) { try { await pedir('resolverNoProcesado', { id: it.npId, nota: 'cargado ' + x.cuenta }, true); } catch (e) {} }
       if (!sin) toast('✔ ' + x.cuenta + ': ' + x.movs + ' movimientos guardados');
     } catch (e) { it.error = e.message || String(e); it.estado = /Ya está cargado/.test(it.error) ? 'duplicado' : 'error'; if (!sin) toast(it.error, true); }
     if (it.estado === 'guardado' && it.auto) it.file = null;
@@ -6282,22 +6368,29 @@ const App = (() => {
       const anio = x => Number(String(x || '').slice(0, 4)), ok = x => anio(x) >= 2015 && anio(x) <= new Date().getFullYear() + 1;
       if (r.hasta && r.corte && !ok(r.hasta) && ok(r.corte)) r.hasta = r.corte;
       if (r.corte && r.hasta && !ok(r.corte) && ok(r.hasta)) r.corte = r.hasta;
+      if (r.desde && r.hasta && r.hasta < r.desde && r.corte && r.corte > r.desde) r.hasta = r.corte;
       if (!r.desde && r.hasta) { const h = r.hasta.split('-').map(Number), d = new Date(h[0], h[1] - 2, h[2] + 1); r.desde = iso(d.getFullYear(), d.getMonth() + 1, d.getDate()); r.avisos.push('No pude leer el inicio del periodo; lo calculé (un mes antes del corte). Revísalo.'); }
       const ult = re => valor(L, re, { ultimo: true });
       const pagos = ult(/PAGOS\s*Y\s*ABONOS/i), compras = ult(/COMPRAS\s*Y\s*CARGOS/i), comis = ult(/^COMISIONES/i) || 0;
       r.resumen = { saldoInicial: ult(/SALDO\s*ANTERIOR/i), abonos: pagos, cargos: compras === null ? null : r2(compras + comis), saldoFinal: ult(/SALDO\s*ACTUAL/i) };
-      let hx = null, en = false, adic = false;
+      let hx = null, en = false, adic = false, hecho = false;
       for (const l of L) {
-        if (/ETALLE\s*DE\s*MOVIMIENTOS/i.test(l.t)) { en = true; adic = /ADICIONAL/i.test(l.t); continue; }
+        if (/ETALLE\s*DE\s*MOV|DE\s*MOVI\s*\w*ENTOS\s*DEL/i.test(l.t)) { en = true; adic = /ADICIONAL/i.test(l.t); continue; }
+        // si el OCR no leyó el título "DETALLE DE MOVIMIENTOS", el renglón de encabezados (… Abonos) también abre la sección
+        if (!en && !hecho && /\bAbonos\b/i.test(l.t) && !/\d/.test(l.t) && l.items.length <= 8) { en = true; continue; }
         if (!en) continue;
         const ab = l.items.find(i => /^Abonos$/i.test(i.s)); if (ab) { hx = ab.x; continue; }
         // cada sección (titular y tarjetas adicionales) cierra con "Sub Total"; el "TOTAL" cierra todo (después vienen los planes a meses)
         if (/^TOTAL/i.test(l.t)) break;
-        if (/^Sub\s*Total/i.test(l.t)) { en = false; continue; }
+        if (/^Sub\s*Total/i.test(l.t)) { en = false; hecho = true; continue; }
         // el OCR a veces lee el día con letras ("LO-MAR" = 10-MAR, "I9-FEB" = 19-FEB)
-        const t0 = l.t.replace(/^([0-9LIl|Oo]{1,2})-([A-Z]{3})\b/i, (x, a, b) => a.replace(/[LIl|]/g, '1').replace(/[Oo]/g, '0') + '-' + b);
+        const t0 = l.t.replace(/^(\d)\s(\d)-/, '$1$2-').replace(/^([0-9LIl|Oo]{1,2})-([A-Z]{3})\b/i, (x, a, b) => a.replace(/[LIl|]/g, '1').replace(/[Oo]/g, '0') + '-' + b);
         const m = t0.match(/^(\d{1,2}-[A-Z]{3})\b\s*(.*)$/i);
-        const ms = montosDe(l); if (!m || !ms.length) continue;
+        let ms = montosDe(l);
+        // el OCR a veces se come el punto decimal ("3992" = 39.92): el último dato del renglón, si son puros dígitos, es el importe en centavos
+        if (m && !ms.length && l.items.length >= 3) { const u = l.items[l.items.length - 1], mm = String(u.s).match(/^([-—–]?)(\d{3,7})$/);
+          if (mm && l.items.indexOf(u) > 1) { const c = mm[2], v = c.slice(0, -2) + '.' + c.slice(-2); u.s = (mm[1] ? '-' : '') + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2 }); ms = montosDe(l); } }
+        if (!m || !ms.length) continue;
         const im = ms[ms.length - 1], d = dinero(im.s), neg = d.neg || /^[-—–]$/.test((l.items[l.items.indexOf(im) - 1] || {}).s || '');
         const esAbono = neg || (hx !== null && im.x >= hx - 60);
         const desc = l.items.filter(i => i !== im && !/^[-—–]$/.test(i.s) && i.x > l.items[0].r).map(i => i.s).join(' ').replace(/^\d{3}\s+/, '').trim();
@@ -6419,7 +6512,76 @@ const App = (() => {
       return renglones(palabras.filter(w => String(w.text).trim()).map(w => ({ x: w.bbox.x0, r: w.bbox.x1, y: -(w.bbox.y0 + w.bbox.y1) / 2,
         s: String(w.text).trim().replace(/^([-—–]?\$?)(\d{1,3})\.(\d{3})\.(\d{2})$/, '$1$2,$3.$4') })), 12);   // "-9.950.57" (OCR) = -9,950.57
     }
-    return { preprocesar: preprocesar, renglonesOcr: renglonesOcr, renglones: renglones, leer: leer, validar: validar, detectar: detectar, mapaExcel: mapaExcel, excel: excel, textoTodo: textoTodo, dinero: dinero, fecha: fecha, esCredito: esCredito };
+    /**
+     * COMBINAR VARIAS LECTURAS OCR del mismo estado (distinta resolución): cada lectura se equivoca en dígitos distintos.
+     * Se vota cada dato del resumen y, para los movimientos, se alinean las lecturas y se elige la combinación de importes
+     * que da EXACTAMENTE los totales del estado. Si ninguna combinación cuadra, se deja la más votada (y no se guarda sola).
+     */
+    function combinar(rs) {
+      rs = rs.filter(r => r && r.movs);
+      if (!rs.length) return null;
+      if (rs.length === 1) return rs[0];
+      const voto = vals => { const c = {}; vals.filter(v => v !== null && v !== undefined && v !== '').forEach(v => c[v] = (c[v] || 0) + 1);
+        const k = Object.keys(c).sort((x, y) => c[y] - c[x])[0]; return k === undefined ? null : (typeof vals.find(v => String(v) === k) === 'number' ? Number(k) : k); };
+      const cand = vals => [...new Set(vals.filter(v => v !== null && v !== undefined))];
+      const anioOk = x => { const y = Number(String(x || '').slice(0, 4)); return y >= 2015 && y <= new Date().getFullYear() + 1; };
+      const base = rs.slice().sort((x, y) => y.movs.length - x.movs.length)[0];
+      const out = Object.assign({}, base, { avisos: ['Leído por OCR (imagen) combinando ' + rs.length + ' lecturas: revisa los movimientos antes de guardar.'], movs: [] });
+      ['numero', 'desde', 'hasta', 'corte', 'tipo', 'producto', 'clabe'].forEach(k => { const v = voto(rs.map(r => (/desde|hasta|corte/.test(k) && !anioOk(r[k])) ? null : r[k])); if (v !== null) out[k] = v; });
+      // resumen: el voto de cada dato y, si la ecuación del saldo no cierra, la combinación de candidatos que sí cierra
+      const cred = esCredito(out), K = ['saldoInicial', 'cargos', 'abonos', 'saldoFinal'], C = {};
+      const leido = (r, k) => k === 'saldoFinal' && r.saldoCalculado ? null : (r.resumen || {})[k];   // un saldo calculado no es un dato leído
+      K.forEach(k => C[k] = cand(rs.map(r => leido(r, k))));
+      const R = {}; K.forEach(k => R[k] = voto(rs.map(r => leido(r, k))));
+      const cierra = x => [x.saldoInicial, x.cargos, x.abonos, x.saldoFinal].every(v => v !== null && v !== undefined) && Math.abs(r2(cred ? x.saldoInicial + x.cargos - x.abonos : x.saldoInicial + x.abonos - x.cargos) - x.saldoFinal) < 0.005;
+      if (!cierra(R)) {
+        let hallado = null;
+        const opc = K.map(k => C[k].length ? C[k] : [null]);
+        (function bus(i, acc) { if (hallado) return; if (i === K.length) { if (cierra(acc)) hallado = Object.assign({}, acc); return; } opc[i].forEach(v => bus(i + 1, Object.assign({}, acc, { [K[i]]: v }))); })(0, {});
+        if (hallado) Object.assign(R, hallado);
+        else if (R.saldoFinal === null && [R.saldoInicial, R.cargos, R.abonos].every(v => v !== null)) R.saldoFinal = r2(cred ? R.saldoInicial + R.cargos - R.abonos : R.saldoInicial + R.abonos - R.cargos);
+      }
+      out.resumen = Object.assign({}, base.resumen, R);
+      // movimientos: se alinean contra la lectura con más renglones (misma fecha y mismo tipo; el importe y la descripción más parecidos)
+      const tipo = m => m.abono ? 'a' : 'c', imp = m => m.abono || m.cargo;
+      const parecido = (x, y) => { const a = String(x).replace(/\D/g, ''), b = String(y).replace(/\D/g, ''); let n = 0; for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[a.length - 1 - i] === b[b.length - 1 - i]) n++; return n - Math.abs(a.length - b.length); };
+      const pal = d => String(d || '').toUpperCase().replace(/[^A-ZÁÉÍÓÚÑ ]/g, ' ').split(/\s+/).filter(w => w.length >= 4);
+      const simDesc = (x, y) => { const a = pal(x), b = new Set(pal(y)); if (!a.length || !b.size) return 0; return a.filter(w => b.has(w)).length / Math.max(a.length, b.size); };
+      const slots = base.movs.map(m => ({ m: m, vals: [imp(m)], visto: 1 }));
+      rs.filter(r => r !== base).forEach(r => {
+        const usados = new Set();
+        r.movs.forEach(m => {
+          let mejor = -1, pts = -99;
+          slots.forEach((s, j) => {
+            if (usados.has(j) || s.m.fecha !== m.fecha || tipo(s.m) !== tipo(m)) return;
+            const dg = String(Math.round(imp(m) * 100)).length, pi = parecido(imp(s.m), imp(m)), sd = simDesc(s.m.desc, m.desc);
+            if (sd < 0.5 && pi < dg - 1) return;   // ni la descripción ni el importe se parecen: es otro renglón
+            const p = pi + sd * 4; if (p > pts) { pts = p; mejor = j; } });
+          if (mejor >= 0) { usados.add(mejor); slots[mejor].vals.push(imp(m)); slots[mejor].visto++; if (String(m.desc).length > String(slots[mejor].m.desc).length) slots[mejor].m = Object.assign({}, slots[mejor].m, { desc: m.desc }); }
+          else slots.push({ m: m, vals: [imp(m)], visto: 1, extra: true });
+        });
+      });
+      // por tipo (cargos / abonos): la combinación que da el total del estado
+      ['c', 'a'].forEach(t => {
+        const ss = slots.filter(s => tipo(s.m) === t), meta = t === 'a' ? out.resumen.abonos : out.resumen.cargos;
+        ss.forEach(s => { const c = {}; s.vals.forEach(v => c[v] = (c[v] || 0) + 1); s.op = Object.keys(c).map(Number).sort((x, y) => c[y] - c[x]); if (s.extra || s.visto < rs.length) s.op.push(0); s.sel = s.op[0]; });
+        if (meta === null || meta === undefined) return;
+        const suma = () => r2(ss.reduce((x, s) => x + s.sel, 0));
+        if (Math.abs(suma() - meta) < 0.005) return;
+        const amb = ss.filter(s => s.op.length > 1);
+        let combos = amb.reduce((x, s) => x * s.op.length, 1); if (combos > 50000) return;
+        const fijo = r2(ss.filter(s => s.op.length === 1).reduce((x, s) => x + s.sel, 0));
+        let ok = null;
+        (function bus(i, acc) { if (ok) return; if (i === amb.length) { if (Math.abs(r2(fijo + acc.reduce((x, v) => x + v, 0)) - meta) < 0.005) ok = acc.slice(); return; } for (const v of amb[i].op) { acc.push(v); bus(i + 1, acc); acc.pop(); if (ok) return; } })(0, []);
+        if (ok) amb.forEach((s, i) => s.sel = ok[i]);
+      });
+      out.movs = slots.filter(s => s.sel).map(s => Object.assign({}, s.m, tipo(s.m) === 'a' ? { abono: s.sel, cargo: 0 } : { cargo: s.sel, abono: 0 }))
+        .sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)));
+      out.lecturas = rs.length;
+      out.saldoCalculado = rs.every(r => r.saldoCalculado);
+      return out;
+    }
+    return { combinar: combinar, preprocesar: preprocesar, renglonesOcr: renglonesOcr, renglones: renglones, leer: leer, validar: validar, detectar: detectar, mapaExcel: mapaExcel, excel: excel, textoTodo: textoTodo, dinero: dinero, fecha: fecha, esCredito: esCredito };
   })();
   /*EDOCTA-FIN*/
 
@@ -6431,7 +6593,8 @@ const App = (() => {
   const LIBS = {
     jspdf: { url: CDN + 'jspdf/2.5.1/jspdf.umd.min.js', ok: () => window.jspdf && window.jspdf.jsPDF ? window.jspdf : null },
     exceljs: { url: CDN + 'exceljs/4.4.0/exceljs.min.js', ok: () => window.ExcelJS || null },
-    xlsx: { url: CDN + 'xlsx/0.18.5/xlsx.full.min.js', ok: () => window.XLSX || null }
+    xlsx: { url: CDN + 'xlsx/0.18.5/xlsx.full.min.js', ok: () => window.XLSX || null },
+    jszip: { url: CDN + 'jszip/3.10.1/jszip.min.js', ok: () => window.JSZip || null }
   };
   async function textoLib(n) {
     const L = LIBS[n];
@@ -9904,7 +10067,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    vistaBancos: t => V.bancos(t), bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    vistaBancos: t => V.bancos(t), bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
