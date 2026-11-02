@@ -920,6 +920,8 @@ label:has(> select[id$="Suc"]) > select:focus, label:has(input[id$="Cli"]) input
   .eq-barra { height: 7px; background: var(--superficie-2); border-radius: 4px; overflow: hidden; min-width: 70px; margin: 2px 0; }
   .eq-barra i { display: block; height: 100%; border-radius: 4px; }
   .nowrap { white-space: nowrap; }
+  .ec-pago { margin-top: 12px; border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+  .ec-pago-ctas { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 16px; margin: 4px 0; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

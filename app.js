@@ -2558,6 +2558,8 @@ const App = (() => {
         { t: 'Importe', num: 1, cls: 'ocultar-movil', h: x => $$(x.total) }, { t: 'Pagado', num: 1, cls: 'ocultar-movil', h: x => $$(x.cobrado) }, { t: 'Saldo', num: 1, h: x => `<b>${$$(x.saldo)}</b>` },
         { t: '', cls: 'no-imprimir', h: x => `<span style="white-space:nowrap"><button class="btn chico" onclick="event.stopPropagation();App.verVentaId('${x.id}')">Ver</button>${puede('cobranza') ? ` <button class="btn chico primario" onclick="event.stopPropagation();App.formCobro('${x.id}', ${x.saldo})">Cobrar</button>` : ''}</span>` }], d.notas)}
       ${d.pagos.length ? `<p style="margin:12px 0 4px"><b>Pagos recibidos (últimos ${d.diasPagos} días)</b></p>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Nota', k: 'folio' }, { t: 'Forma de pago', k: 'forma' }, { t: 'Importe', num: 1, h: x => $$(x.monto) }], d.pagos) : ''}
+      ${d.bancos && d.bancos.cuentas && d.bancos.cuentas.length ? `<div class="ec-pago"><div class="fila" style="align-items:center"><b style="flex:1">Datos para su pago</b>${puede('dueno') ? `<button class="btn chico no-imprimir" style="flex:0 0 auto" onclick="App.bnFormPago('${esc(d.cliente.id)}')">✏️ Cambiar cuentas</button>` : ''}</div>
+        ${d.bancos.titular ? `<div class="peq">Titular: <b>${esc(d.bancos.titular)}</b></div>` : ''}<div class="ec-pago-ctas">${d.bancos.cuentas.map(b => `<div><b>${esc(b.banco)}</b>${b.lineas.map(l => '<br><small>' + esc(l) + '</small>').join('')}</div>`).join('')}</div>${d.bancos.nota ? `<div class="peq"><b>${esc(d.bancos.nota)}</b></div>` : ''}</div>` : ''}
       </div></div>
       <div class="acciones no-imprimir">
         <button class="btn primario" onclick="App.pdfEdoCta('${esc(d.cliente.id)}')">📄 PDF para enviar</button>
@@ -2570,7 +2572,7 @@ const App = (() => {
     return `Estimado cliente ${d.cliente.razon || d.cliente.nombre}:\nLe compartimos su estado de cuenta al ${d.corte} con Interés Veterinario®.\n\n` +
       `Saldo a pagar: ${$$(R.saldo)}` + (R.vencido > 0.009 ? `\nVencido: ${$$(R.vencido)} (${venc.length} ${venc.length === 1 ? 'nota' : 'notas'})` : '') +
       '\n\nNotas pendientes:\n' + d.notas.map(n => `• ${n.folio} del ${n.fecha}: ${$$(n.saldo)}${n.dias > 0 ? ' (vencida ' + n.dias + ' días)' : ''}`).join('\n') +
-      `\n\nDatos para su pago (${d.bancos.titular}):\n` + d.bancos.cuentas.map(b => b.banco + ': ' + b.lineas.join(' · ')).join('\n') +
+      `\n\nDatos para su pago${d.bancos.titular ? ' (' + d.bancos.titular + ')' : ''}:\n` + d.bancos.cuentas.map(b => b.banco + ': ' + b.lineas.join(' · ')).join('\n') +
       '\n\nSi ya realizó su pago, le agradecemos enviarnos el comprobante y hacer caso omiso de este mensaje. ¡Gracias por su preferencia!';
   }
   async function pdfEdoCta(idCliente) {
@@ -6347,7 +6349,7 @@ const App = (() => {
   /* ---------- Cuentas (catálogo) y acceso del contador ---------- */
   async function bnCuentas() {
     let d; try { d = await bnDatos(true); } catch (e) { $('#bnCont').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
-    $('#bnCont').innerHTML = `<div class="tarjeta"><div class="fila"><span style="flex:1" class="muted peq">Las cuentas se dan de alta solas al subir su primer estado de cuenta; aquí puedes corregirlas o marcar si son de la empresa o personales.</span>
+    $('#bnCont').innerHTML = (puede('dueno') ? '<div class="tarjeta" id="bnPago"><h3>💳 Datos para que te paguen</h3><div class="vacio">Cargando…</div></div>' : '') + `<div class="tarjeta"><div class="fila"><span style="flex:1" class="muted peq">Las cuentas se dan de alta solas al subir su primer estado de cuenta; aquí puedes corregirlas o marcar si son de la empresa o personales.</span>
       <button class="btn fijo" onclick="App.bnFormCuenta('')">➕ Cuenta</button></div>` + tabla([
         { t: 'Cuenta', h: c => `<b>${nomCta(c)}</b><br><small class="muted">${esc(c.numero)}${c.clabe ? ' · CLABE ' + esc(c.clabe) : ''}</small>` }, { t: 'Tipo', h: c => esc(c.tipo) },
         { t: 'Uso', h: c => `<span class="etq ${c.uso === 'Empresa' ? 'ok' : c.uso === 'Personal' ? '' : 'av'}">${esc(c.uso)}</span>` }, { t: 'Notas', h: c => esc(c.comentarios || '') },
@@ -6357,6 +6359,47 @@ const App = (() => {
         <div class="fila"><label>Nombre<input id="ctNom"></label><label>Usuario<input id="ctUsr" autocapitalize="off"></label><label>Correo<input id="ctMail" type="email"></label></div>
         <div class="fila"><label>Contraseña inicial (mín. 8)<input id="ctPass" type="text" autocomplete="off"></label><button class="btn primario fijo" onclick="App.bnAltaContador()">➕ Dar de alta</button></div></div>` : '');
     bnCtaCli('', false);
+    if (puede('dueno')) bnPago();
+  }
+  /** Cuentas que aparecen en los estados de cuenta (PDF, pantalla y recordatorio por WhatsApp/correo). */
+  async function bnPago() {
+    const el = $('#bnPago'); if (!el) return;
+    let c; try { c = S.pagoEC = await pedir('datosPagoEC', {}, true); } catch (e) { el.innerHTML = '<h3>💳 Datos para que te paguen</h3><div class="vacio">Requiere conexión</div>'; return; }
+    const act = (c.cuentas || []).filter(x => x.activa !== false);
+    el.innerHTML = `<div class="fila" style="align-items:center"><h3 style="flex:1;margin:0">💳 Datos para que te paguen</h3><button class="btn fijo" onclick="App.bnFormPago()">✏️ Editar / agregar cuenta</button></div>
+      <p class="muted peq">Son las cuentas que aparecen en los <b>estados de cuenta</b> de tus clientes (PDF, pantalla y recordatorios por WhatsApp o correo).</p>
+      ${c.titular ? `<div class="peq">Titular: <b>${esc(c.titular)}</b></div>` : ''}
+      <div class="ec-pago-ctas">${act.map(x => `<div><b>${esc(x.banco)}</b>${[x.titular && x.titular !== c.titular ? 'Titular: ' + x.titular : '', x.cuenta ? 'No. Cta. ' + x.cuenta : '', x.tarjeta ? 'Tarjeta: ' + x.tarjeta : '', x.clabe ? 'CLABE: ' + x.clabe : '', x.extra].filter(Boolean).map(l => '<br><small>' + esc(l) + '</small>').join('')}</div>`).join('') || '<div class="vacio">Sin cuentas</div>'}</div>
+      ${(c.cuentas || []).length > act.length ? `<p class="muted peq">${(c.cuentas || []).length - act.length} cuenta(s) oculta(s).</p>` : ''}`;
+  }
+  async function bnFormPago(idCliente) {
+    let c = S.pagoEC; if (!c) { try { c = S.pagoEC = await pedir('datosPagoEC', {}); } catch (e) { return; } }
+    S.pagoEd = JSON.parse(JSON.stringify(c)); S.pagoCli = idCliente || ''; if (!S.pagoEd.cuentas.length) S.pagoEd.cuentas.push({ banco: '', activa: true });
+    pintarFormPago();
+  }
+  function pintarFormPago() {
+    const c = S.pagoEd, inp = (i, k, ph, extra) => `<input data-i="${i}" data-k="${k}" value="${esc(c.cuentas[i][k] || '')}" placeholder="${ph}" ${extra || ''}>`;
+    modal('💳 Datos para que te paguen', `<p class="muted peq">Aparecen en los estados de cuenta de todos tus clientes. Puedes ocultar una cuenta sin borrarla.</p>
+      <label>Titular (a nombre de quién están las cuentas)<input id="pgTit" value="${esc(c.titular || '')}"></label>
+      ${c.cuentas.map((x, i) => `<div class="tarjeta" style="padding:10px;margin:8px 0"><div class="fila" style="align-items:flex-end">
+          <label>Banco${inp(i, 'banco', 'BBVA, Banorte…')}</label><label>No. de cuenta${inp(i, 'cuenta', '049 132 4543')}</label><label>CLABE (18 dígitos)${inp(i, 'clabe', '012 130 …', 'inputmode="numeric"')}</label></div>
+        <div class="fila" style="align-items:flex-end"><label>Tarjeta (opcional)${inp(i, 'tarjeta', '4915-…')}</label><label>Otros datos (opcional)${inp(i, 'extra', 'Sucursal 2297, referencia…')}</label>
+          <label>Titular si es otro (opcional)${inp(i, 'titular', '')}</label></div>
+        <div class="fila" style="align-items:center"><label class="check"><input type="checkbox" data-i="${i}" data-k="activa" ${x.activa !== false ? 'checked' : ''}> Mostrar en los estados de cuenta</label>
+          <span style="flex:1"></span>${i ? `<button class="icono" title="Subir" onclick="App.pagoMover(${i}, -1)">⬆️</button>` : ''}<button class="icono" title="Quitar" onclick="App.pagoMover(${i}, 0)">🗑️</button></div></div>`).join('')}
+      <button class="btn" onclick="App.pagoMover(-1, 1)">➕ Agregar otra cuenta</button>
+      <label style="margin-top:8px">Nota para el cliente (opcional)<input id="pgNota" value="${esc(c.nota || '')}" placeholder="p. ej. Use su número de cliente como referencia"></label>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarPago()">Guardar</button></div>`);
+    document.querySelectorAll('#modal [data-k]').forEach(e => e.oninput = e.onchange = () => { const x = c.cuentas[+e.dataset.i]; if (x) x[e.dataset.k] = e.type === 'checkbox' ? e.checked : e.value; });
+    const t = $('#pgTit'); t.oninput = () => c.titular = t.value; const n = $('#pgNota'); n.oninput = () => c.nota = n.value;
+  }
+  function pagoMover(i, d) {
+    const l = S.pagoEd.cuentas;
+    if (i < 0) l.push({ banco: '', activa: true }); else if (d === 0) { if (!confirm('¿Quitar la cuenta ' + (l[i].banco || '') + '? (Si solo quieres que no aparezca, desmarca "Mostrar")')) return; l.splice(i, 1); } else { const x = l.splice(i, 1)[0]; l.splice(i + d, 0, x); }
+    pintarFormPago();
+  }
+  async function guardarPago() {
+    try { S.pagoEC = await pedir('guardarDatosPagoEC', S.pagoEd); cerrarModal(); toast('✔ Datos de pago guardados'); bnPago(); if (S.pagoCli) verEdoCta(S.pagoCli); } catch (e) {}
   }
   /** Cuentas de clientes: se aprenden solas al conciliar; aquí se corrigen, se quitan o se agregan. */
   async function bnCtaCli(idCliente, enModal) {
@@ -10495,7 +10538,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    bajarXmlGasto, zipGastos, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
