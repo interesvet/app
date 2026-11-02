@@ -3560,13 +3560,13 @@ const App = (() => {
   /* ---------- FACTURAS Y NOTAS DE CRÉDITO DE PROVEEDORES (CFDI por correo o subidos) ---------- */
   const verBandejaCfdi = () => puede('compras') && !!U().todasSucursales;
   async function contarCfdi() {
-    try { const r = await pedir('comprasCfdi', {}); S.cfdiCompras = r; const el = $('#cfdiN'); if (el) el.innerHTML = r.pendientes.length ? ` <span class="etq" style="background:var(--aviso);color:#fff">${r.pendientes.length}</span>` : ''; } catch (e) {}
+    try { const r = await pedir('comprasCfdi', {}); S.cfdiCompras = r; const el = $('#cfdiN'); if (el) el.innerHTML = r.pendientes.length ? ` <span class="etq" style="background:var(--aviso-fuerte);color:#fff">${r.pendientes.length}</span>` : ''; } catch (e) {}
   }
   async function bandejaCfdi() {
     $('#cCont').innerHTML = '<div class="vacio">Cargando…</div>';
     let r; try { r = S.cfdiCompras = await pedir('comprasCfdi', {}); } catch (e) { if ($('#cCont')) $('#cCont').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     if (!$('#cCont')) return;
-    const el = $('#cfdiN'); if (el) el.innerHTML = r.pendientes.length ? ` <span class="etq" style="background:var(--aviso);color:#fff">${r.pendientes.length}</span>` : '';
+    const el = $('#cfdiN'); if (el) el.innerHTML = r.pendientes.length ? ` <span class="etq" style="background:var(--aviso-fuerte);color:#fff">${r.pendientes.length}</span>` : '';
     const optsSug = x => x.sugeridas.map(o => `<option value="${esc(o.id)}">${o.igual ? '✓ ' : ''}${esc(o.folio)} · ${esc(o.fecha)} · ${$$(o.total)}${o.saldo !== undefined ? ' · saldo ' + $$(o.saldo) : ''}${o.factura ? ' · fact. ' + esc(o.factura) : ''}</option>`).join('');
     const EST_REP = { ligado: ['ok', '✔ ligado al pago'], 'sin pago': ['av', 'pago sin capturar'], 'sin orden': ['mal', 'la factura no está en ninguna orden'], excede: ['mal', 'mayor que el saldo de la orden'] };
     const tarjetaRep = (x, i) => `<div class="tarjeta" style="border-left:4px solid var(--s2, #3b82f6)">
@@ -3864,7 +3864,7 @@ const App = (() => {
     const pend = d.lineas.filter(l => !l.registrado);
     modal('Orden ' + d.folio, `<div class="imprimible"><div class="nota">
       <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.suc)}</div><div>Destino: ${esc(sucNom(d.suc))}</div></div><div style="text-align:right"><b>ORDEN DE COMPRA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div>
-        <div style="margin-top:4px">Factura: <b>${d.factura ? esc(d.factura) : '<span style="color:#b97300">sin capturar</span>'}</b></div>${d.nota ? `<div>Nota del proveedor: <b>${esc(d.nota)}</b></div>` : ''}${d.uuid ? `<div style="font-size:10px;color:#666">Folio fiscal: ${esc(d.uuid)}</div>` : ''}</div></div>
+        <div style="margin-top:4px">Factura: <b>${d.factura ? esc(d.factura) : '<span style="color:var(--aviso)">sin capturar</span>'}</b></div>${d.nota ? `<div>Nota del proveedor: <b>${esc(d.nota)}</b></div>` : ''}${d.uuid ? `<div style="font-size:10px;color:#666">Folio fiscal: ${esc(d.uuid)}</div>` : ''}</div></div>
       ${htmlProvOC(d)}
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', h: x => x.registrado ? esc(x.lote) : x.lote && x.lote !== 'SIN LOTE' ? esc(x.lote) + ' <small class="muted">(por confirmar)</small>' : '<span class="muted">al recibir</span>' }, { t: 'Cad.', h: x => esc(x.cad || '') }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$((x.sub || x.cant * x.precio) - (x.desc || 0)) }, { t: 'IVA $', num: 1, h: x => $$(x.iva || 0) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], d.lineas)}
       <div class="totales" style="margin-top:10px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div>${d.descEsp ? `<div><span>Descuento especial</span><span>−${$$(d.descEsp)}</span></div>` : ''}${d.descPP ? `<div><span>Descuento pronto pago</span><span>−${$$(d.descPP)}</span></div>` : ''}<div><span>IVA</span><span>${$$(d.iva)}</span></div>${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}
