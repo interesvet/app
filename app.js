@@ -653,6 +653,7 @@ const App = (() => {
     { id: 'compras', t: 'Compras', i: '📦', p: ['compras', 'traspasos'] },
     { id: 'reclamaciones', t: 'Reclamaciones', i: '📣', p: ['ventas', 'compras', 'inventario'] },
     { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos', 'ver_gastos'] },
+    { id: 'equipo', t: 'Equipo', i: '🧑‍💼', p: 'equipo' },
     { id: 'comisiones', t: 'Comisiones', i: '💼', p: 'dueno' },
     { id: 'bancos', t: 'Bancos', i: '🏦', p: 'bancos' },
     { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'requisiciones', 'ajustes', 'mermas', 'inventario_fisico'] },
@@ -3021,6 +3022,7 @@ const App = (() => {
         tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Categoría', h: x => !editaGas() ? esc(x.cat) + `<br><small class="muted">${esc(x.grupo || '')}</small>` : x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + ` <button class="icono no-imprimir" title="Cambiar la categoría de esta factura" onclick="App.editarCatGasto('${esc(x.uuid)}')">✏️</button><br><small class="muted">${esc(x.grupo)}</small>` },
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
           { t: 'Sucursal', h: (x) => lect ? esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) : `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
+          ...(puede('equipo') ? [{ t: 'Empleado', cls: 'ocultar-movil', h: x => x.grupo === 'Operación' || x.grupo === 'Financiero' ? `<select class="chico" onchange="App.asignarEmpGasto('${esc(x.uuid)}', this.value)"><option value="">—</option>${(D().vendedores || []).filter(v => !/contador/i.test(v.rol || '')).map(v => `<option value="${esc(v.id)}" ${String(v.id) === String(x.emp || '') ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('')}</select>` : '' }] : []),
           { t: 'Factura', h: x => `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>${x.xml ? `<button class="btn chico" title="Descargar el XML" onclick="App.bajarXmlGasto('${esc(x.uuid)}')">XML</button>` : ''}` },
           ...(lect ? [] : [{ t: 'Flete', h: x => x.flete ? `<button class="btn chico" style="color:var(--ok);border-color:var(--ok)" title="Flete ligado a ${x.flete} documento(s) (órdenes de compra / notas de venta)" onclick="App.fleteLigar('${esc(x.uuid)}')">🚚 ${x.flete}</button>`
             : `<button class="btn chico" ${x.fleteSug ? 'title="Parece flete: ligarlo a sus compras o ventas"' : 'style="opacity:.4" title="Si es un flete que pagaste, ligarlo a sus compras o ventas"'} onclick="App.fleteLigar('${esc(x.uuid)}')">🚚${x.fleteSug ? ' Ligar' : ''}</button>` }]),
@@ -8022,6 +8024,144 @@ const App = (() => {
 
   /* ---------- 💼 COMISIONES (solo el dueño): comisionistas independientes, comisión de sucursal y liquidaciones ---------- */
   const COM_TABS = [['comis', '💼 Comisionistas'], ['liquidar', '🧮 Liquidar'], ['notas', '🧾 Notas'], ['liqs', '📄 Liquidaciones']];
+  /* ---------- 👥 EQUIPO: desempeño de cada empleado (dueño, Administrador y contador) ---------- */
+  const EQ_ORD = [['venta', 'Venta'], ['deja', 'Lo que le deja a la empresa'], ['avance', '% de meta'], ['margen', 'Margen'], ['utilidad', 'Utilidad'], ['cobrado', 'Cobrado'], ['vencida', 'Cartera vencida'], ['gastos', 'Gastos']];
+  const eqSem = (v, bien, mal, inverso) => v === null || v === undefined ? '' : (inverso ? (v <= bien ? 'ok-txt' : v >= mal ? 'error' : 'aviso-txt') : (v >= bien ? 'ok-txt' : v <= mal ? 'error' : 'aviso-txt'));
+  const eqBarra = p => p === null || p === undefined ? '<small class="muted">sin meta</small>' : `<div class="eq-barra"><i style="width:${Math.min(100, p)}%;background:${p >= 100 ? 'var(--ok)' : p >= 80 ? 'var(--aviso)' : 'var(--peligro)'}"></i></div><small class="${eqSem(p, 100, 79)}"><b>${p}%</b></small>`;
+  V.equipo = () => {
+    const h = hoyISO(), f = alDia(S.feq || (S.feq = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, suc: '', orden: 'venta' }));
+    $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
+        <label>Desde<input type="date" id="eqDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="eqHasta" value="${f.hasta}"></label>
+        <label>Sucursal<select id="eqSuc">${opts(D().sucursales || [], f.suc || '', 'Todas')}</select></label>
+        <label>Ordenar por<select id="eqOrd">${opts(EQ_ORD, f.orden)}</select></label>
+        <button class="btn primario fijo" onclick="App.cargarEquipo()">Ver</button><button class="btn fijo" onclick="App.eqAsignarGastos()">⛽ Asignar gastos a empleados</button></div>
+        <p class="muted peq" style="margin-top:6px">🔒 Solo lo ven el dueño, el Administrador y el contador. Venta y utilidad sin IVA; cobranza y cartera con IVA. <b>Le deja a la empresa</b> = utilidad bruta de lo que vendió − sus gastos − su comisión − su sueldo.</p></div>
+      <div id="eqRes"><div class="vacio">Cargando…</div></div>`;
+    agregarMesAnio('eqDesde', 'eqHasta', cargarEquipo);
+    $('#eqSuc').onchange = cargarEquipo; $('#eqOrd').onchange = () => { S.feq.orden = $('#eqOrd').value; pintarEquipo(); };
+    cargarEquipo();
+  };
+  async function cargarEquipo() {
+    const f = S.feq = marcarHoy(Object.assign(S.feq || {}, { desde: $('#eqDesde').value, hasta: $('#eqHasta').value, suc: $('#eqSuc').value, orden: $('#eqOrd').value }));
+    $('#eqRes').innerHTML = '<div class="vacio">Calculando…</div>';
+    try { S.eq = await pedir('equipo', { desde: f.desde, hasta: f.hasta, suc: f.suc }); } catch (e) { $('#eqRes').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    pintarEquipo();
+  }
+  function pintarEquipo() {
+    const r = S.eq; if (!r || !$('#eqRes')) return; const t = r.totales, o = S.feq.orden || 'venta';
+    const lista = r.lista.slice().sort((a, b) => (b[o] === null ? -1e15 : b[o]) - (a[o] === null ? -1e15 : a[o]));
+    S.eqLista = lista;
+    const kpi = (ti, v, sub, cls) => `<div class="kpi"><small>${ti}</small><b class="${cls || ''}">${v}</b><span>${sub || ''}</span></div>`;
+    $('#eqRes').innerHTML = `<div class="kpis">
+        ${kpi('Venta del equipo', $$(t.venta), nf(t.notas) + ' notas' + (t.avance !== null ? ' · ' + t.avance + '% de la meta' : ''))}
+        ${kpi('Utilidad bruta', $$(t.utilidad), 'margen ' + t.margen + '%')}
+        ${kpi('Cobrado', $$(t.cobrado), 'con IVA')}
+        ${kpi('Cartera vencida', $$(t.vencida), 'de ' + $$(t.cxc) + ' por cobrar', t.vencida ? 'error' : '')}
+        ${kpi('Gastos + comisiones + sueldos', $$(t.gastos + t.comision + t.sueldo), 'gastos ' + $$(t.gastos) + ' · comisiones ' + $$(t.comision) + ' · sueldos ' + $$(t.sueldo))}
+        ${kpi('Le deja a la empresa', $$(t.deja), t.venta ? (t.deja / t.venta * 100).toFixed(1) + '% de la venta' : '', t.deja < 0 ? 'error' : 'ok-txt')}</div>
+      ${r.sinAsignar.n ? `<div class="aviso-cand">⛽ Hay <b>${nf(r.sinAsignar.n)}</b> facturas de gastos de operación (${$$(r.sinAsignar.monto)} sin IVA) sin empleado en este periodo. <button class="btn chico" onclick="App.eqAsignarGastos()">Asignarlas</button></div>` : ''}
+      <div class="tarjeta"><h3>Equipo · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3><p class="muted peq">Toca a una persona para ver su ficha completa.</p>` +
+      tabla([{ t: 'Empleado', h: x => `<div class="con-avatar">${avatar('vendFoto', x.id, x.foto, x.nombre)}<div><b>${esc(x.nombre)}</b>${x.activo ? '' : ' <small class="etq">baja</small>'}<br><small class="muted">${esc(x.puesto || x.rol)} · ${esc(sucNom(x.suc))}</small></div></div>` },
+        { t: 'Venta', num: 1, h: x => `<b>${$$(x.venta)}</b><br><small class="muted">${nf(x.notas)} notas · ${nf(x.clientesActivos)} clientes</small>` },
+        { t: 'Meta', h: x => eqBarra(x.avance) },
+        { t: 'Utilidad', num: 1, cls: 'ocultar-movil', h: x => `${$$(x.utilidad)}<br><small class="${eqSem(x.margen, 25, 15)}">${x.margen}%</small>` },
+        { t: 'Cobrado', num: 1, cls: 'ocultar-movil', h: x => $$(x.cobrado) + (x.diasCobro !== null ? `<br><small class="muted">${x.diasCobro} días prom.</small>` : '') },
+        { t: 'Vencida', num: 1, h: x => x.vencida ? `<span class="error">${$$(x.vencida)}</span><br><small class="muted">${x.vencidaPct}% de su cartera</small>` : '<small class="muted">—</small>' },
+        { t: 'Gastos', num: 1, cls: 'ocultar-movil', h: x => x.gastos ? $$(x.gastos) + (x.gastosPct !== null ? `<br><small class="${eqSem(x.gastosPct, 5, 10, true)}">${x.gastosPct}% de su venta</small>` : '') : '<small class="muted">—</small>' },
+        { t: 'Comisión + sueldo', num: 1, cls: 'ocultar-movil', h: x => x.comision || x.sueldo ? $$(x.comision + x.sueldo) : '<small class="muted">—</small>' },
+        { t: 'Le deja', num: 1, h: x => `<b class="${x.deja < 0 ? 'error' : 'ok-txt'}">${$$(x.deja)}</b>${x.dejaPct !== null ? `<br><small class="muted">${x.dejaPct}%</small>` : ''}` }],
+        lista, { clic: 'App.eqFichaIdx', vacio: 'Sin personal con movimientos en el periodo' }) + '</div>';
+  }
+  function eqFichaIdx(i) { const x = (S.eqLista || [])[i]; if (x) eqFicha(x.id); }
+  async function eqFicha(id) {
+    const f = S.feq || {}; S.eqId = id;
+    $('#eqRes').innerHTML = '<div class="vacio">Cargando la ficha…</div>';
+    let e; try { e = S.eqF = await pedir('empleado', { id: id, desde: f.desde, hasta: f.hasta }); } catch (er) { $('#eqRes').innerHTML = `<div class="vacio">${esc(er.message || 'Requiere conexión')}</div>`; return; }
+    S.charts.forEach(c => c.destroy()); S.charts = [];
+    const kpi = (ti, v, sub, cls) => `<div class="kpi"><small>${ti}</small><b class="${cls || ''}">${v}</b><span>${sub || ''}</span></div>`;
+    const sec = (ti, html) => `<div class="tarjeta"><h3>${ti}</h3>${html}</div>`;
+    $('#eqRes').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center">
+        <button class="btn fijo" onclick="App.pintarEquipo()">← Equipo</button>
+        <div class="con-avatar" style="flex:1">${avatar('vendFoto', e.id, e.foto, e.nombre)}<div><h3 style="margin:0">${esc(e.nombre)}${e.activo ? '' : ' <small class="etq">baja</small>'}</h3>
+          <small class="muted">${esc(e.puesto || e.rol)} · ${esc(sucNom(e.suc))}${e.ingreso ? ' · desde ' + esc(e.ingreso) : ''} · ${esc(e.periodo.desde)} al ${esc(e.periodo.hasta)}</small></div></div>
+        <button class="btn fijo" onclick="App.eqDatos()">✏️ Sueldo y datos</button><button class="btn fijo" onclick="App.eqAsignarGastos('${esc(e.id)}')">⛽ Asignarle gastos</button></div></div>
+      <div class="kpis">
+        ${kpi('Venta', $$(e.venta), nf(e.notas) + ' notas · ticket ' + $$(e.ticket))}
+        ${kpi('Meta', e.avance === null ? '—' : e.avance + '%', e.meta ? 'meta del periodo ' + $$(e.meta) + (S.eq && S.eq.lista ? '' : '') : 'sin meta (Seguimiento › Metas)', eqSem(e.avance, 100, 79))}
+        ${kpi('Utilidad bruta', $$(e.utilidad), 'margen ' + e.margen + '%', eqSem(e.margen, 25, 15))}
+        ${kpi('Cobrado', $$(e.cobrado), e.diasCobro !== null ? 'tardan ' + e.diasCobro + ' días en pagarle' : '')}
+        ${kpi('Cartera vencida', $$(e.vencida), e.vencidaPct + '% de ' + $$(e.cxc), e.vencida ? 'error' : 'ok-txt')}
+        ${kpi('Le deja a la empresa', $$(e.deja), e.dejaPct !== null ? e.dejaPct + '% de su venta' : '', e.deja < 0 ? 'error' : 'ok-txt')}</div>
+      <div class="rejilla-2">
+        ${sec('🧾 Ventas', `<table class="lineas"><tr><td>Venta neta (sin IVA)</td><td class="num"><b>${$$(e.venta)}</b></td></tr><tr><td>Notas · ticket promedio</td><td class="num">${nf(e.notas)} · ${$$(e.ticket)}</td></tr>
+          <tr><td>Descuentos que dio</td><td class="num">${$$(e.descuentos)} <small class="${eqSem(e.descPct, 3, 8, true)}">(${e.descPct}%)</small></td></tr>
+          <tr><td>Devoluciones · canceladas</td><td class="num">${$$(e.devoluciones)} (${nf(e.devNotas)}) · ${nf(e.canceladas)}</td></tr>
+          <tr><td>Cotizaciones · vendidas</td><td class="num">${nf(e.cotizaciones)} · ${nf(e.cotVendidas)}${e.conversion !== null ? ' (' + e.conversion + '%)' : ''}</td></tr>
+          <tr><td>Visitas realizadas</td><td class="num">${nf(e.visitas)}</td></tr></table>`)}
+        ${sec('👥 Clientes', `<table class="lineas"><tr><td>Le compraron en el periodo</td><td class="num"><b>${nf(e.clientesActivos)}</b></td></tr><tr><td>Clientes nuevos (primera compra)</td><td class="num">${nf(e.clientesNuevos)}</td></tr>
+          <tr><td>Cartera asignada</td><td class="num">${nf(e.cartera)}</td></tr><tr><td>Sin comprar hace 90 días o más</td><td class="num ${e.sinComprar ? 'error' : ''}">${nf(e.sinComprar)}</td></tr>
+          <tr><td>Concentración (3 clientes principales)</td><td class="num"><span class="${eqSem(e.concentracion, 50, 70, true)}">${e.concentracion}%</span></td></tr></table>`)}
+        ${sec('💰 Resultado para la empresa', `<table class="lineas"><tr><td>Utilidad bruta de lo que vendió</td><td class="num">${$$(e.utilidad)}</td></tr>
+          <tr><td>− Gastos asignados</td><td class="num">${$$(e.gastos)}${e.gastosPct !== null ? ` <small class="muted">(${e.gastosPct}% de su venta)</small>` : ''}</td></tr>
+          <tr><td>− Comisión</td><td class="num">${$$(e.comision)}</td></tr><tr><td>− Sueldo del periodo${e.sueldoMensual ? ` <small class="muted">(${$$(e.sueldoMensual)} al mes)</small>` : ' <small class="muted">(captúralo en ✏️)</small>'}</td><td class="num">${$$(e.sueldo)}</td></tr>
+          <tr class="res-total"><td><b>Le deja a la empresa</b></td><td class="num"><b class="${e.deja < 0 ? 'error' : 'ok-txt'}">${$$(e.deja)}</b></td></tr></table>${e.notasEmp ? `<p class="muted peq">📝 ${esc(e.notasEmp)}</p>` : ''}`)}
+        ${sec('⛽ Gastos por categoría', e.gastosPorCat.length ? tabla([{ t: 'Categoría', k: 'cat' }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }], e.gastosPorCat) : '<div class="vacio">Sin gastos asignados en el periodo. Usa ⛽ Asignarle gastos.</div>')}</div>
+      ${sec('📈 Últimos 12 meses', '<div class="grafica"><canvas id="eqGraf"></canvas></div>')}
+      <div class="rejilla-2">
+        ${sec('🏆 Sus clientes del periodo', tabla([{ t: 'Cliente', h: x => esc(x.nombre) + (x.nuevo ? ' <small class="etq ok">nuevo</small>' : '') }, { t: 'Notas', num: 1, k: 'notas' }, { t: 'Venta', num: 1, h: x => $$(x.venta) }], e.clientes, { vacio: 'Sin ventas' }))}
+        ${sec('💊 Lo que vende', tabla([{ t: 'Producto', h: x => esc(x.nombre || x.id) }, { t: 'Pzas', num: 1, h: x => nf(x.cant) }, { t: 'Venta', num: 1, h: x => $$(x.venta) }, { t: 'Margen', num: 1, h: x => `<span class="${eqSem(x.margen, 25, 15)}">${x.margen}%</span>` }], e.productos, { vacio: 'Sin ventas' }))}
+        ${sec('⏰ Notas vencidas de su cartera', tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Saldo', num: 1, h: x => $$(x.saldo) }, { t: 'Vencida', num: 1, h: x => `<span class="error">${x.dias} días</span>` }], e.vencidas, { vacio: 'Sin notas vencidas 👍' }))}
+        ${sec('😴 Clientes de su cartera sin comprar (90+ días)', tabla([{ t: 'Cliente', k: 'nombre' }, { t: 'Última compra', k: 'ultima' }, { t: 'Días', num: 1, k: 'dias' }], e.sinComprarLista, { vacio: 'Todos sus clientes han comprado en los últimos 90 días 👍' }))}</div>
+      ${sec('⛽ Gastos asignados', tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.cat)}${x.regla ? ' · por regla del proveedor' : ''}</small>` }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) },
+        { t: '', h: x => `<button class="icono" title="Quitar de esta persona" onclick="App.eqQuitarGasto('${esc(x.uuid)}')">✕</button>` }], e.gastosLista, { vacio: 'Sin gastos asignados en el periodo' }))}`;
+    const tn = e.tendencia, lb = tn.map(x => MESES_TXT[+x.mes.slice(5, 7) - 1].slice(0, 3) + ' ' + x.mes.slice(2, 4));
+    grafica('eqGraf', { type: 'bar', data: { labels: lb, datasets: [
+      { type: 'line', label: 'Meta', data: tn.map(x => x.meta), borderColor: css('--aviso'), borderDash: [5, 4], pointRadius: 0, spanGaps: true },
+      { label: 'Venta', data: tn.map(x => x.venta), backgroundColor: css('--marca') },
+      { label: 'Utilidad', data: tn.map(x => x.utilidad), backgroundColor: css('--ok') },
+      { label: 'Gastos', data: tn.map(x => x.gastos), backgroundColor: css('--peligro') }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { ticks: { callback: v => '$' + nf(v) } } } } });
+    window.scrollTo(0, 0);
+  }
+  function eqDatos() {
+    const e = S.eqF; if (!e) return;
+    modal('✏️ ' + esc(e.nombre), `<p class="muted peq">🔒 Solo lo ven el dueño, el Administrador y el contador. El sueldo se reparte por días en el periodo que consultes (sueldo mensual × días ÷ 30.4).</p>
+      <div class="rejilla"><label>Sueldo mensual (con prestaciones, lo que le cuesta a la empresa)<input type="number" id="edSueldo" min="0" step="100" value="${e.sueldoMensual || ''}"></label>
+        <label>Fecha de ingreso<input type="date" id="edIng" value="${e.ingreso ? e.ingreso.split('/').reverse().join('-') : ''}"></label></div>
+      <label>Notas<input id="edNotas" value="${esc(e.notasEmp || '')}" placeholder="p. ej. ruta Champotón – Escárcega"></label>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.eqGuardarDatos()">Guardar</button></div>`);
+  }
+  async function eqGuardarDatos() {
+    try { await pedir('guardarEmpleado', { id: S.eqId, sueldo: Number($('#edSueldo').value) || 0, ingreso: $('#edIng').value, notas: $('#edNotas').value }); cerrarModal(); toast('✔ Datos guardados'); eqFicha(S.eqId); } catch (e) {}
+  }
+  async function eqQuitarGasto(uuid) {
+    if (!confirm('¿Quitar este gasto de la persona? (Si venía por la regla del proveedor, la regla se queda; quítala desde ⛽ Asignar gastos)')) return;
+    try { await pedir('asignarGastoEmpleado', { uuids: [uuid], idVendedor: '' }); toast('✔ Quitado'); eqFicha(S.eqId); } catch (e) {}
+  }
+  /** Asignar facturas de gastos (gasolina, viáticos…) a empleados, del periodo consultado. */
+  async function eqAsignarGastos(idPara, todos) {
+    const f = S.feq || {}; S.eqAsigPara = idPara || S.eqAsigPara || ''; S.eqAsigTodos = !!todos;
+    let l; try { l = S.eqGas = await pedir('gastosParaEmpleado', { desde: f.desde, hasta: f.hasta, soloSinAsignar: !todos }); } catch (e) { return; }
+    const emps = (D().vendedores || []).filter(v => !/contador/i.test(v.rol || '')).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    modal('⛽ Asignar gastos a empleados', `<p class="muted peq">${esc(fechaCorta(f.desde))} al ${esc(fechaCorta(f.hasta))} · gastos de operación y financieros (sin IVA). Marca las facturas, elige a la persona y guarda.
+        Con "y las siguientes de ese proveedor" las facturas que lleguen de ese RFC se le asignan solas (útil para la gasolinera o el hotel que solo usa una persona).</p>
+      <div class="fila" style="align-items:flex-end"><label>Empleado<select id="egEmp"><option value="">— quitar asignación —</option>${emps.map(v => `<option value="${esc(v.id)}" ${String(v.id) === String(S.eqAsigPara) ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('')}</select></label>
+        <label class="check"><input type="checkbox" id="egProv"> y las siguientes de ese proveedor</label>
+        <button class="btn fijo" onclick="App.eqAsignarGastos(document.getElementById('egEmp').value, ${todos ? 'false' : 'true'})">${todos ? 'Solo sin asignar' : 'Ver también las ya asignadas'}</button></div>
+      <div style="max-height:52vh;overflow:auto">${tabla([{ t: '', h: x => `<input type="checkbox" class="egSel" value="${esc(x.uuid)}">` }, { t: 'Fecha', k: 'fecha' },
+        { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.cat)} · ${esc(sucNom(x.suc))}</small>` }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) },
+        { t: 'Asignado a', h: x => x.emp ? esc(x.empNombre) + (x.porRegla ? ' <small class="muted">(regla)</small>' : '') : '<small class="muted">—</small>' }], l, { vacio: 'No hay gastos sin asignar en este periodo 👍' })}</div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button><button class="btn primario" onclick="App.eqGuardarAsig()">Guardar</button></div>`);
+  }
+  async function eqGuardarAsig() {
+    const uu = [...document.querySelectorAll('.egSel:checked')].map(x => x.value); if (!uu.length) return toast('Marca al menos una factura', true);
+    const emp = $('#egEmp').value;
+    try { const r = await pedir('asignarGastoEmpleado', { uuids: uu, idVendedor: emp, proveedor: $('#egProv').checked }); toast('✔ ' + r.facturas + ' factura(s)' + (r.reglas ? ' y ' + r.reglas + ' regla(s) de proveedor' : ''));
+      cerrarModal(); if (S.vista === 'equipo') { if (S.eqId && $('#eqGraf')) eqFicha(S.eqId); else cargarEquipo(); } else { S.datGasKey = ''; if (typeof cargarGastos === 'function' && $('#gRes')) cargarGastos(); } } catch (e) {}
+  }
+  async function asignarEmpGasto(uuid, emp) {
+    try { await pedir('asignarGastoEmpleado', { uuids: [uuid], idVendedor: emp }, true); toast(emp ? '✔ Asignado' : '✔ Sin empleado'); const x = (S.listaFact || []).find(y => y.uuid === uuid); if (x) x.emp = emp; } catch (e) { toast(e.message, true); }
+  }
   V.comisiones = (tab) => {
     if (!puede('dueno')) return ir('inicio');
     const f = S.fCom = S.fCom || { tab: 'comis', id: '', desde: '', hasta: '' };
@@ -10353,7 +10493,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    bajarXmlGasto, zipGastos, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
