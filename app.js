@@ -2567,13 +2567,16 @@ const App = (() => {
         ${d.cliente.correo ? `<a class="btn" target="_blank" href="mailto:${encodeURIComponent(d.cliente.correo)}?subject=${encodeURIComponent('Estado de cuenta ' + d.folio)}&body=${encodeURIComponent(textoEC(d))}">✉️ Recordatorio por correo</a>` : ''}
       </div>`);
   }
-  function textoEC(d) {
-    const R = d.resumen, venc = d.notas.filter(n => n.dias > 0);
-    return `Estimado cliente ${d.cliente.razon || d.cliente.nombre}:\nLe compartimos su estado de cuenta al ${d.corte} con Interés Veterinario®.\n\n` +
+  /** Texto del recordatorio. wa = true: negritas de WhatsApp (*texto*); para correo, sin asteriscos. */
+  function textoEC(d, wa) {
+    const R = d.resumen, venc = d.notas.filter(n => n.dias > 0), b = t => wa ? '*' + t + '*' : t;
+    return `Estimado cliente ${d.cliente.razon || d.cliente.nombre}: Le compartimos su estado de cuenta al ${d.corte} con Interés Veterinario®.\n\n` +
       `Saldo a pagar: ${$$(R.saldo)}` + (R.vencido > 0.009 ? `\nVencido: ${$$(R.vencido)} (${venc.length} ${venc.length === 1 ? 'nota' : 'notas'})` : '') +
-      '\n\nNotas pendientes:\n' + d.notas.map(n => `• ${n.folio} del ${n.fecha}: ${$$(n.saldo)}${n.dias > 0 ? ' (vencida ' + n.dias + ' días)' : ''}`).join('\n') +
-      `\n\nDatos para su pago${d.bancos.titular ? ' (' + d.bancos.titular + ')' : ''}:\n` + d.bancos.cuentas.map(b => b.banco + ': ' + b.lineas.join(' · ')).join('\n') +
-      '\n\nSi ya realizó su pago, le agradecemos enviarnos el comprobante y hacer caso omiso de este mensaje. ¡Gracias por su preferencia!';
+      '\n\n' + b('Notas pendientes:') + '\n' + d.notas.map(n => `• ${n.folio} del ${n.fecha}: ${$$(n.saldo)}${n.dias > 0 ? ' (vencida ' + n.dias + (n.dias === 1 ? ' día)' : ' días)') : ''}`).join('\n') +
+      '\n\n' + b(`Datos para su pago${d.bancos.titular ? ' (' + d.bancos.titular + ')' : ''}:`) + '\n\n' +
+      d.bancos.cuentas.map(c => b(c.banco + ':') + '\n' + c.lineas.map((l, i) => (i ? '· ' : '') + l).join('\n')).join('\n\n') +
+      (d.bancos.nota ? '\n\n' + d.bancos.nota : '') +
+      '\n\nSi ya realizó su pago, le agradecemos enviarnos el comprobante y hacer caso omiso de este mensaje.\n\n¡Gracias por su preferencia!';
   }
   async function pdfEdoCta(idCliente) {
     let d = S.ultimoEC && S.ultimoEC.cliente.id === idCliente ? S.ultimoEC : null;
@@ -2586,7 +2589,7 @@ const App = (() => {
     let d = S.ultimoEC && S.ultimoEC.cliente.id === idCliente ? S.ultimoEC : null;
     if (!d) { try { d = await cargarEC(idCliente); S.ultimoEC = d; } catch (e) { return; } }
     const tel = String(d.cliente.cel || '').replace(/\D/g, '').slice(-10);
-    window.open(WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(textoEC(d)), '_blank');
+    window.open(WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(textoEC(d, true)), '_blank');
   }
 
   /* ---------- FACTURACIÓN: facturas (CFDI) ligadas a las notas ---------- */
