@@ -2687,7 +2687,7 @@ const App = (() => {
         tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Factura', h: x => `<b>${esc(x.sf)}</b>${x.global ? ' <span class="etq">Global</span>' : ''}` },
           { t: 'Cliente', h: x => `${esc(x.receptor || '')}<br><small class="muted">${esc(x.rfc || '')}</small>` },
           { t: 'Total', num: 1, h: x => x.total === null ? '—' : $$(x.total) }, { t: 'Asignado', num: 1, h: x => $$(x.asignado) },
-          { t: 'Notas', num: 1, h: x => nf(x.notas) }, { t: 'Cuadre', h: x => etqCuadre(x.cuadre) + (x.dif && Math.abs(x.dif) > 1 && x.cuadre !== 'sin notas' ? `<br><small class="muted">${$$(x.dif)}</small>` : '') }],
+          { t: 'Remisión(es)', h: x => { const l = x.remisiones || []; return l.length ? l.slice(0, 4).map(n => `<b class="nowrap">${esc(n)}</b>`).join(', ') + (l.length > 4 ? ` <small class="muted">y ${l.length - 4} más</small>` : '') : (x.notas ? nf(x.notas) + ' nota(s)' : '<small class="muted">sin notas</small>'); } }, { t: 'Cuadre', h: x => etqCuadre(x.cuadre) + (x.dif && Math.abs(x.dif) > 1 && x.cuadre !== 'sin notas' ? `<br><small class="muted">${$$(x.dif)}</small>` : '') }],
           r.facturas, { clic: 'App.abrirFactura', vacio: 'Sin facturas en el periodo' });
       return;
     }
