@@ -8068,7 +8068,7 @@ const App = (() => {
         { t: 'Cobrado', num: 1, cls: 'ocultar-movil', h: x => $$(x.cobrado) + (x.diasCobro !== null ? `<br><small class="muted">${x.diasCobro} días prom.</small>` : '') },
         { t: 'Vencida', num: 1, h: x => x.vencida ? `<span class="error">${$$(x.vencida)}</span><br><small class="muted">${x.vencidaPct}% de su cartera</small>` : '<small class="muted">—</small>' },
         { t: 'Gastos', num: 1, cls: 'ocultar-movil', h: x => x.gastos ? $$(x.gastos) + (x.gastosPct !== null ? `<br><small class="${eqSem(x.gastosPct, 5, 10, true)}">${x.gastosPct}% de su venta</small>` : '') : '<small class="muted">—</small>' },
-        { t: 'Comisión + sueldo', num: 1, cls: 'ocultar-movil', h: x => x.comision || x.sueldo ? $$(x.comision + x.sueldo) : '<small class="muted">—</small>' },
+        { t: 'Comisión + sueldo', num: 1, cls: 'ocultar-movil', h: x => x.comision || x.sueldo ? $$(x.comision + x.sueldo) + (x.comision ? `<br><small class="muted">com. ${$$(x.comision)}${x.comFuente === 'Comisiones' && x.comPagada ? ' · pagada ' + $$(x.comPagada) : ''}</small>` : '') : '<small class="muted">—</small>' },
         { t: 'Le deja', num: 1, h: x => `<b class="${x.deja < 0 ? 'error' : 'ok-txt'}">${$$(x.deja)}</b>${x.dejaPct !== null ? `<br><small class="muted">${x.dejaPct}%</small>` : ''}` }],
         lista, { clic: 'App.eqFichaIdx', vacio: 'Sin personal con movimientos en el periodo' }) + '</div>';
   }
@@ -8103,7 +8103,7 @@ const App = (() => {
           <tr><td>Concentración (3 clientes principales)</td><td class="num"><span class="${eqSem(e.concentracion, 50, 70, true)}">${e.concentracion}%</span></td></tr></table>`)}
         ${sec('💰 Resultado para la empresa', `<table class="lineas"><tr><td>Utilidad bruta de lo que vendió</td><td class="num">${$$(e.utilidad)}</td></tr>
           <tr><td>− Gastos asignados</td><td class="num">${$$(e.gastos)}${e.gastosPct !== null ? ` <small class="muted">(${e.gastosPct}% de su venta)</small>` : ''}</td></tr>
-          <tr><td>− Comisión</td><td class="num">${$$(e.comision)}</td></tr><tr><td>− Sueldo del periodo${e.sueldoMensual ? ` <small class="muted">(${$$(e.sueldoMensual)} al mes)</small>` : ' <small class="muted">(captúralo en ✏️)</small>'}</td><td class="num">${$$(e.sueldo)}</td></tr>
+          <tr><td>− Comisión <small class="muted">${e.comFuente === 'Comisiones' ? '(devengada · Comisiones › ' + esc(e.comNombre) + ')' : '(según Metas)'}</small>${e.comFuente === 'Comisiones' ? `<br><small class="muted">pagada en el periodo ${$$(e.comPagada)} · por pagar ${$$(e.comPorPagar)}</small>` : ''}</td><td class="num">${$$(e.comision)}</td></tr><tr><td>− Sueldo del periodo${e.sueldoMensual ? ` <small class="muted">(${$$(e.sueldoMensual)} al mes)</small>` : ' <small class="muted">(captúralo en ✏️)</small>'}</td><td class="num">${$$(e.sueldo)}</td></tr>
           <tr class="res-total"><td><b>Le deja a la empresa</b></td><td class="num"><b class="${e.deja < 0 ? 'error' : 'ok-txt'}">${$$(e.deja)}</b></td></tr></table>${e.notasEmp ? `<p class="muted peq">📝 ${esc(e.notasEmp)}</p>` : ''}`)}
         ${sec('⛽ Gastos por categoría', e.gastosPorCat.length ? tabla([{ t: 'Categoría', k: 'cat' }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }], e.gastosPorCat) : '<div class="vacio">Sin gastos asignados en el periodo. Usa ⛽ Asignarle gastos.</div>')}</div>
       ${sec('📈 Últimos 12 meses', '<div class="grafica"><canvas id="eqGraf"></canvas></div>')}
@@ -8129,11 +8129,12 @@ const App = (() => {
       <div class="rejilla"><label>Sueldo mensual (con prestaciones, lo que le cuesta a la empresa)<input type="number" id="edSueldo" min="0" step="100" value="${e.sueldoMensual || ''}"></label>
         <label>Fecha de ingreso<input type="date" id="edIng" value="${e.ingreso ? e.ingreso.split('/').reverse().join('-') : ''}"></label></div>
       <label>¿Qué ventas se le cuentan?<select id="edVentas">${opts([['', 'Automático (' + (e.modo === 'sucursal' ? 'toda su sucursal' : 'solo las suyas') + ')'], ['propias', 'Solo las notas que él/ella vende'], ['sucursal', 'Toda la venta de su sucursal (encargado / gerente)']], String(e.modoConf || '').toLowerCase())}</select></label>
+      ${(e.comisionistas || []).length ? `<label>Sus comisiones están en Comisiones como…<select id="edComi"><option value="">Automático (${e.comId ? esc(e.comNombre) : 'ninguno con su nombre'})</option><option value="NINGUNO" ${e.comLiga === 'NINGUNO' ? 'selected' : ''}>No tiene comisionista (usar Metas)</option>${e.comisionistas.map(c => `<option value="${esc(c.id)}" ${String(e.comLiga) === String(c.id) ? 'selected' : ''}>${esc(c.nombre)} · ${esc(c.tipo)}</option>`).join('')}</select></label>` : ''}
       <label>Notas<input id="edNotas" value="${esc(e.notasEmp || '')}" placeholder="p. ej. ruta Champotón – Escárcega"></label>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.eqGuardarDatos()">Guardar</button></div>`);
   }
   async function eqGuardarDatos() {
-    try { await pedir('guardarEmpleado', { id: S.eqId, sueldo: Number($('#edSueldo').value) || 0, ingreso: $('#edIng').value, notas: $('#edNotas').value, ventas: $('#edVentas').value }); cerrarModal(); toast('✔ Datos guardados'); eqFicha(S.eqId); } catch (e) {}
+    try { await pedir('guardarEmpleado', { id: S.eqId, sueldo: Number($('#edSueldo').value) || 0, ingreso: $('#edIng').value, notas: $('#edNotas').value, ventas: $('#edVentas').value, comisionista: $('#edComi') ? $('#edComi').value : '' }); cerrarModal(); toast('✔ Datos guardados'); eqFicha(S.eqId); } catch (e) {}
   }
   async function eqQuitarGasto(uuid) {
     if (!confirm('¿Quitar este gasto de la persona? (Si venía por la regla del proveedor, la regla se queda; quítala desde ⛽ Asignar gastos)')) return;
