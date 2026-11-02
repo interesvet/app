@@ -8035,7 +8035,7 @@ const App = (() => {
         <label>Sucursal<select id="eqSuc">${opts(D().sucursales || [], f.suc || '', 'Todas')}</select></label>
         <label>Ordenar por<select id="eqOrd">${opts(EQ_ORD, f.orden)}</select></label>
         <button class="btn primario fijo" onclick="App.cargarEquipo()">Ver</button><button class="btn fijo" onclick="App.eqAsignarGastos()">⛽ Asignar gastos a empleados</button></div>
-        <p class="muted peq" style="margin-top:6px">🔒 Solo lo ven el dueño, el Administrador y el contador. Venta y utilidad sin IVA; cobranza y cartera con IVA. <b>Le deja a la empresa</b> = utilidad bruta de lo que vendió − sus gastos − su comisión − su sueldo.</p></div>
+        <p class="muted peq" style="margin-top:6px">🔒 Solo lo ven el dueño, el Administrador y el contador. Venta y utilidad sin IVA; cobranza y cartera con IVA. <b>Le deja a la empresa</b> = utilidad bruta de lo que vendió − sus gastos − su comisión − su sueldo. A los gerentes y encargados (🏬) se les cuenta toda la venta de su sucursal; los totales no cuentan dos veces la misma nota.</p></div>
       <div id="eqRes"><div class="vacio">Cargando…</div></div>`;
     agregarMesAnio('eqDesde', 'eqHasta', cargarEquipo);
     $('#eqSuc').onchange = cargarEquipo; $('#eqOrd').onchange = () => { S.feq.orden = $('#eqOrd').value; pintarEquipo(); };
@@ -8061,8 +8061,8 @@ const App = (() => {
         ${kpi('Le deja a la empresa', $$(t.deja), t.venta ? (t.deja / t.venta * 100).toFixed(1) + '% de la venta' : '', t.deja < 0 ? 'error' : 'ok-txt')}</div>
       ${r.sinAsignar.n ? `<div class="aviso-cand">⛽ Hay <b>${nf(r.sinAsignar.n)}</b> facturas de gastos de operación (${$$(r.sinAsignar.monto)} sin IVA) sin empleado en este periodo. <button class="btn chico" onclick="App.eqAsignarGastos()">Asignarlas</button></div>` : ''}
       <div class="tarjeta"><h3>Equipo · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3><p class="muted peq">Toca a una persona para ver su ficha completa.</p>` +
-      tabla([{ t: 'Empleado', h: x => `<div class="con-avatar">${avatar('vendFoto', x.id, x.foto, x.nombre)}<div><b>${esc(x.nombre)}</b>${x.activo ? '' : ' <small class="etq">baja</small>'}<br><small class="muted">${esc(x.puesto || x.rol)} · ${esc(sucNom(x.suc))}</small></div></div>` },
-        { t: 'Venta', num: 1, h: x => `<b>${$$(x.venta)}</b><br><small class="muted">${nf(x.notas)} notas · ${nf(x.clientesActivos)} clientes</small>` },
+      tabla([{ t: 'Empleado', h: x => `<div class="con-avatar">${avatar('vendFoto', x.id, x.foto, x.nombre)}<div><b>${esc(x.nombre)}</b>${x.activo ? '' : ' <small class="etq">baja</small>'}<br><small class="muted">${esc(x.puesto || x.rol)} · ${esc(sucNom(x.suc))}</small>${x.modo === 'sucursal' ? '<br><small class="etq">🏬 toda su sucursal</small>' : ''}</div></div>` },
+        { t: 'Venta', num: 1, h: x => `<b>${$$(x.venta)}</b><br><small class="muted">${nf(x.notas)} notas · ${nf(x.clientesActivos)} clientes${x.modo === 'sucursal' ? ' · vendió él/ella ' + $$(x.ventaPropia) : ''}</small>` },
         { t: 'Meta', h: x => eqBarra(x.avance) },
         { t: 'Utilidad', num: 1, cls: 'ocultar-movil', h: x => `${$$(x.utilidad)}<br><small class="${eqSem(x.margen, 25, 15)}">${x.margen}%</small>` },
         { t: 'Cobrado', num: 1, cls: 'ocultar-movil', h: x => $$(x.cobrado) + (x.diasCobro !== null ? `<br><small class="muted">${x.diasCobro} días prom.</small>` : '') },
@@ -8086,14 +8086,14 @@ const App = (() => {
           <small class="muted">${esc(e.puesto || e.rol)} · ${esc(sucNom(e.suc))}${e.ingreso ? ' · desde ' + esc(e.ingreso) : ''} · ${esc(e.periodo.desde)} al ${esc(e.periodo.hasta)}</small></div></div>
         <button class="btn fijo" onclick="App.eqDatos()">✏️ Sueldo y datos</button><button class="btn fijo" onclick="App.eqAsignarGastos('${esc(e.id)}')">⛽ Asignarle gastos</button></div></div>
       <div class="kpis">
-        ${kpi('Venta', $$(e.venta), nf(e.notas) + ' notas · ticket ' + $$(e.ticket))}
+        ${kpi(e.modo === 'sucursal' ? 'Venta de su sucursal' : 'Venta', $$(e.venta), e.modo === 'sucursal' ? 'vendió él/ella ' + $$(e.ventaPropia) + ' · ' + nf(e.notas) + ' notas' : nf(e.notas) + ' notas · ticket ' + $$(e.ticket))}
         ${kpi('Meta', e.avance === null ? '—' : e.avance + '%', e.meta ? 'meta del periodo ' + $$(e.meta) + (S.eq && S.eq.lista ? '' : '') : 'sin meta (Seguimiento › Metas)', eqSem(e.avance, 100, 79))}
         ${kpi('Utilidad bruta', $$(e.utilidad), 'margen ' + e.margen + '%', eqSem(e.margen, 25, 15))}
         ${kpi('Cobrado', $$(e.cobrado), e.diasCobro !== null ? 'tardan ' + e.diasCobro + ' días en pagarle' : '')}
         ${kpi('Cartera vencida', $$(e.vencida), e.vencidaPct + '% de ' + $$(e.cxc), e.vencida ? 'error' : 'ok-txt')}
         ${kpi('Le deja a la empresa', $$(e.deja), e.dejaPct !== null ? e.dejaPct + '% de su venta' : '', e.deja < 0 ? 'error' : 'ok-txt')}</div>
       <div class="rejilla-2">
-        ${sec('🧾 Ventas', `<table class="lineas"><tr><td>Venta neta (sin IVA)</td><td class="num"><b>${$$(e.venta)}</b></td></tr><tr><td>Notas · ticket promedio</td><td class="num">${nf(e.notas)} · ${$$(e.ticket)}</td></tr>
+        ${sec('🧾 Ventas', `${e.modo === 'sucursal' ? `<p class="muted peq">🏬 Como encargado se le cuenta <b>toda la venta, cobranza y cartera de ${esc(sucNom(e.suc))}</b>, venda quien venda. Cámbialo en ✏️ Sueldo y datos.</p>` : ''}<table class="lineas"><tr><td>Venta neta (sin IVA)</td><td class="num"><b>${$$(e.venta)}</b></td></tr>${e.modo === 'sucursal' ? `<tr><td>Vendido por él/ella</td><td class="num">${$$(e.ventaPropia)}</td></tr>` : ''}<tr><td>Notas · ticket promedio</td><td class="num">${nf(e.notas)} · ${$$(e.ticket)}</td></tr>
           <tr><td>Descuentos que dio</td><td class="num">${$$(e.descuentos)} <small class="${eqSem(e.descPct, 3, 8, true)}">(${e.descPct}%)</small></td></tr>
           <tr><td>Devoluciones · canceladas</td><td class="num">${$$(e.devoluciones)} (${nf(e.devNotas)}) · ${nf(e.canceladas)}</td></tr>
           <tr><td>Cotizaciones · vendidas</td><td class="num">${nf(e.cotizaciones)} · ${nf(e.cotVendidas)}${e.conversion !== null ? ' (' + e.conversion + '%)' : ''}</td></tr>
@@ -8128,11 +8128,12 @@ const App = (() => {
     modal('✏️ ' + esc(e.nombre), `<p class="muted peq">🔒 Solo lo ven el dueño, el Administrador y el contador. El sueldo se reparte por días en el periodo que consultes (sueldo mensual × días ÷ 30.4).</p>
       <div class="rejilla"><label>Sueldo mensual (con prestaciones, lo que le cuesta a la empresa)<input type="number" id="edSueldo" min="0" step="100" value="${e.sueldoMensual || ''}"></label>
         <label>Fecha de ingreso<input type="date" id="edIng" value="${e.ingreso ? e.ingreso.split('/').reverse().join('-') : ''}"></label></div>
+      <label>¿Qué ventas se le cuentan?<select id="edVentas">${opts([['', 'Automático (' + (e.modo === 'sucursal' ? 'toda su sucursal' : 'solo las suyas') + ')'], ['propias', 'Solo las notas que él/ella vende'], ['sucursal', 'Toda la venta de su sucursal (encargado / gerente)']], String(e.modoConf || '').toLowerCase())}</select></label>
       <label>Notas<input id="edNotas" value="${esc(e.notasEmp || '')}" placeholder="p. ej. ruta Champotón – Escárcega"></label>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.eqGuardarDatos()">Guardar</button></div>`);
   }
   async function eqGuardarDatos() {
-    try { await pedir('guardarEmpleado', { id: S.eqId, sueldo: Number($('#edSueldo').value) || 0, ingreso: $('#edIng').value, notas: $('#edNotas').value }); cerrarModal(); toast('✔ Datos guardados'); eqFicha(S.eqId); } catch (e) {}
+    try { await pedir('guardarEmpleado', { id: S.eqId, sueldo: Number($('#edSueldo').value) || 0, ingreso: $('#edIng').value, notas: $('#edNotas').value, ventas: $('#edVentas').value }); cerrarModal(); toast('✔ Datos guardados'); eqFicha(S.eqId); } catch (e) {}
   }
   async function eqQuitarGasto(uuid) {
     if (!confirm('¿Quitar este gasto de la persona? (Si venía por la regla del proveedor, la regla se queda; quítala desde ⛽ Asignar gastos)')) return;
