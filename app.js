@@ -194,7 +194,7 @@ const App = (() => {
   }
   const cargando = v => $('#cargando').classList.toggle('oculto', !v);
   function modal(titulo, html) { $('#modalTit').textContent = titulo; $('#modalCuerpo').innerHTML = html; $('#modal').classList.remove('oculto'); if (html.indexOf('data-arch=') >= 0) setTimeout(() => cargarArchs($('#modalCuerpo')), 0); }
-  function cerrarModal() { $('#modal').classList.add('oculto'); $('#modalCuerpo').innerHTML = ''; }
+  function cerrarModal() { if (S.lector) detenerEscaner(); $('#modal').classList.add('oculto'); $('#modalCuerpo').innerHTML = ''; }
   function tabla(cols, filas, opc) {
     opc = opc || {};
     if (!filas.length) return `<div class="vacio">${esc(opc.vacio || 'Sin registros')}</div>`;
@@ -642,6 +642,7 @@ const App = (() => {
     { id: 'inicio', t: 'Inicio', i: '🏠' },
     { id: 'tablero', t: 'Dashboard', i: '📊', p: 'dashboard' },
     { id: 'venta', t: 'Nueva venta', i: '🛒', p: 'ventas' },
+    { id: 'pos', t: 'Venta rápida', i: '⚡', p: 'ventas' },
     { id: 'ventas', t: 'Ventas', i: '🧾', p: ['ventas', 'cobranza'] },
     { id: 'cotizaciones', t: 'Cotizaciones', i: '📝', p: 'cotizaciones' },
     { id: 'seguimiento', t: 'Seguimiento', i: '🤝', p: ['seguimiento', 'recetas'] },
@@ -878,6 +879,8 @@ const App = (() => {
     input.addEventListener('input', buscar);
     input.addEventListener('focus', buscar);
     input.addEventListener('keydown', e => {
+      // pistola lectora / código escrito + Enter: si es un código conocido, se usa directo
+      if (e.key === 'Enter' && o.codigo && input.value.trim() && o.codigo(input.value.trim())) { e.preventDefault(); box.classList.add('oculto'); input.value = ''; items = []; return; }
       if (box.classList.contains('oculto')) return;
       if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, items.length - 1); pintar(); e.preventDefault(); }
       else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); pintar(); e.preventDefault(); }
@@ -901,7 +904,7 @@ const App = (() => {
     return lista.map(x => [nivel(x), x]).sort((a, b) => a[0] - b[0] || String(nombreDe(a[1])).localeCompare(String(nombreDe(b[1])))).map(z => z[1]);
   }
   const fuenteProductos = (suc, lista, soloActivos) => q => rankear((D().productos || [])
-    .filter(p => (!soloActivos || p.activo) && coincide(p.id + ' ' + p.nombre + ' ' + p.lab + ' ' + p.categoria, q)), q, p => p.nombre, p => p.id)
+    .filter(p => (!soloActivos || p.activo) && coincide(p.id + ' ' + p.nombre + ' ' + p.lab + ' ' + p.categoria + ' ' + (p.cb || ''), q)), q, p => p.nombre, p => p.id)
     .map(p => ({ id: p.id, t: p.nombre, s: `${p.id} · ${lista ? $$(p.precios[lista]) + ' · ' : ''}Exist. ${suc ? nf(existencia(p.id, suc)) : nf(existencia(p.id))}${p.activo ? '' : ' · INACTIVO'}` }));
   const fuenteClientes = q => rankear((D().clientes || []).filter(c => coincide(c.nombre + ' ' + c.razon + ' ' + (c.rancho || '') + ' ' + c.rfc + ' ' + c.localidad + ' ' + c.cel, q)), q, c => (c.razon || '') + ' ' + c.nombre + ' ' + (c.rancho || ''))
     .map(c => ({ id: c.id, t: c.razon && c.razon !== c.nombre ? c.razon + ' — ' + c.nombre : c.nombre, s: `${c.lista} · ${c.credito} días · ${c.localidad || c.municipio || ''}${c.status === 'Inactivo' ? ' · INACTIVO' : ''}` }));
@@ -1294,7 +1297,7 @@ const App = (() => {
         ${puede('clientes_editar') ? '<button class="btn fijo" onclick="App.formCliente(null,\'venta\')">+ Cliente</button>' : ''}
       </div>
       <div id="vCliInfo" class="muted" style="margin-top:8px">${c ? `Lista <b>${esc(v.lista)}</b> · Crédito ${c.credito} días · ${esc(c.rfc || 'Sin RFC')} · ${esc(c.localidad || c.municipio || '')} ${c.status === 'Inactivo' ? '<span class="etq mal">Inactivo</span>' : ''}` : 'Selecciona un cliente para aplicar su lista de precios.'}</div></div>
-      <div class="tarjeta"><div class="buscador buscador-prod"><input id="vProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
+      <div class="tarjeta"><div class="fila" style="gap:8px;flex-wrap:nowrap"><div class="buscador buscador-prod" style="flex:1"><input id="vProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, código de barras…" autocomplete="off"></div><button class="btn fijo" onclick="App.escanear('venta', true)" title="Escanear con la cámara">📷</button></div>
         <div class="espacio"></div>
         <div class="doc-lineas" id="vLineas"></div></div>
       <div id="vRx"></div>
@@ -1319,8 +1322,9 @@ const App = (() => {
           <button class="btn primario" id="vGuardar" onclick="App.guardarVenta()">${ed ? '💾 Guardar cambios' : '💾 Guardar venta'}</button></div></div>
       </div>`;
     if ($('#vSuc')) $('#vSuc').onchange = e => { v.suc = e.target.value; v.lineas.forEach(l => l.lote = ''); guardarBorrador(); V.venta(); };
-    buscador($('#vCli'), { fuente: fuenteClientes, nuevo: puede('clientes_editar') ? q => formCliente(null, 'venta', q) : null, alElegir: x => elegirClienteVenta(x.id) });
-    buscador($('#vProd'), { fuente: q => fuenteProductos(v.suc, v.lista, true)(q), limpiar: true, alElegir: x => agregarLineaVenta(x.id) });
+    buscador($('#vCli'), { fuente: fuenteClientes, nuevo: puede('clientes_editar') ? q => formCliente(null, 'venta', q) : null, alElegir: x => elegirClienteVenta(x.id), codigo: t => { const id = idClienteQR(t); if (id) { elegirClienteVenta(id); return true; } return false; } });
+    buscador($('#vProd'), { fuente: q => fuenteProductos(v.suc, v.lista, true)(q), limpiar: true, alElegir: x => agregarLineaVenta(x.id),
+      codigo: t => { if (leerCodigo(t, 'venta')) return true; if (/^\d{6,}$/.test(t)) { codigoDesconocido(t, 'venta'); return true; } return false; } });
     const bind = (id, k, num, sub) => { if (!$(id)) return; $(id).oninput = e => { if (sub) v.cobro[k] = e.target.value; else v[k] = num ? Number(e.target.value) || 0 : e.target.value; guardarBorrador(); totalesVenta(); }; $(id).onchange = $(id).oninput; };
     bind('#vEstatus', 'estatus'); bind('#vEnvio', 'idFlete'); bind('#vGuia', 'guia');
     bind('#vDias', 'dias', 1); bind('#vMetodo', 'metodo'); bind('#vPC', 'descPC', 1);
@@ -7191,12 +7195,14 @@ const App = (() => {
    *  DOCUMENTOS EN EL EQUIPO (sin conexión): PDF con jsPDF y Excel con ExcelJS.
    *  Las librerías se bajan una vez con señal y quedan guardadas en el equipo (IndexedDB).
    * ===================================================================================== */
-  const CDN = 'https:' + '//cdnjs.cloudflare.com/ajax/libs/';
+  const CDN = 'https:' + '//cdnjs.cloudflare.com/ajax/libs/', JSD = 'https:' + '//cdn.jsdelivr.net/npm/';
   const LIBS = {
     jspdf: { url: CDN + 'jspdf/2.5.1/jspdf.umd.min.js', ok: () => window.jspdf && window.jspdf.jsPDF ? window.jspdf : null },
     exceljs: { url: CDN + 'exceljs/4.4.0/exceljs.min.js', ok: () => window.ExcelJS || null },
     xlsx: { url: CDN + 'xlsx/0.18.5/xlsx.full.min.js', ok: () => window.XLSX || null },
-    jszip: { url: CDN + 'jszip/3.10.1/jszip.min.js', ok: () => window.JSZip || null }
+    jszip: { url: CDN + 'jszip/3.10.1/jszip.min.js', ok: () => window.JSZip || null },
+    qr: { url: JSD + 'qrcode-generator@1.4.4/qrcode.js', ok: () => window.qrcode || null },
+    scan: { url: JSD + 'html5-qrcode@2.3.8/html5-qrcode.min.js', ok: () => window.__Html5QrcodeLibrary__ || null }
   };
   async function textoLib(n) {
     const L = LIBS[n];
@@ -7897,7 +7903,7 @@ const App = (() => {
       { k: 'Unidad_Venta', t: 'Unidad de venta', tipo: 'select', ops: ['Pieza', 'Caja', 'Saco', 'Cubeta', 'Bolsa', 'KG', 'Litro'].map(x => [x, x]) },
       { k: 'Piezas_por_Unidad', t: 'Piezas por unidad', tipo: 'number' }, { k: 'TASA_IVA', t: 'IVA', tipo: 'select', ops: cat.tasasIva },
       { k: 'Categoria', t: 'Categoría', tipo: 'lista', ops: cats, ph: 'Elige o escribe una nueva' }, { k: 'Laboratorio', t: 'Laboratorio', tipo: 'lista', ops: labs, ph: 'Elige o escribe uno nuevo' },
-      { k: 'No_Registro', t: 'No. registro' }, { k: 'Stock_Minimo', t: 'Stock mínimo', tipo: 'number' },
+      { k: 'No_Registro', t: 'No. registro' }, { k: 'Stock_Minimo', t: 'Stock mínimo', tipo: 'number' }, { k: 'Codigo_Barras', t: 'Código(s) de barras (varios separados por coma)', ancho: 1 },
       { k: 'Precio_Costo', t: 'Costo $', tipo: 'number' }, { k: 'Precio_Publico', t: 'Público $', tipo: 'number' }, { k: 'Precio_Subdistribuidor', t: 'Subdistribuidor $', tipo: 'number' },
       { k: 'Precio_Socio', t: 'Socio $', tipo: 'number' }, { k: 'Precio_Aliado', t: 'Aliado $', tipo: 'number' }, { k: 'AGL', t: 'AGL $', tipo: 'number' },
       { k: 'Precio_Farmacia', t: 'Farmacia $', tipo: 'number' }, { k: 'Precio_Ganadero', t: 'Ganadero $', tipo: 'number' }, { k: 'Comisionista', t: 'Comisionista $', tipo: 'number' },
@@ -8017,6 +8023,7 @@ const App = (() => {
         <button class="btn" onclick="App.formInteraccion({idCliente:'${esc(c.id)}', nombre:'${esc(String(x.Razon_social || x.Nombre_cliente || '').replace(/'/g, ''))}'})">📞 Registrar llamada / nota</button>
         ${puede('ventas') ? `<button class="btn" onclick="App.ventasDeCliente('${esc(c.id)}','${esc(String(x.Razon_social || x.Nombre_cliente || '').replace(/'/g, ''))}')">🧾 Ver sus ventas</button><button class="btn" onclick="App.venderA('${esc(c.id)}')">🛒 Venderle</button>` : ''}
         ${puede('cobranza') ? `<button class="btn" onclick="App.verEdoCta('${esc(c.id)}')">📊 Estado de cuenta</button>` : ''}
+        <button class="btn" onclick="App.tarjetaCliente('${esc(c.id)}')">🪪 Tarjeta con QR</button>
         ${dueno ? `<button class="btn" onclick="App.comiCliente('${esc(c.id)}','${esc(String(x.Razon_social || x.Nombre_cliente || '').replace(/'/g, ''))}')">💼 Comisionista</button>` : ''}
         ${dueno ? `<button class="btn peligro" onclick="App.eliminarCliente('${esc(c.id)}')">🗑️ Eliminar</button>` : ''}
         ${admin ? `<button class="btn primario" onclick="App.formCliente(${i})">✏️ Editar</button>` : ''}
@@ -8500,6 +8507,247 @@ const App = (() => {
     if (!quitar && !/^\d{4,8}$/.test(pin)) return toast('El PIN debe tener de 4 a 8 números', true);
     if (quitar && !confirm('¿Quitar el PIN? Solo tú o un Administrador podrán autorizar ventas que rebasen el límite.')) return;
     try { await pedir('guardarPinCredito', { pin: pin }); toast(quitar ? '✔ PIN quitado' : '✔ PIN guardado'); cfgCaja(); } catch (e) {}
+  }
+  /* =====================================================================================
+   *  ⚡ VENTA RÁPIDA (punto de venta), CÓDIGOS DE BARRAS, ESCÁNER CON CÁMARA Y TARJETA QR DEL CLIENTE
+   * ===================================================================================== */
+  /** Producto por código de barras (o por su clave exacta). */
+  function prodPorCodigo(txt) {
+    const c = String(txt || '').trim(); if (!c) return null;
+    const ps = D().productos || [];
+    if (S.cbIdx !== ps || !S.cbMap) { S.cbMap = {}; ps.forEach(p => String(p.cb || '').split(',').map(x => x.trim()).filter(Boolean).forEach(x => S.cbMap[x] = p)); S.cbIdx = ps; }
+    return S.cbMap[c] || (/^\d+$/.test(c) && S.cbMap[c.replace(/^0+/, '')]) || ps.find(p => String(p.id).toUpperCase() === c.toUpperCase()) || null;
+  }
+  const idClienteQR = txt => { const m = String(txt || '').trim().match(/^IVCLI:(.+)$/i); return m && cliente(m[1]) ? m[1] : null; };
+  /** Interpreta un código leído (pistola o cámara). destino: 'venta' | 'pos'. Regresa el texto a mostrar o null si no se reconoce. */
+  function leerCodigo(txt, destino) {
+    const idc = idClienteQR(txt);
+    if (idc) { const c = cliente(idc); destino === 'pos' ? posCliente(idc) : elegirClienteVenta(idc); return '👤 ' + (c.razon || c.nombre); }
+    const p = prodPorCodigo(txt);
+    if (p) { destino === 'pos' ? posAgregar(p.id) : agregarLineaVenta(p.id); return '✔ ' + p.nombre; }
+    return null;
+  }
+  function codigoDesconocido(txt, destino) {
+    if (!/^[\w\-.]{4,40}$/.test(String(txt).trim())) return toast('Código no reconocido', true);
+    if (!puede('productos_editar')) return toast('El código ' + txt + ' no está registrado en ningún producto. Pide que lo den de alta.', true);
+    S.cbNuevo = { codigo: String(txt).trim(), destino: destino };
+    modal('🏷️ Código sin registrar', `<p>El código <b>${esc(txt)}</b> no está en ningún producto. ¿A cuál pertenece?</p>
+      <div class="buscador"><input id="cbProd" placeholder="Busca el producto por nombre o clave…" autocomplete="off"></div>
+      <p class="muted peq">Se guarda en el producto y la próxima vez se reconoce solo.</p><div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
+    buscador($('#cbProd'), { fuente: fuenteProductos('', '', true), alElegir: x => asignarCodigo(x.id) }); setTimeout(() => $('#cbProd') && $('#cbProd').focus(), 50);
+  }
+  async function asignarCodigo(id) {
+    const n = S.cbNuevo; if (!n) return;
+    try {
+      const r = await pedir('asignarCodigoBarras', { ID_Producto: id, codigo: n.codigo });
+      const p = prod(id); if (p) p.cb = r.cb; S.cbMap = null; LS.set('datos', S.datos);
+      cerrarModal(); toast('✔ Código guardado en ' + (p ? p.nombre : id));
+      n.destino === 'pos' ? posAgregar(id) : agregarLineaVenta(id);
+    } catch (e) {}
+  }
+  /* ---- escáner con la cámara (códigos de barras y QR) ---- */
+  function pitido() { try { const a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.frequency.value = 1400; g.gain.value = 0.08; o.connect(g); g.connect(a.destination); o.start(); setTimeout(() => { o.stop(); a.close(); }, 90); } catch (e) {} }
+  async function escanear(destino, continuo) {
+    let L; try { L = await libLocal('scan'); } catch (e) { return toast(e.message, true); }
+    modal('📷 Escanear código', `<div id="scanVista" style="width:100%;max-width:480px;margin:auto;border-radius:12px;overflow:hidden;background:#000"></div>
+      <p class="muted" id="scanMsg" style="text-align:center;margin:8px 0">Apunta la cámara al código de barras del producto o al QR de la tarjeta del cliente.</p>
+      <div class="acciones">${continuo ? '<span class="muted peq" style="flex:1">Modo continuo: escanea uno tras otro.</span>' : ''}<button class="btn primario" onclick="App.cerrarEscaner()">${continuo ? 'Listo' : 'Cerrar'}</button></div>`);
+    const lector = S.lector = new L.Html5Qrcode('scanVista', { verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+    let ult = '', t0 = 0;
+    const leido = txt => {
+      const ahora = Date.now(); if (txt === ult && ahora - t0 < 2500) return; ult = txt; t0 = ahora;
+      pitido(); try { navigator.vibrate && navigator.vibrate(60); } catch (e) {}
+      const r = leerCodigo(txt, destino);
+      if (!r) { cerrarEscaner(); return codigoDesconocido(txt, destino); }
+      if (!continuo) cerrarEscaner();
+      const m = $('#scanMsg'); if (m) m.textContent = r;
+    };
+    try { await lector.start({ facingMode: 'environment' }, { fps: 12, qrbox: (w, h) => ({ width: Math.round(Math.min(w * 0.85, 380)), height: Math.round(Math.min(h * 0.55, 220)) }) }, leido, () => {}); }
+    catch (e) { const m = $('#scanMsg'); if (m) m.innerHTML = '⚠️ No se pudo abrir la cámara (' + esc(String(e && e.message || e).slice(0, 120)) + '). Revisa que la app tenga permiso de usar la cámara.'; S.lector = null; }
+  }
+  function detenerEscaner() { const l = S.lector; S.lector = null; if (l) { try { l.stop().catch(() => {}).then(() => { try { l.clear(); } catch (e) {} }); } catch (e) {} } }
+  function cerrarEscaner() { detenerEscaner(); cerrarModal(); if (S.vista === 'pos') { V.pos(); setTimeout(posFoco, 60); } }
+
+  /* ---- ⚡ venta rápida ---- */
+  const formaPor = re => { const f = ((D().catalogos || {}).formasPago || []).find(o => re.test(Array.isArray(o) ? o[1] : (o && (o.nombre || o.id)) || '')); return f ? (Array.isArray(f) ? f[0] : f.id) : ''; };
+  const bancoPor = re => { const b = ((D().catalogos || {}).bancos || []).find(o => re.test(Array.isArray(o) ? o[0] + ' ' + o[1] : (o && (o.id + ' ' + o.nombre)) || '')); return b ? (Array.isArray(b) ? b[0] : b.id) : ''; };
+  function clientePOS(suc) {
+    const g = LS.get('posCliente_' + suc, ''); if (g && cliente(g)) return g;
+    const c = (D().clientes || []).find(x => /p[uú]blico en general|mostrador|venta de mostrador/i.test((x.razon || '') + ' ' + (x.nombre || '')) && x.status !== 'Inactivo');
+    return c ? c.id : null;
+  }
+  function posNueva() {
+    const v = ventaNueva(); v.pos = 1; v.estatus = 'Entregado'; v.pago = 'efectivo'; v.recibido = '';
+    const c = clientePOS(v.suc); if (c) { const cl = cliente(c); v.cli = c; v.lista = cl.lista && (D().catalogos.listas || []).indexOf(cl.lista) >= 0 ? cl.lista : 'Publico'; v.dias = 0; }
+    return v;
+  }
+  const posGuardar = () => LS.set('borrador_pos', S.pos);
+  const posFoco = () => { const i = $('#posQ'); if (i && !tkMovil()) i.focus(); };
+  V.pos = () => {
+    if (!S.pos) S.pos = LS.get('borrador_pos', null) || posNueva();
+    if ((D().permitidas || []).indexOf(S.pos.suc) < 0) S.pos = posNueva();
+    const v = S.pos, c = v.cli ? cliente(v.cli) : null, u = U();
+    $('#vista').innerHTML = `<div class="pos">
+      <div class="pos-izq">
+        <div class="tarjeta pos-cab"><div class="fila" style="align-items:center">
+          ${u.todasSucursales ? `<label class="fijo" style="min-width:150px">Sucursal<select id="posSuc">${optsSuc(v.suc)}</select></label>` : ''}
+          <div style="flex:1 1 220px"><small class="muted">Cliente</small><div class="buscador"><input id="posCli" value="${c ? esc(c.razon || c.nombre) : ''}" placeholder="Busca el cliente o escanea su tarjeta QR" autocomplete="off"></div></div>
+          <div class="fijo pos-lista">${c ? `Lista <b>${esc(v.lista)}</b>${c.credito ? '<br><small>Crédito ' + c.credito + ' días</small>' : ''}` : '<small class="muted">Sin cliente</small>'}</div></div>
+          ${c && v.cli !== clientePOS(v.suc) ? `<div class="peq" style="margin-top:6px"><a href="#" onclick="event.preventDefault();App.posFijarCliente()">📌 Usar este cliente por defecto en esta sucursal</a></div>` : ''}${!clientePOS(v.suc) ? '<div class="peq muted" style="margin-top:6px">Tip: da de alta un cliente "PÚBLICO EN GENERAL" para que la venta rápida lo use solo.</div>' : ''}</div>
+        <div class="tarjeta"><div class="fila" style="gap:8px"><div class="buscador buscador-prod" style="flex:1"><input id="posQ" enterkeyhint="search" placeholder="🔍 Escanea el código de barras o busca el producto…" autocomplete="off"></div>
+          <button class="btn primario fijo pos-cam" onclick="App.escanear('pos', true)" title="Escanear con la cámara">📷</button></div>
+          <div id="posLineas" class="pos-lineas"></div></div>
+      </div>
+      <div class="pos-der tarjeta" id="posCobro"></div></div>`;
+    if ($('#posSuc')) $('#posSuc').onchange = e => { const l = S.pos.lineas; S.pos = posNueva(); S.pos.suc = e.target.value; const c2 = clientePOS(S.pos.suc); if (c2) S.pos.cli = c2; S.pos.lineas = l; posGuardar(); V.pos(); };
+    buscador($('#posCli'), { fuente: fuenteClientes, alElegir: x => posCliente(x.id), codigo: t => { const id = idClienteQR(t); if (id) { posCliente(id); return true; } return false; } });
+    buscador($('#posQ'), { fuente: q => fuenteProductos(v.suc, v.lista, true)(q), limpiar: true, alElegir: x => posAgregar(x.id),
+      codigo: t => { const r = leerCodigo(t, 'pos'); if (r) return true; if (/^\d{6,}$/.test(t)) { codigoDesconocido(t, 'pos'); return true; } return false; } });
+    pintarPos(); posFoco();
+  };
+  function posCliente(id) {
+    const v = S.pos, c = cliente(id); if (!c) return;
+    v.cli = id; v.lista = c.lista && (D().catalogos.listas || []).indexOf(c.lista) >= 0 ? c.lista : 'Publico'; v.dias = c.credito || 0; v.metodo = v.dias > 0 ? 'PPD' : 'PUE';
+    v.lineas.forEach(l => { const p = prod(l.id); if (p && !l.manual) l.precio = p.precios[v.lista] || 0; });
+    posGuardar(); if (S.vista === 'pos' && !S.lector) V.pos(); else pintarPos();
+    toast('👤 ' + (c.razon || c.nombre) + ' · lista ' + v.lista);
+  }
+  function posFijarCliente() { LS.set('posCliente_' + S.pos.suc, S.pos.cli); toast('✔ Cliente por defecto de la venta rápida en ' + sucNom(S.pos.suc)); V.pos(); }
+  function posAgregar(id) {
+    const v = S.pos, p = prod(id); if (!p) return;
+    const ya = v.lineas.find(l => l.id === id);
+    if (ya) { ya.cant = r2(Number(ya.cant) + 1); v.lineas.splice(v.lineas.indexOf(ya), 1); v.lineas.unshift(ya); }
+    else v.lineas.unshift({ id: id, cant: 1, precio: p.precios[v.lista] || 0, desc: 0, lote: '' });
+    if (existencia(id, v.suc) < (ya ? ya.cant : 1)) toast('⚠️ ' + p.nombre + ': existencia ' + nf(existencia(id, v.suc)) + ' en esta sucursal', true);
+    posGuardar(); pintarPos();
+  }
+  function posCant(i, d) { const l = S.pos.lineas[i]; if (!l) return; l.cant = r2(Math.max(0, Number(l.cant) + d)); if (!l.cant) S.pos.lineas.splice(i, 1); posGuardar(); pintarPos(); }
+  function pintarPos() {
+    const v = S.pos, el = $('#posLineas'), co = $('#posCobro'); if (!el || !co) return;
+    const t = calcVenta(v), editP = puede('precio_editar');
+    el.innerHTML = v.lineas.length ? v.lineas.map((l, i) => { const p = prod(l.id) || {}; return `<div class="pos-linea" data-i="${i}">
+        <div class="pos-nom"><b>${esc(p.nombre || l.id)}</b><small>${esc(l.id)} · Exist. ${nf(existencia(l.id, v.suc))}</small></div>
+        <div class="pos-cant"><button class="btn chico" onclick="App.posCant(${i},-1)" aria-label="Menos">−</button><input type="number" data-f="cant" value="${l.cant}" min="0" step="any"><button class="btn chico" onclick="App.posCant(${i},1)" aria-label="Más">+</button></div>
+        <div class="pos-pre">${editP ? `<input type="number" data-f="precio" value="${l.precio}" step="0.01" min="0">` : $$(l.precio)}</div>
+        <div class="pos-imp"><b>${$$(t.imps[i])}</b></div><button class="icono" onclick="App.posCant(${i},-1e9)" title="Quitar">✕</button></div>`; }).join('')
+      : '<div class="vacio">Escanea o busca un producto para empezar.<br><small>Con pistola lectora: solo escanea, se agrega solo.</small></div>';
+    el.oninput = e => { const r = e.target.closest('[data-i]'), f = e.target.dataset.f; if (!r || !f) return; const l = v.lineas[+r.dataset.i]; l[f] = Number(e.target.value) || 0; if (f === 'precio') l.manual = 1; posGuardar(); posTotales(); };
+    posTotales();
+  }
+  function posTotales() {
+    const v = S.pos, co = $('#posCobro'); if (!co) return;
+    const t = calcVenta(v), c = cliente(v.cli) || {}, pub = v.cli === clientePOS(v.suc);
+    if (v.pago === 'credito' && (pub || !c.credito)) v.pago = 'efectivo';
+    const btn = (k, tx) => `<button class="btn ${v.pago === k ? 'primario' : ''}" onclick="App.posPago('${k}')">${tx}</button>`;
+    const rec = Number(v.recibido) || 0, cambio = r2(rec - t.total);
+    const ctas = ((D().catalogos || {}).bancos || []), ts = terminalesLocal().filter(x => x.activa !== false && (!x.suc || x.suc === v.suc));
+    co.innerHTML = `<div class="pos-total"><small>Total a cobrar</small><b>${$$(t.total)}</b><span>${v.lineas.reduce((s, l) => s + (Number(l.cant) || 0), 0)} pzas · IVA ${$$(t.iva)}${t.desc ? ' · desc. ' + $$(t.desc) : ''}</span></div>
+      <div class="pos-pagos">${btn('efectivo', '💵 Efectivo')}${btn('tarjeta', '💳 Tarjeta')}${btn('transfer', '🏦 Transferencia')}${!pub && c.credito ? btn('credito', '📝 Crédito') : ''}</div>
+      ${v.pago === 'efectivo' ? `<label>Recibido $<input type="number" id="posRec" value="${esc(v.recibido)}" step="0.01" min="0" inputmode="decimal" placeholder="${t.total.toFixed(2)}"></label>
+        <div class="pos-rapidos">${[['Exacto', t.total], ...[50, 100, 200, 500, 1000].filter(x => x > t.total).slice(0, 4).map(x => ['$' + x, x])].map(([tx, x]) => `<button class="btn chico" onclick="App.posRecibido(${x})">${tx}</button>`).join('')}</div>
+        <div class="pos-cambio ${rec && cambio < -0.009 ? 'falta' : ''}"><small>${rec && cambio < -0.009 ? 'Falta' : 'Cambio'}</small><b>${$$(rec ? Math.abs(cambio) : 0)}</b></div>` : ''}
+      ${v.pago === 'tarjeta' ? `<label>Tipo de tarjeta<select id="posFT">${opts(((D().catalogos || {}).formasPago || []).filter(o => /tarjeta/i.test(Array.isArray(o) ? o[1] : (o.nombre || ''))), v.formaT || formaPor(/d[eé]bito/i))}</select></label>
+        ${ts.length ? `<label>Terminal<select id="posTerm">${opts(ts.map(x => [x.id, x.nombre]), v.terminal || LS.get('posTerm_' + v.suc, ''), '— Ninguna —')}</select></label>` : ''}
+        <label>Cuenta donde se deposita<select id="posCta">${opts(ctas, v.cta || LS.get('posCtaT_' + v.suc, ''), '— Elige —')}</select></label><label>No. de autorización<input id="posRef" value="${esc(v.ref || '')}" maxlength="60"></label>` : ''}
+      ${v.pago === 'transfer' ? `<label>Cuenta donde entró<select id="posCta">${opts(ctas, v.cta || LS.get('posCtaX_' + v.suc, ''), '— Elige —')}</select></label><label>Referencia / rastreo<input id="posRef" value="${esc(v.ref || '')}" maxlength="60"></label>` : ''}
+      ${v.pago === 'credito' ? `<p class="muted">Se guarda a crédito (${c.credito} días). El cobro se registra después en Cobranza o desde su estado de cuenta.</p>` : ''}
+      <button class="btn primario pos-cobrar" id="posCobrarBtn" onclick="App.posCobrar()" ${v.lineas.length ? '' : 'disabled'}>${v.pago === 'credito' ? '📝 Guardar a crédito' : '✔ Cobrar ' + $$(t.total)}</button>
+      <div class="fila" style="justify-content:space-between;margin-top:8px"><button class="btn chico peligro" onclick="App.posLimpiar()">Descartar</button><button class="btn chico" onclick="App.posANota()">Pasar a nota completa</button></div>`;
+    const bind = (id, k, ls) => { const x = $(id); if (x) x.onchange = x.oninput = () => { v[k] = x.value; if (ls) LS.set(ls, x.value); posGuardar(); if (id === '#posRec') posCambio(); }; };
+    bind('#posRec', 'recibido'); bind('#posFT', 'formaT'); bind('#posTerm', 'terminal', 'posTerm_' + v.suc); bind('#posCta', 'cta', v.pago === 'tarjeta' ? 'posCtaT_' + v.suc : 'posCtaX_' + v.suc); bind('#posRef', 'ref');
+    if ($('#posRec')) $('#posRec').onkeydown = e => { if (e.key === 'Enter') posCobrar(); };
+  }
+  function posCambio() { const v = S.pos, t = calcVenta(v), rec = Number(v.recibido) || 0, d = r2(rec - t.total), el = document.querySelector('.pos-cambio'); if (!el) return;
+    el.classList.toggle('falta', !!rec && d < -0.009); el.innerHTML = `<small>${rec && d < -0.009 ? 'Falta' : 'Cambio'}</small><b>${$$(rec ? Math.abs(d) : 0)}</b>`; }
+  function posPago(k) { S.pos.pago = k; posGuardar(); posTotales(); }
+  function posRecibido(x) { S.pos.recibido = r2(x); posGuardar(); posTotales(); }
+  function posLimpiar() { if (S.pos.lineas.length && !confirm('¿Descartar la venta rápida?')) return; S.pos = posNueva(); posGuardar(); V.pos(); }
+  function posANota() { const p = S.pos; if (S.venta && S.venta.lineas.length && !confirm('Tienes otra venta en captura en "Nueva venta" que se va a reemplazar. ¿Continuar?')) return;
+    S.venta = Object.assign(ventaNueva(), { suc: p.suc, cli: p.cli, lista: p.lista, dias: p.dias, metodo: p.metodo, lineas: p.lineas.map(l => Object.assign({}, l)), estatus: 'Entregado' });
+    guardarBorrador(); S.pos = posNueva(); posGuardar(); ir('venta'); }
+  async function posCobrar(aut) {
+    const v = S.pos; if (!aut || aut instanceof Event) aut = null;
+    if (!v.cli) return toast('Elige el cliente (o da de alta "PÚBLICO EN GENERAL")', true);
+    if (!v.lineas.length) return toast('Agrega productos', true);
+    if (v.lineas.some(l => !(l.cant > 0))) return toast('Revisa las cantidades', true);
+    const t = calcVenta(v); let monto = t.total, forma = '', banco = '', ref = '', term = '';
+    if (v.pago === 'efectivo') {
+      const rec = Number(v.recibido) || 0; forma = formaPor(/efectivo/i) || '1'; banco = bancoPor(/efecti/i) || 'EFECTI10';
+      if (rec && rec < t.total - 0.009) { if (v.cli === clientePOS(v.suc)) return toast('Falta dinero: el cliente de mostrador no puede quedar a crédito', true);
+        if (!confirm('Recibido ' + $$(rec) + '. ¿Dejar ' + $$(t.total - rec) + ' a crédito?')) return; monto = rec; }
+    } else if (v.pago === 'tarjeta') { forma = v.formaT || ($('#posFT') || {}).value || formaPor(/tarjeta/i); banco = v.cta || ($('#posCta') || {}).value; ref = v.ref || ''; term = v.terminal || '';
+      if (!banco) return toast('Elige la cuenta donde se deposita la tarjeta', true); }
+    else if (v.pago === 'transfer') { forma = formaPor(/transfer/i); banco = v.cta || ($('#posCta') || {}).value; ref = v.ref || ''; if (!banco) return toast('Elige la cuenta donde entró la transferencia', true); }
+    else monto = 0;
+    const c = cliente(v.cli) || {};
+    const params = { ID_Venta: v.idPend || (v.idPend = uid()), ID_Sucursal: v.suc, ID_Cliente: v.cli, Lista_de_Precios: v.lista, Dias_de_credito: monto < t.total ? (c.credito || 0) : 0,
+      Metodo_de_pago: monto >= t.total ? 'PUE' : 'PPD', descPC: 0, Costo_Flete: 0, Flete_Pagado: 0, Cliente_Paga_Flete: 'SI', Comentarios: 'Venta rápida', fecha: hoyISO(),
+      Estatus: 'Entregado', ID_Flete: ENVIO_DEFAULT, No_Guia: '', lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, lote: '' })),
+      pago: monto > 0 ? { monto: r2(Math.min(monto, t.total)), forma: forma, banco: banco, referencia: ref, terminal: term } : null };
+    if (aut) Object.assign(params, aut);
+    const b = $('#posCobrarBtn'); if (b) b.disabled = true;
+    const cambio = v.pago === 'efectivo' && Number(v.recibido) > t.total ? r2(Number(v.recibido) - t.total) : 0;
+    const listo = () => { S.pos = posNueva(); posGuardar(); if (S.vista === 'pos') V.pos(); };   // la siguiente venta vuelve al cliente de mostrador
+    try {
+      const r = await pedir('guardarVenta', params, true);
+      (r.avisos || []).forEach(a => toast(a, true)); refrescarStock(); listo();
+      toast('✔ Venta ' + r.folio + (cambio ? ' · CAMBIO ' + $$(cambio) : ''));
+      try { S.ultimaVenta = await pedir('detalleVenta', { ID_Venta: r.ID_Venta }, true); ticketNota(false); if (cambio) posAvisoCambio(cambio); } catch (e2) {}
+    } catch (e) {
+      if (b) b.disabled = false;
+      const ic = errCredito(e); if (ic) return pedirAutCredito(ic, a => posCobrar(a));
+      if (e.red) {
+        encolar('guardarVenta', params, 'Venta rápida a ' + (c.razon || c.nombre || '') + ' por ' + $$(t.total));
+        descontarStockLocal(v); notaOffline(v, t, params); listo();
+        toast('📴 Sin conexión: venta guardada en el dispositivo' + (cambio ? ' · CAMBIO ' + $$(cambio) : ''));
+        ticketNota(true); if (cambio) posAvisoCambio(cambio);
+      } else toast(e.message, true);
+    }
+  }
+  function posAvisoCambio(c) { const h = $('#modalCuerpo'); if (h) h.insertAdjacentHTML('afterbegin', `<div class="pos-cambio" style="margin-bottom:10px"><small>Cambio a entregar</small><b>${$$(c)}</b></div>`); }
+
+  /* ---- 🪪 tarjeta del cliente con QR ---- */
+  async function qrCanvas(txt, px) {
+    const qr = await libLocal('qr'), q = qr(0, 'M'); q.addData(txt); q.make();
+    const n = q.getModuleCount(), m = 4, cv = document.createElement('canvas'), s = Math.floor(px / (n + m * 2)); cv.width = cv.height = s * (n + m * 2);
+    const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height); x.fillStyle = '#000';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) x.fillRect((c + m) * s, (r + m) * s, s, s);
+    return cv;
+  }
+  async function tarjetaPng(c) {
+    const W = 1012, H = 638, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#1f6b4a'); g.addColorStop(1, '#0f3d2a'); x.fillStyle = g;
+    x.beginPath(); x.roundRect ? x.roundRect(0, 0, W, H, 36) : x.rect(0, 0, W, H); x.fill();
+    try { const logo = await new Promise((ok, mal) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = mal; i.src = window.LOGO || 'logo.png'; });
+      const lh = 120, lw = logo.width * lh / logo.height; x.fillStyle = '#fff'; x.beginPath(); x.roundRect ? x.roundRect(40, 36, lw + 32, lh + 24, 18) : x.rect(40, 36, lw + 32, lh + 24); x.fill(); x.drawImage(logo, 56, 48, lw, lh); } catch (e) {}
+    const qr = await qrCanvas('IVCLI:' + c.id, 340); x.fillStyle = '#fff'; x.fillRect(W - 400, 150, 360, 360); x.drawImage(qr, W - 390, 160, 340, 340);
+    x.fillStyle = '#fff'; x.textBaseline = 'top';
+    const partir = (t, ancho, f) => { x.font = f; const out = []; let l = ''; String(t).split(/\s+/).forEach(p => { const pr = l ? l + ' ' + p : p; if (x.measureText(pr).width > ancho && l) { out.push(l); l = p; } else l = pr; }); out.push(l); return out.slice(0, 3); };
+    let y = 210; partir(c.razon || c.nombre, W - 480, 'bold 44px Arial').forEach(l => { x.font = 'bold 44px Arial'; x.fillText(l, 44, y); y += 52; });
+    if (c.razon && c.nombre && c.razon !== c.nombre) { x.font = '28px Arial'; x.fillText(String(c.nombre).slice(0, 40), 44, y + 4); y += 40; }
+    x.font = '26px Arial'; x.globalAlpha = .8; x.fillText('Cliente preferente', 44, H - 190); x.globalAlpha = 1;
+    x.font = 'bold 34px Arial'; x.fillText('Precio ' + (c.lista || 'Público'), 44, H - 150);
+    x.font = '26px Arial'; x.fillText((c.credito ? 'Crédito ' + c.credito + ' días · ' : '') + 'No. ' + c.id, 44, H - 100);
+    x.font = '22px Arial'; x.globalAlpha = .75; x.fillText('Presenta esta tarjeta en tu compra · Interés Veterinario®', 44, H - 56); x.globalAlpha = 1;
+    return new Promise(ok => cv.toBlob(ok, 'image/png'));
+  }
+  async function tarjetaCliente(id) {
+    const c = cliente(id); if (!c) return;
+    let b; try { b = await tarjetaPng(c); } catch (e) { return toast(e.message || 'No se pudo generar la tarjeta', true); }
+    S.tarjeta = { id: id, blob: b }; const url = URL.createObjectURL(b);
+    modal('🪪 Tarjeta del cliente', `<div style="text-align:center"><img src="${url}" alt="Tarjeta" style="max-width:100%;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.2)"></div>
+      <p class="muted peq">Al escanear el QR en la venta (cámara o pistola lectora) se elige al cliente y se aplica su lista de precios (${esc(c.lista || 'Público')}).</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button><button class="btn" onclick="App.tarjetaBajar()">⬇️ Descargar</button><button class="btn primario" onclick="App.tarjetaEnviar()">💬 Enviar por WhatsApp</button></div>`);
+  }
+  function tarjetaBajar() { const t = S.tarjeta; if (!t) return; const a = document.createElement('a'); a.href = URL.createObjectURL(t.blob); a.download = 'tarjeta-' + String(t.id).replace(/[^\w-]/g, '_') + '.png'; document.body.appendChild(a); a.click(); a.remove(); }
+  async function tarjetaEnviar() {
+    const t = S.tarjeta; if (!t) return; const c = cliente(t.id) || {};
+    const txt = 'Interés Veterinario® — Esta es tu tarjeta de cliente. Preséntala en tu próxima compra para aplicar tu precio ' + (c.lista || '') + '.';
+    const file = new File([t.blob], 'tarjeta-interes-veterinario.png', { type: 'image/png' });
+    if (tkMovil() && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], text: txt }); } catch (e) {} return; }
+    let ok = false; try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': t.blob })]); ok = true; } } catch (e) {}
+    const tel = String(c.cel || '').replace(/\D/g, '').slice(-10); window.open(WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(txt), '_blank');
+    if (ok) toast('✔ Imagen copiada: pégala en el chat con ⌘V / Ctrl+V'); else { tarjetaBajar(); toast('Se descargó la imagen: adjúntala en el chat', true); }
   }
   V.equipo = () => {
     const h = hoyISO(), f = alDia(S.feq || (S.feq = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, suc: '', orden: 'venta' }));
@@ -11053,6 +11301,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
+    escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
