@@ -858,7 +858,7 @@ const App = (() => {
   function mostrarApp() {
     $('#login').classList.add('oculto'); $('#app').classList.remove('oculto');
     marcarRed(S.online); pintarCola(); ir(S.vista);
-    botonBienvenida(); bienvenida(); abrirDesdeQR();   // al abrir la app: siempre la pantalla de bienvenida con el menú (celular, iPad y Mac)
+    botonBienvenida(); if (!abrirDesdeQR()) bienvenida();   // al abrir la app (o desde el QR de una tarjeta: directo a la venta): siempre la pantalla de bienvenida con el menú (celular, iPad y Mac)
     revisarVersionApp(); revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => { revisarVersion(); revisarVersionApp(); }, 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { revisarVersion(); revisarVersionApp(); } }); }
     // logotipos de sucursal guardados con fondo blanco: el administrador los deja sin fondo (una vez, en segundo plano)
     if (U().rol === 'Administrador' && LS.get('minisSucRev', '') !== hoyISO()) setTimeout(() => { try { LS.set('minisSucRev', hoyISO()); repararMinisSuc(D().sucursales || []); } catch (e) {} }, 30000);
@@ -8521,13 +8521,32 @@ const App = (() => {
   // QR de la tarjeta: enlace a la app (…/?cli=ID; al escanearlo con la cámara del celular abre la app) o el formato anterior IVCLI:ID
   const QR_CLI = 'https:' + '\/\/app.interesveterinario.com/?cli=';
   const idClienteQR = txt => { const s = String(txt || '').trim(), m = s.match(/^IVCLI:(.+)$/i) || s.match(/[?&#]cli=([^&#\s]+)/i); const id = m ? decodeURIComponent(m[1]) : ''; return id && cliente(id) ? id : null; };
-  /** Se abrió la app desde el QR de una tarjeta (cámara del celular): a Venta rápida con ese cliente. */
+  /** Cliente del QR con el que se abrió la app (cámara del celular), mientras no se haya atendido. */
+  const qrPendiente = () => { try { return new URLSearchParams(location.search).get('cli') || ''; } catch (e) { return ''; } };
+  /** Personal de la empresa con sesión: directo a Nueva venta con el cliente de la tarjeta. */
   function abrirDesdeQR() {
-    let id = ''; try { id = new URLSearchParams(location.search).get('cli') || ''; } catch (e) {}
-    if (!id) return; try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
-    const c = cliente(id); if (!c) return toast('El cliente de la tarjeta no está en tus datos', true);
-    if (puede('ventas')) { setTimeout(() => { if (!S.pos) S.pos = posNueva(); ir('pos'); posCliente(id); const b = $('#bienvenida'); if (b) b.classList.add('oculto'); document.body.classList.remove('con-bienv'); }, 300); }
-    else toast('👤 ' + (c.razon || c.nombre));
+    const id = qrPendiente(); if (!id) return false;
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
+    const b = $('#bienvenida'); if (b) b.classList.add('oculto'); document.body.classList.remove('con-bienv');
+    const c = cliente(id);
+    if (!c) { toast('El cliente de la tarjeta no está en tus datos (o es de otra sucursal)', true); ir(S.vista || 'inicio'); return true; }
+    if (!puede('ventas')) { ir('clientes'); setTimeout(() => { const i = (S.lista || []).findIndex(x => x.id === id); if (i >= 0) verCliente(i); else toast('👤 ' + (c.razon || c.nombre)); }, 400); return true; }
+    if (S.venta && S.venta.lineas.length && S.venta.cli !== id && !S.venta.editId) {
+      if (!confirm('Tienes una venta en captura para otro cliente. ¿Descartarla y empezar una nueva para ' + (c.razon || c.nombre) + '?')) { ir('venta'); return true; }
+    }
+    if (!S.venta || S.venta.editId || S.venta.cli !== id) S.venta = ventaNueva();
+    ir('venta'); elegirClienteVenta(id);
+    toast('👤 ' + (c.razon || c.nombre) + ' · ' + (S.venta.lista || '') + (c.credito ? ' · crédito ' + c.credito + ' días' : ''));
+    return true;
+  }
+  /** Sin sesión y abierta desde la tarjeta: no se muestra nada del sistema (solo a quien se identifique como personal). */
+  function pantallaQRSinSesion() {
+    if (!qrPendiente()) return;
+    const f = document.querySelector('#login .login-card'); if (!f || $('#lgQR')) return;
+    [...f.children].forEach(x => { if (!/^(lgLogo|lgNombre)$/.test(x.id)) x.classList.add('oculto-qr'); });
+    f.insertAdjacentHTML('beforeend', `<div id="lgQR" style="text-align:center"><p style="font-size:17px;margin:10px 0 6px"><b>Tarjeta de cliente</b></p>
+      <p class="muted">Presenta esta tarjeta en tu sucursal de Interés Veterinario® para identificarte en tu compra.</p>
+      <p style="margin-top:22px"><a href="#" class="muted peq" onclick="event.preventDefault();document.querySelectorAll('#login .oculto-qr').forEach(x=>x.classList.remove('oculto-qr'));this.closest('#lgQR').remove()">Personal de la empresa</a></p></div>`);
   }
   /** Interpreta un código leído (pistola o cámara). destino: 'venta' | 'pos'. Regresa el texto a mostrar o null si no se reconoce. */
   function leerCodigo(txt, destino) {
@@ -10753,7 +10772,7 @@ const App = (() => {
       mostrarApp();
       refrescarDatos(true).then(() => { pintarMenu(); pintarBienvEstado(); sincronizar(); renovarSesion(); setTimeout(precargar, 20000); setTimeout(revisarMinisSuc, 8000); setTimeout(fotosAlEntrar, 4000); }).catch(() => {});
     } else {
-      $('#login').classList.remove('oculto'); avisarNativoLogin(); revisarVersionApp();
+      $('#login').classList.remove('oculto'); pantallaQRSinSesion(); avisarNativoLogin(); revisarVersionApp();
     }
   }
   /* Puente con la app nativa (Xcode / WKWebView). La app nativa puede pedir la contraseña guardada en Contraseñas de Apple

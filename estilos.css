@@ -947,6 +947,7 @@ label:has(> select[id$="Suc"]) > select:focus, label:has(input[id$="Cli"]) input
 #scanVista video { width: 100% !important; display: block; }
 @media (max-width: 900px) { .pos { grid-template-columns: 1fr; } .pos-der { position: static; } }
 @media (max-width: 560px) { .pos-linea { grid-template-columns: auto minmax(0, 1fr) auto 28px; } .pos-nom { grid-column: 1 / -1; } .pos-pre { text-align: left; } .pos-pre input { width: 78px; } }
+.oculto-qr { display: none !important; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
