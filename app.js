@@ -8752,29 +8752,39 @@ const App = (() => {
     for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) x.fillRect((c + m) * s, (r + m) * s, s, s);
     return cv;
   }
+  /** Tarjeta del cliente (credencial vertical, para mostrar en el celular o imprimir). */
   async function tarjetaPng(c) {
-    const W = 1012, H = 638, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
-    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#1f6b4a'); g.addColorStop(1, '#0f3d2a'); x.fillStyle = g;
-    x.beginPath(); x.roundRect ? x.roundRect(0, 0, W, H, 36) : x.rect(0, 0, W, H); x.fill();
+    const W = 640, H = 1090, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    const rr = (X, Y, w, h, r) => { x.beginPath(); if (x.roundRect) x.roundRect(X, Y, w, h, r); else x.rect(X, Y, w, h); };
+    const ajustar = (t, max, px, min) => { let s = px; do { x.font = 'bold ' + s + 'px Arial'; s -= 2; } while (x.measureText(t).width > max && s > min); };
+    rr(0, 0, W, H, 44); x.clip();
+    const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1f6b4a'); g.addColorStop(1, '#0c3526'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.fillStyle = '#fff'; x.beginPath(); x.moveTo(0, 0); x.lineTo(W, 0); x.lineTo(W, 250); x.bezierCurveTo(W * .7, 310, W * .3, 200, 0, 280); x.fill();
     try { const logo = await new Promise((ok, mal) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = mal; i.src = window.LOGO || 'logo.png'; });
-      const lh = 120, lw = logo.width * lh / logo.height; x.fillStyle = '#fff'; x.beginPath(); x.roundRect ? x.roundRect(40, 36, lw + 32, lh + 24, 18) : x.rect(40, 36, lw + 32, lh + 24); x.fill(); x.drawImage(logo, 56, 48, lw, lh); } catch (e) {}
-    const qr = await qrCanvas(QR_CLI + encodeURIComponent(c.id), 340); x.fillStyle = '#fff'; x.fillRect(W - 400, 150, 360, 360); x.drawImage(qr, W - 390, 160, 340, 340);
-    x.fillStyle = '#fff'; x.textBaseline = 'top';
-    const partir = (t, ancho, f) => { x.font = f; const out = []; let l = ''; String(t).split(/\s+/).forEach(p => { const pr = l ? l + ' ' + p : p; if (x.measureText(pr).width > ancho && l) { out.push(l); l = p; } else l = pr; }); out.push(l); return out.slice(0, 3); };
-    let y = 210; partir(c.razon || c.nombre, W - 480, 'bold 44px Arial').forEach(l => { x.font = 'bold 44px Arial'; x.fillText(l, 44, y); y += 52; });
-    if (c.razon && c.nombre && c.razon !== c.nombre) { x.font = '28px Arial'; x.fillText(String(c.nombre).slice(0, 40), 44, y + 4); y += 40; }
-    x.font = '26px Arial'; x.globalAlpha = .8; x.fillText('Cliente preferente', 44, H - 190); x.globalAlpha = 1;
-    const lugar = String(c.estado || '').trim(); if (lugar) { x.font = 'bold 34px Arial'; x.fillText(lugar.slice(0, 40), 44, H - 150); }
-    x.font = '26px Arial'; x.fillText((c.credito ? 'Crédito ' + c.credito + ' días · ' : '') + 'No. ' + c.id, 44, H - 100);
-    x.font = '22px Arial'; x.globalAlpha = .75; x.fillText('Presenta esta tarjeta en tu compra · Interés Veterinario®', 44, H - 56); x.globalAlpha = 1;
+      const lh = 170, lw = Math.min(W - 80, logo.width * lh / logo.height), lh2 = lw * logo.height / logo.width; x.drawImage(logo, (W - lw) / 2, 40 + (lh - lh2) / 2, lw, lh2); } catch (e) {}
+    x.textAlign = 'center'; x.fillStyle = '#fff';
+    x.font = '600 22px Arial'; x.globalAlpha = .8; x.fillText('TARJETA DE CLIENTE', W / 2, 360); x.globalAlpha = 1;
+    const nom = String(c.razon || c.nombre || ''); ajustar(nom, W - 80, 50, 26); x.fillText(nom, W / 2, 420);
+    if (c.razon && c.nombre && c.razon !== c.nombre) { x.font = '28px Arial'; x.globalAlpha = .8; x.fillText(String(c.nombre).slice(0, 36), W / 2, 462); x.globalAlpha = 1; }
+    const qr = await qrCanvas(QR_CLI + encodeURIComponent(c.id), 380);
+    x.fillStyle = '#fff'; rr((W - 400) / 2, 500, 400, 400, 30); x.fill(); x.drawImage(qr, (W - 380) / 2, 510, 380, 380);
+    const edo = String(c.estado || '').trim();
+    if (edo) {
+      x.font = 'bold 30px Arial'; const tw = x.measureText(edo).width, X0 = W / 2 - (tw + 34) / 2;
+      x.fillStyle = '#8ef0b5'; x.beginPath(); x.arc(X0 + 12, 946, 12.6, Math.PI, 0); x.lineTo(X0 + 12, 968); x.closePath(); x.fill();
+      x.fillStyle = 'rgba(0,0,0,.25)'; x.beginPath(); x.arc(X0 + 12, 946, 4.8, 0, 7); x.fill();
+      x.fillStyle = '#fff'; x.textAlign = 'left'; x.fillText(edo, X0 + 34, 958); x.textAlign = 'center';
+    }
+    x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(W / 2 - 120, edo ? 994 : 950, 240, 2);
+    x.fillStyle = '#fff'; x.globalAlpha = .9; x.font = 'italic 26px Arial'; x.fillText('Presenta tu tarjeta en cada compra', W / 2, edo ? 1040 : 1000); x.globalAlpha = 1;
     return new Promise(ok => cv.toBlob(ok, 'image/png'));
   }
   async function tarjetaCliente(id) {
     const c = cliente(id); if (!c) return;
     let b; try { b = await tarjetaPng(c); } catch (e) { return toast(e.message || 'No se pudo generar la tarjeta', true); }
     S.tarjeta = { id: id, blob: b }; const url = URL.createObjectURL(b);
-    modal('🪪 Tarjeta del cliente', `<div style="text-align:center"><img src="${url}" alt="Tarjeta" style="max-width:100%;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.2)"></div>
-      <p class="muted peq">Al escanear el QR en la venta (cámara de la app o pistola lectora) se elige al cliente y se le aplican sus precios. Si se escanea con la cámara del celular, abre la app en Venta rápida con ese cliente.</p>
+    modal('🪪 Tarjeta del cliente', `<div style="text-align:center"><img src="${url}" alt="Tarjeta" style="width:100%;max-width:300px;border-radius:18px;box-shadow:0 4px 16px rgba(0,0,0,.25)"></div>
+      <p class="muted peq">Al escanear el QR en la venta (cámara de la app o pistola lectora) se elige al cliente y se le aplican sus precios. Si tu personal lo escanea con la cámara del celular, abre Nueva venta con ese cliente; a cualquier otra persona no le muestra nada.</p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button><button class="btn" onclick="App.tarjetaBajar()">⬇️ Descargar</button><button class="btn primario" onclick="App.tarjetaEnviar()">💬 Enviar por WhatsApp</button></div>`);
   }
   function tarjetaBajar() { const t = S.tarjeta; if (!t) return; const a = document.createElement('a'); a.href = URL.createObjectURL(t.blob); a.download = 'tarjeta-' + String(t.id).replace(/[^\w-]/g, '_') + '.png'; document.body.appendChild(a); a.click(); a.remove(); }
