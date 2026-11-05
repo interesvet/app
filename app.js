@@ -780,7 +780,8 @@ const App = (() => {
         <div class="bienv-tit"><b>CRM &amp; Ventas</b><span>Inteligencia y Gestión Comercial</span></div>
         <div class="bienv-hola"><h2>${saludo()}${nombre ? ', ' + esc(nombre) : ''}</h2><p>${esc(fecha.charAt(0).toUpperCase() + fecha.slice(1))} · ${esc(u.rolNombre || u.rol || '')}</p></div>
         <div class="bienv-estado" id="bienvEstado"></div>
-        ${puede('ventas') ? `<button class="bienv-cta" onclick="App.bienvIr('venta')"><span>🛒</span><div><b>Nueva venta</b><small>Captura una nota en segundos</small></div><em>›</em></button>` : ''}
+        ${puede('ventas') ? `<button class="bienv-cta" onclick="App.bienvIr('venta')"><span>🛒</span><div><b>Nueva venta</b><small>Captura una nota en segundos</small></div><em>›</em></button>
+          <button class="bienv-cta bienv-cta2" onclick="App.escanearTarjeta()"><span>📷</span><div><b>Escanear tarjeta</b><small>QR del cliente → venta con sus datos</small></div><em>›</em></button>` : ''}
         <div class="bienv-grid">${items.map(x => `<button class="bienv-item" onclick="App.bienvIr('${x.id}')"><span class="bienv-ico">${x.e.i}</span><b>${esc(x.e.t)}</b><small>${esc(SUB_MENU[x.id] || '')}</small></button>`).join('')}</div>
         <div class="bienv-pie">Interés Veterinario® · ${new Date().getFullYear()}${S.cola && S.cola.length ? ` · <b>${S.cola.length} por sincronizar</b>` : ''}<div class="ver-app"></div></div>
         <button class="bienv-salir" onclick="App.salirBienv()" aria-label="Cerrar sesión">⏻ Cerrar sesión</button>
@@ -8531,14 +8532,21 @@ const App = (() => {
     const c = cliente(id);
     if (!c) { toast('El cliente de la tarjeta no está en tus datos (o es de otra sucursal)', true); ir(S.vista || 'inicio'); return true; }
     if (!puede('ventas')) { ir('clientes'); setTimeout(() => { const i = (S.lista || []).findIndex(x => x.id === id); if (i >= 0) verCliente(i); else toast('👤 ' + (c.razon || c.nombre)); }, 400); return true; }
+    ventaConCliente(id); return true;
+  }
+  /** Nueva venta con el cliente ya elegido (desde el QR de su tarjeta). */
+  function ventaConCliente(id) {
+    const c = cliente(id); if (!c) return;
+    const b = $('#bienvenida'); if (b) b.classList.add('oculto'); document.body.classList.remove('con-bienv');
     if (S.venta && S.venta.lineas.length && S.venta.cli !== id && !S.venta.editId) {
-      if (!confirm('Tienes una venta en captura para otro cliente. ¿Descartarla y empezar una nueva para ' + (c.razon || c.nombre) + '?')) { ir('venta'); return true; }
+      if (!confirm('Tienes una venta en captura para otro cliente. ¿Descartarla y empezar una nueva para ' + (c.razon || c.nombre) + '?')) { ir('venta'); return; }
     }
     if (!S.venta || S.venta.editId || S.venta.cli !== id) S.venta = ventaNueva();
     ir('venta'); elegirClienteVenta(id);
     toast('👤 ' + (c.razon || c.nombre) + ' · ' + (S.venta.lista || '') + (c.credito ? ' · crédito ' + c.credito + ' días' : ''));
-    return true;
   }
+  /** Botón de la pantalla de inicio: escanear la tarjeta del cliente con la cámara de la app. */
+  function escanearTarjeta() { const b = $('#bienvenida'); if (b) b.classList.add('oculto'); document.body.classList.remove('con-bienv'); if (S.vista !== 'venta') ir('venta'); escanear('tarjeta', false); }
   /** Sin sesión y abierta desde la tarjeta: no se muestra nada del sistema (solo a quien se identifique como personal). */
   function pantallaQRSinSesion() {
     if (!qrPendiente()) return;
@@ -8551,9 +8559,10 @@ const App = (() => {
   /** Interpreta un código leído (pistola o cámara). destino: 'venta' | 'pos'. Regresa el texto a mostrar o null si no se reconoce. */
   function leerCodigo(txt, destino) {
     const idc = idClienteQR(txt);
-    if (idc) { const c = cliente(idc); destino === 'pos' ? posCliente(idc) : elegirClienteVenta(idc); return '👤 ' + (c.razon || c.nombre); }
+    if (idc) { const c = cliente(idc); destino === 'pos' ? posCliente(idc) : destino === 'tarjeta' ? setTimeout(() => ventaConCliente(idc), 50) : elegirClienteVenta(idc); return '👤 ' + (c.razon || c.nombre); }
     const p = prodPorCodigo(txt);
-    if (p) { destino === 'pos' ? posAgregar(p.id) : agregarLineaVenta(p.id); return '✔ ' + p.nombre; }
+    if (p) { if (destino === 'tarjeta') { const b = $('#bienvenida'); if (b) b.classList.add('oculto'); document.body.classList.remove('con-bienv'); if (!S.venta || S.venta.editId) S.venta = ventaNueva(); ir('venta'); }
+      destino === 'pos' ? posAgregar(p.id) : agregarLineaVenta(p.id); return '✔ ' + p.nombre; }
     return null;
   }
   function codigoDesconocido(txt, destino) {
@@ -11330,7 +11339,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
+    escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
