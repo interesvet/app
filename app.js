@@ -1493,6 +1493,114 @@ const App = (() => {
     return htmlNota(d, true);
   }
 
+
+  /* ---------- 🧾 TICKET 80 mm (impresora térmica portátil) ----------
+     Un solo "modelo" de renglones que se dibuja de 3 formas:
+       · HTML para Star PassPRNT (iPhone y Android, impresoras Star por Bluetooth: SM-S230i, SM-L200…)
+       · HTML para imprimir desde el navegador (AirPrint, impresoras con controlador en Mac/PC)
+       · Imagen PNG de 576 px para compartir (Android: RawBT u otras apps de impresoras genéricas)
+     576 puntos = 72 mm imprimibles del papel de 80 mm (203 dpi). */
+  const TK_W = 576;
+  function ticketFilas(d) {
+    const F = [], L = (t, o) => F.push(Object.assign({ t: String(t == null ? '' : t) }, o || {})), D2 = (a, b, o) => F.push(Object.assign({ a: String(a), b: String(b) }, o || {})), S_ = () => F.push({ sep: 1 });
+    const suc = d.sucursal || {};
+    L('INTERÉS VETERINARIO®', { c: 1, n: 1 });
+    if (suc.nombre) L(suc.nombre, { c: 1, n: 1 });
+    if (suc.direccion) L(suc.direccion, { c: 1, p: 1 });
+    if (suc.tel) L('Tel. ' + suc.tel, { c: 1, p: 1 });
+    S_();
+    L('NOTA DE VENTA', { c: 1, n: 1 }); L(d.folio || '', { c: 1, n: 1, g: 1 }); L(d.fecha || '', { c: 1 });
+    if (d.estatus && d.estatus !== 'Entregado') L(String(d.estatus).toUpperCase(), { c: 1, n: 1 });
+    (d.facturas || []).forEach(f => L('Factura ' + f.sf, { c: 1, p: 1 }));
+    S_();
+    L(d.razon || d.cliente || '', { n: 1 }); if (d.razon && d.cliente && d.razon !== d.cliente) L(d.cliente, { p: 1 });
+    if (d.rfc && !/^X[AE]XX010101000$/i.test(d.rfc)) L('RFC ' + d.rfc, { p: 1 });
+    L('Crédito: ' + (d.dias || 0) + ' días' + (d.venc ? ' · Vence ' + d.venc : ''), { p: 1 });
+    if (d.vendedor) L('Vendedor: ' + d.vendedor, { p: 1 });
+    S_();
+    (d.lineas || []).filter(l => l.cant > 0).forEach(l => { L(l.nombre || l.prod || '', { n: 1 }); D2(nf(l.cant) + ' × ' + $$(l.precio) + (l.desc ? ' − desc. ' + $$(l.desc) : ''), $$((l.sub || l.cant * l.precio) - (l.desc || 0))); });
+    S_();
+    D2('Subtotal', $$(d.sub)); if (d.desc) D2('Descuento', '−' + $$(d.desc)); if (d.descPC) D2('Pronto pago', '−' + $$(d.descPC));
+    D2('IVA', $$(d.iva)); if (d.flete) D2('Flete', $$(d.flete));
+    D2('TOTAL', $$(d.total), { n: 1, g: 1 }); D2('Pagado', $$(d.cobrado || 0)); D2('SALDO', $$(d.saldo || 0), { n: 1, g: 1 });
+    if (d.letras) L('(' + d.letras + ')', { p: 1, c: 1 });
+    (d.cobros || []).forEach(c => D2('Pago ' + c.fecha + (c.forma ? ' · ' + String(c.forma).replace(/^\d+:\s*/, '') : ''), $$(c.monto), { p: 1 }));
+    if (pagadaNota(d)) L('*** PAGADO ***', { c: 1, n: 1, g: 1 });
+    if (d.comentarios) { S_(); L(d.comentarios, { p: 1 }); }
+    F.push({ esp: 70 }); L('______________________________', { c: 1 }); L('Recibí de conformidad', { c: 1, p: 1 });
+    F.push({ esp: 16 }); L('¡Gracias por su preferencia!', { c: 1, n: 1 }); F.push({ esp: 30 });
+    return F;
+  }
+  /** HTML del ticket (logo por URL absoluta para que PassPRNT o la impresora lo carguen). */
+  function ticketHtml(F, paraNavegador) {
+    const logo = new URL('logo.png', location.href).href;
+    const st = paraNavegador
+      ? '@page{size:80mm auto;margin:0}html,body{margin:0}body{width:72mm;margin:0 4mm;font:12px/1.3 Arial,Helvetica,sans-serif;color:#000}'
+      : 'body{margin:0;width:' + TK_W + 'px;font:22px/1.3 Arial,Helvetica,sans-serif;color:#000}';
+    const f = paraNavegador ? { g: '15px', p: '10.5px' } : { g: '30px', p: '19px' };
+    return '<html><head><meta charset="utf-8"><style>' + st + '.c{text-align:center}.n{font-weight:bold}.g{font-size:' + f.g + '}.p{font-size:' + f.p + '}.d{display:flex;justify-content:space-between;gap:8px}.d span:last-child{white-space:nowrap}hr{border:0;border-top:1px dashed #000;margin:6px 0}</style></head><body>' +
+      '<div class="c"><img src="' + logo + '" style="max-width:55%;max-height:' + (paraNavegador ? '22mm' : '150px') + ';filter:grayscale(1)" onerror="this.remove()"></div>' +
+      F.map(r => r.sep ? '<hr>' : r.esp ? '<div style="height:' + (paraNavegador ? r.esp / 8 + 'mm' : r.esp + 'px') + '"></div>' :
+        '<div class="' + [r.a !== undefined ? 'd' : '', r.c ? 'c' : '', r.n ? 'n' : '', r.g ? 'g' : '', r.p ? 'p' : ''].join(' ') + '">' + (r.a !== undefined ? '<span>' + esc(r.a) + '</span><span>' + esc(r.b) + '</span>' : esc(r.t)) + '</div>').join('') +
+      '</body></html>';
+  }
+  /** Imagen PNG del ticket (576 px de ancho), en blanco y negro. */
+  async function ticketPng(F) {
+    const cv = document.createElement('canvas'), x = cv.getContext('2d'), M = 8, W = TK_W - M * 2;
+    const font = r => (r.n ? 'bold ' : '') + (r.g ? 30 : r.p ? 20 : 23) + 'px Arial, Helvetica, sans-serif', alto = r => (r.g ? 30 : r.p ? 20 : 23) * 1.3;
+    const partir = (t, ancho) => { const out = []; let lin = ''; String(t).split(/\s+/).forEach(p => { const prueba = lin ? lin + ' ' + p : p; if (x.measureText(prueba).width > ancho && lin) { out.push(lin); lin = p; } else lin = prueba; }); out.push(lin); return out; };
+    let logo = null; try { logo = await new Promise((ok, mal) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = mal; i.src = window.LOGO || 'logo.png'; }); } catch (e) {}
+    const lh = logo ? Math.min(150, logo.height * Math.min(1, (W * 0.55) / logo.width)) : 0, lw = logo ? logo.width * lh / logo.height : 0;
+    const pasos = [];   // primero se mide
+    F.forEach(r => {
+      if (r.sep) return pasos.push({ sep: 1, h: 16 });
+      if (r.esp) return pasos.push({ h: r.esp });
+      x.font = font(r);
+      if (r.a !== undefined) { const wb = x.measureText(r.b).width, ls = partir(r.a, W - wb - 12); ls.forEach((t, i) => pasos.push({ r: r, t: t, b: i === ls.length - 1 ? r.b : '', h: alto(r) })); }
+      else partir(r.t, W).forEach(t => pasos.push({ r: r, t: t, h: alto(r) }));
+    });
+    cv.width = TK_W; cv.height = Math.ceil(M + lh + (logo ? 10 : 0) + pasos.reduce((s, p) => s + p.h, 0) + M);
+    x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height); x.fillStyle = '#000'; x.strokeStyle = '#000'; x.textBaseline = 'top';
+    let y = M;
+    if (logo) { x.filter = 'grayscale(1)'; x.drawImage(logo, (TK_W - lw) / 2, y, lw, lh); x.filter = 'none'; y += lh + 10; }
+    pasos.forEach(p => {
+      if (p.sep) { x.setLineDash([6, 5]); x.beginPath(); x.moveTo(M, y + 8); x.lineTo(TK_W - M, y + 8); x.stroke(); x.setLineDash([]); }
+      else if (p.r) { x.font = font(p.r); x.textAlign = p.r.c ? 'center' : 'left'; x.fillText(p.t, p.r.c ? TK_W / 2 : M, y); if (p.b) { x.textAlign = 'right'; x.fillText(p.b, TK_W - M, y); } }
+      y += p.h;
+    });
+    return new Promise(ok => cv.toBlob(ok, 'image/png'));
+  }
+  const tkModo = () => { try { return localStorage.getItem('ticketModo') || ''; } catch (e) { return ''; } };
+  function ticketNota(offline) {
+    const d = offline ? S.notaOff : S.ultimaVenta; if (!d) return toast('Abre la nota primero', true);
+    S.tkF = ticketFilas(d); S.tkFolio = d.folio || 'nota';
+    const m = tkModo(), op = (id, t, sub) => `<button class="btn ${m === id ? 'primario' : ''}" style="display:block;width:100%;text-align:left" onclick="App.ticketImprimir('${id}')"><b>${t}</b><br><small>${sub}</small></button>`;
+    modal('🧾 Ticket 80 mm · ' + esc(S.tkFolio), `<div class="tk-vista">${ticketHtml(S.tkF, true).replace(/^[\s\S]*?<body>|<\/body>[\s\S]*$/g, '')}</div>
+      <p class="muted peq">¿Con qué impresora? (se recuerda tu elección en este equipo)</p>
+      <div style="display:grid;gap:8px">
+        ${op('star', '📲 Impresora Star (Bluetooth)', 'SM-S230i, SM-L200… iPhone y Android · requiere la app gratuita Star PassPRNT')}
+        ${op('imagen', '🖼️ Compartir imagen del ticket', 'Android con impresoras genéricas: elige RawBT u otra app de tu impresora')}
+        ${op('navegador', '🖨️ Imprimir con el sistema', 'AirPrint o impresora instalada en la Mac/PC (papel de 80 mm)')}</div>`);
+  }
+  async function ticketImprimir(modo) {
+    try { localStorage.setItem('ticketModo', modo); } catch (e) {}
+    const F = S.tkF; if (!F) return;
+    if (modo === 'star') {
+      const url = 'starpassprnt:' + '/' + '/v1/print/nopreview?size=' + TK_W + '&cut=partial&html=' + encodeURIComponent(ticketHtml(F, false)) + '&back=' + encodeURIComponent(location.href.split('#')[0]);
+      location.href = url;
+      setTimeout(() => { if (document.visibilityState === 'visible') toast('Si no se abrió, instala "Star PassPRNT" (App Store / Play Store) y elige tu impresora en su configuración.', true); }, 2500);
+      return;
+    }
+    if (modo === 'imagen') {
+      const b = await ticketPng(F), file = new File([b], 'ticket-' + String(S.tkFolio).replace(/[^\w-]/g, '_') + '.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: 'Ticket ' + S.tkFolio }); } catch (e) {} return; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); toast('Imagen descargada: ábrela con la app de tu impresora');
+      return;
+    }
+    const w = window.open('', '_blank'); if (!w) return toast('Permite las ventanas emergentes para imprimir', true);
+    w.document.write(ticketHtml(F, true).replace('</body>', '<script>window.onload=()=>{setTimeout(()=>{window.print()},300)}<\/script></body>')); w.document.close();
+  }
+
   /* ---------- NOTA DE VENTA (impresión / WhatsApp) ---------- */
   const pagadaNota = d => !!(d && d.id && d.total > 0.009 && d.cobrado > 0.009 && d.saldo <= 0.009 && d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto');
   /** Serie-folio y UUID (folio fiscal) de las facturas asignadas, debajo de la fecha de la nota. */
@@ -1526,6 +1634,7 @@ const App = (() => {
         </tbody></table></div></div>` : ''}
       <p style="margin-top:36px;text-align:center">_______________________________<br><small>Recibí de conformidad</small></p></div></div>
       <div class="acciones no-imprimir">
+        <button class="btn" onclick="App.ticketNota(${offline ? 'true' : 'false'})">🧾 Ticket 80 mm</button>
         ${!offline && d.id ? `<button class="btn primario" onclick="App.pdfNota('${d.id}')">📄 PDF para enviar / imprimir</button>` : '<button class="btn primario" onclick="App.pdfNotaOffline()">📄 PDF para enviar</button><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button>'}
         ${d.cel ? `<a class="btn" target="_blank" href="${WA_BASE}52${String(d.cel).replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent('Interés Veterinario® — Nota ' + d.folio + '\nTotal: ' + $$(d.total) + '\nSaldo: ' + $$(d.saldo) + '\n¡Gracias por su compra!')}">💬 WhatsApp</a>` : ''}
         ${!offline && d.id && viva && !bloq && d.saldo > 0.009 && puede('ventas_editar') ? `<button class="btn" onclick="App.editarNota('${d.id}')">✏️ Editar nota</button>` : ''}
@@ -10541,7 +10650,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    bajarXmlGasto, zipGastos, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
