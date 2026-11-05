@@ -1573,17 +1573,36 @@ const App = (() => {
   const tkModo = () => { try { return localStorage.getItem('ticketModo') || ''; } catch (e) { return ''; } };
   function ticketNota(offline) {
     const d = offline ? S.notaOff : S.ultimaVenta; if (!d) return toast('Abre la nota primero', true);
-    S.tkF = ticketFilas(d); S.tkFolio = d.folio || 'nota';
+    S.tkF = ticketFilas(d); S.tkFolio = d.folio || 'nota'; S.tkNota = d; S.tkOff = !!offline;
     const m = tkModo(), op = (id, t, sub) => `<button class="btn ${m === id ? 'primario' : ''}" style="display:block;width:100%;text-align:left" onclick="App.ticketImprimir('${id}')"><b>${t}</b><br><small>${sub}</small></button>`;
     modal('🧾 Ticket 80 mm · ' + esc(S.tkFolio), `<div class="tk-vista">${ticketHtml(S.tkF, true).replace(/^[\s\S]*?<body>|<\/body>[\s\S]*$/g, '')}</div>
       <p class="muted peq">¿Con qué impresora? (se recuerda tu elección en este equipo)</p>
       <div style="display:grid;gap:8px">
+        <div class="fila"><button class="btn primario" style="flex:1" onclick="App.ticketWhats()">💬 WhatsApp ${d.cel ? 'a ' + esc(d.razon || d.cliente || 'el cliente') : '(elegir contacto)'}</button>
+          ${navigator.canShare ? '<button class="btn fijo" onclick="App.ticketImprimir(\'imagen\', true)">📤 Compartir imagen</button>' : ''}</div>
+        <p class="muted peq" style="margin:-2px 0 4px">${d.cel ? 'Abre el chat del cliente (' + esc(d.cel) + ') con el enlace al ticket.' : 'El cliente no tiene celular registrado: elige el contacto en WhatsApp.'} Con "Compartir imagen" se manda la foto del ticket (eliges WhatsApp y el chat).</p>
         ${op('star', '📲 Impresora Star (Bluetooth)', 'SM-S230i, SM-L200… iPhone y Android · requiere la app gratuita Star PassPRNT')}
         ${op('imagen', '🖼️ Compartir imagen del ticket', 'Android con impresoras genéricas: elige RawBT u otra app de tu impresora')}
         ${op('navegador', '🖨️ Imprimir con el sistema', 'AirPrint o impresora instalada en la Mac/PC (papel de 80 mm)')}</div>`);
   }
-  async function ticketImprimir(modo) {
-    try { localStorage.setItem('ticketModo', modo); } catch (e) {}
+  /** Manda el ticket al WhatsApp del cliente: sube la imagen a Drive y abre su chat con el enlace. */
+  async function ticketWhats() {
+    const d = S.tkNota || {}, tel = String(d.cel || '').replace(/\D/g, '').slice(-10);
+    const texto = 'Interés Veterinario® — Ticket de su nota ' + (d.folio || '') + '\nTotal: ' + $$(d.total || 0) + ' · Saldo: ' + $$(d.saldo || 0);
+    if (S.tkOff || !d.id || !navigator.onLine) {   // sin conexión: se comparte la imagen
+      toast('Sin conexión: comparte la imagen y elige WhatsApp'); return ticketImprimir('imagen', true);
+    }
+    const w = window.open('', '_blank');
+    try {
+      toast('Preparando el ticket…');
+      const b = await ticketPng(S.tkF), b64 = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.readAsDataURL(b); });
+      const r = await pedir('guardarTicket', { ID_Venta: d.id, imagen: b64 });
+      const url = WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(texto + '\n' + r.url + '\n¡Gracias por su preferencia!');
+      if (w && !w.closed) w.location.href = url; else window.open(url, '_blank');
+    } catch (e) { if (w) { try { w.close(); } catch (x) {} } if (e.red) { toast('Sin conexión: comparte la imagen', true); ticketImprimir('imagen', true); } }
+  }
+  async function ticketImprimir(modo, soloCompartir) {
+    if (!soloCompartir) { try { localStorage.setItem('ticketModo', modo); } catch (e) {} }
     const F = S.tkF; if (!F) return;
     if (modo === 'star') {
       const url = 'starpassprnt:' + '/' + '/v1/print/nopreview?size=' + TK_W + '&cut=partial&html=' + encodeURIComponent(ticketHtml(F, false)) + '&back=' + encodeURIComponent(location.href.split('#')[0]);
@@ -1593,7 +1612,8 @@ const App = (() => {
     }
     if (modo === 'imagen') {
       const b = await ticketPng(F), file = new File([b], 'ticket-' + String(S.tkFolio).replace(/[^\w-]/g, '_') + '.png', { type: 'image/png' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: 'Ticket ' + S.tkFolio }); } catch (e) {} return; }
+      const tx = soloCompartir && S.tkNota ? 'Interés Veterinario® — Nota ' + (S.tkNota.folio || '') + ' · Total ' + $$(S.tkNota.total || 0) + ' · Saldo ' + $$(S.tkNota.saldo || 0) : undefined;
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share(Object.assign({ files: [file], title: 'Ticket ' + S.tkFolio }, tx ? { text: tx } : {})); } catch (e) {} return; }
       const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); toast('Imagen descargada: ábrela con la app de tu impresora');
       return;
     }
@@ -10650,7 +10670,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
