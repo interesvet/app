@@ -858,7 +858,7 @@ const App = (() => {
   function mostrarApp() {
     $('#login').classList.add('oculto'); $('#app').classList.remove('oculto');
     marcarRed(S.online); pintarCola(); ir(S.vista);
-    botonBienvenida(); bienvenida();   // al abrir la app: siempre la pantalla de bienvenida con el menú (celular, iPad y Mac)
+    botonBienvenida(); bienvenida(); abrirDesdeQR();   // al abrir la app: siempre la pantalla de bienvenida con el menú (celular, iPad y Mac)
     revisarVersionApp(); revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => { revisarVersion(); revisarVersionApp(); }, 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { revisarVersion(); revisarVersionApp(); } }); }
     // logotipos de sucursal guardados con fondo blanco: el administrador los deja sin fondo (una vez, en segundo plano)
     if (U().rol === 'Administrador' && LS.get('minisSucRev', '') !== hoyISO()) setTimeout(() => { try { LS.set('minisSucRev', hoyISO()); repararMinisSuc(D().sucursales || []); } catch (e) {} }, 30000);
@@ -8518,7 +8518,17 @@ const App = (() => {
     if (S.cbIdx !== ps || !S.cbMap) { S.cbMap = {}; ps.forEach(p => String(p.cb || '').split(',').map(x => x.trim()).filter(Boolean).forEach(x => S.cbMap[x] = p)); S.cbIdx = ps; }
     return S.cbMap[c] || (/^\d+$/.test(c) && S.cbMap[c.replace(/^0+/, '')]) || ps.find(p => String(p.id).toUpperCase() === c.toUpperCase()) || null;
   }
-  const idClienteQR = txt => { const m = String(txt || '').trim().match(/^IVCLI:(.+)$/i); return m && cliente(m[1]) ? m[1] : null; };
+  // QR de la tarjeta: enlace a la app (…/?cli=ID; al escanearlo con la cámara del celular abre la app) o el formato anterior IVCLI:ID
+  const QR_CLI = 'https:' + '\/\/app.interesveterinario.com/?cli=';
+  const idClienteQR = txt => { const s = String(txt || '').trim(), m = s.match(/^IVCLI:(.+)$/i) || s.match(/[?&#]cli=([^&#\s]+)/i); const id = m ? decodeURIComponent(m[1]) : ''; return id && cliente(id) ? id : null; };
+  /** Se abrió la app desde el QR de una tarjeta (cámara del celular): a Venta rápida con ese cliente. */
+  function abrirDesdeQR() {
+    let id = ''; try { id = new URLSearchParams(location.search).get('cli') || ''; } catch (e) {}
+    if (!id) return; try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
+    const c = cliente(id); if (!c) return toast('El cliente de la tarjeta no está en tus datos', true);
+    if (puede('ventas')) { setTimeout(() => { if (!S.pos) S.pos = posNueva(); ir('pos'); posCliente(id); const b = $('#bienvenida'); if (b) b.classList.add('oculto'); document.body.classList.remove('con-bienv'); }, 300); }
+    else toast('👤 ' + (c.razon || c.nombre));
+  }
   /** Interpreta un código leído (pistola o cámara). destino: 'venta' | 'pos'. Regresa el texto a mostrar o null si no se reconoce. */
   function leerCodigo(txt, destino) {
     const idc = idClienteQR(txt);
@@ -8720,13 +8730,13 @@ const App = (() => {
     x.beginPath(); x.roundRect ? x.roundRect(0, 0, W, H, 36) : x.rect(0, 0, W, H); x.fill();
     try { const logo = await new Promise((ok, mal) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = mal; i.src = window.LOGO || 'logo.png'; });
       const lh = 120, lw = logo.width * lh / logo.height; x.fillStyle = '#fff'; x.beginPath(); x.roundRect ? x.roundRect(40, 36, lw + 32, lh + 24, 18) : x.rect(40, 36, lw + 32, lh + 24); x.fill(); x.drawImage(logo, 56, 48, lw, lh); } catch (e) {}
-    const qr = await qrCanvas('IVCLI:' + c.id, 340); x.fillStyle = '#fff'; x.fillRect(W - 400, 150, 360, 360); x.drawImage(qr, W - 390, 160, 340, 340);
+    const qr = await qrCanvas(QR_CLI + encodeURIComponent(c.id), 340); x.fillStyle = '#fff'; x.fillRect(W - 400, 150, 360, 360); x.drawImage(qr, W - 390, 160, 340, 340);
     x.fillStyle = '#fff'; x.textBaseline = 'top';
     const partir = (t, ancho, f) => { x.font = f; const out = []; let l = ''; String(t).split(/\s+/).forEach(p => { const pr = l ? l + ' ' + p : p; if (x.measureText(pr).width > ancho && l) { out.push(l); l = p; } else l = pr; }); out.push(l); return out.slice(0, 3); };
     let y = 210; partir(c.razon || c.nombre, W - 480, 'bold 44px Arial').forEach(l => { x.font = 'bold 44px Arial'; x.fillText(l, 44, y); y += 52; });
     if (c.razon && c.nombre && c.razon !== c.nombre) { x.font = '28px Arial'; x.fillText(String(c.nombre).slice(0, 40), 44, y + 4); y += 40; }
     x.font = '26px Arial'; x.globalAlpha = .8; x.fillText('Cliente preferente', 44, H - 190); x.globalAlpha = 1;
-    x.font = 'bold 34px Arial'; x.fillText('Precio ' + (c.lista || 'Público'), 44, H - 150);
+    const lugar = String(c.estado || '').trim(); if (lugar) { x.font = 'bold 34px Arial'; x.fillText(lugar.slice(0, 40), 44, H - 150); }
     x.font = '26px Arial'; x.fillText((c.credito ? 'Crédito ' + c.credito + ' días · ' : '') + 'No. ' + c.id, 44, H - 100);
     x.font = '22px Arial'; x.globalAlpha = .75; x.fillText('Presenta esta tarjeta en tu compra · Interés Veterinario®', 44, H - 56); x.globalAlpha = 1;
     return new Promise(ok => cv.toBlob(ok, 'image/png'));
@@ -8736,13 +8746,13 @@ const App = (() => {
     let b; try { b = await tarjetaPng(c); } catch (e) { return toast(e.message || 'No se pudo generar la tarjeta', true); }
     S.tarjeta = { id: id, blob: b }; const url = URL.createObjectURL(b);
     modal('🪪 Tarjeta del cliente', `<div style="text-align:center"><img src="${url}" alt="Tarjeta" style="max-width:100%;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.2)"></div>
-      <p class="muted peq">Al escanear el QR en la venta (cámara o pistola lectora) se elige al cliente y se aplica su lista de precios (${esc(c.lista || 'Público')}).</p>
+      <p class="muted peq">Al escanear el QR en la venta (cámara de la app o pistola lectora) se elige al cliente y se le aplican sus precios. Si se escanea con la cámara del celular, abre la app en Venta rápida con ese cliente.</p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button><button class="btn" onclick="App.tarjetaBajar()">⬇️ Descargar</button><button class="btn primario" onclick="App.tarjetaEnviar()">💬 Enviar por WhatsApp</button></div>`);
   }
   function tarjetaBajar() { const t = S.tarjeta; if (!t) return; const a = document.createElement('a'); a.href = URL.createObjectURL(t.blob); a.download = 'tarjeta-' + String(t.id).replace(/[^\w-]/g, '_') + '.png'; document.body.appendChild(a); a.click(); a.remove(); }
   async function tarjetaEnviar() {
     const t = S.tarjeta; if (!t) return; const c = cliente(t.id) || {};
-    const txt = 'Interés Veterinario® — Esta es tu tarjeta de cliente. Preséntala en tu próxima compra para aplicar tu precio ' + (c.lista || '') + '.';
+    const txt = 'Interés Veterinario® — Esta es tu tarjeta de cliente. Preséntala en tu próxima compra.';
     const file = new File([t.blob], 'tarjeta-interes-veterinario.png', { type: 'image/png' });
     if (tkMovil() && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], text: txt }); } catch (e) {} return; }
     let ok = false; try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': t.blob })]); ok = true; } } catch (e) {}
