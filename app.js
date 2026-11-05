@@ -436,7 +436,7 @@ const App = (() => {
   async function pedir(accion, params, silencioso) {
     if (!silencioso) cargando(true);
     try { return await call(accion, params); }
-    catch (e) { if (!silencioso) toast(e.message, true); throw e; }
+    catch (e) { if (!silencioso && String(e.message || '').indexOf('LIMITE_CREDITO::') !== 0) toast(e.message, true); throw e; }
     finally { if (!silencioso) cargando(false); }
   }
 
@@ -655,6 +655,7 @@ const App = (() => {
     { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos', 'ver_gastos'] },
     { id: 'equipo', t: 'Equipo', i: '🧑‍💼', p: 'equipo' },
     { id: 'comisiones', t: 'Comisiones', i: '💼', p: 'dueno' },
+    { id: 'caja', t: 'Corte de caja', i: '💰', p: 'cobranza' },
     { id: 'bancos', t: 'Bancos', i: '🏦', p: 'bancos' },
     { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'requisiciones', 'ajustes', 'mermas', 'inventario_fisico'] },
     { id: 'traspasos', t: 'Traspasos', i: '🚚', p: 'traspasos', oculto: 1 },
@@ -1424,8 +1425,24 @@ const App = (() => {
     guardarBorrador(); cerrarModal(); ir('venta');
   }
 
-  async function guardarVenta() {
-    const v = S.venta;
+  /* ---- límite de crédito: el servidor bloquea con 'LIMITE_CREDITO::{json}' ---- */
+  function errCredito(e) { const m = String((e && e.message) || ''); if (m.indexOf('LIMITE_CREDITO::') !== 0) return null; try { return JSON.parse(m.slice(16)); } catch (x) { return {}; } }
+  function pedirAutCredito(info, reintentar) {
+    const f = (t, v, c) => `<div class="fila" style="justify-content:space-between"><span>${t}</span><b style="${c ? 'color:var(--peligro-fuerte)' : ''}">${$$(v)}</b></div>`;
+    modal('🚫 Límite de crédito rebasado', `<p><b>${esc(info.cliente || '')}</b> quedaría con más deuda de la autorizada.</p>
+      <div class="tarjeta" style="display:grid;gap:4px">${f('Saldo pendiente actual', info.saldo)}${f('Esta nota a crédito', info.extra)}${f('Límite de crédito', info.limite)}${f('Exceso', info.exceso, 1)}</div>
+      <p class="muted">Opciones: cobrar una parte de contado, pedir un abono a sus notas pendientes o autorizar el excedente.</p>
+      ${info.admin ? `<div class="fila"><button class="btn primario" id="acAut">✔ Autorizar y guardar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`
+        : info.pin ? `<label>PIN de autorización (te lo da el dueño)<input id="acPin" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></label>
+          <div class="fila"><button class="btn primario" id="acAut">✔ Autorizar con PIN</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`
+        : `<p class="aviso-txt">Pide al dueño o a un Administrador que guarde la nota, o que defina un PIN de autorización en Caja → Configuración.</p><button class="btn" onclick="App.cerrarModal()">Entendido</button>`}`);
+    const b = document.getElementById('acAut'); if (!b) return;
+    const pin = document.getElementById('acPin'); if (pin) { pin.focus(); pin.onkeydown = ev => { if (ev.key === 'Enter') b.click(); }; }
+    b.onclick = () => { const aut = info.admin ? { autorizarCredito: true } : { pinCredito: (pin.value || '').trim() };
+      if (!info.admin && !aut.pinCredito) return toast('Escribe el PIN', true); cerrarModal(); reintentar(aut); };
+  }
+  async function guardarVenta(aut) {
+    const v = S.venta; if (!aut || aut instanceof Event) aut = null;
     if (!v.cli) return toast('Selecciona un cliente', true);
     if (!v.lineas.length) return toast('Agrega productos', true);
     if (v.lineas.some(l => !(l.cant > 0))) return toast('Revisa las cantidades', true);
@@ -1439,6 +1456,7 @@ const App = (() => {
       lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, lote: l.lote })),
       pago: cobro > 0 ? { monto: cobro, forma: v.cobro.forma, banco: v.cobro.banco } : null
     };
+    if (aut) Object.assign(params, aut);
     $('#vGuardar').disabled = true;
     if (v.editId) {
       const rep = v.lineas.filter((l, i) => v.lineas.findIndex(x => x.id === l.id && (x.lote || '') === (l.lote || '')) !== i);
@@ -1449,7 +1467,8 @@ const App = (() => {
         (r.avisos || []).forEach(a => toast(a, true));
         toast('✔ Nota ' + r.folio + ' actualizada. Total ' + $$(r.total) + ' · saldo ' + $$(r.saldo));
         S.venta = ventaNueva(); guardarBorrador(); refrescarStock(); S.tabVen = 'notas'; ir('ventas', true); verVenta(r.ID_Venta);
-      } catch (e) { if (e.red) toast('Editar una nota requiere conexión', true); if ($('#vGuardar')) $('#vGuardar').disabled = false; }
+      } catch (e) { if ($('#vGuardar')) $('#vGuardar').disabled = false; const ic = errCredito(e); if (ic) return pedirAutCredito(ic, guardarVenta);
+        if (e.red) toast('Editar una nota requiere conexión', true); }
       return;
     }
     try {
@@ -1467,7 +1486,7 @@ const App = (() => {
         S.venta = ventaNueva(); guardarBorrador();
         toast('📴 Sin conexión: venta guardada en el dispositivo. Se enviará al reconectar.');
         S.tabVen = 'notas'; ir('ventas', true); modal('Venta pendiente de sincronizar', nota);
-      } else { toast(e.message, true); $('#vGuardar').disabled = false; }
+      } else { $('#vGuardar').disabled = false; const ic = errCredito(e); if (ic) return pedirAutCredito(ic, guardarVenta); toast(e.message, true); }
     }
   }
   function descontarStockLocal(v) {
@@ -2712,10 +2731,83 @@ const App = (() => {
         ${d.bancos.titular ? `<div class="peq">Titular: <b>${esc(d.bancos.titular)}</b></div>` : ''}<div class="ec-pago-ctas">${d.bancos.cuentas.map(b => `<div><b>${esc(b.banco)}</b>${b.lineas.map(l => '<br><small>' + esc(l) + '</small>').join('')}</div>`).join('')}</div>${d.bancos.nota ? `<div class="peq"><b>${esc(d.bancos.nota)}</b></div>` : ''}</div>` : ''}
       </div></div>
       <div class="acciones no-imprimir">
-        <button class="btn primario" onclick="App.pdfEdoCta('${esc(d.cliente.id)}')">📄 PDF para enviar</button>
+        ${puede('cobranza') && d.notas.some(n => n.saldo > 0.009) ? `<button class="btn primario" onclick="App.formPagoEC('${esc(d.cliente.id)}')">💵 Registrar pago</button>` : ''}
+        <button class="btn${puede('cobranza') ? '' : ' primario'}" onclick="App.pdfEdoCta('${esc(d.cliente.id)}')">📄 PDF para enviar</button>
         <button class="btn" onclick="App.recordatorioEC('${esc(d.cliente.id)}')">💬 Recordatorio por WhatsApp</button>
         ${d.cliente.correo ? `<a class="btn" target="_blank" href="mailto:${encodeURIComponent(d.cliente.correo)}?subject=${encodeURIComponent('Estado de cuenta ' + d.folio)}&body=${encodeURIComponent(textoEC(d))}">✉️ Recordatorio por correo</a>` : ''}
       </div>`);
+  }
+  /* ---- 💵 Pago desde el estado de cuenta: un pago repartido en una o varias notas ---- */
+  function formPagoEC(idCliente) {
+    const d = S.ultimoEC; if (!d || d.cliente.id !== idCliente) return verEdoCta(idCliente);
+    const cat = D().catalogos, notas = d.notas.filter(n => n.saldo > 0.009);
+    S.pagoEC = { idCliente: idCliente, notas: notas, grupo: uid() };
+    modal('💵 Registrar pago · ' + (d.cliente.razon || d.cliente.nombre), `<div class="rejilla">
+      <label>Monto recibido $<input type="number" id="peMonto" step="0.01" min="0" value="${r2(notas.reduce((t, n) => t + n.saldo, 0))}"></label>
+      <label>Fecha del pago<input type="date" id="peFecha" value="${hoyISO()}"></label>
+      <label>Forma de pago<select id="peForma">${opts(cat.formasPago, (x => x ? (Array.isArray(x) ? x[0] : x.id) : '3')((cat.formasPago || []).find(o => /transfer/i.test(Array.isArray(o) ? o[1] : (o && o.nombre) || ''))))}</select></label>
+      <label>Cuenta donde entró<select id="peBanco">${opts(cat.bancos, '', '— Elige la cuenta —')}</select></label>
+      ${camposPagoExtra('pe', d.sucursal && d.sucursal.id)}
+      <label style="grid-column:1/-1">Nota<input id="peNota" placeholder="Opcional"></label>
+      <label style="grid-column:1/-1">Comprobante (foto y/o PDF, opcional)<input type="file" id="peArch" multiple accept="image/&#42;,application/pdf"></label></div>
+      <p class="muted" style="margin:10px 0 4px">El monto se reparte de la nota más antigua a la más nueva. Puedes desmarcar notas o cambiar cuánto se aplica a cada una.</p>
+      <div class="tabla-cont"><table><thead><tr><th></th><th>Nota</th><th>Fecha</th><th class="num">Saldo</th><th class="num">Aplicar $</th></tr></thead><tbody id="peNotas">
+        ${notas.map((n, i) => `<tr data-i="${i}"><td><input type="checkbox" data-chk checked></td><td><b>${esc(n.folio)}</b>${n.dias > 0 ? ` <small style="color:var(--peligro-fuerte)">vencida ${n.dias} d</small>` : ''}</td><td>${esc(n.fecha)}</td><td class="num">${$$(n.saldo)}</td>
+          <td class="num"><input type="number" step="0.01" min="0" data-m style="width:110px;text-align:right"></td></tr>`).join('')}</tbody></table></div>
+      <div id="peRes" class="tarjeta" style="margin-top:8px"></div>
+      <div class="acciones"><button class="btn" onclick="App.verEdoCta('${esc(idCliente)}')">← Volver</button><button class="btn primario" id="peGuardar" onclick="App.guardarPagoEC()">Guardar pago</button></div>`);
+    const tb = $('#peNotas');
+    $('#peMonto').oninput = () => repartirPagoEC();
+    tb.onchange = e => { if (e.target.matches('[data-chk]')) repartirPagoEC(); else resumenPagoEC(); };
+    tb.oninput = e => { if (e.target.matches('[data-m]')) { const tr = e.target.closest('tr'); tr.querySelector('[data-chk]').checked = Number(e.target.value) > 0; resumenPagoEC(); } };
+    repartirPagoEC(); refrescarSelTerminal('pe', d.sucursal && d.sucursal.id);
+  }
+  function repartirPagoEC() {
+    const P = S.pagoEC; if (!P) return;
+    let resto = Number($('#peMonto').value) || 0;
+    const filas = [...document.querySelectorAll('#peNotas tr')];
+    // de la más antigua a la más nueva (las notas vienen ordenadas por fecha)
+    filas.forEach(tr => { const n = P.notas[+tr.dataset.i], on = tr.querySelector('[data-chk]').checked, inp = tr.querySelector('[data-m]');
+      const m = on ? Math.min(n.saldo, Math.max(0, r2(resto))) : 0; inp.value = m > 0 ? m.toFixed(2) : ''; resto = r2(resto - m); });
+    resumenPagoEC();
+  }
+  function resumenPagoEC() {
+    const P = S.pagoEC; if (!P || !$('#peRes')) return;
+    const monto = r2(Number($('#peMonto').value) || 0); let apl = 0, n = 0, exc = '';
+    document.querySelectorAll('#peNotas tr').forEach(tr => { const x = P.notas[+tr.dataset.i], m = tr.querySelector('[data-chk]').checked ? r2(Number(tr.querySelector('[data-m]').value) || 0) : 0;
+      if (m > 0) { apl += m; n++; } if (m > x.saldo + 0.009) exc = x.folio; });
+    apl = r2(apl); const dif = r2(monto - apl);
+    $('#peRes').innerHTML = `<div class="fila" style="justify-content:space-between"><span>Aplicado a ${n} ${n === 1 ? 'nota' : 'notas'}</span><b>${$$(apl)}</b></div>
+      ${Math.abs(dif) > 0.009 ? `<div class="fila" style="justify-content:space-between;color:var(--aviso-fuerte)"><span>${dif > 0 ? 'Sobra (no se aplica: quedaría como saldo a favor fuera de la app)' : 'Falta: el monto recibido es menor a lo aplicado'}</span><b>${$$(Math.abs(dif))}</b></div>` : ''}
+      ${exc ? `<div style="color:var(--peligro-fuerte)">La nota ${esc(exc)} no puede recibir más que su saldo.</div>` : ''}`;
+    P.ok = n > 0 && !exc && dif > -0.009;
+  }
+  async function guardarPagoEC() {
+    const P = S.pagoEC; if (!P) return; resumenPagoEC();
+    if (!P.ok) return toast('Revisa los montos: lo aplicado no puede ser mayor al pago ni al saldo de cada nota', true);
+    const apl = []; document.querySelectorAll('#peNotas tr').forEach(tr => { const x = P.notas[+tr.dataset.i], m = tr.querySelector('[data-chk]').checked ? r2(Number(tr.querySelector('[data-m]').value) || 0) : 0;
+      if (m > 0) apl.push({ ID_Venta: x.id, monto: m, ID_Cobranza: uid(), folio: x.folio }); });
+    if (!$('#peBanco').value) return toast('Elige la cuenta / caja donde entró el pago', true);
+    const p = Object.assign({ idCliente: P.idCliente, fecha: $('#peFecha').value, forma: $('#peForma').value, banco: $('#peBanco').value, nota: $('#peNota').value.trim(), grupo: P.grupo,
+      aplicaciones: apl.map(x => ({ ID_Venta: x.ID_Venta, monto: x.monto, ID_Cobranza: x.ID_Cobranza })) }, leerPagoExtra('pe'));
+    let adjs; try { adjs = await leerComprobantes($('#peArch'), navigator.onLine === false ? 1200 : 1600); } catch (e) { return toast(e.message || 'No se pudo leer el comprobante', true); }
+    const total = r2(apl.reduce((t, x) => t + x.monto, 0)), idAdj = apl[0].ID_Cobranza, desc = 'Pago de ' + apl.map(x => x.folio).join(', ') + ' por ' + $$(total);
+    const encolarAdj = () => { let av = ''; adjs.forEach(u => { if (u.length > 900000) av = ' Un comprobante es pesado: agrégalo desde el cobro cuando tengas señal.'; else encolar('subirAdjuntoCobro', { ID_Cobranza: idAdj, dataUri: u }, 'Comprobante del ' + desc); }); return av; };
+    $('#peGuardar').disabled = true;
+    let r;
+    try { r = await pedir('cobroMultiple', p); }
+    catch (e) {
+      if (e.red) { encolar('cobroMultiple', p, desc); const av = encolarAdj(); S.pagoEC = null; cerrarModal(); toast('📴 Pago guardado en el dispositivo; se aplicará al reconectar.' + av, !!av); }
+      else if ($('#peGuardar')) $('#peGuardar').disabled = false;
+      return;
+    }
+    if (S.cacheTot) S.cacheTot = {};
+    let msg = '✔ Pago de ' + $$(r.total) + ' aplicado a ' + r.notas + (r.notas === 1 ? ' nota' : ' notas');
+    if (adjs.length) {
+      try { for (const u of adjs) await pedir('subirAdjuntoCobro', { ID_Cobranza: idAdj, dataUri: u }, true); msg += ' · comprobante adjunto'; }
+      catch (e) { if (e.red) msg += encolarAdj() || ' · el comprobante se enviará al reconectar'; else msg += ' · el comprobante no se pudo subir, agrégalo desde el cobro'; }
+    }
+    toast(msg); S.pagoEC = null; S.ultimoEC = null; verEdoCta(P.idCliente);
   }
   /** Texto del recordatorio. wa = true: negritas de WhatsApp (*texto*); para correo, sin asteriscos. */
   function textoEC(d, wa) {
@@ -3665,20 +3757,42 @@ const App = (() => {
       if ($('#lCob')) buscarCobros();
     } catch (e) {}
   }
+  /* ---- terminales de cobro (Clip, Mercado Pago, banco…) y referencia del pago ---- */
+  function terminalesLocal() { if (!S.terminales) S.terminales = LS.get('terminales', []) || []; return S.terminales; }
+  async function cargarTerminales() {
+    try { const t = await pedir('terminales', {}, true); S.terminales = t || []; LS.set('terminales', S.terminales); } catch (e) {}
+    return terminalesLocal();
+  }
+  function camposPagoExtra(pre, suc) {
+    const ts = terminalesLocal().filter(t => t.activa !== false && (!t.suc || !suc || t.suc === suc));
+    return `<label id="${pre}TermL" class="${ts.length ? '' : 'oculto'}">Terminal (si fue con tarjeta)<select id="${pre}Term"><option value="">— Ninguna —</option>${ts.map(t => `<option value="${esc(t.id)}">${esc(t.nombre)}${t.comision ? ' · ' + t.comision + '%' : ''}</option>`).join('')}</select></label>
+      <label>Referencia / No. de autorización<input id="${pre}Ref" maxlength="60" placeholder="Opcional"></label>`;
+  }
+  function leerPagoExtra(pre) { const t = document.getElementById(pre + 'Term'), r = document.getElementById(pre + 'Ref'); return { terminal: t ? t.value : '', referencia: r ? r.value.trim() : '' }; }
+  function refrescarSelTerminal(pre, suc) {
+    cargarTerminales().then(ts => { const sel = document.getElementById(pre + 'Term'), lab = document.getElementById(pre + 'TermL'); if (!sel) return;
+      const v = sel.value, l = ts.filter(t => t.activa !== false && (!t.suc || !suc || t.suc === suc));
+      sel.innerHTML = '<option value="">— Ninguna —</option>' + l.map(t => `<option value="${esc(t.id)}">${esc(t.nombre)}${t.comision ? ' · ' + t.comision + '%' : ''}</option>`).join(''); sel.value = v;
+      if (lab) lab.classList.toggle('oculto', !l.length); });
+  }
   function formCobro(idVenta, saldo) {
     const cat = D().catalogos;
+    const sucV = S.ultimaVenta && S.ultimaVenta.id === idVenta && S.ultimaVenta.sucursal ? S.ultimaVenta.sucursal.id : '';
     const s = saldo !== undefined ? saldo : (S.ultimaVenta && S.ultimaVenta.id === idVenta ? S.ultimaVenta.saldo : '');
     modal('Registrar cobro', `<div class="rejilla">
       <label>Monto $<input type="number" id="cbMonto" step="0.01" value="${s}"></label>
       <label>Fecha<input type="date" id="cbFecha" value="${hoyISO()}"></label>
       <label>Forma de pago<select id="cbForma">${opts(cat.formasPago, '1')}</select></label>
       <label>Cuenta / caja<select id="cbBanco">${opts(cat.bancos, 'EFECTI10')}</select></label>
+      ${camposPagoExtra('cb', sucV)}
       <label style="grid-column:1/-1">Nota<input id="cbNota"></label>
       <label style="grid-column:1/-1">Comprobante (foto y/o PDF, opcional — puedes elegir ambos)<input type="file" id="cbArch" multiple accept="image/&#42;,application/pdf"></label></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarCobro('${idVenta}')">Guardar cobro</button></div>`);
+    refrescarSelTerminal('cb', sucV);
   }
   async function guardarCobro(idVenta) {
     const p = { ID_Venta: idVenta, ID_Cobranza: uid(), monto: Number($('#cbMonto').value), fecha: $('#cbFecha').value, forma: $('#cbForma').value, banco: $('#cbBanco').value, nota: $('#cbNota').value };
+    Object.assign(p, leerPagoExtra('cb')); if (!p.terminal) delete p.terminal; if (!p.referencia) delete p.referencia;
     if (!(p.monto > 0)) return toast('Captura el monto', true);
     let adjs;
     try { adjs = await leerComprobantes($('#cbArch'), navigator.onLine === false ? 1200 : 1600); } catch (e) { return toast(e.message || 'No se pudo leer el comprobante', true); }
@@ -7837,7 +7951,7 @@ const App = (() => {
     const campos = [
       { k: 'Nombre_cliente', t: 'Nombre del cliente', req: 1 }, { k: 'Razon_social', t: 'Razón social' }, { k: 'Nombre_Rancho', t: 'Nombre del rancho' }, { k: 'RFC', t: 'RFC' },
       { k: 'Regimen_Fiscal', t: 'Régimen fiscal', tipo: 'select', ops: cat.regimen, vacio: '' }, { k: 'Uso_CFDI', t: 'Uso CFDI', tipo: 'select', ops: cat.usoCfdi, vacio: '' }, { k: 'C.P.', t: 'C.P.' },
-      { k: 'Lista_de_Precios', t: 'Lista de precios', tipo: 'select', ops: cat.listas.map(x => [x, x]), dis: !comercial }, { k: 'D_Credito', t: 'Días de crédito', tipo: 'number', dis: !comercial },
+      { k: 'Lista_de_Precios', t: 'Lista de precios', tipo: 'select', ops: cat.listas.map(x => [x, x]), dis: !comercial }, { k: 'D_Credito', t: 'Días de crédito', tipo: 'number', dis: !comercial }, { k: 'Limite_Credito', t: 'Límite de crédito $ (0 = sin límite)', tipo: 'number', dis: !(puede('dueno') || U().rol === 'Administrador') },
       { k: 'Clasificacion', t: 'Clasificación', tipo: 'select', ops: ['AAA', 'AA', 'A', 'B', 'C'].map(x => [x, x]), vacio: '' }, { k: 'Tipo', t: 'Tipo', tipo: 'select', ops: ['Productor', 'Farmacia', 'Clínica', 'MVZ', 'Distribuidor', 'Público'].map(x => [x, x]), vacio: '' },
       { k: 'Nicho Mercado', t: 'Nicho de mercado (puedes elegir varios)', tipo: 'multi', ops: NICHOS, ancho: 1 }, { k: 'Celular', t: 'Celular', tipo: 'tel' }, { k: 'e-mail', t: 'Correo', tipo: 'email' }, { k: 'Tel_Fijo', t: 'Tel. fijo' },
       { k: 'Calle', t: 'Calle' }, { k: 'Colonia', t: 'Colonia' }, { k: 'Municipio/Delegación', t: 'Municipio' }, { k: 'Localidad', t: 'Localidad' }, { k: 'Estado', t: 'Estado' }, { k: 'Ruta', t: 'Ruta' },
@@ -7881,7 +7995,7 @@ const App = (() => {
       <div class="fc-cab"><div><h3>${esc(x.Razon_social || x.Nombre_cliente || '')}</h3>
         ${x.Razon_social && x.Nombre_cliente && x.Razon_social !== x.Nombre_cliente ? `<div>${esc(x.Nombre_cliente)}</div>` : ''}
         ${x.Nombre_Rancho ? `<div class="muted">🐄 ${esc(x.Nombre_Rancho)}</div>` : ''}
-        <div class="fc-etqs"><span class="etq ${st === 'Inactivo' ? 'mal' : 'ok'}">${esc(st)}</span>${x.Lista_de_Precios ? `<span class="etq">Lista ${esc(x.Lista_de_Precios)}</span>` : ''}<span class="etq">Crédito ${Number(x.D_Credito) || 0} días</span>${x.Clasificacion ? `<span class="etq">Clasif. ${esc(x.Clasificacion)}</span>` : ''}</div></div></div>
+        <div class="fc-etqs"><span class="etq ${st === 'Inactivo' ? 'mal' : 'ok'}">${esc(st)}</span>${x.Lista_de_Precios ? `<span class="etq">Lista ${esc(x.Lista_de_Precios)}</span>` : ''}<span class="etq">Crédito ${Number(x.D_Credito) || 0} días</span>${Number(x.Limite_Credito) > 0 ? `<span class="etq">Límite ${$$(x.Limite_Credito)}</span>` : ''}${x.Clasificacion ? `<span class="etq">Clasif. ${esc(x.Clasificacion)}</span>` : ''}</div></div></div>
       <div class="arch-par">${bloqueArch('cliFoto', c.id)}${bloqueArch('cliCsf', c.id)}</div>
       ${seccion('🧾 Datos fiscales', dato('RFC', x.RFC) + dato('Régimen fiscal', nomCat(cat.regimen, x.Regimen_Fiscal)) + dato('Uso CFDI', nomCat(cat.usoCfdi, x.Uso_CFDI)) + dato('C.P.', x['C.P.']))}
       ${seccion('📞 Contacto', datoHtml('Celular', tel(x.Celular)) + datoHtml('Tel. fijo', tel(x.Tel_Fijo)) + dato('Correo', x['e-mail']) + dato('Encargado de compras', [x.Enc_Compras, x.Tel_Enc_Compras].filter(Boolean).join(' · ')) + dato('Encargado de pagos', [x.Enc_Pagos, x.Tel_Enc_Pagos].filter(Boolean).join(' · ')))}
@@ -7922,13 +8036,24 @@ const App = (() => {
     const nuevo = !ini.ID_Cliente;
     if (!f.Nombre_cliente) return toast('Captura el nombre', true);
     const datos = nuevo ? f : soloCambios(ini, f);
+    // el límite de crédito va por su propia acción (solo dueño / Administrador)
+    let limNuevo = Object.prototype.hasOwnProperty.call(datos, 'Limite_Credito') ? Math.max(0, Number(datos.Limite_Credito) || 0) : null; delete datos.Limite_Credito;
+    if (nuevo && !limNuevo) limNuevo = null;
+    if (limNuevo !== null && !(puede('dueno') || U().rol === 'Administrador')) return toast('🔒 Solo el dueño o un Administrador cambian el límite de crédito', true);
+    if (!nuevo && !Object.keys(datos).length && limNuevo !== null) {
+      try { await pedir('guardarLimiteCredito', { idCliente: ini.ID_Cliente, limite: limNuevo }); const cc = (D().clientes || []).find(z => z.id === ini.ID_Cliente); if (cc) { cc.limite = limNuevo; LS.set('datos', S.datos); }
+        toast('✔ Límite de crédito: ' + (limNuevo ? $$(limNuevo) : 'sin límite')); } catch (e) { return; }
+      const k = (S.lista || []).findIndex(z => z.id === ini.ID_Cliente); return S.vista === 'clientes' && k >= 0 ? verCliente(k) : cerrarModal();
+    }
     if (!nuevo && !Object.keys(datos).length) { const k = (S.lista || []).findIndex(z => z.id === ini.ID_Cliente); return S.vista === "clientes" && k >= 0 ? verCliente(k) : cerrarModal(); }
     datos.ID_Cliente = ini.ID_Cliente || uid();
     const local = { id: datos.ID_Cliente, nombre: f.Nombre_cliente, razon: f.Razon_social || f.Nombre_cliente, rancho: f.Nombre_Rancho || '', nicho: f['Nicho Mercado'] || '', rfc: f.RFC, lista: f.Lista_de_Precios || 'Publico', credito: Number(f.D_Credito) || 0,
       cel: f.Celular, localidad: f.Localidad, municipio: f['Municipio/Delegación'], estado: f.Estado, calle: f.Calle, colonia: f.Colonia, status: f.Status || 'Activo', suc: f.ID_Sucursal };
+    if (limNuevo !== null) local.limite = limNuevo;
     const aplicarLocal = () => { const arr = D().clientes; const k = arr.findIndex(x => x.id === local.id); if (k >= 0) Object.assign(arr[k], local); else arr.push(local); LS.set('datos', S.datos); };
     const conArch = nuevo && [['cliFoto', '#cliFotoN'], ['cliCsf', '#cliCsfN']].some(x => $(x[1]) && $(x[1])._uri);
-    try { await pedir('guardarCliente', datos); aplicarLocal(); toast('✔ Cliente guardado' + (conArch ? await subirArchNuevos([['cliFoto', '#cliFotoN'], ['cliCsf', '#cliCsfN']], datos.ID_Cliente) : '')); }
+    try { await pedir('guardarCliente', datos); if (limNuevo !== null) { try { await pedir('guardarLimiteCredito', { idCliente: datos.ID_Cliente, limite: limNuevo }, true); } catch (e2) { toast('El cliente se guardó, pero no el límite de crédito: ' + e2.message, true); delete local.limite; } }
+      aplicarLocal(); toast('✔ Cliente guardado' + (conArch ? await subirArchNuevos([['cliFoto', '#cliFotoN'], ['cliCsf', '#cliCsfN']], datos.ID_Cliente) : '')); }
     catch (e) { if (!e.red) return; encolar('guardarCliente', datos, 'Cliente ' + local.nombre); aplicarLocal(); toast('📴 Cliente guardado en el dispositivo' + (conArch ? '. La foto y la constancia se adjuntan con conexión, desde la ficha del cliente.' : '')); }
     cerrarModal();
     if (S.formDesdeVenta === 'venta' && S.vista === 'venta') elegirClienteVenta(local.id);
@@ -8224,6 +8349,153 @@ const App = (() => {
   const EQ_ORD = [['venta', 'Venta'], ['deja', 'Lo que le deja a la empresa'], ['avance', '% de meta'], ['margen', 'Margen'], ['utilidad', 'Utilidad'], ['cobrado', 'Cobrado'], ['vencida', 'Cartera vencida'], ['gastos', 'Gastos']];
   const eqSem = (v, bien, mal, inverso) => v === null || v === undefined ? '' : (inverso ? (v <= bien ? 'ok-txt' : v >= mal ? 'error' : 'aviso-txt') : (v >= bien ? 'ok-txt' : v <= mal ? 'error' : 'aviso-txt'));
   const eqBarra = p => p === null || p === undefined ? '<small class="muted">sin meta</small>' : `<div class="eq-barra"><i style="width:${Math.min(100, p)}%;background:${p >= 100 ? 'var(--ok)' : p >= 80 ? 'var(--aviso)' : 'var(--peligro)'}"></i></div><small class="${eqSem(p, 100, 79)}"><b>${p}%</b></small>`;
+  /* ---------- 🧾 CAJA: corte de caja por sucursal (diario / semanal / mensual), terminales y PIN de crédito ---------- */
+  const cajaAdmin = () => puede('dueno') || U().rol === 'Administrador';
+  V.caja = () => {
+    const f = S.fcaja || (S.fcaja = { suc: sucTrabajo(), tipo: 'Diario', fecha: hoyISO(), desde: hoyISO(), hasta: hoyISO() });
+    const sucs = puede('dueno') || U().todasSucursales ? (D().sucursales || []) : sucsPermitidas();
+    $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
+        <label>Sucursal<select id="cjSuc">${opts(sucs, f.suc)}</select></label>
+        <label>Corte<select id="cjTipo">${opts([['Diario', 'Del día'], ['Semanal', 'Semanal (lun–dom)'], ['Mensual', 'Mensual'], ['Periodo', 'Otro periodo']], f.tipo)}</select></label>
+        <label id="cjFechaL">${f.tipo === 'Diario' ? 'Día' : 'Cualquier día del periodo'}<input type="date" id="cjFecha" value="${f.fecha}"></label>
+        <label id="cjDesdeL">Desde<input type="date" id="cjDesde" value="${f.desde}"></label><label id="cjHastaL">Hasta<input type="date" id="cjHasta" value="${f.hasta}"></label>
+        <button class="btn primario fijo" onclick="App.cargarCaja()">Ver corte</button>${cajaAdmin() ? '<button class="btn fijo" onclick="App.cfgCaja()">⚙️ Terminales y PIN</button>' : ''}</div>
+        <p class="muted peq" style="margin-top:6px">Ventas y cobros de la sucursal en el periodo. <b>Efectivo esperado</b> = fondo inicial + cobros en efectivo. Al cerrar el corte se guarda con folio (CC-…) en la hoja APP_Cortes_Caja.</p></div>
+      <div id="cjRes"><div class="vacio">Cargando…</div></div>`;
+    const vis = () => { const t = $('#cjTipo').value; $('#cjFechaL').classList.toggle('oculto', t === 'Periodo'); $('#cjDesdeL').classList.toggle('oculto', t !== 'Periodo'); $('#cjHastaL').classList.toggle('oculto', t !== 'Periodo');
+      $('#cjFechaL').firstChild.textContent = t === 'Diario' ? 'Día' : 'Cualquier día del periodo'; };
+    vis(); $('#cjTipo').onchange = () => { vis(); cargarCaja(); }; $('#cjSuc').onchange = cargarCaja; $('#cjFecha').onchange = cargarCaja;
+    cargarCaja();
+  };
+  function leerFiltroCaja() {
+    return S.fcaja = { suc: $('#cjSuc').value, tipo: $('#cjTipo').value, fecha: $('#cjFecha').value || hoyISO(), desde: $('#cjDesde').value || hoyISO(), hasta: $('#cjHasta').value || hoyISO() };
+  }
+  const paramsCaja = f => f.tipo === 'Periodo' ? { suc: f.suc, tipo: f.tipo, desde: f.desde, hasta: f.hasta } : { suc: f.suc, tipo: f.tipo, fecha: f.fecha };
+  async function cargarCaja() {
+    const f = leerFiltroCaja(); if (!$('#cjRes')) return;
+    $('#cjRes').innerHTML = '<div class="vacio">Calculando…</div>';
+    try { S.caja = await pedir('corteCaja', paramsCaja(f), true); } catch (e) { if ($('#cjRes')) $('#cjRes').innerHTML = `<div class="vacio">${esc(e.red ? 'El corte de caja requiere conexión.' : e.message)}</div>`; return; }
+    pintarCaja();
+  }
+  function pintarCaja() {
+    const c = S.caja, el = $('#cjRes'); if (!c || !el) return;
+    const k = (t, v, s, col) => `<div class="kpi"${col ? ` style="border-top:3px solid ${col}"` : ''}><small>${t}</small><b>${v}</b>${s ? `<span>${s}</span>` : ''}</div>`;
+    const tb = (cols, filas, vacio) => tabla(cols, filas, { vacio: vacio });
+    const grupo = (tit, filas, extra) => `<div class="tarjeta"><h4 style="margin:0 0 6px">${tit}</h4>${tb([{ t: 'Concepto', h: x => esc(x.nombre) }, { t: 'Movs.', num: 1, h: x => nf(x.n) }, { t: 'Importe', num: 1, h: x => `<b>${$$(x.monto)}</b>` }].concat(extra || []), filas, 'Sin movimientos')}</div>`;
+    const ult = c.cerrado ? c : null;
+    el.innerHTML = `<h3 style="margin:6px 0 10px">${esc(c.sucNombre)} · ${c.tipo === 'Diario' ? 'Corte del ' + esc(c.desde) : 'Del ' + esc(c.desde) + ' al ' + esc(c.hasta)}</h3>
+      <div class="kpis">${k('Ventas', $$(c.ventas.total), nf(c.ventas.notas) + ' notas' + (c.ventas.canceladas ? ' · ' + c.ventas.canceladas + ' canceladas' : '') + (c.ventas.devueltas ? ' · ' + c.ventas.devueltas + ' devueltas' : ''), 'var(--marca)')}
+        ${k('Cobrado de esas ventas', $$(c.ventas.contado), 'contado / anticipos')}${k('Quedó a crédito', $$(c.ventas.credito), 'por cobrar', 'var(--aviso)')}
+        ${k('Cobranza de notas anteriores', $$(c.cobrosDeOtrosPeriodos), 'abonos a notas de otros días')}${k('Total cobrado', $$(c.cobrado), nf(c.cobros) + ' cobros', 'var(--info)')}
+        ${k('💵 Efectivo cobrado', $$(c.efectivo), 'debe estar en caja (más el fondo)', 'var(--marca-fuerte)')}${c.comisionTerminales ? k('Comisión de terminales', $$(c.comisionTerminales), 'estimada') : ''}</div>
+      <div class="rejilla" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+        ${grupo('💳 Por forma de pago', c.porForma)}${grupo('🏦 Por cuenta / caja', c.porCuenta)}
+        ${c.porTerminal.length ? grupo('📟 Por terminal', c.porTerminal, [{ t: 'Comisión', num: 1, h: x => x.extra ? $$(x.comision) + ' <small class="muted">(' + x.extra + '%)</small>' : '—' }]) : ''}
+        ${grupo('🧑‍💼 Ventas por vendedor', c.ventas.porVendedor)}</div>
+      <details class="tarjeta" style="margin-top:12px"><summary><b>Detalle de cobros (${nf(c.cobros)})</b></summary>
+        ${tb([{ t: 'Fecha', k: 'fecha' }, { t: 'Nota', k: 'folio' }, { t: 'Cliente', h: x => esc(x.cliente) }, { t: 'Forma', k: 'forma' }, { t: 'Cuenta', k: 'cuenta', cls: 'ocultar-movil' }, { t: 'Ref. / terminal', cls: 'ocultar-movil', h: x => esc([x.ref, x.terminal].filter(Boolean).join(' · ')) }, { t: 'Importe', num: 1, h: x => $$(x.monto) }], c.detalle, 'Sin cobros en el periodo')}</details>
+      ${ult ? `<div class="tarjeta" style="margin-top:12px;border-color:var(--marca)"><b>✔ Corte ${esc(ult.folio)} cerrado</b> por ${esc(ult.usuario)} el ${esc(ult.cerrado)} · Fondo ${$$(ult.fondo)} · Efectivo esperado ${$$(ult.esperado)}${ult.contado !== null ? ' · Contado ' + $$(ult.contado) + ' · <b style="color:' + (Math.abs(ult.diferencia) < 0.01 ? 'var(--marca-fuerte)' : 'var(--peligro-fuerte)') + '">Diferencia ' + $$(ult.diferencia) + '</b>' : ''}
+        <div class="acciones izq"><button class="btn" onclick="App.ticketCorte()">🧾 Ticket 80 mm del corte</button></div></div>` : `
+      <div class="tarjeta" style="margin-top:12px"><h4 style="margin:0 0 6px">🔒 Cerrar corte</h4><div class="rejilla">
+        <label>Fondo inicial de caja $<input type="number" step="0.01" min="0" id="cjFondo" value="${LS.get('fondoCaja_' + c.suc, '') || ''}"></label>
+        <label>Efectivo contado $<input type="number" step="0.01" min="0" id="cjContado" placeholder="Lo que hay en caja"></label>
+        <label style="grid-column:1/-1">Notas<input id="cjNotas" maxlength="300" placeholder="Opcional: faltante, retiro, depósito al banco…"></label></div>
+        <div id="cjDif" class="tarjeta" style="margin-top:8px"></div>
+        <div class="acciones"><button class="btn" onclick="App.ticketCorte()">🧾 Ticket (sin cerrar)</button><button class="btn primario" onclick="App.cerrarCorte()">🔒 Cerrar corte</button></div></div>`}
+      <div class="tarjeta" style="margin-top:12px"><h4 style="margin:0 0 6px">🗂️ Cortes anteriores de ${esc(c.sucNombre)}</h4>
+        ${tb([{ t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Tipo', k: 'tipo' }, { t: 'Periodo', h: x => esc(x.desde === x.hasta ? x.desde : x.desde + ' – ' + x.hasta) }, { t: 'Cobrado', num: 1, h: x => $$(x.cobrado) },
+          { t: 'Esperado', num: 1, cls: 'ocultar-movil', h: x => $$(x.esperado) }, { t: 'Contado', num: 1, cls: 'ocultar-movil', h: x => x.contado || x.contado === 0 ? $$(x.contado) : '—' },
+          { t: 'Diferencia', num: 1, h: x => x.contado === '' || x.contado === null ? '—' : `<b style="color:${Math.abs(x.diferencia) < 0.01 ? 'var(--marca-fuerte)' : 'var(--peligro-fuerte)'}">${$$(x.diferencia)}</b>` },
+          { t: 'Cerró', cls: 'ocultar-movil', h: x => esc(x.usuario + ' · ' + x.fecha) }, { t: '', h: x => `<button class="btn chico" title="${esc(x.notas)}" onclick="App.verCorteAnt('${esc(x.id)}')">Ver</button>` }], c.anteriores || [], 'Aún no hay cortes cerrados')}</div>`;
+    const dif = () => { const d = $('#cjDif'); if (!d) return; const fo = Number($('#cjFondo').value) || 0, esp = r2(fo + c.efectivo), co = $('#cjContado').value;
+      d.innerHTML = `<div class="fila" style="justify-content:space-between"><span>Efectivo esperado (fondo ${$$(fo)} + cobrado en efectivo ${$$(c.efectivo)})</span><b>${$$(esp)}</b></div>` +
+        (co === '' ? '' : (x => `<div class="fila" style="justify-content:space-between;color:${Math.abs(x) < 0.01 ? 'var(--marca-fuerte)' : 'var(--peligro-fuerte)'}"><span>${Math.abs(x) < 0.01 ? '✔ Cuadra' : x > 0 ? 'Sobrante' : 'Faltante'}</span><b>${$$(x)}</b></div>`)(r2(Number(co) - esp))); };
+    if ($('#cjFondo')) { $('#cjFondo').oninput = dif; $('#cjContado').oninput = dif; dif(); }
+  }
+  async function cerrarCorte() {
+    const c = S.caja; if (!c) return;
+    const fondo = Number($('#cjFondo').value) || 0, contado = $('#cjContado').value, notas = $('#cjNotas').value.trim();
+    const dup = (c.anteriores || []).find(x => x.tipo === c.tipo && x.desde === c.desde && x.hasta === c.hasta);
+    if (dup && !confirm('Ya existe el corte ' + dup.folio + ' de este mismo periodo (lo cerró ' + dup.usuario + '). ¿Cerrar otro?')) return;
+    if (contado === '' && !confirm('No capturaste el efectivo contado. ¿Cerrar el corte sin arqueo?')) return;
+    if (!confirm('¿Cerrar el corte ' + (c.tipo === 'Diario' ? 'del ' + c.desde : 'del ' + c.desde + ' al ' + c.hasta) + ' de ' + c.sucNombre + '?\nSe guarda con folio y ya no se modifica.')) return;
+    try {
+      const r = await pedir('cerrarCorte', Object.assign(paramsCaja(S.fcaja), { suc: c.suc, fondo: fondo, contado: contado, notas: notas }));
+      LS.set('fondoCaja_' + c.suc, fondo || ''); S.caja = r; pintarCaja();
+      toast('✔ Corte ' + r.folio + ' cerrado' + (r.diferencia !== null && Math.abs(r.diferencia) >= 0.01 ? ' · diferencia ' + $$(r.diferencia) : ''));
+    } catch (e) {}
+  }
+  function verCorteAnt(id) {
+    const c = S.caja, x = c && (c.anteriores || []).find(z => String(z.id) === String(id)); if (!x) return;
+    const dmy = s => { const m = String(s).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2) : hoyISO(); };
+    S.fcaja = { suc: c.suc, tipo: 'Periodo', fecha: dmy(x.desde), desde: dmy(x.desde), hasta: dmy(x.hasta) };
+    V.caja();
+    toast('Corte ' + x.folio + ': fondo/esperado ' + $$(x.esperado) + (x.contado !== '' && x.contado !== null ? ' · contado ' + $$(x.contado) + ' · diferencia ' + $$(x.diferencia) : '') + (x.notas ? ' · ' + x.notas : ''));
+  }
+  /** Ticket 80 mm del corte (mismo motor que el ticket de la nota). */
+  function corteFilas(c) {
+    const F = [], L = (a, b, o) => F.push(Object.assign({ a: a, b: b }, o || {})), T = (t, o) => F.push(Object.assign({ t: t }, o || {}));
+    T('CORTE DE CAJA', { c: 1, n: 1, g: 1 }); T(c.sucNombre, { c: 1, n: 1 }); if (c.folio) T('Folio ' + c.folio, { c: 1 });
+    T(c.tipo === 'Diario' ? 'Día ' + c.desde : c.desde + ' al ' + c.hasta, { c: 1 }); F.push({ sep: 1 });
+    L('Ventas (' + c.ventas.notas + ' notas)', $$(c.ventas.total), { n: 1 }); L('Cobrado de esas ventas', $$(c.ventas.contado)); L('A crédito', $$(c.ventas.credito));
+    if (c.ventas.canceladas) L('Notas canceladas', String(c.ventas.canceladas));
+    L('Cobranza notas anteriores', $$(c.cobrosDeOtrosPeriodos)); L('TOTAL COBRADO', $$(c.cobrado), { n: 1 }); F.push({ sep: 1 });
+    T('Por forma de pago', { n: 1 }); c.porForma.forEach(x => L(x.nombre + ' (' + x.n + ')', $$(x.monto)));
+    if (c.porTerminal.length) { F.push({ sep: 1 }); T('Terminales', { n: 1 }); c.porTerminal.forEach(x => L(x.nombre + (x.extra ? ' · com. ' + $$(x.comision) : ''), $$(x.monto))); }
+    if (c.ventas.porVendedor.length) { F.push({ sep: 1 }); T('Ventas por vendedor', { n: 1 }); c.ventas.porVendedor.forEach(x => L(x.nombre, $$(x.monto))); }
+    F.push({ sep: 1 }); L('Efectivo cobrado', $$(c.efectivo));
+    const fondo = c.cerrado ? c.fondo : Number(($('#cjFondo') || {}).value) || 0, cont = c.cerrado ? c.contado : (($('#cjContado') || {}).value === '' || !$('#cjContado') ? null : Number($('#cjContado').value));
+    L('Fondo inicial', $$(fondo)); L('Efectivo esperado', $$(r2(fondo + c.efectivo)), { n: 1 });
+    if (cont !== null && cont !== undefined) { L('Efectivo contado', $$(cont)); L('Diferencia', $$(r2(cont - fondo - c.efectivo)), { n: 1 }); }
+    F.push({ sep: 1 }); T((c.cerrado ? 'Cerró: ' + c.usuario + ' · ' + c.cerrado : 'Vista previa (corte sin cerrar) · ' + new Date().toLocaleString('es-MX')), { p: 1, c: 1 });
+    F.push({ esp: 50 }); T('_______________________', { c: 1 }); T('Firma de quien entrega', { p: 1, c: 1 }); F.push({ esp: 30 });
+    return F;
+  }
+  function ticketCorte() {
+    const c = S.caja; if (!c) return;
+    S.tkF = corteFilas(c); S.tkFolio = c.folio || ('corte-' + c.desdeISO); S.tkNota = null; S.tkOff = false;
+    modal('🧾 Corte de caja · 80 mm', `<div class="tk-vista">${ticketHtml(S.tkF, true).replace(/^[\s\S]*?<body>|<\/body>[\s\S]*$/g, '')}</div>
+      <div style="display:grid;gap:8px">
+        <button class="btn primario" onclick="App.ticketImprimir('imagen', true)">💬 Compartir imagen (WhatsApp, correo…)</button>
+        <button class="btn" onclick="App.ticketImprimir('star')">📲 Impresora Star (Bluetooth)</button>
+        <button class="btn" onclick="App.ticketImprimir('navegador')">🖨️ Imprimir con el sistema</button></div>`);
+  }
+  /* ---- configuración: terminales de cobro y PIN de autorización de crédito ---- */
+  async function cfgCaja() {
+    let r; try { r = await pedir('configCaja', {}); } catch (e) { return; }
+    S.cfgCaja = r; S.terminales = (r.terminales || []).filter(t => t.activa); LS.set('terminales', S.terminales);
+    modal('⚙️ Caja: terminales y PIN', `<h4 style="margin:0 0 6px">📟 Terminales de cobro</h4>
+      <p class="muted peq">Clip, Mercado Pago, terminal del banco… Se eligen al registrar un cobro con tarjeta; el corte suma lo cobrado por terminal y estima su comisión.</p>
+      ${tabla([{ t: 'Terminal', h: x => `<b>${esc(x.nombre)}</b>${x.proveedor ? ' <small class="muted">' + esc(x.proveedor) + '</small>' : ''}` }, { t: 'Sucursal', h: x => esc(x.suc ? sucNom(x.suc) : 'Todas') }, { t: 'Comisión', num: 1, h: x => x.comision + '%' },
+        { t: 'Estado', h: x => x.activa ? '<span class="etq ok">Activa</span>' : '<span class="etq">Inactiva</span>' }, { t: '', h: x => `<button class="btn chico" onclick="App.formTerminal('${esc(x.id)}')">✏️</button>` }], r.terminales, { vacio: 'Sin terminales registradas' })}
+      <div class="acciones izq"><button class="btn" onclick="App.formTerminal('')">+ Agregar terminal</button></div>
+      ${puede('dueno') ? `<h4 style="margin:16px 0 6px">🔑 PIN para autorizar crédito</h4>
+      <p class="muted peq">Cuando una venta rebasa el límite de crédito del cliente, el vendedor puede guardarla si tú le das este PIN (4 a 8 números). El dueño y el Administrador autorizan desde su sesión sin PIN. ${r.pinActivo ? '<b>PIN activo.</b>' : '<b>Sin PIN:</b> solo tú o un Administrador pueden autorizar.'}</p>
+      <div class="fila"><input id="cjPin" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" placeholder="Nuevo PIN" style="max-width:160px"><button class="btn primario fijo" onclick="App.guardarPinCredito()">Guardar PIN</button>${r.pinActivo ? '<button class="btn fijo" onclick="App.guardarPinCredito(true)">Quitar PIN</button>' : ''}</div>` : ''}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  function formTerminal(id) {
+    const t = ((S.cfgCaja || {}).terminales || []).find(x => x.id === id) || { activa: true, comision: 0 };
+    modal(id ? '✏️ Terminal' : '+ Nueva terminal', `<div class="rejilla">
+      <label>Nombre<input id="tmNom" maxlength="60" value="${esc(t.nombre || '')}" placeholder="Clip Matriz"></label>
+      <label>Proveedor<input id="tmProv" maxlength="40" value="${esc(t.proveedor || '')}" placeholder="Clip, Mercado Pago, BBVA…"></label>
+      <label>Sucursal<select id="tmSuc">${opts(D().sucursales || [], t.suc || '', 'Todas')}</select></label>
+      <label>Comisión %<input id="tmCom" type="number" step="0.01" min="0" value="${t.comision || 0}"></label>
+      <label>Estado<select id="tmAct">${opts([['SI', 'Activa'], ['NO', 'Inactiva']], t.activa === false ? 'NO' : 'SI')}</select></label>
+      <label style="grid-column:1/-1">Notas<input id="tmNotas" maxlength="200" value="${esc(t.notas || '')}"></label></div>
+      <div class="acciones"><button class="btn" onclick="App.cfgCaja()">← Volver</button><button class="btn primario" onclick="App.guardarTerminal('${esc(id || '')}')">Guardar</button></div>`);
+  }
+  async function guardarTerminal(id) {
+    const p = { id: id, nombre: $('#tmNom').value.trim(), proveedor: $('#tmProv').value.trim(), suc: $('#tmSuc').value, comision: Number($('#tmCom').value) || 0, activa: $('#tmAct').value !== 'NO', notas: $('#tmNotas').value.trim() };
+    if (!p.nombre) return toast('Escribe el nombre de la terminal', true);
+    try { await pedir('guardarTerminal', p); toast('✔ Terminal guardada'); cfgCaja(); } catch (e) {}
+  }
+  async function guardarPinCredito(quitar) {
+    const pin = quitar ? '' : ($('#cjPin').value || '').trim();
+    if (!quitar && !/^\d{4,8}$/.test(pin)) return toast('El PIN debe tener de 4 a 8 números', true);
+    if (quitar && !confirm('¿Quitar el PIN? Solo tú o un Administrador podrán autorizar ventas que rebasen el límite.')) return;
+    try { await pedir('guardarPinCredito', { pin: pin }); toast(quitar ? '✔ PIN quitado' : '✔ PIN guardado'); cfgCaja(); } catch (e) {}
+  }
   V.equipo = () => {
     const h = hoyISO(), f = alDia(S.feq || (S.feq = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, suc: '', orden: 'venta' }));
     $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
@@ -10691,6 +10963,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
+    formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
