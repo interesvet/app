@@ -10651,12 +10651,46 @@ const App = (() => {
   }
 
   /* ---------- CONFIGURACIÓN ---------- */
+  /* ---- 🔑 contraseñas y 🛟 respaldos ---- */
+  function formMiClave() {
+    modal('🔑 Cambiar mi contraseña', `<div class="rejilla"><label style="grid-column:1/-1">Contraseña actual<input type="password" id="mcA" autocomplete="current-password"></label>
+      <label>Nueva contraseña<input type="password" id="mcN" autocomplete="new-password" minlength="6"></label><label>Repite la nueva<input type="password" id="mcN2" autocomplete="new-password"></label></div>
+      <p class="muted peq">Mínimo 6 caracteres. Se guarda cifrada: nadie (ni en la hoja de cálculo) puede verla.</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarMiClave()">Guardar</button></div>`);
+  }
+  async function guardarMiClave() {
+    const a = $('#mcA').value, n = $('#mcN').value, n2 = $('#mcN2').value;
+    if (n.length < 6) return toast('La nueva contraseña debe tener al menos 6 caracteres', true);
+    if (n !== n2) return toast('Las contraseñas nuevas no coinciden', true);
+    try { await pedir('cambiarMiClave', { actual: a, nueva: n }); cerrarModal(); toast('✔ Contraseña cambiada. Úsala la próxima vez que entres.'); } catch (e) {}
+  }
+  function formRestablecerClave() {
+    const vs = (D().vendedores || []).slice().sort((x, y) => String(x.nombre).localeCompare(String(y.nombre)));
+    modal('🔑 Contraseña de otro usuario', `<p class="muted">Para quien la olvidó: le pones una nueva y se la compartes. Después puede cambiarla en Mi cuenta.</p>
+      <div class="rejilla"><label style="grid-column:1/-1">Usuario<select id="rcV">${opts(vs.map(v => [v.id, v.nombre + (v.rol ? ' · ' + v.rol : '')]), '', '— Elige —')}</select></label>
+      <label>Nueva contraseña<input type="text" id="rcN" autocomplete="off" minlength="6"></label></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarRestablecerClave()">Guardar</button></div>`);
+  }
+  async function guardarRestablecerClave() {
+    const id = $('#rcV').value, n = $('#rcN').value.trim();
+    if (!id) return toast('Elige el usuario', true); if (n.length < 6) return toast('Mínimo 6 caracteres', true);
+    try { const r = await pedir('restablecerClave', { idVendedor: id, nueva: n }); cerrarModal(); toast('✔ Nueva contraseña de ' + r.nombre + ' guardada'); } catch (e) {}
+  }
+  async function cargarRespaldos(accion) {
+    const el = $('#cfResp'); if (!el) return;
+    if (accion) el.innerHTML = '<span class="muted">' + (accion === 'respaldarAhora' ? 'Copiando el archivo… (puede tardar un minuto)' : 'Programando…') + '</span>';
+    let r; try { r = await pedir(accion || 'estadoRespaldos', {}, !accion); } catch (e) { el.innerHTML = '<span class="muted">' + esc(e.red ? 'Requiere conexión.' : e.message) + '</span>'; return; }
+    el.innerHTML = `<p>${r.activo ? '<span class="etq ok">Activo</span> Cada noche (2–3 a. m.) se guarda una copia completa del archivo en Drive; se conservan las últimas ' + r.dias + '.' : '<span class="etq av">Sin activar</span> Actívalo para tener una copia completa cada noche.'}</p>
+      <p>Último respaldo: ${r.ultimo ? `<b>${esc(r.ultimo.fecha)}</b> · <a href="${esc(r.ultimo.url)}" target="_blank" rel="noopener">abrir copia</a>` : '<span class="muted">aún no hay</span>'}${r.carpeta ? ` · <a href="${esc(r.carpeta)}" target="_blank" rel="noopener">carpeta de respaldos</a>` : ''}</p>
+      <div class="fila">${r.activo ? '' : '<button class="btn primario fijo" onclick="App.cargarRespaldos(\'activarRespaldo\')">Activar respaldo diario</button>'}<button class="btn fijo" onclick="App.cargarRespaldos(\'respaldarAhora\')">🛟 Respaldar ahora</button></div>`;
+  }
   V.config = async () => {
     const u = U();
-    setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) cargarSucsCfg(); }, 0);
+    setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) { cargarSucsCfg(); cargarRespaldos(); } }, 0);
     $('#vista').innerHTML = `<div class="tarjeta"><h3>Mi sesión</h3><p>${esc(u.nombre)} · <b>${esc(u.rolNombre || u.rol)}</b> · ${esc(u.correo)}<br>Sucursal: ${esc(sucNom(u.sucursal))} · Acceso: ${u.todasSucursales ? 'todas las sucursales' : 'solo su sucursal'}</p>
       <p class="muted">Datos guardados en este dispositivo: ${(D().productos || []).length} productos, ${(D().clientes || []).length} clientes, ${(D().stock || []).length} lotes. Última actualización: ${D().servidor ? new Date(D().servidor).toLocaleString('es-MX') : '—'}</p>
-      <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
+      <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
+      ${puede('dueno') ? '<div class="tarjeta"><h3>🛟 Respaldos automáticos</h3><div id="cfResp"><span class="muted">Revisando…</span></div></div>' : ''}
       <div class="tarjeta"><h3>Operaciones pendientes de sincronizar (${S.cola.length})</h3>${tabla([{ t: 'Capturada', k: 'creado' }, { t: 'Operación', k: 'desc' }, { t: 'Error', h: o => o.error ? `<span class="error">${esc(o.error)}</span>` : 'En espera' },
         { t: '', h: o => `<button class="btn chico peligro" onclick="App.descartarOp('${o.opId}')">Descartar</button>` }], S.cola.slice().reverse(), { vacio: 'Todo sincronizado ✔' })}
       ${S.cola.length ? '<div class="acciones"><button class="btn primario" onclick="App.sincronizar(true)">Sincronizar ahora</button></div>' : ''}</div>
@@ -11349,6 +11383,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
+    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
