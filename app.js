@@ -641,6 +641,7 @@ const App = (() => {
   const MENU = [
     { id: 'inicio', t: 'Inicio', i: '🏠' },
     { id: 'tablero', t: 'Dashboard', i: '📊', p: 'dashboard' },
+    { id: 'resumen', t: 'Resumen del día', i: '📋', p: 'dueno' },
     { id: 'venta', t: 'Nueva venta', i: '🛒', p: 'ventas' },
     { id: 'pos', t: 'Venta rápida', i: '⚡', p: 'ventas' },
     { id: 'ventas', t: 'Ventas', i: '🧾', p: ['ventas', 'cobranza'] },
@@ -762,7 +763,7 @@ const App = (() => {
   function fabCot() { S.tabCot = 'nueva'; ir('cotizaciones', true); }
   /* ---------- BIENVENIDA (solo celulares y tabletas: iPhone, iPad, Android) ---------- */
   const esMovil = () => { try { return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) || window.innerWidth <= 820; } catch (e) { return window.innerWidth <= 820; } };
-  const SUB_MENU = { bancos: 'Estados de cuenta y movimientos', reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
+  const SUB_MENU = { resumen: 'Ventas, cortes, cartera y caducidades', pos: 'Cobro rápido con código de barras', caja: 'Cortes por sucursal', bancos: 'Estados de cuenta y movimientos', reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
     seguimiento: 'Clientes por atender y visitas', comisiones: 'Comisionistas y liquidaciones', compras: 'Órdenes de compra y pedido sugerido', gastos: 'Gastos del negocio', sucursales: 'Inventario, traspasos y requisiciones',
     productos: 'Catálogo, portafolio y precios', clientes: 'Cartera de clientes', mapa: 'Dónde están tus clientes: casa y rancho', proveedores: 'Laboratorios y distribuidores', config: 'Folios, permisos y ajustes' };
   function saludo() { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; }
@@ -8797,6 +8798,58 @@ const App = (() => {
     const tel = String(c.cel || '').replace(/\D/g, '').slice(-10); window.open(WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(txt), '_blank');
     if (ok) toast('✔ Imagen copiada: pégala en el chat con ⌘V / Ctrl+V'); else { tarjetaBajar(); toast('Se descargó la imagen: adjúntala en el chat', true); }
   }
+  /* ---------- 📋 RESUMEN DEL DÍA (dueño) ---------- */
+  V.resumen = () => {
+    const f = S.fres || (S.fres = { fecha: hoyISO() });
+    $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila"><label>Día<input type="date" id="rsF" value="${f.fecha}"></label>
+      <button class="btn fijo" onclick="App.resumenDia(-1)">◀ Día anterior</button><button class="btn fijo" onclick="App.resumenDia(0)">Hoy</button>
+      <button class="btn primario fijo" onclick="App.resumenWhats()">💬 Compartir por WhatsApp</button><button class="btn fijo" onclick="App.resumenCorreo()">✉️ Enviarme por correo</button></div></div>
+      <div id="rsRes"><div class="vacio">Cargando…</div></div>`;
+    $('#rsF').onchange = () => { S.fres.fecha = $('#rsF').value; cargarResumen(); };
+    cargarResumen();
+  };
+  function resumenDia(d) { const x = d === 0 ? new Date() : new Date((S.fres.fecha || hoyISO()) + 'T12:00:00'); if (d) x.setDate(x.getDate() + d);
+    S.fres.fecha = x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); if ($('#rsF')) $('#rsF').value = S.fres.fecha; cargarResumen(); }
+  async function cargarResumen() {
+    const el = $('#rsRes'); if (!el) return; el.innerHTML = '<div class="vacio">Calculando…</div>';
+    try { S.res = await pedir('resumenDia', { fecha: S.fres.fecha }, true); } catch (e) { if ($('#rsRes')) $('#rsRes').innerHTML = `<div class="vacio">${esc(e.red ? 'El resumen requiere conexión.' : e.message)}</div>`; return; }
+    pintarResumen();
+  }
+  function pintarResumen() {
+    const r = S.res, el = $('#rsRes'); if (!r || !el) return;
+    const k = (t, v, s, col) => `<div class="kpi"${col ? ` style="border-top:3px solid ${col}"` : ''}><small>${t}</small><b>${v}</b>${s ? `<span>${s}</span>` : ''}</div>`;
+    const card = (t, h) => `<div class="tarjeta"><h4 style="margin:0 0 8px">${t}</h4>${h}</div>`;
+    const rojo = t => `<b style="color:var(--peligro-fuerte)">${t}</b>`;
+    el.innerHTML = `<div class="kpis">${k('Ventas del día', $$(r.totales.ventas), nf(r.totales.notas) + ' notas', 'var(--marca)')}${k('Cobrado', $$(r.totales.cobrado), 'efectivo ' + $$(r.totales.efectivo), 'var(--info)')}
+        ${k('Cartera vencida', $$(r.cartera.vencido), 'de ' + $$(r.cartera.saldo) + ' por cobrar', 'var(--peligro)')}${k('Por caducar (' + r.caducidad.dias + ' d)', nf(r.caducidad.nProximos) + ' lotes', 'costo ' + $$(r.caducidad.valorProximos), 'var(--aviso)')}
+        ${k('Bajo mínimo', nf(r.bajoMinimo.n), 'productos')}</div>
+      ${r.sinCorte.length ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)">⚠️ Sin corte de caja: <b>${esc(r.sinCorte.join(', '))}</b></div>` : ''}
+      ${card('🏬 Por sucursal', tabla([{ t: 'Sucursal', h: x => `<b>${esc(x.nombre)}</b>` }, { t: 'Notas', num: 1, h: x => nf(x.notas) }, { t: 'Ventas', num: 1, h: x => $$(x.ventas) }, { t: 'Cobrado', num: 1, h: x => $$(x.cobrado) },
+        { t: 'Efectivo', num: 1, cls: 'ocultar-movil', h: x => $$(x.efectivo) }, { t: 'Corte', h: x => x.corte ? esc(x.corte.folio) + (x.corte.diferencia !== null && Math.abs(x.corte.diferencia) >= 0.01 ? ' ' + rojo('dif ' + $$(x.corte.diferencia)) : ' ✔') : rojo('sin corte') }], r.sucursales, { vacio: 'Sin movimientos ese día' }))}
+      <div class="rejilla" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
+        ${card('💳 Clientes con más saldo vencido', tabla([{ t: 'Cliente', h: x => esc(x.cliente) }, { t: 'Notas', num: 1, h: x => x.notas }, { t: 'Días', num: 1, h: x => x.dias }, { t: 'Vencido', num: 1, h: x => `<b>${$$(x.monto)}</b>` }], r.cartera.top, { vacio: '✔ Sin cartera vencida' }))}
+        ${card('⏳ Próximos a caducar' + (r.caducidad.nCaducados ? ' · ' + rojo(r.caducidad.nCaducados + ' lotes ya caducados') : ''), tabla([{ t: 'Producto', h: x => esc(x.prod) }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(x.suc) }, { t: 'Caduca', h: x => esc(x.cad) + ' <small class="muted">(' + x.dias + ' d)</small>' }, { t: 'Pzas', num: 1, h: x => nf(x.q) }], r.caducidad.proximos, { vacio: '✔ Nada por caducar' }))}
+        ${card('📉 Bajo mínimo', tabla([{ t: 'Producto', h: x => esc(x.prod) }, { t: 'Exist.', num: 1, h: x => nf(x.ex) }, { t: 'Mín.', num: 1, h: x => nf(x.min) }], r.bajoMinimo.lista, { vacio: '✔ Todo arriba del mínimo' }))}
+        ${r.sinReceta.length || r.creditos.length ? card('⚠️ Para revisar', (r.sinReceta.length ? `<p>💊 <b>${r.sinReceta.length}</b> ventas sin receta: ${esc(r.sinReceta.map(x => x.folio).join(', '))}</p>` : '') + (r.creditos.length ? `<p>🚫 <b>${r.creditos.length}</b> ventas sobre el límite de crédito</p>` : '')) : ''}
+      </div>
+      ${card('✉️ Envío automático cada noche', `<div class="rejilla"><label style="grid-column:1/-1">Enviar a (correos separados por coma; vacío = tu cuenta de Google)<input id="rsCor" value="${esc(r.cfg.correos)}"></label>
+        <label>Hora<select id="rsHora">${opts([18, 19, 20, 21, 22, 23].map(h => [h, h + ':00 h']), r.cfg.hora)}</select></label></div>
+        <p>${r.activo ? '<span class="etq ok">Activo</span> Te llega cada noche con el resumen del día.' : '<span class="etq av">Sin activar</span>'}</p>
+        <div class="fila"><button class="btn fijo" onclick="App.resumenCfg()">Guardar</button>${r.activo ? '<button class="btn fijo" onclick="App.resumenCfg(false)">Desactivar</button>' : '<button class="btn primario fijo" onclick="App.resumenCfg(true)">Activar envío diario</button>'}</div>`)}`;
+  }
+  async function resumenCfg(activar) {
+    try { const r = await pedir('configResumen', { correos: $('#rsCor').value, hora: $('#rsHora').value, activar: activar }); S.res.cfg = r.cfg; S.res.activo = r.activo; pintarResumen();
+      if (r.aviso) toast(r.aviso, true); else toast(activar === true ? '✔ Envío diario activado' : activar === false ? 'Envío diario desactivado' : '✔ Guardado'); } catch (e) {}
+  }
+  async function resumenCorreo() { try { const r = await pedir('enviarResumen', { fecha: S.fres.fecha }); toast('✔ Resumen enviado a ' + r.para); } catch (e) {} }
+  function resumenWhats() {
+    const r = S.res; if (!r) return; const b = t => '*' + t + '*';
+    const t = `📋 ${b('Resumen ' + r.fecha)} · Interés Veterinario®\n\nVentas: ${b($$(r.totales.ventas))} (${r.totales.notas} notas)\nCobrado: ${b($$(r.totales.cobrado))} · efectivo ${$$(r.totales.efectivo)}\n\n` +
+      b('Por sucursal:') + '\n' + r.sucursales.map(x => `• ${x.nombre}: ${$$(x.ventas)} · cobrado ${$$(x.cobrado)} · ${x.corte ? 'corte ' + x.corte.folio + (x.corte.diferencia !== null && Math.abs(x.corte.diferencia) >= 0.01 ? ' (dif ' + $$(x.corte.diferencia) + ')' : ' ✔') : 'SIN CORTE'}`).join('\n') +
+      `\n\nCartera vencida: ${b($$(r.cartera.vencido))} de ${$$(r.cartera.saldo)}\nPor caducar (${r.caducidad.dias} d): ${r.caducidad.nProximos} lotes${r.caducidad.nCaducados ? ' · ' + r.caducidad.nCaducados + ' ya caducados' : ''}\nBajo mínimo: ${r.bajoMinimo.n} productos` +
+      (r.sinReceta.length ? `\nVentas sin receta: ${r.sinReceta.length}` : '') + (r.creditos.length ? `\nVentas sobre límite de crédito: ${r.creditos.length}` : '');
+    window.open(WA_BASE + '?text=' + encodeURIComponent(t), '_blank');
+  }
   V.equipo = () => {
     const h = hoyISO(), f = alDia(S.feq || (S.feq = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, suc: '', orden: 'venta' }));
     $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
@@ -11383,6 +11436,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
+    resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
