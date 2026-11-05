@@ -1297,6 +1297,7 @@ const App = (() => {
       <div class="tarjeta"><div class="buscador buscador-prod"><input id="vProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
         <div class="espacio"></div>
         <div class="doc-lineas" id="vLineas"></div></div>
+      <div id="vRx"></div>
       <div class="rejilla-2" style="margin-top:14px">
         <div class="tarjeta"><h3>Condiciones, entrega y cobro</h3><div class="rejilla">
           <label>Estatus de la nota<select id="vEstatus">${opts([['Pendiente', 'Pendiente de entrega (no descuenta)'], ['Entregado', 'Entregado (descuenta inventario)']], v.estatus)}</select></label>
@@ -1406,6 +1407,7 @@ const App = (() => {
       <div><span>IVA</span><span>${$$(t.iva)}</span></div>${t.flete ? `<div><span>Flete</span><span>${$$(t.flete)}</span></div>` : ''}
       <div class="gran"><span>Total</span><span>${$$(t.total)}</span></div>${v.clientePaga === false && v.fletePag ? `<div class="muted"><span>🚚 Flete que absorbes (no se le cobra)</span><span>${$$(v.fletePag)}</span></div>` : ''}
       <div class="muted"><span>Saldo a crédito</span><span>${$$(Math.max(0, t.total - (Number(v.cobro.monto) || 0)))}</span></div>`;
+    pintarRxVenta();
   }
   function limpiarVenta() {
     if (S.venta.editId) { if (!confirm('¿Salir de la edición sin guardar? La nota queda como estaba.')) return; }
@@ -1457,6 +1459,8 @@ const App = (() => {
       pago: cobro > 0 ? { monto: cobro, forma: v.cobro.forma, banco: v.cobro.banco } : null
     };
     if (aut) Object.assign(params, aut);
+    if (v.rxExt && (v.rxExt.mvz || v.rxExt.cedula) && !(v.ligar && v.ligar.receta)) params.rxExterna = v.rxExt;
+    const rxUri = $('#vRxArch') && $('#vRxArch')._uri;
     $('#vGuardar').disabled = true;
     if (v.editId) {
       const rep = v.lineas.filter((l, i) => v.lineas.findIndex(x => x.id === l.id && (x.lote || '') === (l.lote || '')) !== i);
@@ -1477,6 +1481,7 @@ const App = (() => {
       (r.avisos || []).forEach(a => toast(a, true));
       toast('✔ Venta ' + r.folio + (r.estatus === 'Pendiente' ? ' guardada como Pendiente de entrega (no descontó inventario)' : ' guardada') + (r.cotPendiente && r.cotPendiente.folio ? ' · lo que faltó de la cotización pasó a la ' + r.cotPendiente.folio : ''));
       refrescarStock();
+      if (rxUri) { try { await pedir('subirArchivo', { tipo: 'ventaRx', id: r.ID_Venta, dataUri: rxUri }, true); toast('✔ Receta adjunta a la nota'); } catch (e2) { toast('La receta no se pudo adjuntar: agrégala desde la nota', true); } }
       S.tabVen = 'notas'; ir('ventas', true); verVenta(r.ID_Venta, true);   // al guardar: a Ventas para corroborar; otra venta con "Nueva venta"
     } catch (e) {
       if (e.red) {
@@ -1484,7 +1489,7 @@ const App = (() => {
         if (v.estatus === 'Entregado') descontarStockLocal(v);
         const nota = notaOffline(v, t, params);
         S.venta = ventaNueva(); guardarBorrador();
-        toast('📴 Sin conexión: venta guardada en el dispositivo. Se enviará al reconectar.');
+        toast('📴 Sin conexión: venta guardada en el dispositivo. Se enviará al reconectar.' + (rxUri ? ' La foto de la receta adjúntala desde la nota cuando tengas señal.' : ''));
         S.tabVen = 'notas'; ir('ventas', true); modal('Venta pendiente de sincronizar', nota);
       } else { $('#vGuardar').disabled = false; const ic = errCredito(e); if (ic) return pedirAutCredito(ic, guardarVenta); toast(e.message, true); }
     }
@@ -1706,7 +1711,7 @@ const App = (() => {
         ${d.devolucion && puede('devoluciones') ? `<button class="btn" onclick="App.verDev('${esc(d.devolucion.id)}')">↩️ Ver devolución ${esc(d.devolucion.folio)}</button>` : ''}
         ${!offline && d.id && d.estatus !== 'Cancelado' && puede('ventas') ? `<button class="btn" onclick="App.rclDesde('Cliente','${d.id}')">📣 Reclamación</button>` : ''}
         ${!offline && d.id && puede('dueno') ? `<button class="btn" onclick="App.comiNota('${d.id}','${esc(d.folio)}')">💼 Comisión</button>` : ''}
-      </div>${!offline && d.id && d.estatus !== 'Cancelado' && puede('facturacion') ? '<div id="notaFact" class="no-imprimir fact-bloque"><span class="muted">Cargando facturación…</span></div>' : ''}${!offline && d.id && puede('ventas') ? bloqueArch('ventaGuia', d.id) + (d.estatus === 'Entregado' ? bloqueArch('ventaFirma', d.id) : '') : ''}${bloq ? `<p class="muted no-imprimir" style="text-align:right;margin-top:6px">🔒 Nota ${[d.facturada ? 'facturada' : '', pagada ? 'pagada al 100 %' : ''].filter(Boolean).join(' y ')}: ya no se pueden quitar productos, editarla ni cancelarla.${puede('devoluciones') ? ' Si el cliente regresa la mercancía, usa “Devolución de la nota completa”' + (d.facturada ? ' con el acuse de cancelación o la nota de crédito.' : '.') : ''}</p>` : ''}`;
+      </div>${!offline && d.id && d.estatus !== 'Cancelado' && puede('facturacion') ? '<div id="notaFact" class="no-imprimir fact-bloque"><span class="muted">Cargando facturación…</span></div>' : ''}${!offline && d.id && d.estatus !== 'Cancelado' && d.lineas.some(l => l.cant > 0 && prodRx(l.prod)) ? '<div id="notaRx" class="no-imprimir fact-bloque"><span class="muted">Revisando receta…</span></div>' : ''}${!offline && d.id && puede('ventas') ? bloqueArch('ventaGuia', d.id) + (d.estatus === 'Entregado' ? bloqueArch('ventaFirma', d.id) : '') : ''}${bloq ? `<p class="muted no-imprimir" style="text-align:right;margin-top:6px">🔒 Nota ${[d.facturada ? 'facturada' : '', pagada ? 'pagada al 100 %' : ''].filter(Boolean).join(' y ')}: ya no se pueden quitar productos, editarla ni cancelarla.${puede('devoluciones') ? ' Si el cliente regresa la mercancía, usa “Devolución de la nota completa”' + (d.facturada ? ' con el acuse de cancelación o la nota de crédito.' : '.') : ''}</p>` : ''}`;
   }
   /* ---------- PDF: se genera en el servidor, se guarda en Drive y se abre para compartir ---------- */
   async function generarPdf(accion, params, info) {
@@ -1867,7 +1872,7 @@ const App = (() => {
   }
   const verAdjCob = (id, f) => verAdj('cobro', id, f), subirAdjCob = (id, i) => subirAdj('cobro', id, i), quitarAdjCob = (id, f) => quitarAdj('cobro', id, f);
   /* ---------- FOTOS Y DOCUMENTOS: clientes, ventas, compras, vendedores, proveedores ---------- */
-  const ARCH_TIT = { cliFoto: '📷 Foto del cliente', cliCsf: '🧾 Constancia de situación fiscal', ventaGuia: '📦 Guía de envío', ocGuia: '📦 Guía de envío', trGuia: '📦 Guía de envío', vendFoto: '📷 Foto del vendedor', provLogo: '🏷️ Logotipo del proveedor',
+  const ARCH_TIT = { cliFoto: '📷 Foto del cliente', cliCsf: '🧾 Constancia de situación fiscal', ventaGuia: '📦 Guía de envío', ventaRx: '💊 Receta del MVZ (foto o PDF)', ocGuia: '📦 Guía de envío', trGuia: '📦 Guía de envío', vendFoto: '📷 Foto del vendedor', provLogo: '🏷️ Logotipo del proveedor',
     visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)', sucFoto: '🏬 Foto de la sucursal', liqComp: '🧾 Comprobante de pago (transferencia)',
     ocFactura: '🧾 Factura del proveedor (PDF y XML)', ocNota: '📝 Nota de venta / cotización del proveedor (foto o PDF)', prodFicha: '📑 Ficha técnica (PDF)', ventaFirma: '✍️ Firma de recibido', ocFirma: '✍️ Firma de recepción', trFirma: '✍️ Firma de recibido', devDoc: '🧾 Documento fiscal de cancelación (XML y PDF)' };
   const ARCH_ACEPTA = { devDoc: 'application/pdf,.xml,text/xml,application/xml', ocFactura: 'application/pdf,.xml,text/xml,application/xml', prodFicha: 'application/pdf' };
@@ -2126,7 +2131,7 @@ const App = (() => {
   }
 
   async function verVenta(id) {
-    try { const d = await pedir('detalleVenta', { ID_Venta: id }); S.ultimaVenta = d; modal('Nota ' + d.folio, htmlNota(d)); if ($('#notaFact')) cargarFactNota(id); } catch (e) {}
+    try { const d = await pedir('detalleVenta', { ID_Venta: id }); S.ultimaVenta = d; modal('Nota ' + d.folio, htmlNota(d)); if ($('#notaFact')) cargarFactNota(id); if ($('#notaRx')) cargarRxNota(d); } catch (e) {}
   }
   function formCancelarLinea(idVenta, idDet) {
     const d = S.ultimaVenta, l = d && d.lineas.find(x => x.idDet === idDet);
@@ -9760,7 +9765,7 @@ const App = (() => {
         <label>Desde<input type="date" id="rxDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="rxHasta" value="${f.hasta}"></label>
         <label>Surtir en<select id="rxSucF">${optsSuc(f.suc || '', true, 'Todas')}</select></label>
         <label style="flex:2 1 220px">Buscar<input id="rxQ" value="${esc(f.q)}" placeholder="Folio, propietario, animal, diagnóstico o medicamento"></label>
-        <button class="btn primario fijo" onclick="App.formReceta()">💊 Nueva receta</button></div></div>
+        <button class="btn primario fijo" onclick="App.formReceta()">💊 Nueva receta</button><button class="btn fijo" onclick="App.rxSinReceta()">⚠️ Ventas sin receta</button>${puede('dueno') || U().rol === 'Administrador' ? '<button class="btn fijo" onclick="App.rxCfgCats()">⚙️ Categorías con receta</button>' : ''}</div></div>
       <div id="rxRes"><div class="vacio">Cargando…</div></div>`;
     ['rxDesde', 'rxHasta', 'rxSucF'].forEach(id => $('#' + id).onchange = cargarRecetas);
     $('#rxQ').oninput = e => { f.q = e.target.value; pintarRecetas(); };
@@ -9782,6 +9787,91 @@ const App = (() => {
       { t: 'Diagnóstico', h: r => esc(r.diagnostico || r.motivo) }, { t: 'Surtir en', cls: 'ocultar-movil', h: r => r.sucCompra ? esc(sucNom(r.sucCompra)) : '<span class="muted">—</span>' },
       { t: 'Liga', cls: 'ocultar-movil', h: r => (r.idVisita ? '📅' : '') + (r.idVenta ? '🧾' : '') + (!r.idCliente ? ' <span class="etq">Prospecto</span>' : '') }, { t: 'Vigencia', h: r => `<span class="etq ${r.vigente ? 'ok' : ''}">${r.vigente ? 'Vigente' : 'Vencida'}</span><br><small class="muted">${esc(r.validez)}</small>` }],
       l, { clic: 'App.abrirReceta', vacio: 'Sin recetas en el periodo' });
+  }
+  /* ---------- 💊 RECORDATORIO DE RECETA (por categoría; no limita la venta) ---------- */
+  const normRx = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+  const rxCats = () => (D().config || {}).rxCats || [];
+  const prodRx = id => { const c = rxCats(); if (!c.length) return false; const p = prod(id); return !!p && c.some(x => normRx(x) === normRx(p.categoria)); };
+  /** Aviso en la captura de la venta: qué productos piden receta y cómo dejarla registrada. */
+  function pintarRxVenta() {
+    const el = $('#vRx'), v = S.venta; if (!el || !v) return;
+    const req = v.editId ? [] : v.lineas.filter(l => prodRx(l.id)).map(l => (prod(l.id) || {}).nombre || l.id).filter((x, i, a) => a.indexOf(x) === i);
+    const ext = v.rxExt || {}, lig = v.ligar && v.ligar.receta;
+    const key = req.join('|') + '#' + (lig || '') + '#' + (v.rxAbierta ? 1 : 0) + '#' + (v.cli || '');
+    if (el.dataset.k === key) return; el.dataset.k = key;
+    if (!req.length) { el.innerHTML = ''; return; }
+    el.innerHTML = `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)">
+      <div><b>💊 Recordatorio: ${req.length === 1 ? 'este producto requiere' : 'estos productos requieren'} receta</b><br><small>${esc(req.join(' · '))}</small></div>
+      ${lig ? `<p style="margin:8px 0 0">✔ La venta quedará ligada a la receta <b>${esc(v.ligar.folio || 'interna')}</b>. <a href="#" onclick="event.preventDefault();App.rxQuitarLiga()">Quitar</a></p>` : `
+      <div class="acciones izq" style="margin-top:8px">${puede('recetas') && v.cli ? '<button class="btn chico" onclick="App.rxElegirReceta()">📋 Receta del cliente</button>' : ''}
+        <button class="btn chico" onclick="App.rxExterna()">${v.rxAbierta ? '▲ Ocultar receta externa' : '🩺 Receta de otro MVZ'}</button></div>
+      ${v.rxAbierta ? `<div class="rejilla" style="margin-top:8px"><label>MVZ que la expidió<input id="vRxMvz" value="${esc(ext.mvz || '')}" maxlength="120"></label>
+        <label>Cédula profesional<input id="vRxCed" value="${esc(ext.cedula || '')}" maxlength="40" inputmode="numeric"></label></div>
+        <div class="arch-par" style="margin-top:6px">${bloqueArchNuevo('ventaRx', 'vRxArch')}</div>` : ''}`}
+      <p class="muted peq" style="margin:6px 0 0">No impide guardar la venta: si queda sin receta, aparece en Recetas → "Ventas sin receta" para darle seguimiento.</p></div>`;
+    const m = $('#vRxMvz'), c = $('#vRxCed');
+    if (m) { const up = () => { v.rxExt = { mvz: m.value.trim(), cedula: c.value.trim() }; guardarBorrador(); }; m.oninput = up; c.oninput = up; }
+  }
+  function rxExterna() { S.venta.rxAbierta = !S.venta.rxAbierta; pintarRxVenta(); }
+  function rxQuitarLiga() { if (S.venta.ligar) { delete S.venta.ligar.receta; delete S.venta.ligar.folio; } guardarBorrador(); pintarRxVenta(); }
+  async function rxElegirReceta(idVenta) {
+    const idCli = idVenta ? (S.ultimaVenta || {}).idCliente : S.venta.cli; if (!idCli) return;
+    let l; try { l = (await pedir('listarRecetas', { idCliente: idCli })).recetas; } catch (e) { return; }
+    S.rxOpc = l; S.rxOpcVenta = idVenta || '';
+    modal('📋 Recetas del cliente', l.length ? `<p class="muted">Elige la receta que respalda esta venta.</p>` + tabla([{ t: 'Folio', h: r => `<b>${esc(r.folio)}</b>` }, { t: 'Fecha', k: 'fecha' }, { t: 'Paciente', h: r => esc([r.especie, r.animal].filter(Boolean).join(' · ')) },
+        { t: 'Tratamiento', cls: 'ocultar-movil', h: r => esc(r.tratamientos.map(t => t.nombre || t.texto).join(', ').slice(0, 90)) }, { t: 'Vigencia', h: r => `<span class="etq ${r.vigente ? 'ok' : ''}">${r.vigente ? 'Vigente' : 'Vencida'}</span>` }], l, { clic: 'App.rxUsarReceta' }) : '<div class="vacio">El cliente no tiene recetas. Puedes hacerle una en Recetas o capturar la de otro MVZ.</div>' +
+      `<div class="acciones"><button class="btn" onclick="${idVenta ? `App.verVentaId('${idVenta}')` : 'App.cerrarModal()'}">Cerrar</button></div>`);
+  }
+  async function rxUsarReceta(i) {
+    const r = (S.rxOpc || [])[i]; if (!r) return;
+    if (!r.vigente && !confirm('La receta ' + r.folio + ' ya venció (' + r.validez + '). ¿Usarla de todos modos?')) return;
+    if (S.rxOpcVenta) {
+      try { await pedir('guardarRxVenta', { ID_Venta: S.rxOpcVenta, idReceta: r.id }); toast('✔ Nota ligada a la receta ' + r.folio); verVenta(S.rxOpcVenta); } catch (e) {}
+      return;
+    }
+    S.venta.ligar = Object.assign(S.venta.ligar || {}, { receta: r.id, folio: r.folio }); guardarBorrador(); cerrarModal(); pintarRxVenta();
+  }
+  /** Bloque de receta en la nota (si tiene productos que la requieren). */
+  async function cargarRxNota(d) {
+    const el = $('#notaRx'); if (!el) return;
+    let r; try { r = await pedir('rxVenta', { ID_Venta: d.id }, true); } catch (e) { el.innerHTML = '<span class="muted">Receta: requiere conexión.</span>'; return; }
+    if (!r.requiere || !r.requiere.length) { el.remove(); return; }
+    el.innerHTML = `<h4>💊 Receta ${r.ok ? '<span class="etq ok">Con receta</span>' : '<span class="etq av">Sin receta</span>'}</h4>
+      <p class="muted" style="margin:0 0 6px">Requieren receta: ${esc(r.requiere.join(' · '))}</p>
+      ${r.receta ? `<p>📋 Receta interna <a href="#" onclick="event.preventDefault();App.verReceta('${esc(r.receta.id)}')"><b>${esc(r.receta.folio)}</b></a></p>` : ''}
+      ${r.mvz || r.cedula ? `<p>🩺 ${esc(r.mvz || 'MVZ')}${r.cedula ? ' · Cédula ' + esc(r.cedula) : ''}</p>` : ''}
+      ${puede('ventas') ? `<div class="rejilla"><label>MVZ que la expidió<input id="nrMvz" value="${esc(r.mvz || '')}" maxlength="120"></label><label>Cédula profesional<input id="nrCed" value="${esc(r.cedula || '')}" maxlength="40"></label></div>
+      <div class="acciones izq"><button class="btn chico" onclick="App.rxGuardarNota('${esc(d.id)}')">💾 Guardar datos del MVZ</button>${!r.receta && puede('recetas') ? `<button class="btn chico" onclick="App.rxElegirReceta('${esc(d.id)}')">📋 Ligar receta del cliente</button>` : ''}</div>` : ''}
+      ${bloqueArch('ventaRx', d.id)}`;
+    cargarArchs(el);
+  }
+  async function rxGuardarNota(id) {
+    const p = { ID_Venta: id, mvz: $('#nrMvz').value.trim(), cedula: $('#nrCed').value.trim() };
+    try { await pedir('guardarRxVenta', p); toast('✔ Datos de la receta guardados'); cargarRxNota(S.ultimaVenta); }
+    catch (e) { if (e.red) { encolar('guardarRxVenta', p, 'Receta de la nota ' + ((S.ultimaVenta || {}).folio || '')); toast('📴 Se guardará al reconectar'); } }
+  }
+  /** Recetas → ventas que requieren receta y no la tienen. */
+  async function rxSinReceta() {
+    const f = S.fRx || {};
+    let r; try { r = await pedir('ventasSinReceta', { desde: f.desde, hasta: f.hasta, suc: f.suc || '' }); } catch (e) { return; }
+    S.rxSin = r.ventas;
+    modal('⚠️ Ventas sin receta', !r.configurado ? `<p>Aún no hay categorías marcadas como "requieren receta".</p>${puede('dueno') || U().rol === 'Administrador' ? '<button class="btn primario" onclick="App.rxCfgCats()">⚙️ Elegir categorías</button>' : '<p class="muted">Pide al dueño o al Administrador que las elija.</p>'}` :
+      `<p class="muted">Del ${esc(fechaCorta(f.desde || ''))} al ${esc(fechaCorta(f.hasta || ''))} · categorías: ${esc(r.categorias.join(', '))}</p>` +
+      tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Nota', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', h: x => esc(x.cliente) }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Productos', h: x => esc(x.requiere.join(' · ')) }],
+        r.ventas, { clic: 'App.rxAbrirSin', vacio: '✔ Todas las ventas del periodo tienen su receta' }) +
+      `<div class="acciones">${puede('dueno') || U().rol === 'Administrador' ? '<button class="btn" onclick="App.rxCfgCats()">⚙️ Categorías</button>' : ''}<button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  function rxCfgCats() {
+    const cats = [...new Set((D().productos || []).map(p => String(p.categoria || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+    const sel = rxCats().map(normRx);
+    modal('⚙️ Categorías que requieren receta', `<p class="muted">Al vender un producto de estas categorías, la app recuerda pedir la receta. No limita la venta.</p>
+      <div class="multi-sel" id="rxCatsSel" style="margin:8px 0">${cats.map(c => `<label class="chip-op${sel.indexOf(normRx(c)) >= 0 ? ' on' : ''}"><input type="checkbox" value="${esc(c)}" ${sel.indexOf(normRx(c)) >= 0 ? 'checked' : ''} style="display:none" onchange="this.parentNode.classList.toggle('on', this.checked)">${esc(c)}</label>`).join('') || '<span class="muted">No hay categorías en los productos</span>'}</div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.rxGuardarCats()">Guardar</button></div>`);
+  }
+  async function rxGuardarCats() {
+    const l = [...document.querySelectorAll('#rxCatsSel input:checked')].map(i => i.value);
+    try { const r = await pedir('guardarRxCategorias', { categorias: l }); D().config = Object.assign(D().config || {}, { rxCats: r.categorias }); LS.set('datos', S.datos);
+      toast('✔ ' + (r.categorias.length ? r.categorias.length + ' categoría(s) con recordatorio de receta' : 'Sin recordatorio de receta')); cerrarModal(); } catch (e) {}
   }
   async function verReceta(id) {
     let d; try { d = await pedir('detalleReceta', { id: id }); } catch (e) { return; }
@@ -9825,7 +9915,7 @@ const App = (() => {
   function rxAVenta(id) {
     const d = S.ultimaRx; if (!d || d.id !== id) return;
     if (S.venta && S.venta.lineas.length && !confirm('Tienes una venta en captura que se va a reemplazar. ¿Continuar?')) return;
-    S.venta = ventaNueva(); S.venta.ligar = { receta: d.id, visita: d.idVisita || '' };
+    S.venta = ventaNueva(); S.venta.ligar = { receta: d.id, folio: d.folio, visita: d.idVisita || '' };
     if (d.sucCompra && d.sucCompra !== S.venta.suc) { if ((D().permitidas || []).indexOf(d.sucCompra) >= 0) S.venta.suc = d.sucCompra; else toast('La receta se canalizó a ' + sucNom(d.sucCompra), true); }
     cerrarModal(); ir('venta');
     if (d.idCliente && cliente(d.idCliente)) elegirClienteVenta(d.idCliente);
@@ -10963,6 +11053,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
+    rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
