@@ -2571,7 +2571,7 @@ const App = (() => {
     const tabs = (puede('ventas') || esContador() ? [['notas', esContador() ? 'Notas facturadas' : 'Notas de venta']] : []).concat(puede('cobranza') ? [['cobranza', '💵 Cobranza'], ['edocta', '📑 Estados de cuenta']] : [])
       .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('devoluciones') ? [['dev', '↩️ Devoluciones']] : []).concat(puede('dueno') ? [['util', '🔒 Utilidad por nota']] : []);
     tab = tab || S.tabVen || 'notas'; if (!tabs.some(x => x[0] === tab)) tab = tabs[0][0]; S.tabVen = tab;
-    const h = hoyISO(), ini = h.slice(0, 8) + '01';   // mes en curso: del día 1 a hoy
+    const h = hoyISO(), ini = h.slice(0, 5) + String(Math.floor((+h.slice(5, 7) - 1) / 3) * 3 + 1).padStart(2, '0') + '-01';   // trimestre en curso: del día 1 del trimestre a hoy
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaVentas('${id}')">${n}</button>`;
     const barra = tabs.length > 1 ? `<div class="pestanas">${tabs.map(x => tb(x[0], x[1])).join('')}</div>` : '';
     if (tab === 'fact') return vistaFacturacion(barra);
