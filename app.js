@@ -658,6 +658,7 @@ const App = (() => {
     { id: 'equipo', t: 'Equipo', i: '🧑‍💼', p: 'equipo' },
     { id: 'comisiones', t: 'Comisiones', i: '💼', p: 'dueno' },
     { id: 'caja', t: 'Corte de caja', i: '💰', p: 'cobranza' },
+    { id: 'contable', t: 'Contabilidad del mes', i: '🧮', p: 'bancos' },
     { id: 'bancos', t: 'Bancos', i: '🏦', p: 'bancos' },
     { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'requisiciones', 'ajustes', 'mermas', 'inventario_fisico'] },
     { id: 'traspasos', t: 'Traspasos', i: '🚚', p: 'traspasos', oculto: 1 },
@@ -678,7 +679,7 @@ const App = (() => {
   function pintarMenu() {
     const u = U();
     $('#menu').innerHTML = `<div class="cab">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : '<b>🐾 Interés Veterinario®</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
-      <nav>${MENU.filter(m => !m.oculto && puede(m.p) && !(esContador() && OCULTO_CONTADOR.indexOf(m.id) >= 0)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
+      <nav>${MENU.filter(m => !m.oculto && puedeVer(m.id, m.p)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
         return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(e.t)}</button>`; }).join('')}</nav>
       <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
       <div class="fila" style="gap:6px"><button class="btn chico" onclick="App.ir('config')">${puede('dueno') ? '⚙️ Configuración' : '👤 Mi cuenta y sincronización'}</button><button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div><div class="ver-app"></div></div>`;
@@ -709,10 +710,13 @@ const App = (() => {
       { v: 'matriz', t: '🔄 Actualizar desde Matriz', p: 'productos_editar' }] }
   };
   const grupoDe = v => Object.keys(GRUPOS).find(g => GRUPOS[g].tabs.some(t => t.v === v)) || null;
-  /** Perfil Contador: solo lo que le sirve (consulta, facturación y bancos). */
+  /** Perfil Contador: consulta TODA la información (el servidor le bloquea lo que modifica, salvo facturación, bancos y gastos). */
   const esContador = () => U().rol === 'Contador';
-  const OCULTO_CONTADOR = ['mapa', 'pedido', 'anCompras', 'reclamaciones', 'seguimiento', 'cotizaciones'];
-  const tabsGrupo = g => GRUPOS[g].tabs.filter(t => puede(t.p) && !(esContador() && OCULTO_CONTADOR.indexOf(t.v) >= 0));
+  const OCULTO_CONTADOR = ['venta', 'pos', 'matriz'];
+  /** Pantallas del dueño que la contadora también consulta (solo lectura). */
+  const VER_CONTADOR = ['resumen', 'comisiones', 'sucursales'];
+  const puedeVer = (id, p) => esContador() ? OCULTO_CONTADOR.indexOf(id) < 0 && (puede(p) || VER_CONTADOR.indexOf(id) >= 0) : puede(p);
+  const tabsGrupo = g => GRUPOS[g].tabs.filter(t => puedeVer(t.v, t.p));
   const argVista = v => v === 'productos' ? (S.tabProd || 'cat') : undefined;
   const claveTab = t => t.v + (t.a ? ':' + t.a : '');
   function pintarSubnav() {
@@ -738,8 +742,8 @@ const App = (() => {
       if (t) { v = t.v; if (t.v === 'productos' && t.a) S.tabProd = t.a; }
     }
     const g = grupoDe(v), spec = g ? GRUPOS[g].tabs.find(t => t.v === v) : null;
-    let m = MENU.find(x => x.id === v && puede(spec ? spec.p : x.p) && !(esContador() && OCULTO_CONTADOR.indexOf(x.id) >= 0));
-    if (!m) m = esContador() ? MENU.find(x => x.id === 'bancos') : MENU[0];
+    let m = MENU.find(x => x.id === v && puedeVer(x.id, spec ? spec.p : x.p));
+    if (!m) m = esContador() ? MENU.find(x => x.id === 'contable') : MENU[0];
     if (m.id !== 'ventas') S.ventasCli = null;
     if (m.id !== 'compras') S.comprasProv = null;
     S.vista = m.id; LS.set('vista', m.id);
@@ -763,14 +767,14 @@ const App = (() => {
   function fabCot() { S.tabCot = 'nueva'; ir('cotizaciones', true); }
   /* ---------- BIENVENIDA (solo celulares y tabletas: iPhone, iPad, Android) ---------- */
   const esMovil = () => { try { return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) || window.innerWidth <= 820; } catch (e) { return window.innerWidth <= 820; } };
-  const SUB_MENU = { resumen: 'Ventas, cortes, cartera y caducidades', pos: 'Cobro rápido con código de barras', caja: 'Cortes por sucursal', bancos: 'Estados de cuenta y movimientos', reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
+  const SUB_MENU = { contable: 'Facturado al SAT, compras, gastos y bancos', resumen: 'Ventas, cortes, cartera y caducidades', pos: 'Cobro rápido con código de barras', caja: 'Cortes por sucursal', bancos: 'Estados de cuenta y movimientos', reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
     seguimiento: 'Clientes por atender y visitas', comisiones: 'Comisionistas y liquidaciones', compras: 'Órdenes de compra y pedido sugerido', gastos: 'Gastos del negocio', sucursales: 'Inventario, traspasos y requisiciones',
     productos: 'Catálogo, portafolio y precios', clientes: 'Cartera de clientes', mapa: 'Dónde están tus clientes: casa y rancho', proveedores: 'Laboratorios y distribuidores', config: 'Folios, permisos y ajustes' };
   function saludo() { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; }
   function bienvenida() {
     let el = $('#bienvenida');
     if (!el) { el = document.createElement('section'); el.id = 'bienvenida'; el.className = 'bienv'; document.body.appendChild(el); }
-    const u = U(), items = MENU.filter(m => !m.oculto && puede(m.p) && m.id !== 'venta').map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null; return { id: m.id, e: solo || m }; });
+    const u = U(), items = MENU.filter(m => !m.oculto && puedeVer(m.id, m.p) && m.id !== 'venta').map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null; return { id: m.id, e: solo || m }; });
     const fecha = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
     const nombre = String(u.apodo || u.nombre || '').trim().split(/\s+/).slice(0, 2).map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
     el.innerHTML = `<div class="bienv-fondo" aria-hidden="true"></div>
@@ -999,8 +1003,8 @@ const App = (() => {
 
   /* ---------- INICIO / DASHBOARD ---------- */
   V.inicio = () => {
+    if (esContador()) return ir('contable');
     if (puede('dashboard')) return V.dashboard();
-    if (esContador()) return ir('bancos');
     const suc = sucTrabajo();
     const dias = (D().config || {}).diasCaducidad || 120;
     const alerta = (D().stock || []).filter(s => s.s === suc && s.q > 0 && diasA(s.c) !== null && diasA(s.c) <= dias).sort((a, b) => diasA(a.c) - diasA(b.c));
@@ -2579,8 +2583,8 @@ const App = (() => {
 
   /* ---------- HISTORIAL DE VENTAS ---------- */
   V.ventas = (tab) => {
-    const tabs = (puede('ventas') || esContador() ? [['notas', esContador() ? 'Notas facturadas' : 'Notas de venta']] : []).concat(puede('cobranza') ? [['cobranza', '💵 Cobranza'], ['edocta', '📑 Estados de cuenta']] : [])
-      .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('devoluciones') ? [['dev', '↩️ Devoluciones']] : []).concat(puede('dueno') ? [['util', '🔒 Utilidad por nota']] : []);
+    const tabs = (puede('ventas') || esContador() ? [['notas', 'Notas de venta']] : []).concat(puede('cobranza') ? [['cobranza', '💵 Cobranza'], ['edocta', '📑 Estados de cuenta']] : [])
+      .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('devoluciones') ? [['dev', '↩️ Devoluciones']] : []).concat(puede('dueno') || esContador() ? [['util', '🔒 Utilidad por nota']] : []);
     tab = tab || S.tabVen || 'notas'; if (!tabs.some(x => x[0] === tab)) tab = tabs[0][0]; S.tabVen = tab;
     const h = hoyISO(), ini = h.slice(0, 5) + String(Math.floor((+h.slice(5, 7) - 1) / 3) * 3 + 1).padStart(2, '0') + '-01';   // trimestre en curso: del día 1 del trimestre a hoy
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaVentas('${id}')">${n}</button>`;
@@ -2632,12 +2636,12 @@ const App = (() => {
       const tot = vivas.reduce((a, x) => a + x.total, 0), sal = vivas.reduce((a, x) => a + Math.max(0, x.saldo), 0), cob = vivas.reduce((a, x) => a + x.cobrado, 0);
       const conSal = vivas.filter(x => x.saldo > 0.009).length;
       $('#lVentas').innerHTML = `<div class="kpis">
-        <div class="kpi"><small>${esContador() ? 'Notas facturadas del periodo' : S.ventasCli && !$('#fDesde').value && !$('#fHasta').value ? 'Ventas históricas del cliente' : 'Ventas del periodo'}</small><b>${$$(tot)}</b><span>${vivas.length} ${vivas.length === 1 ? 'nota' : 'notas'}${l.length > vivas.length ? ' · ' + (l.length - vivas.length) + ' canceladas' : ''}</span></div>
+        <div class="kpi"><small>${S.ventasCli && !$('#fDesde').value && !$('#fHasta').value ? 'Ventas históricas del cliente' : 'Ventas del periodo'}</small><b>${$$(tot)}</b><span>${vivas.length} ${vivas.length === 1 ? 'nota' : 'notas'}${l.length > vivas.length ? ' · ' + (l.length - vivas.length) + ' canceladas' : ''}</span></div>
         <div class="kpi"><small>Cobrado de esas notas</small><b>${$$(cob)}</b><span>${tot > 0 ? Math.round(cob / tot * 100) + ' % del total' : '—'}</span></div>
         <div class="kpi"><small>Por cobrar del periodo</small><b>${$$(sal)}</b><span>${conSal} ${conSal === 1 ? 'nota' : 'notas'} con saldo</span></div>
-        ${puede('cobranza') && !esContador() ? `<div class="kpi kpi-clic" id="kCxC" onclick="App.verCxC()" title="Ver todas las notas con saldo"><small>Cuentas por cobrar (total)</small><b>…</b><span>calculando</span></div>` : ''}
-        ${esContador() ? `<div class="kpi"><small>Facturado de esas notas</small><b>${$$(vivas.reduce((a, x) => a + (x.montoFac || 0), 0))}</b><span>solo notas con factura ligada</span></div>` : ''}
-      </div>` + (esContador() ? '<p class="muted peq">Solo se muestran las notas que tienen factura fiscal (total o parcial).</p>' : '') + tabla([
+        ${puede('cobranza') ? `<div class="kpi kpi-clic" id="kCxC" onclick="App.verCxC()" title="Ver todas las notas con saldo"><small>Cuentas por cobrar (total)</small><b>…</b><span>calculando</span></div>` : ''}
+        ${esContador() ? `<div class="kpi"><small>Facturado de esas notas</small><b>${$$(vivas.reduce((a, x) => a + (x.montoFac || 0), 0))}</b><span>lo que ya se reportó al SAT de esas notas</span></div>` : ''}
+      </div>` + (esContador() ? '<p class="muted peq">Filtra con <b>Factura</b> para ver solo las facturadas o las que faltan. Lo emitido al SAT en el mes está en 🧮 Contabilidad del mes.</p>' : '') + tabla([
         { t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) },
         { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Saldo', num: 1, h: x => x.saldo > 0.009 && x.estatus !== 'Cancelado' ? `<b>${$$(x.saldo)}</b>` : '—' },
         { t: 'Estatus', h: x => etqEstatus(x.estatus) },
@@ -2645,7 +2649,7 @@ const App = (() => {
           return (t === 'SI' ? '<span class="etq ok">Facturada</span>' : t === 'PARCIAL' ? '<span class="etq av">Parcial</span>' : '<span class="muted">Sin facturar</span>') + (x.montoFac !== undefined ? `<br><b>${$$(x.montoFac)}</b> facturado` : '') + (x.factura ? `<br><small class="muted">${esc(x.factura)}</small>` : ''); } },
         { t: 'Pago', h: x => x.estatus === 'Cancelado' || x.estatus === 'Devuelto' ? '—' : x.saldo > 0.009 ? '<span class="etq saldo">Con saldo</span>' : x.saldo < -0.009 ? '<span class="etq av">Saldo a favor</span>' : '<span class="etq ok">Pagada</span>' }
       ], l, { clic: 'App.abrirVenta' });
-      if (puede('cobranza') && !esContador()) totalCxC();
+      if (puede('cobranza')) totalCxC();
     } catch (e) { if (nq === S.qVentas && $('#lVentas')) $('#lVentas').innerHTML = `<div class="vacio">${e.red ? 'Consultar ventas requiere conexión.' : 'No se pudo consultar: ' + esc(e.message || '')}</div>`; }
   }
   /** Cuentas por cobrar de TODAS las fechas (no depende del periodo elegido). */
@@ -3722,44 +3726,57 @@ const App = (() => {
   }
   /* ---------- 🧾 ARMAR FACTURA GLOBAL DEL MES (un concepto por nota cobrada) ---------- */
   function formArmarGlobal() {
-    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
-    const ini = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01', f2 = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-    const fin = f2.getFullYear() + '-' + String(f2.getMonth() + 1).padStart(2, '0') + '-' + String(f2.getDate()).padStart(2, '0');
-    S.ag = S.ag || { desde: ini, hasta: fin, suc: '', conRfc: false };
-    modal('🧾 Armar factura global', `<p class="muted">Junta lo <b>cobrado</b> en el periodo que aún no está en ninguna factura y lo acomoda como lo pide el SAT para la global: <b>un renglón por nota</b> (clave 01010101, unidad ACT, No. identificación = folio de la nota) con lo cobrado de ella. Si la nota tiene productos con IVA 16 % y 0 %, va un renglón por tasa. No hay que capturar productos ni cambiar precios.</p>
-      <div class="fila"><label>Desde<input type="date" id="agD" value="${S.ag.desde}"></label><label>Hasta<input type="date" id="agH" value="${S.ag.hasta}"></label>
+    const h = hoyISO(), ini = h.slice(0, 8) + '01';
+    S.ag = S.ag || { desde: ini < '2026-11-01' ? '2026-11-01' : ini, hasta: h, suc: '' };
+    modal('🧾 Armar factura global', `<p class="muted">Junta lo <b>cobrado</b> en el periodo que aún no tiene factura (de cualquier cliente que no la pidió, aunque tenga RFC) y lo acomoda como lo pide el SAT para la global: <b>un renglón por nota</b> (clave 01010101, unidad ACT, No. identificación = folio) con lo cobrado de ella. De una nota que ya facturaste en parte, solo entra lo que le falta facturar. Las globales con este sistema empiezan el <b>1 de noviembre de 2026</b>.</p>
+      <div class="fila"><label>Desde<input type="date" id="agD" value="${S.ag.desde}" min="2026-11-01"></label><label>Hasta<input type="date" id="agH" value="${S.ag.hasta}"></label>
         ${U().todasSucursales ? `<label>Sucursal<select id="agS">${optsSuc(S.ag.suc, false, 'Todas')}</select></label>` : ''}
-        <label class="fijo" style="align-self:end"><input type="checkbox" id="agR" ${S.ag.conRfc ? 'checked' : ''}> Incluir clientes con RFC propio</label>
         <button class="btn primario fijo" style="align-self:end" onclick="App.armarGlobal()">Armar</button></div>
       <div id="agRes"></div>`);
     armarGlobal();
   }
+  /** Conceptos y cobros de las notas marcadas. */
+  function agIncluidos() { const r = S.agR, ex = S.agEx || {}; const cs = r.conceptos.filter(x => !ex[x.idVenta]); const ids = []; cs.forEach(x => x.cobros.forEach(id => { if (ids.indexOf(id) < 0) ids.push(id); })); return { conceptos: cs, cobros: ids }; }
+  function agTotales() {
+    const { conceptos } = agIncluidos(), t = { notas: 0, conceptos: conceptos.length, base16: 0, iva16: 0, base0: 0, total: 0 }, vs = {};
+    conceptos.forEach(x => { vs[x.idVenta] = 1; if (Math.abs(x.tasa - 0.16) < 0.001) { t.base16 += x.base; t.iva16 += x.iva; } else if (!x.tasa) t.base0 += x.base; t.total += x.total; });
+    t.notas = Object.keys(vs).length; Object.keys(t).forEach(k => t[k] = r2(t[k])); return t;
+  }
+  function pintarAgTot() { const t = agTotales(), el = $('#agKpi'); if (!el) return;
+    el.innerHTML = `<div class="kpi"><small>Total a facturar</small><b>${$$(t.total)}</b><span>${t.notas} notas · ${t.conceptos} renglones</span></div><div class="kpi"><small>Base IVA 16 %</small><b>${$$(t.base16)}</b><span>IVA ${$$(t.iva16)}</span></div><div class="kpi"><small>Base IVA 0 %</small><b>${$$(t.base0)}</b><span></span></div>`;
+    const b = $('#agLigar'); if (b) b.textContent = 'Ligar estos ' + agIncluidos().cobros.length + ' abonos'; }
   async function armarGlobal() {
-    S.ag = { desde: $('#agD').value, hasta: $('#agH').value, suc: $('#agS') ? $('#agS').value : '', conRfc: $('#agR').checked };
+    S.ag = { desde: $('#agD').value, hasta: $('#agH').value, suc: $('#agS') ? $('#agS').value : '' }; S.agEx = {};
     const el = $('#agRes'); el.innerHTML = '<div class="vacio">Juntando cobros…</div>';
-    let r; try { r = await pedir('armarGlobal', { desde: S.ag.desde, hasta: S.ag.hasta, sucursal: S.ag.suc, incluirConRfc: S.ag.conRfc }, true); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message)}</div>`; return; }
-    S.agR = r; const t = r.totales, pc = x => (x * 100).toFixed(0) + ' %';
-    el.innerHTML = `<div class="kpis"><div class="kpi"><small>Total a facturar</small><b>${$$(t.total)}</b><span>${t.notas} notas · ${t.conceptos} renglones</span></div>
-        <div class="kpi"><small>Base IVA 16 %</small><b>${$$(t.base16)}</b><span>IVA ${$$(t.iva16)}</span></div><div class="kpi"><small>Base IVA 0 %</small><b>${$$(t.base0)}</b><span></span></div></div>
-      ${r.conRfc.length ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)">⚠️ <b>${r.conRfc.length} cobros de clientes con RFC propio</b> no se incluyeron (${$$(r.conRfc.reduce((s, x) => s + x.monto, 0))}): normalmente llevan su propia factura. <small>${esc(r.conRfc.slice(0, 8).map(x => x.folio + ' ' + x.cliente).join(' · '))}${r.conRfc.length > 8 ? '…' : ''}</small></div>` : ''}
-      ${r.revisar.length ? `<div class="tarjeta" style="border-color:var(--peligro)">❓ <b>${r.revisar.length} cobros por revisar</b> (su nota tiene una factura con monto por definir): ${esc(r.revisar.slice(0, 8).map(x => x.folio).join(', '))}</div>` : ''}
-      ${tabla([{ t: 'No. identificación', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', cls: 'ocultar-movil', h: x => esc(x.cliente) }, { t: 'Cobrado el', cls: 'ocultar-movil', h: x => esc(x.fechas) },
+    let r; try { r = await pedir('armarGlobal', { desde: S.ag.desde, hasta: S.ag.hasta, sucursal: S.ag.suc }, true); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message)}</div>`; return; }
+    S.agR = r; if (r.desdeISO && r.desdeISO !== S.ag.desde) { S.ag.desde = r.desdeISO; $('#agD').value = r.desdeISO; }
+    const pc = x => (x * 100).toFixed(0) + ' %', primero = {};
+    el.innerHTML = `<div class="kpis" id="agKpi"></div>
+      ${r.yaFacturadas.length ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)">ℹ️ <b>${r.yaFacturadas.length} notas ya estaban facturadas en parte o completas</b>: de ellas solo entra a la global lo que les faltaba facturar. Si alguna se facturó <b>a crédito (PPD)</b>, sus abonos no van en la global: llevan complemento de pago.
+        <small>${esc(r.yaFacturadas.slice(0, 10).map(x => x.folio + ' (cobrado ' + $$(x.cobrado) + ', a la global ' + $$(x.global) + ')').join(' · '))}${r.yaFacturadas.length > 10 ? '…' : ''}</small></div>` : ''}
+      ${r.revisar.length ? `<div class="tarjeta" style="border-color:var(--peligro)">❓ <b>${r.revisar.length} notas por revisar</b> (tienen una factura con monto por definir; asígnale el monto en la factura): ${esc(r.revisar.slice(0, 10).map(x => x.folio).join(', '))}</div>` : ''}
+      <p class="muted peq">Desmarca las notas que <b>no</b> deben ir (por ejemplo, un cliente que sí te va a pedir su factura).</p>
+      ${tabla([{ t: '', h: x => { if (primero[x.idVenta]) return ''; primero[x.idVenta] = 1; return `<input type="checkbox" data-ag="${esc(x.idVenta)}" checked>`; } },
+        { t: 'No. identificación', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', cls: 'ocultar-movil', h: x => esc(x.cliente) + (x.rfc ? ` <span class="etq">RFC ${esc(x.rfc)}</span>` : '') }, { t: 'Cobrado el', cls: 'ocultar-movil', h: x => esc(x.fechas) },
         { t: 'IVA', h: x => pc(x.tasa) }, { t: 'Valor unitario (sin IVA)', num: 1, h: x => $$(x.base) }, { t: 'IVA $', num: 1, h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], r.conceptos, { vacio: 'No hay cobros por facturar en el periodo' })}
       ${r.conceptos.length ? `<div class="acciones izq"><button class="btn" onclick="App.excelGlobal()">📊 Excel para capturar</button></div>
       <div class="tarjeta" style="margin-top:10px"><b>Cuando la timbres:</b> súbela en Facturación → "⬆️ Subir facturas" y sus renglones se ligan solos a estos abonos (el No. identificación debe ser el folio de la nota). O lígala aquí:
         <div class="fila" style="margin-top:6px"><label>XML de la global<input type="file" id="agX" accept=".xml,text/xml"></label><span class="muted fijo" style="align-self:end">o</span>
-          <label>Serie-folio<input id="agSF" placeholder="IV-300" style="max-width:120px"></label><button class="btn primario fijo" style="align-self:end" onclick="App.ligarArmada()">Ligar estos ${r.cobros.length} abonos</button></div></div>` : ''}`;
+          <label>Serie-folio<input id="agSF" placeholder="IV-300" style="max-width:120px"></label><button class="btn primario fijo" id="agLigar" style="align-self:end" onclick="App.ligarArmada()"></button></div></div>` : ''}`;
+    el.onchange = e => { const id = e.target.dataset && e.target.dataset.ag; if (!id) return; S.agEx[id] = !e.target.checked; pintarAgTot(); };
+    pintarAgTot();
   }
   async function ligarArmada() {
-    const r = S.agR; if (!r || !r.cobros.length) return;
+    const r = S.agR; if (!r) return; const inc = agIncluidos(); if (!inc.cobros.length) return toast('No hay notas marcadas', true);
     const fx = $('#agX').files[0], sf = $('#agSF').value.trim();
     if (!fx && !sf) return toast('Elige el XML o escribe la serie-folio de la factura', true);
-    const p = { cobros: r.cobros };
-    if (fx) p.xml = await leerArchivo(fx, true); else { p.serieFolio = sf; p.total = r.totales.total; p.fecha = S.ag.hasta; }
+    const montos = {}; inc.cobros.forEach(id => { if (r.montos[id] !== undefined) montos[id] = r.montos[id]; });
+    const p = { cobros: inc.cobros, montos: montos };
+    if (fx) p.xml = await leerArchivo(fx, true); else { p.serieFolio = sf; p.total = agTotales().total; p.fecha = S.ag.hasta; }
     try { const x = await pedir('ligarGlobal', p); toast('✔ ' + x.cobros + ' abonos de ' + x.notas + ' notas ligados a ' + x.sf + (x.dif !== null && Math.abs(x.dif) > 1 ? ' · diferencia ' + $$(x.dif) : '')); armarGlobal(); } catch (e) {}
   }
   async function excelGlobal() {
-    const r = S.agR; if (!r) return; const nom = 'Factura global ' + S.ag.desde + ' a ' + S.ag.hasta;
+    const r0 = S.agR; if (!r0) return; const nom = 'Factura global ' + S.ag.desde + ' a ' + S.ag.hasta, r = { conceptos: agIncluidos().conceptos, totales: agTotales() };
     try {
       const blob = await excelLocal(nom, [{ nombre: 'Conceptos', titulo: 'Factura global · público en general', sub: ['Cobros del ' + fechaTxt(S.ag.desde) + ' al ' + fechaTxt(S.ag.hasta) + ' · un concepto por nota (clave 01010101, unidad ACT)'],
         resumen: [['Total', r.totales.total, 'mon'], ['Base IVA 16 %', r.totales.base16, 'mon'], ['IVA 16 %', r.totales.iva16, 'mon'], ['Base IVA 0 %', r.totales.base0, 'mon'], ['Renglones', r.totales.conceptos, 'num']],
@@ -6794,23 +6811,31 @@ const App = (() => {
         { t: 'Observación', h: o => esc(o.texto).replace(/\n/g, '<br>') + (o.respuesta ? `<br><small>↪️ <b>Respuesta:</b> ${esc(o.respuesta)}</small>` : '') },
         { t: 'Estado', h: o => `<span class="etq ${o.estado === 'Hecha' ? 'ok' : o.estado === 'Nueva' ? 'av' : ''}">${esc(o.estado)}</span>` + (due ? `<br><button class="btn chico" onclick="App.responderObs('${o.id}')">Responder</button>` : '') }], r.lista, { vacio: 'Sin observaciones' });
   }
-  function formObservacion() {
-    const vista = (MENU.find(m => m.id === S.vista) || {}).t + (S.vista === 'bancos' ? ' › ' + S.tabBan : S.vista === 'ventas' ? ' › ' + S.tabVen : '');
-    modal('💬 Observación para el dueño', `<p class="muted peq">Pantalla: <b>${esc(vista)}</b>. Sugiere cambios de diseño, columnas, cálculos o reportes; el dueño la revisa.</p>
-      <label>Observación<textarea id="obsTxt" rows="5" placeholder="p. ej. En Movimientos agregar una columna con el RFC del proveedor"></textarea></label>
-      <div class="acciones"><button class="btn primario" onclick="App.guardarObservacion('${esc(vista)}')">Enviar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
+  const TIPOS_ANOT = ['Observación', 'Cálculo', 'Ajuste requerido', 'Pregunta', 'Sugerencia'];
+  function formObservacion(tipo) {
+    const vista = (MENU.find(m => m.id === S.vista) || {}).t + (S.vista === 'bancos' ? ' › ' + S.tabBan : S.vista === 'ventas' ? ' › ' + S.tabVen : S.vista === 'contable' ? ' › ' + (S.tabCont || 'resumen') : '');
+    const mes = S.vista === 'contable' && S.fcont ? S.fcont.desde.slice(0, 7) : hoyISO().slice(0, 7);
+    modal('📝 Anotación para el dueño', `<p class="muted peq">Pantalla: <b>${esc(vista)}</b>. Deja cálculos, ajustes que hagan falta, preguntas o cambios para analizar mejor los números; el dueño la revisa y te responde aquí.</p>
+      <div class="rejilla"><label>Tipo<select id="obsTipo">${opts(TIPOS_ANOT.map(t => [t, t]), tipo || 'Cálculo')}</select></label>
+        <label>Periodo (mes)<input type="month" id="obsPer" value="${mes}"></label>
+        <label>Importe (opcional)<input id="obsMonto" inputmode="decimal" placeholder="0.00"></label></div>
+      <label>Anotación<textarea id="obsTxt" rows="6" placeholder="p. ej. IVA acreditable de junio: pagos a proveedores 116,000 → IVA 16,000. Falta la factura de la comisión bancaria del día 15."></textarea></label>
+      <div class="acciones"><button class="btn primario" onclick="App.guardarObservacion('${esc(vista)}')">Guardar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
   }
-  async function guardarObservacion(vista) { try { await pedir('guardarObservacion', { vista: vista, texto: $('#obsTxt').value }); cerrarModal(); toast('✔ Observación enviada al dueño'); } catch (e) {} }
+  async function guardarObservacion(vista) {
+    try { await pedir('guardarObservacion', { vista: vista, texto: $('#obsTxt').value, tipo: $('#obsTipo') ? $('#obsTipo').value : '', periodo: $('#obsPer') ? $('#obsPer').value : '', monto: $('#obsMonto') ? $('#obsMonto').value.replace(/[$,\s]/g, '') : '' });
+      cerrarModal(); toast('✔ Anotación guardada'); if (S.vista === 'contable') cargarContable(); } catch (e) {}
+  }
   async function responderObs(id) {
     const est = prompt('Estado (Nueva, En revisión, Hecha, No procede):', 'En revisión'); if (est === null) return;
     const resp = prompt('Respuesta para el contador (opcional):', '') || '';
-    try { await pedir('responderObservacion', { id: id, estado: est.trim(), respuesta: resp }); bnObs(); } catch (e) {}
+    try { await pedir('responderObservacion', { id: id, estado: est.trim(), respuesta: resp }); if (S.vista === 'contable') cargarContable(); else bnObs(); } catch (e) {}
   }
   /** Botón flotante 💬 en todas las pantallas del contador. */
   function botonObservaciones() {
     let b = $('#fabObs'); const es = U().rol === 'Contador';
     if (!es) { if (b) b.remove(); return; }
-    if (!b) { document.body.insertAdjacentHTML('beforeend', '<button id="fabObs" class="fab-obs" title="Dejar una observación al dueño" onclick="App.formObservacion()">💬</button>'); }
+    if (!b) { document.body.insertAdjacentHTML('beforeend', '<button id="fabObs" class="fab-obs" title="Dejar una anotación al dueño (cálculos, ajustes, preguntas)" onclick="App.formObservacion()">📝</button>'); }
   }
 
   /*EDOCTA-INI*/
@@ -8850,6 +8875,149 @@ const App = (() => {
     const tel = String(c.cel || '').replace(/\D/g, '').slice(-10); window.open(WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(txt), '_blank');
     if (ok) toast('✔ Imagen copiada: pégala en el chat con ⌘V / Ctrl+V'); else { tarjetaBajar(); toast('Se descargó la imagen: adjúntala en el chat', true); }
   }
+  /* ---------- 🧮 CONTABILIDAD DEL MES (contadora y dueño) ---------- */
+  V.contable = () => {
+    const hoy = new Date(), ini = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1), fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+    const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    const f = S.fcont || (S.fcont = { desde: iso(ini), hasta: iso(fin) });   // por omisión: el mes pasado (el que se cierra)
+    $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
+        <label>Desde<input type="date" id="ctDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="ctHasta" value="${f.hasta}"></label>
+        <button class="btn primario fijo" onclick="App.cargarContable()">Ver</button>
+        <button class="btn fijo" onclick="App.excelContable()">📊 Excel del periodo</button>
+        <button class="btn fijo" onclick="App.zipEstadosContable()">📦 Estados de cuenta (PDF)</button>
+        <button class="btn fijo" onclick="App.formObservacion('Cálculo')">📝 Anotación</button></div>
+        <p class="muted peq" style="margin-top:6px">Todo lo del periodo en un lugar: lo facturado al SAT, compras con sus pagos y notas de crédito, facturas de gastos y bancos con su conciliación. Solo consulta; las anotaciones le llegan al dueño.</p></div>
+      <div id="ctRes"><div class="vacio">Cargando…</div></div>`;
+    agregarMesAnio('ctDesde', 'ctHasta', cargarContable);
+    cargarContable();
+  };
+  async function cargarContable() {
+    if (!$('#ctRes')) return;
+    S.fcont = { desde: $('#ctDesde').value, hasta: $('#ctHasta').value };
+    $('#ctRes').innerHTML = '<div class="vacio">Reuniendo la información del periodo…</div>';
+    try { S.cont = await pedir('paqueteContable', S.fcont, true); } catch (e) { if ($('#ctRes')) $('#ctRes').innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message || 'No se pudo cargar')}</div>`; return; }
+    pintarContable();
+  }
+  function tabContable(t) { S.tabCont = t; pintarContable(); }
+  function pintarContable() {
+    const q = S.cont, el = $('#ctRes'); if (!q || !el) return;
+    const R = q.resumen, t = S.tabCont || 'resumen';
+    const tabs = [['resumen', '📋 Resumen'], ['ingresos', '🧾 Ingresos (SAT) · ' + R.ingresos.n], ['compras', '📦 Compras y pagos · ' + R.compras.n], ['gastos', '💸 Gastos · ' + R.gastos.n], ['bancos', '🏦 Bancos · ' + R.bancos.estados], ['anot', '📝 Anotaciones · ' + R.anotaciones]];
+    const k = (ti, v, sub, cls) => `<div class="kpi"><small>${ti}</small><b class="${cls || ''}">${v}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
+    const card = (ti, h) => `<div class="tarjeta"><h4 style="margin:0 0 8px">${ti}</h4>${h}</div>`;
+    const etq = (x, cls) => `<span class="etq ${cls || ''}">${esc(x)}</span>`;
+    let h = `<div class="pestanas">${tabs.map(x => `<button class="${t === x[0] ? 'activo' : ''}" onclick="App.tabContable('${x[0]}')">${x[1]}</button>`).join('')}</div>`;
+    if (t === 'resumen') {
+      h += `<div class="kpis">${k('Facturado al SAT (ingresos)', $$(R.ingresos.total), 'subtotal ' + $$(R.ingresos.subtotal) + ' · IVA ' + $$(R.ingresos.iva))}
+          ${k('Nominativas / globales', $$(R.ingresos.nominativas) + ' / ' + $$(R.ingresos.globales), R.ingresos.ppd ? 'PPD ' + $$(R.ingresos.ppd) : 'sin PPD')}
+          ${k('Cobrado sin factura', $$(R.ingresos.cobradoSinFactura), nf(R.ingresos.nCobradoSinFactura) + ' abonos · van a la global', R.ingresos.cobradoSinFactura > 0.009 ? 'error' : '')}
+          ${k('Compras', $$(R.compras.total), nf(R.compras.conFactura) + ' de ' + nf(R.compras.n) + ' con factura · IVA ' + $$(R.compras.iva))}
+          ${k('Pagos a proveedores', $$(R.pagos.total), nf(R.pagos.n) + ' pagos · N/C ' + $$(R.nc.total))}
+          ${k('Gastos (facturas)', $$(R.gastos.total), nf(R.gastos.n) + ' facturas · IVA ' + $$(R.gastos.iva))}
+          ${k('Bancos', nf(R.bancos.estados) + ' estados', !R.bancos.estados ? 'falta cargar los estados de cuenta del periodo' : R.bancos.sinCuadrar ? R.bancos.sinCuadrar + ' no cuadran' : 'todos cuadran', !R.bancos.estados || R.bancos.sinCuadrar ? 'error' : 'ok-txt')}
+          ${k('Por conciliar', nf(R.bancos.pendientes) + ' movs.', nf(R.bancos.sinClasificar) + ' sin clasificar', R.bancos.pendientes ? 'error' : 'ok-txt')}</div>
+        ${card('IVA del periodo (referencia)', tabla([{ t: 'Concepto', h: x => esc(x[0]) }, { t: 'Importe', num: 1, h: x => `<b>${$$(x[1])}</b>` }],
+          [['IVA trasladado en facturas emitidas', R.ingresos.iva], ['IVA en facturas de compras', R.compras.iva], ['IVA en facturas de gastos', R.gastos.iva]]) +
+          '<p class="muted peq">Montos de las facturas del periodo. El IVA acreditable depende de cuándo se pagó (flujo de efectivo); los pagos están en "Compras y pagos".</p>')}
+        ${R.ingresos.sinXml || R.ingresos.canceladas ? card('⚠️ Para revisar', (R.ingresos.sinXml ? `<p>🧾 ${R.ingresos.sinXml} facturas emitidas sin XML guardado (sus importes pueden estar incompletos).</p>` : '') + (R.ingresos.canceladas ? `<p>❌ ${R.ingresos.canceladas} facturas canceladas en el periodo (se listan aparte en Ingresos).</p>` : '')) : ''}`;
+    } else if (t === 'ingresos') {
+      const cols = [{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Serie-folio', h: x => `<b>${esc(x.sf)}</b><br><small class="muted">${esc(x.uuid.slice(0, 8))}…</small>` },
+        { t: 'Tipo', h: x => etq(x.tipo, x.tipo === 'Global' ? 'av' : '') + (x.metodo ? ' ' + etq(x.metodo, x.metodo === 'PPD' ? 'av' : '') : '') },
+        { t: 'Receptor', h: x => esc(x.receptor) + `<br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Notas', cls: 'ocultar-movil', h: x => `<small>${esc(x.notas || '—')}</small>` },
+        { t: 'Subtotal', num: 1, h: x => $$(x.subtotal) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` },
+        { t: '', h: x => `<button class="btn chico" onclick="App.verFactura('${x.id}')">Ver</button>` }];
+      h += card(`Facturas de venta emitidas · ${esc(q.periodo.desde)} al ${esc(q.periodo.hasta)}`, `<p class="muted peq">Esto es lo que se reporta al SAT como ingreso: facturas a nombre del cliente y globales a público en general, vigentes.</p>` +
+        tabla(cols, q.ingresos, { vacio: 'Sin facturas emitidas en el periodo' }) + `<p style="text-align:right"><b>Total ${$$(R.ingresos.total)}</b> · subtotal ${$$(R.ingresos.subtotal)} · IVA ${$$(R.ingresos.iva)}</p>`);
+      if (q.canceladas.length) h += card('❌ Canceladas en el periodo', tabla(cols, q.canceladas));
+      if (R.ingresos.cobradoSinFactura > 0.009) h += card('💵 Cobrado sin factura', `<p>${nf(R.ingresos.nCobradoSinFactura)} abonos por <b>${$$(R.ingresos.cobradoSinFactura)}</b> cobrados en el periodo aún no están en ninguna factura (van a la factura global). Se arma en Ventas › Facturación › 🧾 Armar global del mes.</p>`);
+    } else if (t === 'compras') {
+      h += card('📦 Compras del periodo (qué se compró)', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Orden', h: x => `<b>${esc(x.folio)}</b>` },
+        { t: 'Proveedor', h: x => esc(x.proveedor) + `<br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Factura', h: x => x.conFactura ? esc(x.factura) + (x.uuid ? `<br><small class="muted">${esc(x.uuid.slice(0, 8))}…</small>` : '') : etq('sin factura', 'av') },
+        { t: 'Subtotal', num: 1, cls: 'ocultar-movil', h: x => $$(x.subtotal) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` },
+        { t: 'Pagado', num: 1, h: x => $$(x.pagado) + (x.saldo > 0.009 ? `<br><small class="error">saldo ${$$(x.saldo)}</small>` : '') }], q.compras, { vacio: 'Sin compras en el periodo' }));
+      h += card('💳 Pagos a proveedores (cuándo se pagó)', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Proveedor', h: x => esc(x.proveedor) }, { t: 'Orden / factura', h: x => esc(x.folioOC) + (x.factura ? ' · ' + esc(x.factura) : '') + (x.ppd ? ' ' + etq('PPD' + (x.rep ? ' · REP ✔' : ' · falta REP'), x.rep ? 'ok' : 'av') : '') },
+        { t: 'Forma', h: x => esc(x.forma) + (x.banco ? `<br><small class="muted">${esc(x.banco)}</small>` : '') }, { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }], q.pagos, { vacio: 'Sin pagos en el periodo' }) +
+        `<p style="text-align:right"><b>${$$(R.pagos.total)}</b></p>`);
+      h += card('🧾 Notas de crédito de proveedores', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Proveedor', h: x => esc(x.proveedor) }, { t: 'N/C', h: x => `<b>${esc(x.nc)}</b>` + (x.uuidNC ? `<br><small class="muted">${esc(x.uuidNC.slice(0, 8))}…</small>` : '') },
+        { t: 'Motivo', h: x => esc(x.motivoNC || x.comentarios) }, { t: 'Aplicada a', h: x => esc(x.folioOC) + (x.factura ? ' · ' + esc(x.factura) : '') }, { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }], q.nc, { vacio: 'Sin notas de crédito en el periodo' }));
+    } else if (t === 'gastos') {
+      h += card('💸 Facturas de gastos del periodo', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Emisor', h: x => esc(x.emisor) + `<br><small class="muted">${esc(x.rfc)}</small>` },
+        { t: 'Categoría', h: x => esc(x.cat || 'POR CLASIFICAR') + (x.grupo ? `<br><small class="muted">${esc(x.grupo)}</small>` : '') }, { t: 'Método', cls: 'ocultar-movil', h: x => esc(x.metodo || '') },
+        { t: 'Subtotal', num: 1, cls: 'ocultar-movil', h: x => $$(x.subtotal) }, { t: 'IVA', num: 1, h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], q.gastos, { vacio: 'Sin facturas de gastos en el periodo' }) +
+        `<p style="text-align:right"><b>${$$(R.gastos.total)}</b> · IVA ${$$(R.gastos.iva)}</p><p class="muted peq">PDF y XML de cada factura: Gastos › Facturas.</p>`);
+    } else if (t === 'bancos') {
+      h += card('🏦 Conciliación por cuenta', tabla([{ t: 'Cuenta', h: x => `<b>${esc(x.cuenta)}</b><br><small class="muted">${esc(x.tipo)}${x.uso ? ' · ' + esc(x.uso) : ''}</small>` },
+        { t: 'Movs.', num: 1, h: x => nf(x.movs) }, { t: 'Abonos', num: 1, h: x => $$(x.abonos) }, { t: 'Cargos', num: 1, h: x => $$(x.cargos) },
+        { t: 'Conciliados', num: 1, h: x => `<span class="ok-txt">${nf(x.conciliados)}</span>` }, { t: 'Pendientes', num: 1, h: x => x.pendientes ? `<b class="error">${nf(x.pendientes)}</b><br><small class="muted">${$$(x.montoPend)}</small>` : '✔' },
+        { t: 'Sin clasificar', num: 1, cls: 'ocultar-movil', h: x => x.sinClasificar ? nf(x.sinClasificar) : '—' }], q.cuentas, { vacio: 'Sin movimientos bancarios en el periodo' }) +
+        `<p><button class="btn chico" onclick="App.ir('bancos')">Ir a Bancos › Conciliación</button></p>`);
+      h += card('📥 Estados de cuenta del periodo', tabla([{ t: 'Cuenta', h: x => esc(x.cuenta) }, { t: 'Periodo', h: x => esc(x.desde) + ' al ' + esc(x.hasta) },
+        { t: 'Saldo inicial', num: 1, cls: 'ocultar-movil', h: x => $$(x.saldoInicial) }, { t: 'Abonos', num: 1, cls: 'ocultar-movil', h: x => $$(x.abonos) }, { t: 'Cargos', num: 1, cls: 'ocultar-movil', h: x => $$(x.cargos) },
+        { t: 'Saldo final', num: 1, h: x => `<b>${$$(x.saldoFinal)}</b>` }, { t: 'Cuadre', h: x => x.cuadra ? etq('cuadra', 'ok') : etq('no cuadra', 'mal') + (x.avisos ? `<br><small>${esc(x.avisos)}</small>` : '') },
+        { t: '', h: x => x.archivo ? `<button class="btn chico" onclick="App.bnBajarEstado('${x.id}')">⬇️ PDF</button>` : '<small class="muted">sin PDF</small>' }], q.estados, { vacio: 'No hay estados de cuenta cargados para este periodo' }) +
+        (q.estados.some(x => x.archivo) ? `<p><button class="btn" onclick="App.zipEstadosContable()">📦 Descargar todos (ZIP)</button></p>` : ''));
+      const pend = q.movs.filter(m => m.estado !== 'Conciliado' && m.estado !== 'No aplica');
+      h += card('⏳ Movimientos por conciliar · ' + pend.length, tabla([{ t: 'Fecha', h: m => esc(m.fecha) }, { t: 'Cuenta', cls: 'ocultar-movil', h: m => `<small>${esc(m.cuenta)}</small>` },
+        { t: 'Descripción', h: m => esc(m.desc) + (m.categoria ? `<br><small class="muted">${esc(m.categoria)}</small>` : '') }, { t: 'Cargo', num: 1, h: m => m.cargo ? $$(m.cargo) : '' }, { t: 'Abono', num: 1, h: m => m.abono ? $$(m.abono) : '' }],
+        pend.slice(0, 400), { vacio: '✔ Todo conciliado' }));
+    } else {
+      const due = puede('dueno');
+      h += card('📝 Anotaciones del periodo', `<p class="muted peq">Cálculos, ajustes y preguntas sobre este periodo. ${due ? 'Respóndelas para que la contadora vea qué se hizo.' : 'El dueño las revisa y te responde aquí.'}</p>
+        <div class="fila" style="gap:6px;margin-bottom:8px">${TIPOS_ANOT.slice(1).map(x => `<button class="btn chico" onclick="App.formObservacion('${x}')">+ ${x}</button>`).join('')}</div>` +
+        tabla([{ t: 'Fecha', h: o => esc(o.fecha) + `<br><small class="muted">${esc(o.usuario)}</small>` }, { t: 'Tipo', h: o => etq(o.tipo, o.tipo === 'Ajuste requerido' ? 'av' : '') + (o.monto !== null ? `<br><b>${$$(o.monto)}</b>` : '') },
+          { t: 'Anotación', h: o => esc(o.texto).replace(/\n/g, '<br>') + `<br><small class="muted">${esc(o.vista)}</small>` + (o.respuesta ? `<br><small>↪️ <b>Respuesta:</b> ${esc(o.respuesta)}</small>` : '') },
+          { t: 'Estado', h: o => etq(o.estado, o.estado === 'Hecha' ? 'ok' : o.estado === 'Nueva' ? 'av' : '') + (due ? `<br><button class="btn chico" onclick="App.responderObs('${o.id}')">Responder</button>` : '') }], q.anotaciones, { vacio: 'Sin anotaciones en este periodo' }));
+    }
+    el.innerHTML = h;
+  }
+  async function zipEstadosContable() {
+    const q = S.cont; if (!q) return; const es = q.estados.filter(e => e.archivo);
+    if (!es.length) return toast('No hay PDFs de estados de cuenta en este periodo', true);
+    try {
+      const Z = await libLocal('jszip'), zip = new Z();
+      for (let i = 0; i < es.length; i++) {
+        toast('Descargando ' + (i + 1) + ' de ' + es.length + '…');
+        const a = await pedir('descargarArchivoBanco', { estado: es[i].id }, true), b = await (await fetch(a.uri)).blob();
+        zip.file(String(es[i].cuenta).replace(/[\\/:*?"<>|…]+/g, ' ').trim() + '/' + a.nombre, b);
+      }
+      entregarArchivo(await zip.generateAsync({ type: 'blob' }), 'Estados de cuenta ' + q.periodo.desdeISO + ' a ' + q.periodo.hastaISO + '.zip', 'PDFs de estados de cuenta del periodo');
+    } catch (e) { toast(e.message || 'No se pudo armar el ZIP', true); }
+  }
+  async function excelContable() {
+    const q = S.cont; if (!q) return toast('Primero carga el periodo', true);
+    const R = q.resumen, per = q.periodo.desde + ' al ' + q.periodo.hasta, sub = t => [t + ' · ' + per, 'Interés Veterinario® · generado ' + fechaTxt(hoyISO())];
+    const M = (t, w) => ({ t: t, w: w || 13, fmt: 'mon', suma: 1 });
+    const ing = [{ t: 'Fecha', w: 11 }, { t: 'Serie-folio', w: 12 }, { t: 'UUID', w: 38 }, { t: 'Tipo', w: 11 }, { t: 'RFC', w: 15 }, { t: 'Receptor', w: 30 }, { t: 'Método', w: 8 }, { t: 'Forma', w: 7 }, { t: 'Uso CFDI', w: 8 },
+      M('Subtotal'), M('Descuento'), M('IVA'), M('Total'), { t: 'Notas', w: 30 }];
+    const filaIng = x => ({ v: [x.fecha, x.sf, x.uuid, x.tipo, x.rfc, x.receptor, x.metodo, x.forma, x.uso, x.subtotal, x.descuento, x.iva, x.total, x.notas] });
+    const hojas = [
+      { nombre: 'Resumen', titulo: 'Resumen contable', sub: sub('Periodo'), cols: [{ t: 'Concepto', w: 46 }, { t: 'Importe', w: 16, fmt: 'mon' }, { t: 'Cantidad', w: 10, fmt: 'num' }],
+        filas: [['Facturado al SAT (total)', R.ingresos.total, R.ingresos.n], ['  Subtotal', R.ingresos.subtotal, ''], ['  IVA trasladado', R.ingresos.iva, ''], ['  Nominativas', R.ingresos.nominativas, ''], ['  Globales', R.ingresos.globales, ''],
+          ['  PPD', R.ingresos.ppd, ''], ['Cobrado sin factura', R.ingresos.cobradoSinFactura, R.ingresos.nCobradoSinFactura], ['Compras (total)', R.compras.total, R.compras.n], ['  IVA de compras', R.compras.iva, ''],
+          ['Pagos a proveedores', R.pagos.total, R.pagos.n], ['Notas de crédito de proveedores', R.nc.total, R.nc.n], ['Gastos (total)', R.gastos.total, R.gastos.n], ['  IVA de gastos', R.gastos.iva, ''],
+          ['Estados de cuenta del periodo', '', R.bancos.estados], ['  que no cuadran', '', R.bancos.sinCuadrar], ['Movimientos bancarios por conciliar', '', R.bancos.pendientes]].map(x => ({ v: x })) },
+      { nombre: 'Ingresos SAT', titulo: 'Facturas de venta emitidas (vigentes)', sub: sub('Lo que se reporta al SAT'), cols: ing, filas: q.ingresos.map(filaIng) },
+      { nombre: 'Canceladas', titulo: 'Facturas de venta canceladas', sub: sub('Canceladas'), cols: ing, filas: q.canceladas.map(filaIng) },
+      { nombre: 'Compras', titulo: 'Compras (órdenes con su factura)', sub: sub('Compras'), cols: [{ t: 'Fecha', w: 11 }, { t: 'Orden', w: 12 }, { t: 'Proveedor', w: 30 }, { t: 'RFC', w: 15 }, { t: 'Factura', w: 12 }, { t: 'UUID', w: 38 },
+        M('Subtotal'), M('Descuentos'), M('IVA'), M('Flete'), M('Total'), M('Pagado'), M('Saldo'), { t: 'Vence', w: 11 }],
+        filas: q.compras.map(x => ({ v: [x.fecha, x.folio, x.proveedor, x.rfc, x.conFactura ? x.factura : 'SIN FACTURA', x.uuid, x.subtotal, x.descuento, x.iva, x.flete, x.total, x.pagado, x.saldo, x.venc] })) },
+      { nombre: 'Pagos proveedores', titulo: 'Pagos a proveedores', sub: sub('Cuándo se pagó'), cols: [{ t: 'Fecha', w: 11 }, { t: 'Proveedor', w: 30 }, { t: 'Orden', w: 12 }, { t: 'Factura', w: 12 }, { t: 'Forma', w: 16 }, { t: 'Banco', w: 18 }, { t: 'PPD / REP', w: 12 }, M('Monto', 14), { t: 'Comentarios', w: 30 }],
+        filas: q.pagos.map(x => ({ v: [x.fecha, x.proveedor, x.folioOC, x.factura, x.forma, x.banco, x.ppd ? (x.rep ? 'PPD · REP' : 'PPD · falta REP') : '', x.monto, x.comentarios] })) },
+      { nombre: 'NC proveedores', titulo: 'Notas de crédito de proveedores', sub: sub('Notas de crédito aplicadas'), cols: [{ t: 'Fecha', w: 11 }, { t: 'Proveedor', w: 30 }, { t: 'Folio N/C', w: 12 }, { t: 'UUID', w: 38 }, { t: 'Motivo', w: 26 }, { t: 'Orden', w: 12 }, { t: 'Factura', w: 12 }, M('Monto', 14)],
+        filas: q.nc.map(x => ({ v: [x.fecha, x.proveedor, x.nc, x.uuidNC, x.motivoNC || x.comentarios, x.folioOC, x.factura, x.monto] })) },
+      { nombre: 'Gastos', titulo: 'Facturas de gastos', sub: sub('Gastos'), cols: [{ t: 'Fecha', w: 11 }, { t: 'Emisor', w: 30 }, { t: 'RFC', w: 15 }, { t: 'UUID', w: 38 }, { t: 'Categoría', w: 22 }, { t: 'Grupo', w: 16 }, { t: 'Método', w: 8 }, M('Subtotal'), M('IVA'), M('Total')],
+        filas: q.gastos.map(x => ({ v: [x.fecha, x.emisor, x.rfc, x.uuid, x.cat, x.grupo, x.metodo, x.subtotal, x.iva, x.total] })) },
+      { nombre: 'Conciliación', titulo: 'Conciliación bancaria por cuenta', sub: sub('Bancos'), cols: [{ t: 'Cuenta', w: 34 }, { t: 'Tipo', w: 12 }, { t: 'Movimientos', w: 12, fmt: 'num' }, M('Abonos', 15), M('Cargos', 15), { t: 'Conciliados', w: 12, fmt: 'num' }, { t: 'Pendientes', w: 12, fmt: 'num' }, M('Monto pendiente', 15), { t: 'Sin clasificar', w: 12, fmt: 'num' }],
+        filas: q.cuentas.map(x => ({ v: [x.cuenta, x.tipo, x.movs, x.abonos, x.cargos, x.conciliados, x.pendientes, x.montoPend, x.sinClasificar] })) },
+      { nombre: 'Estados de cuenta', titulo: 'Estados de cuenta del periodo', sub: sub('Saldos'), cols: [{ t: 'Cuenta', w: 34 }, { t: 'Desde', w: 11 }, { t: 'Hasta', w: 11 }, { t: 'Saldo inicial', w: 15, fmt: 'mon' }, M('Abonos', 15), M('Cargos', 15), { t: 'Saldo final', w: 15, fmt: 'mon' }, { t: 'Cuadra', w: 9 }, { t: 'Avisos', w: 30 }],
+        filas: q.estados.map(x => ({ v: [x.cuenta, x.desde, x.hasta, x.saldoInicial, x.abonos, x.cargos, x.saldoFinal, x.cuadra ? 'Sí' : 'NO', x.avisos] })) },
+      { nombre: 'Movimientos', titulo: 'Movimientos bancarios', sub: sub('Movimientos'), cols: [{ t: 'Fecha', w: 11 }, { t: 'Cuenta', w: 28 }, { t: 'Descripción', w: 40 }, { t: 'Referencia', w: 16 }, M('Cargo'), M('Abono'), { t: 'Saldo', w: 13, fmt: 'mon' }, { t: 'Categoría', w: 18 }, { t: 'Conciliación', w: 12 }, { t: 'Ligado a', w: 30 }, { t: 'Notas', w: 24 }],
+        filas: q.movs.map(m => ({ v: [m.fecha, m.cuenta, m.desc, m.ref, m.cargo || '', m.abono || '', m.saldo === null ? '' : m.saldo, m.categoria, m.estado, m.liga, m.notas] })) },
+      { nombre: 'Anotaciones', titulo: 'Anotaciones de la contadora', sub: sub('Anotaciones'), cols: [{ t: 'Fecha', w: 16 }, { t: 'Usuario', w: 18 }, { t: 'Tipo', w: 16 }, { t: 'Importe', w: 13, fmt: 'mon' }, { t: 'Anotación', w: 60 }, { t: 'Estado', w: 12 }, { t: 'Respuesta', w: 40 }],
+        filas: q.anotaciones.map(o => ({ v: [o.fecha, o.usuario, o.tipo, o.monto === null ? '' : o.monto, o.texto, o.estado, o.respuesta] })) }];
+    try { toast('Armando el Excel…'); const blob = await excelLocal('Contabilidad ' + per, hojas); entregarArchivo(blob, 'Contabilidad ' + q.periodo.desdeISO + ' a ' + q.periodo.hastaISO + '.xlsx', 'Excel del periodo contable'); }
+    catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
+  }
   /* ---------- 📋 RESUMEN DEL DÍA (dueño) ---------- */
   V.resumen = () => {
     const f = S.fres || (S.fres = { fecha: hoyISO() });
@@ -9039,7 +9207,7 @@ const App = (() => {
     try { await pedir('asignarGastoEmpleado', { uuids: [uuid], idVendedor: emp }, true); toast(emp ? '✔ Asignado' : '✔ Sin empleado'); const x = (S.listaFact || []).find(y => y.uuid === uuid); if (x) x.emp = emp; } catch (e) { toast(e.message, true); }
   }
   V.comisiones = (tab) => {
-    if (!puede('dueno')) return ir('inicio');
+    if (!puede('dueno') && !esContador()) return ir('inicio');
     const f = S.fCom = S.fCom || { tab: 'comis', id: '', desde: '', hasta: '' };
     if (tab) f.tab = tab;
     $('#vista').innerHTML = `<div class="pestanas">${COM_TABS.map(t => `<button class="${f.tab === t[0] ? 'activo' : ''}" onclick="App.comTab('${t[0]}')">${t[1]}</button>`).join('')}</div><div id="comRes"><div class="vacio">💼 Cargando…</div></div>`;
@@ -11488,7 +11656,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
