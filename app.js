@@ -3278,13 +3278,13 @@ const App = (() => {
     } else if (tab === 'facturas') {
       S.listaFact = r.facturas;
       const optSucG = sel => `<option value="PRORRATEO" ${sel === 'PRORRATEO' ? 'selected' : ''}>Prorrateo (% ventas)</option>` + (D().sucursales || []).map(x => `<option value="${esc(x.id)}" ${x.id === sel ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('');
-      const lect = !puede('dueno');
-      html += `<div class="tarjeta">${lect ? `<div class="fila no-imprimir" style="margin-bottom:8px"><button class="btn primario fijo" onclick="App.zipGastos()">⬇️ Descargar XML y PDF de estas ${nf(r.facturas.length)} facturas (ZIP)</button></div>` : `<div class="fila no-imprimir" style="margin-bottom:8px"><label>Asignar las ${nf(r.facturas.length)} facturas mostradas a<select id="gAsigTodas"><option value="">Elige sucursal…</option>${optSucG('')}</select></label>
+      const lect = !puede('dueno'), lectSuc = lect && !esContador();   // la contadora también reasigna sucursal (el flete lo liga el dueño)
+      html += `<div class="tarjeta">${lectSuc ? `<div class="fila no-imprimir" style="margin-bottom:8px"><button class="btn primario fijo" onclick="App.zipGastos()">⬇️ Descargar XML y PDF de estas ${nf(r.facturas.length)} facturas (ZIP)</button></div>` : `<div class="fila no-imprimir" style="margin-bottom:8px"><label>Asignar las ${nf(r.facturas.length)} facturas mostradas a<select id="gAsigTodas"><option value="">Elige sucursal…</option>${optSucG('')}</select></label>
         <button class="btn fijo" onclick="App.asignarSucGastos(null)">Aplicar</button><button class="btn fijo" onclick="App.zipGastos()">⬇️ XML y PDF (ZIP)</button></div>`}
         <p class="muted">${nf(r.facturas.length)} facturas · ${$$(r.facturas.reduce((a, x) => a + x.monto, 0))} sin IVA · ${$$(r.facturas.reduce((a, x) => a + x.total, 0))} con IVA${r.sucursal ? ' · montos ponderados para ' + esc(sucNom(r.sucursal)) : ''}</p>` +
         tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Categoría', h: x => !editaGas() ? esc(x.cat) + `<br><small class="muted">${esc(x.grupo || '')}</small>` : x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + ` <button class="icono no-imprimir" title="Cambiar la categoría de esta factura" onclick="App.editarCatGasto('${esc(x.uuid)}')">✏️</button><br><small class="muted">${esc(x.grupo)}</small>` },
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
-          { t: 'Sucursal', h: (x) => lect ? esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) : `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
+          { t: 'Sucursal', h: (x) => lectSuc ? esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) : `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
           ...(puede('equipo') ? [{ t: 'Empleado', cls: 'ocultar-movil', h: x => x.grupo === 'Operación' || x.grupo === 'Financiero' ? `<select class="chico" onchange="App.asignarEmpGasto('${esc(x.uuid)}', this.value)"><option value="">—</option>${(D().vendedores || []).filter(v => !/contador/i.test(v.rol || '')).map(v => `<option value="${esc(v.id)}" ${String(v.id) === String(x.emp || '') ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('')}</select>` : '' }] : []),
           { t: 'Factura', h: x => `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>${x.xml ? `<button class="btn chico" title="Descargar el XML" onclick="App.bajarXmlGasto('${esc(x.uuid)}')">XML</button>` : ''}` },
           ...(lect ? [] : [{ t: 'Flete', h: x => x.flete ? `<button class="btn chico" style="color:var(--ok);border-color:var(--ok)" title="Flete ligado a ${x.flete} documento(s) (órdenes de compra / notas de venta)" onclick="App.fleteLigar('${esc(x.uuid)}')">🚚 ${x.flete}</button>`
@@ -3437,7 +3437,7 @@ const App = (() => {
   async function guardarCatGasto(uuid) {
     let cat = $('#ecCat').value; if (cat === '__nueva') cat = ($('#ecOtra').value || '').trim().toUpperCase();
     if (!cat) return toast('Escribe la categoría', true);
-    try { await pedir('clasificarGasto', { uuid: uuid, categoria: cat, todasDelProveedor: false }); cerrarModal(); toast('✔ Categoría cambiada a ' + cat); S.datGasKey = ''; cargarGastos(); } catch (e) {}
+    try { await pedir('clasificarGasto', { uuid: uuid, categoria: cat, todasDelProveedor: false }); cerrarModal(); toast('✔ Categoría cambiada a ' + cat); S.datGasKey = ''; if (S.vista === 'contable') cargarContable(); else cargarGastos(); } catch (e) {}
   }
   async function bajarXmlGasto(uuid) {
     try { const r = await pedir('xmlGasto', { uuid: uuid }); entregarArchivo(new Blob([b64aBytes(r.b64)], { type: 'application/xml' }), r.nombre, 'XML de la factura'); } catch (e) {}
@@ -8942,9 +8942,9 @@ const App = (() => {
         { t: 'Motivo', h: x => esc(x.motivoNC || x.comentarios) }, { t: 'Aplicada a', h: x => esc(x.folioOC) + (x.factura ? ' · ' + esc(x.factura) : '') }, { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }], q.nc, { vacio: 'Sin notas de crédito en el periodo' }));
     } else if (t === 'gastos') {
       h += card('💸 Facturas de gastos del periodo', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Emisor', h: x => esc(x.emisor) + `<br><small class="muted">${esc(x.rfc)}</small>` },
-        { t: 'Categoría', h: x => esc(x.cat || 'POR CLASIFICAR') + (x.grupo ? `<br><small class="muted">${esc(x.grupo)}</small>` : '') }, { t: 'Método', cls: 'ocultar-movil', h: x => esc(x.metodo || '') },
+        { t: 'Categoría', h: x => esc(x.cat || 'POR CLASIFICAR') + (puede('clasificar_gastos') && x.uuid ? ` <button class="icono" title="Cambiar la categoría" onclick="App.ctCatGasto('${esc(x.uuid)}')">✏️</button>` : '') + (x.grupo ? `<br><small class="muted">${esc(x.grupo)}</small>` : '') }, { t: 'Método', cls: 'ocultar-movil', h: x => esc(x.metodo || '') },
         { t: 'Subtotal', num: 1, cls: 'ocultar-movil', h: x => $$(x.subtotal) }, { t: 'IVA', num: 1, h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], q.gastos, { vacio: 'Sin facturas de gastos en el periodo' }) +
-        `<p style="text-align:right"><b>${$$(R.gastos.total)}</b> · IVA ${$$(R.gastos.iva)}</p><p class="muted peq">PDF y XML de cada factura: Gastos › Facturas.</p>`);
+        `<p style="text-align:right"><b>${$$(R.gastos.total)}</b> · IVA ${$$(R.gastos.iva)}</p><p class="muted peq">✏️ cambia la categoría de una factura. Sucursal, reglas por proveedor, PDF y XML: <a href="#" onclick="App.ir('gastos');return false">Gastos › Facturas</a>.</p>`);
     } else if (t === 'bancos') {
       h += card('🏦 Conciliación por cuenta', tabla([{ t: 'Cuenta', h: x => `<b>${esc(x.cuenta)}</b><br><small class="muted">${esc(x.tipo)}${x.uso ? ' · ' + esc(x.uso) : ''}</small>` },
         { t: 'Movs.', num: 1, h: x => nf(x.movs) }, { t: 'Abonos', num: 1, h: x => $$(x.abonos) }, { t: 'Cargos', num: 1, h: x => $$(x.cargos) },
@@ -8969,6 +8969,12 @@ const App = (() => {
           { t: 'Estado', h: o => etq(o.estado, o.estado === 'Hecha' ? 'ok' : o.estado === 'Nueva' ? 'av' : '') + (due ? `<br><button class="btn chico" onclick="App.responderObs('${o.id}')">Responder</button>` : '') }], q.anotaciones, { vacio: 'Sin anotaciones en este periodo' }));
     }
     el.innerHTML = h;
+  }
+  function ctCatGasto(uuid) {
+    const q = S.cont; if (!q) return;
+    S.listaFact = q.gastos.map(g => ({ uuid: g.uuid, emisor: g.emisor, fecha: g.fecha, monto: g.subtotal, cat: g.cat, grupo: g.grupo }));
+    S.catsGas = [...new Set((S.catsGas || []).concat(q.gastos.map(g => g.cat)))];
+    editarCatGasto(uuid);
   }
   async function zipEstadosContable() {
     const q = S.cont; if (!q) return; const es = q.estados.filter(e => e.archivo);
@@ -11656,7 +11662,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
