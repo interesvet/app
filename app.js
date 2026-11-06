@@ -7974,7 +7974,7 @@ const App = (() => {
     if (!editar) {
       modal(p.nombre, `${bloqueFoto(p)}<p><b>${esc(p.id)}</b> · ${esc(p.unidad)} · ${esc(p.categoria)} · ${esc(p.lab)} · Reg. ${esc(full.No_Registro || '')}</p>
         ${['Descripcion', 'Indicaciones', 'Especies', 'Dosis', 'Tiempo_retiro', 'Advertencias'].filter(k => full[k]).map(k => `<h4 style="margin-top:12px">${k.replace('_', ' ')}</h4><p style="white-space:pre-wrap">${esc(full[k])}</p>`).join('')}
-        <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.cerrarModal();App.verFicha('${esc(p.id)}')">🔎 Ficha para el cliente</button></div>
+        ${bloqueFichaCompartir(p.id)}
         <h4 style="margin-top:12px">Precios</h4>${tabla([{ t: 'Lista', k: 'l' }, { t: 'Precio', num: 1, h: x => $$(x.v) }], Object.keys(p.precios).map(k => ({ l: k, v: p.precios[k] })))}${bloqueArch('prodFicha', p.id)}`);
       cargarFotoGrande(p.id);
       return;
@@ -7996,7 +7996,7 @@ const App = (() => {
     modal(p ? 'Editar ' + p.nombre : 'Nuevo producto', `${p ? `<div class="foto-editar"><div class="foto-prod" id="fotoEdit" data-grande="${esc(p.id)}">${p.foto ? '<span class="muted">Cargando foto…</span>' : '<span class="muted">Sin foto</span>'}</div>
       <label class="btn">📷 ${p.foto ? 'Cambiar foto' : 'Agregar foto'}<input type="file" accept="image/&#42;" style="display:none" onchange="App.subirFoto('${esc(p.id)}', this)"></label></div>`
       : `<div class="foto-editar"><div class="foto-prod" id="fotoEdit"><span class="muted">Sin foto</span></div>
-      <label class="btn">📷 Agregar foto<input type="file" id="fotoNueva" accept="image/&#42;" style="display:none" onchange="App.fotoNuevaPrev(this)"></label></div>`}<div id="fProd">${formulario(campos, ini)}</div>${p ? bloqueArch('prodFicha', p.id) : ''}
+      <label class="btn">📷 Agregar foto<input type="file" id="fotoNueva" accept="image/&#42;" style="display:none" onchange="App.fotoNuevaPrev(this)"></label></div>`}<div id="fProd">${formulario(campos, ini)}</div>${p ? bloqueFichaCompartir(p.id) : ''}${p ? bloqueArch('prodFicha', p.id) : ''}
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarProducto(${p ? 'false' : 'true'})">Guardar</button></div>`);
     if (p && p.foto) cargarFotoGrande(p.id);
   }
@@ -8886,17 +8886,33 @@ const App = (() => {
     inp.onkeydown = ev => { if (ev.key === 'Enter') { const l = fqLista(inp.value); if (l.length) { ev.preventDefault(); abrirFicha(l[0].id); } } };
     if (S.fqId) abrirFicha(S.fqId); else setTimeout(() => inp.focus(), 50);
   };
+  /** Nombre del producto sin la presentación ("DORACIDE, Frasco de 500 ml." → "DORACIDE"); igual que en el servidor. */
+  function baseProd(nombre) {
+    const t = String(nombre || '').replace(/\s+/g, ' ').trim(), i = t.indexOf(',');
+    let b = i >= 0 ? t.slice(0, i) : t; const m = b.match(/^(.*?\S)\s+(\d+(?:[.,]\d+)?\s*(?:ml|lts?|l|kgs?|grs?|g|mg)\.?)$/i);
+    if (m && m[1].length >= 2) b = m[1];
+    return b.replace(/[\s.,*-]+$/, '').trim();
+  }
+  const claveProd = p => String(p.lab || '').toUpperCase() + '|' + baseProd(p.nombre).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[®*™]/g, '').replace(/\s+/g, ' ').trim();
+  /** Resultados agrupados: un renglón por producto (todas sus presentaciones juntas). */
   function fqLista(q) {
     q = String(q || '').trim().toLowerCase(); if (q.length < 2) return [];
     const ps = (D().productos || []).filter(p => p.activo !== false && p.activo !== 'NO');
-    const cb = ps.filter(p => String(p.cb || '').split(',').some(c => c && c.toLowerCase() === q)); if (cb.length) return cb;
+    const cb = ps.filter(p => String(p.cb || '').split(',').some(c => c && c.toLowerCase() === q));
     const pal = q.split(/\s+/);
-    return ps.filter(p => { const t = (p.id + ' ' + p.nombre + ' ' + (p.lab || '') + ' ' + (p.categoria || '')).toLowerCase(); return pal.every(w => t.indexOf(w) >= 0); }).slice(0, 40);
+    const hall = cb.length ? cb : ps.filter(p => { const t = (p.id + ' ' + p.nombre + ' ' + (p.lab || '') + ' ' + (p.categoria || '')).toLowerCase(); return pal.every(w => t.indexOf(w) >= 0); });
+    const g = {}, out = [];
+    hall.forEach(p => { const k = claveProd(p); if (!g[k]) { g[k] = { id: p.id, base: baseProd(p.nombre), lab: p.lab, cat: p.categoria, n: 0, foto: !!p.foto }; out.push(g[k]); }
+      g[k].n++; if (!g[k].foto && p.foto) { g[k].id = p.id; g[k].foto = true; } });
+    // cuántas presentaciones tiene cada producto en total (aunque la búsqueda haya encontrado solo una)
+    const tot = {}; ps.forEach(p => { const k = claveProd(p); tot[k] = (tot[k] || 0) + 1; });
+    out.forEach(x => x.total = tot[String(x.lab || '').toUpperCase() + '|' + baseProd(x.base).toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[®*™]/g, '').replace(/\s+/g, ' ').trim()] || x.n);
+    return out.sort((a, b) => a.base.localeCompare(b.base)).slice(0, 40);
   }
   function fqBuscar(q) {
     const l = fqLista(q), el = $('#fqRes'); if (!el) return;
     el.innerHTML = !String(q || '').trim() ? '' : !l.length ? '<p class="muted">Sin resultados</p>' :
-      l.map(p => `<button class="fq-item" onclick="App.abrirFicha('${esc(p.id)}')"><b>${esc(p.nombre)}</b><small>${esc([p.lab, p.categoria].filter(Boolean).join(' · '))}</small></button>`).join('');
+      l.map(p => `<button class="fq-item" onclick="App.abrirFicha('${esc(p.id)}')"><b>${esc(p.base)}</b><small>${esc([p.lab, p.categoria || p.cat, p.total > 1 ? p.total + ' presentaciones' : ''].filter(Boolean).join(' · '))}</small></button>`).join('');
   }
   async function abrirFicha(id) {
     S.fqId = id; S.fichas = S.fichas || {};
@@ -8906,16 +8922,21 @@ const App = (() => {
     if (S.fqId !== id || !$('#fqFicha')) return;
     const dato = (k, v) => v ? `<div class="fq-dato"><small>${k}</small><b>${esc(v)}</b></div>` : '';
     el.innerHTML = `<div class="tarjeta fq-ficha">
-      <div class="fq-cab">${f.foto ? `<div class="arch-foto fq-foto" data-grande="${esc(f.id)}"><span class="muted">Cargando foto…</span></div>` : ''}
+      <div class="fq-cab">${f.foto ? `<div class="arch-foto fq-foto" data-grande="${esc(f.fotoId || f.id)}"><span class="muted">Cargando foto…</span></div>` : ''}
         <div class="fq-tit"><h2>${esc(f.base)}</h2>
           <div class="fq-datos">${dato('Laboratorio', f.lab)}${dato('Categoría', f.cat)}${dato(/,| y /.test(f.pres || '') ? 'Presentaciones' : 'Presentación', f.pres || f.unidad)}${dato('No. de registro', f.registro)}</div></div></div>
       ${f.secciones.length ? f.secciones.map(x => `<h4 class="fq-sec">${esc(x[0])}</h4><p class="fq-txt">${esc(x[1])}</p>`).join('') : '<p class="muted">Este producto aún no tiene especificaciones capturadas.</p>'}
       <div class="acciones no-imprimir" style="justify-content:flex-start;margin-top:14px">
         <button class="btn primario" onclick="App.pdfFicha('${esc(f.id)}')">📄 PDF para enviar (WhatsApp / correo)</button>
-        ${f.fichaLab ? `<button class="btn" onclick="App.fichaLab('${esc(f.id)}')">📑 Ficha técnica del laboratorio</button>` : ''}
+        ${f.fichaLab ? `<button class="btn" onclick="App.fichaLab('${esc(f.fichaId || f.id)}')">📑 Ficha técnica del laboratorio</button>` : ''}
         <button class="btn" onclick="App.fqOtra()">🔎 Buscar otro</button></div></div>`;
-    if (f.foto) cargarFotoGrande(f.id);
+    if (f.foto) cargarFotoGrande(f.fotoId || f.id);
   }
+  /** En cada producto del catálogo: la ficha para compartir se arma sola con sus datos (siempre al día). */
+  const bloqueFichaCompartir = id => `<div class="fact-bloque no-imprimir"><h4>📄 Ficha para compartir</h4>
+    <p class="muted" style="margin:2px 0 8px;font-size:13px">Se arma sola con la foto y las especificaciones de este producto (todas sus presentaciones juntas). Sin precios ni existencias.</p>
+    <div class="acciones" style="justify-content:flex-start;margin:0"><button class="btn chico" onclick="App.cerrarModal();App.verFicha('${esc(id)}')">🔎 Ver ficha</button>
+    <button class="btn chico primario" onclick="App.pdfFicha('${esc(id)}')">📄 PDF para WhatsApp / correo</button></div></div>`;
   function verFicha(id) { S.fqId = id; ir('ficha'); }
   function fqOtra() { S.fqId = ''; V.ficha(); }
   function pdfFicha(id) {
@@ -11173,6 +11194,20 @@ const App = (() => {
      pantalla de entrada se le avisa con el mensaje { tipo: 'login' } al handler "iv" (window.webkit.messageHandlers.iv). */
   function avisarNativoLogin() { try { const h = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iv; if (h) h.postMessage({ tipo: 'login' }); } catch (e) {} }
   window.IVNativo = { version: 1, login: (u, p) => { const a = $('#lgUser'), b = $('#lgPass'); if (!a || !b) return false; a.value = u || ''; b.value = p || ''; if (u && p) entrar({ preventDefault() {} }); return true; } };
+  /* ---------- Campos de búsqueda destacados (cliente, folio, producto…) en todas las pantallas ---------- */
+  const BUSQ_IDS = new Set(['fTxt', 'cTxt', 'eTxt', 'dvTxt', 'dvBus', 'glTxt', 'ligTxt', 'sgQ', 'ntQ', 'rcTxt', 'ccBus', 'lpNCq', 'fqTxt', 'pfTxt', 'tbQ', 'rxQ', 'mpQ', 'posQ',
+    'oTxt', 'gTxt', 'ftTxt', 'pcTxt', 'pdTxt', 'ppTxt', 'pvTxt', 'lpTxt', 'ieTxt', 'flTxt', 'rqTxt', 'mzTxt', 'icoTxt', 'rnBus', 'fcoPBus', 'fcoEBus']);
+  function marcarBusquedas(root) {
+    (root || document).querySelectorAll('input:not(.busq)').forEach(i => {
+      if (!/^(text|search)$/.test(i.type || 'text') || i.disabled || i.readOnly) return;
+      const lab = i.closest('label'), t = lab && lab.firstChild && lab.firstChild.nodeType === 3 ? lab.firstChild.textContent.trim() : '';
+      if (BUSQ_IDS.has(i.id) || i.closest('.buscador') || /^(Buscar|Busca |Cliente)/i.test(t) || /^(🔍|🔎)/.test(i.placeholder || '')) {
+        i.classList.add('busq'); if (lab) lab.classList.add('busq-lab');
+        if (/^(🔍|🔎)\s*/u.test(i.placeholder || '')) i.placeholder = i.placeholder.replace(/^(🔍|🔎)\s*/u, '');   // la lupa ya va dibujada en el campo
+      }
+    });
+  }
+  { let pend = 0; new MutationObserver(() => { if (pend) return; pend = requestAnimationFrame(() => { pend = 0; marcarBusquedas(); }); }).observe(document.documentElement, { childList: true, subtree: true }); }
   document.addEventListener('DOMContentLoaded', iniciar);
 
   /* ---------------- 📣 RECLAMACIONES (de clientes y a proveedores) ----------------

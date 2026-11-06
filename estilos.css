@@ -972,6 +972,13 @@ label:has(> select[id$="Suc"]) > select:focus, label:has(input[id$="Cli"]) input
 .fq-sec { margin: 16px 0 4px; padding-bottom: 4px; border-bottom: 1px solid var(--borde); color: var(--marca); }
 .fq-txt { white-space: pre-wrap; margin: 0; line-height: 1.45; }
 @media (max-width: 600px) { .fq-foto { flex-basis: 100%; } .fq-tit h2 { font-size: 20px; } }
+/* Campos de búsqueda (cliente, folio, producto…): resaltados para ubicarlos de un vistazo */
+input.busq { font-size: 16px; font-weight: 600; min-height: 44px; border: 2px solid var(--marca) !important; border-radius: 10px;
+  background: var(--marca-suave) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231f6f4a' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.6-3.6'/%3E%3C/svg%3E") no-repeat 11px 50% / 18px;
+  padding-left: 38px !important; color: var(--texto); }
+input.busq::placeholder { color: var(--marca); opacity: .8; font-weight: 500; }
+input.busq:focus { background-color: var(--superficie); box-shadow: 0 0 0 3px color-mix(in srgb, var(--marca) 28%, transparent); outline: none; }
+label.busq-lab { font-weight: 700; color: var(--marca); flex: 2 1 260px; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
