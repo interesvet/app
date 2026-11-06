@@ -2922,7 +2922,7 @@ const App = (() => {
       <label>Buscar<input id="fTxt" placeholder="Factura, nota, RFC o cliente"></label>
       ${S.tabFact === 'facturas' ? `<label>Cuadre<select id="fCuadre">${opts([['cuadra', 'Cuadra'], ['falta asignar', 'Falta asignar'], ['excede', 'Excede'], ['por definir', 'Montos por definir'], ['sin XML', 'Sin XML'], ['sin notas', 'Sin notas'], ['cancelada', 'Canceladas sin sustituir'], ['sustituida', 'Canceladas y sustituidas']], '', 'Todos')}</select></label>` : ''}
       <button class="btn primario fijo" onclick="App.cargarFacturacion()">Buscar</button>
-      ${S.tabFact === 'facturas' ? `<button class="btn fijo" onclick="App.formSubirFactura()">⬆️ Subir XML</button>` : ''}${S.tabFact === 'piezas' ? `<button class="btn fijo" onclick="App.excelPiezas()">📊 Excel</button>` : ''}
+      ${S.tabFact === 'facturas' ? `<button class="btn fijo" onclick="App.formSubirFactura()">⬆️ Subir facturas (varias o carpeta)</button>` : ''}${S.tabFact === 'piezas' ? `<button class="btn fijo" onclick="App.excelPiezas()">📊 Excel</button>` : ''}
       ${S.tabFact === 'facturas' && U().rol === 'Administrador' ? `<button class="btn fijo" onclick="App.importarFacturas()">🔄 Importar de AppSheet</button>` : ''}</div></div>
       <div class="espacio"></div><div id="lFact"><div class="vacio">Cargando…</div></div>`;
     $('#fTxt').onkeydown = e => { if (e.key === 'Enter') cargarFacturacion(); };
@@ -3096,7 +3096,8 @@ const App = (() => {
     const folio = $('#fdNota').value.trim(); if (!folio) return toast('Escribe el folio de la nota', true);
     try { await pedir('asignarFactura', { ID_Factura: id, folio: folio, monto: $('#fdMonto').value }); toast('✔ Nota agregada'); verFactura(id); refrescarVentasVista(); } catch (e) {}
   }
-  function formSubirFactura() {
+  function formSubirFactura() { formFacturasGasto('venta'); }
+  function formSubirFacturaUna() {
     modal('Subir XML de factura', `<div class="rejilla"><label>XML *<input type="file" id="sfXml" accept=".xml,text/xml"></label><label>PDF (opcional)<input type="file" id="sfPdf" accept="application/pdf,.pdf"></label></div>
       <p class="muted">Se guarda en la carpeta de facturas y queda lista para asignarla a sus notas.</p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.subirFactura()">Subir</button></div>`);
@@ -3458,11 +3459,12 @@ const App = (() => {
     try { const r = await pedir('verPdfGasto', { uuid: uuid }); verPdf(b64aBytes(r.b64), r.nombre, { url: r.url }); if (r.generado) toast('No llegó PDF: se armó uno con los datos del XML'); } catch (e) {}
   }
   function formFacturasGasto(dest) {
-    S.subirDest = dest === 'compra' ? 'compra' : 'gasto';
-    modal(S.subirDest === 'compra' ? 'Subir facturas de proveedores' : 'Subir facturas de gastos', `<p>Elige los <b>XML</b> (y sus <b>PDF</b>) de tus facturas${S.subirDest === 'compra' ? ' y notas de crédito de proveedores' : ' de gastos'}; también puedes subir archivos <b>.zip</b>. Puedes elegir muchos a la vez.</p>
+    S.subirDest = dest === 'compra' ? 'compra' : dest === 'venta' ? 'venta' : 'gasto';
+    const ven = S.subirDest === 'venta';
+    modal(S.subirDest === 'compra' ? 'Subir facturas de proveedores' : ven ? 'Subir facturas de venta' : 'Subir facturas de gastos', `<p>Elige los <b>XML</b> (y sus <b>PDF</b>) de tus facturas${S.subirDest === 'compra' ? ' y notas de crédito de proveedores' : ven ? ' a clientes' : ' de gastos'}; también puedes subir archivos <b>.zip</b>. Puedes elegir muchos a la vez.</p>
       <div class="fila"><label>Archivos<input type="file" id="fgArch" multiple accept=".xml,.pdf,.zip,text/xml,application/pdf,application/zip"></label>
         ${'webkitdirectory' in document.createElement('input') && !/iPhone|iPad|iPod/.test(navigator.userAgent) ? `<label>…o una carpeta completa<input type="file" id="fgCarp" webkitdirectory multiple></label>` : ''}</div>
-      <p class="muted">${S.subirDest === 'compra' ? 'Se reconocen por el RFC del catálogo de proveedores: se ligan a su orden de compra (o quedan aquí para que elijas) y las notas de crédito se aplican a la orden de su factura.' : 'Se registran en Egresos CFDI con su categoría (según el proveedor), los archivos se guardan en Drive › Facturas de gastos y no se duplican si ya estaban. Las de proveedores del catálogo se van a Compras.'} Solo se aceptan facturas a tu RFC.</p>
+      <p class="muted">${ven ? 'Se registran en Facturación (sin duplicar: se reconocen por su UUID) y quedan listas para asignarlas a sus notas. El XML y su PDF se juntan por el nombre del archivo o por el UUID. Se omiten notas de crédito, complementos de pago y facturas a tu nombre.' : S.subirDest === 'compra' ? 'Se reconocen por el RFC del catálogo de proveedores: se ligan a su orden de compra (o quedan aquí para que elijas) y las notas de crédito se aplican a la orden de su factura.' : 'Se registran en Egresos CFDI con su categoría (según el proveedor), los archivos se guardan en Drive › Facturas de gastos y no se duplican si ya estaban. Las de proveedores del catálogo se van a Compras.'}${ven ? '' : ' Solo se aceptan facturas a tu RFC.'}</p>
       <div id="fgProg"></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="fgBtn" onclick="App.subirFacturasGasto()">Subir</button></div>`);
   }
@@ -3486,19 +3488,20 @@ const App = (() => {
       let r = null;
       for (let intento = 0; intento < 2 && !r; intento++) {
         try { const archivos = []; for (const f of lotes[i]) archivos.push({ nombre: f.name, dataUri: await leerArchivo(f) });
-          r = await pedir(S.subirDest === 'compra' ? 'subirFacturasCompra' : 'subirFacturasGasto', { archivos: archivos, estricto: estricto }, true); } catch (e) { if (intento) fallidos.push(lotes[i].map(f => f.name).join(', ')); }
+          r = await pedir(S.subirDest === 'compra' ? 'subirFacturasCompra' : S.subirDest === 'venta' ? 'subirFacturasVenta' : 'subirFacturasGasto', { archivos: archivos, estricto: estricto }, true); } catch (e) { if (intento) fallidos.push(lotes[i].map(f => f.name).join(', ')); }
       }
       if (r) { ['nuevas', 'duplicadas', 'omitidas', 'porClasificar'].forEach(k => tot[k] += r[k] || 0); tot.detalle.push(...r.detalle); }
     }
     if (fallidos.length) fallidos.forEach(n => tot.detalle.push({ estado: 'omitida', archivo: n.slice(0, 120), motivo: 'No se pudo subir (vuelve a subir estos; los que ya entraron no se duplican)' }));
     if (fallidos.length) tot.omitidas += fallidos.length;
-    resultadoFacturasGasto('Facturas subidas', tot); if (S.subirDest === 'compra') { if ($('#cCont')) bandejaCfdi(); } else { S.datGasKey = ''; cargarGastos(); }
+    if (S.subirDest === 'venta') tot.detalle.forEach(x => { x.emisor = [x.sf, x.receptor].filter(Boolean).join(' · ') || x.archivo; });
+    resultadoFacturasGasto('Facturas subidas', tot); if (S.subirDest === 'venta') { if ($('#lFact')) cargarFacturacion(); } else if (S.subirDest === 'compra') { if ($('#cCont')) bandejaCfdi(); } else { S.datGasKey = ''; cargarGastos(); }
   }
   function resultadoFacturasGasto(tit, r, extra) {
     const ic = { nueva: '✔', duplicada: '=', omitida: '✕' };
-    modal(tit, `<div class="kpis">${[['Nuevas', r.nuevas], ['Ya estaban', r.duplicadas], ['Omitidas', r.omitidas], ['Por clasificar', r.porClasificar || r.detalle.filter(x => x.categoria === 'POR CLASIFICAR').length]].map(k => `<div class="kpi"><small>${k[0]}</small><b>${nf(k[1])}</b></div>`).join('')}</div>` +
-      (r.detalle.length ? tabla([{ t: '', h: x => ic[x.estado] || '' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor || x.archivo || '')}</b>${x.de ? `<br><small class="muted">${esc(x.de)}</small>` : ''}` },
-        { t: 'Total', num: 1, h: x => x.total ? $$(x.total) : '' }, { t: 'Resultado', h: x => x.compra && x.estado === 'nueva' ? `🧾 Compra · ${esc(x.accion || '')}${x.motivo ? '<br><small class="muted">' + esc(x.motivo) + '</small>' : ''}` : esc(x.estado === 'nueva' ? x.categoria : x.motivo || '') }], r.detalle) : '<p class="muted">No había facturas nuevas.</p>') +
+    modal(tit, `<div class="kpis">${[['Nuevas', r.nuevas], ['Ya estaban', r.duplicadas], ['Omitidas', r.omitidas], ['Por clasificar', r.porClasificar || r.detalle.filter(x => x.categoria === 'POR CLASIFICAR').length]].slice(0, S.subirDest === 'venta' ? 3 : 4).map(k => `<div class="kpi"><small>${k[0]}</small><b>${nf(k[1])}</b></div>`).join('')}</div>` +
+      (r.detalle.length ? tabla([{ t: '', h: x => ic[x.estado] || '' }, { t: S.subirDest === 'venta' ? 'Factura · cliente' : 'Proveedor', h: x => `<b>${esc(x.emisor || x.archivo || '')}</b>${x.de ? `<br><small class="muted">${esc(x.de)}</small>` : ''}` },
+        { t: 'Total', num: 1, h: x => x.total ? $$(x.total) : '' }, { t: 'Resultado', h: x => x.compra && x.estado === 'nueva' ? `🧾 Compra · ${esc(x.accion || '')}${x.motivo ? '<br><small class="muted">' + esc(x.motivo) + '</small>' : ''}` : esc(x.estado === 'nueva' ? (x.categoria || x.motivo || '') : x.motivo || '') }], r.detalle) : '<p class="muted">No había facturas nuevas.</p>') +
       (extra || '') + `<div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Listo</button></div>`);
   }
   async function correoGastos() {
