@@ -659,6 +659,7 @@ const App = (() => {
     { id: 'comisiones', t: 'Comisiones', i: '💼', p: 'dueno' },
     { id: 'caja', t: 'Corte de caja', i: '💰', p: 'cobranza' },
     { id: 'contable', t: 'Contabilidad del mes', i: '🧮', p: 'bancos' },
+    { id: 'anotaciones', t: 'Anotaciones de la contadora', i: '📝', p: 'bancos' },
     { id: 'bancos', t: 'Bancos', i: '🏦', p: 'bancos' },
     { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'requisiciones', 'ajustes', 'mermas', 'inventario_fisico'] },
     { id: 'traspasos', t: 'Traspasos', i: '🚚', p: 'traspasos', oculto: 1 },
@@ -681,7 +682,7 @@ const App = (() => {
     const u = U();
     $('#menu').innerHTML = `<div class="cab">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : '<b>🐾 Interés Veterinario®</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
       <nav>${MENU.filter(m => !m.oculto && puedeVer(m.id, m.p)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
-        return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(e.t)}</button>`; }).join('')}</nav>
+        return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(e.t)}${m.id === 'anotaciones' && S.obsNuevas ? `<b class="menu-num">${S.obsNuevas}</b>` : ''}</button>`; }).join('')}</nav>
       <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
       <div class="fila" style="gap:6px"><button class="btn chico" onclick="App.ir('config')">${puede('dueno') ? '⚙️ Configuración' : '👤 Mi cuenta y sincronización'}</button><button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div><div class="ver-app"></div></div>`;
     cargarAvatares($('#menu')); pintarVersion();
@@ -768,7 +769,7 @@ const App = (() => {
   function fabCot() { S.tabCot = 'nueva'; ir('cotizaciones', true); }
   /* ---------- BIENVENIDA (solo celulares y tabletas: iPhone, iPad, Android) ---------- */
   const esMovil = () => { try { return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) || window.innerWidth <= 820; } catch (e) { return window.innerWidth <= 820; } };
-  const SUB_MENU = { contable: 'Facturado al SAT, compras, gastos y bancos', resumen: 'Ventas, cortes, cartera y caducidades', pos: 'Cobro rápido con código de barras', caja: 'Cortes por sucursal', bancos: 'Estados de cuenta y movimientos', reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
+  const SUB_MENU = { anotaciones: 'Cálculos, ajustes y cambios que pide la contadora', contable: 'Facturado al SAT, compras, gastos y bancos', resumen: 'Ventas, cortes, cartera y caducidades', pos: 'Cobro rápido con código de barras', caja: 'Cortes por sucursal', bancos: 'Estados de cuenta y movimientos', reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
     seguimiento: 'Clientes por atender y visitas', comisiones: 'Comisionistas y liquidaciones', compras: 'Órdenes de compra y pedido sugerido', gastos: 'Gastos del negocio', sucursales: 'Inventario, traspasos y requisiciones',
     productos: 'Catálogo, portafolio y precios', clientes: 'Cartera de clientes', mapa: 'Dónde están tus clientes: casa y rancho', proveedores: 'Laboratorios y distribuidores', config: 'Folios, permisos y ajustes' };
   function saludo() { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; }
@@ -864,7 +865,7 @@ const App = (() => {
   }
   function mostrarApp() {
     $('#login').classList.add('oculto'); $('#app').classList.remove('oculto');
-    marcarRed(S.online); pintarCola(); ir(S.vista);
+    marcarRed(S.online); pintarCola(); ir(S.vista); setTimeout(() => contarAnotaciones(), 5000);
     botonBienvenida(); if (!abrirDesdeQR()) bienvenida();   // al abrir la app (o desde el QR de una tarjeta: directo a la venta): siempre la pantalla de bienvenida con el menú (celular, iPad y Mac)
     revisarVersionApp(); revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => { revisarVersion(); revisarVersionApp(); }, 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { revisarVersion(); revisarVersionApp(); } }); }
     // logotipos de sucursal guardados con fondo blanco: el administrador los deja sin fondo (una vez, en segundo plano)
@@ -6827,10 +6828,79 @@ const App = (() => {
     try { await pedir('guardarObservacion', { vista: vista, texto: $('#obsTxt').value, tipo: $('#obsTipo') ? $('#obsTipo').value : '', periodo: $('#obsPer') ? $('#obsPer').value : '', monto: $('#obsMonto') ? $('#obsMonto').value.replace(/[$,\s]/g, '') : '' });
       cerrarModal(); toast('✔ Anotación guardada'); if (S.vista === 'contable') cargarContable(); } catch (e) {}
   }
-  async function responderObs(id) {
-    const est = prompt('Estado (Nueva, En revisión, Hecha, No procede):', 'En revisión'); if (est === null) return;
-    const resp = prompt('Respuesta para el contador (opcional):', '') || '';
-    try { await pedir('responderObservacion', { id: id, estado: est.trim(), respuesta: resp }); if (S.vista === 'contable') cargarContable(); else bnObs(); } catch (e) {}
+  const EST_ANOT = ['Nueva', 'En revisión', 'Cambio en la app', 'Hecha', 'No procede'];
+  function responderObs(id) {
+    const o = ((S.anot && S.anot.lista) || []).find(x => x.id === id) || {};
+    modal('Responder anotación ' + (o.num || ''), `${o.texto ? `<p style="white-space:pre-wrap;background:var(--superficie-2);padding:10px;border-radius:10px">${esc(o.texto)}</p>` : ''}
+      <label>Estado<select id="raEst">${opts(EST_ANOT.map(x => [x, x === 'Cambio en la app' ? 'Cambio en la app (se lo pido a Claude)' : x]), o.estado || 'En revisión')}</select></label>
+      <label>Respuesta para la contadora<textarea id="raResp" rows="4" placeholder="Qué se hizo o por qué no procede">${esc(o.respuesta || '')}</textarea></label>
+      <div class="acciones"><button class="btn primario" onclick="App.guardarRespObs('${esc(id)}')">Guardar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
+  }
+  async function guardarRespObs(id) {
+    try { await pedir('responderObservacion', { id: id, estado: $('#raEst').value, respuesta: $('#raResp').value }); cerrarModal(); toast('✔ Respuesta guardada');
+      if (S.vista === 'contable') cargarContable(); else if (S.vista === 'anotaciones') cargarAnotaciones(); else if (S.vista === 'bancos') bnObs(); } catch (e) {}
+  }
+  /* ---------- 📝 CONCENTRADO DE ANOTACIONES DE LA CONTADORA ---------- */
+  V.anotaciones = () => {
+    const f = S.fAnot = S.fAnot || { est: 'pend', tipo: '', q: '' };
+    const due = puede('dueno');
+    $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
+        <label>Mostrar<select id="anEst">${opts([['pend', 'Pendientes (nuevas, en revisión y cambios en la app)'], ['Nueva', 'Nuevas'], ['En revisión', 'En revisión'], ['Cambio en la app', 'Cambio en la app'], ['cerradas', 'Hechas y no procede'], ['', 'Todas']], f.est)}</select></label>
+        <label>Tipo<select id="anTipo">${opts([['', 'Todos']].concat(TIPOS_ANOT.map(t => [t, t])), f.tipo)}</select></label>
+        <label style="flex:2 1 220px">Buscar<input id="anQ" value="${esc(f.q)}" placeholder="Texto, pantalla o periodo"></label>
+        ${due ? `<button class="btn primario fijo" onclick="App.copiarAnotClaude()">📋 Copiar para pedir cambios</button>` : `<button class="btn primario fijo" onclick="App.formObservacion('Sugerencia')">📝 Nueva anotación</button>`}
+        <button class="btn fijo" onclick="App.excelAnot()">📊 Excel</button></div>
+      <p class="muted peq" style="margin-top:6px">${due ? 'Todo lo que la contadora anota desde cualquier pantalla. Revísalo, respóndelo y marca <b>Cambio en la app</b> lo que haya que modificar: con <b>📋 Copiar para pedir cambios</b> se arma el texto para pegárselo a Claude. Cuando quede, márcalo <b>Hecha</b> con la respuesta.' : 'Tus anotaciones y lo que respondió el dueño. Las nuevas se hacen con el botón 📝 desde cualquier pantalla.'}</p></div>
+      <div id="anRes"><div class="vacio">Cargando…</div></div>`;
+    $('#anEst').onchange = e => { f.est = e.target.value; pintarAnotaciones(); };
+    $('#anTipo').onchange = e => { f.tipo = e.target.value; pintarAnotaciones(); };
+    $('#anQ').oninput = e => { f.q = e.target.value; pintarAnotaciones(); };
+    cargarAnotaciones();
+  };
+  /** Número de anotaciones nuevas en el menú del dueño (para que no se pierdan de vista). */
+  async function contarAnotaciones() {
+    if (!puede('dueno') || navigator.onLine === false) return;
+    try { const r = await pedir('observaciones', {}, true); S.obsNuevas = r.nuevas || 0; pintarMenu(); } catch (e) {}
+  }
+  async function cargarAnotaciones() {
+    try { S.anot = await pedir('observaciones', {}, true); } catch (e) { if ($('#anRes')) $('#anRes').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : esc(e.message)}</div>`; return; }
+    S.obsNuevas = S.anot.nuevas || 0; pintarMenu(); pintarAnotaciones();
+  }
+  function anotFiltradas() {
+    const f = S.fAnot || {}, l = (S.anot && S.anot.lista) || [], q = String(f.q || '').toLowerCase().trim();
+    return l.filter(o => (f.est === 'pend' ? ['Nueva', 'En revisión', 'Cambio en la app'].indexOf(o.estado) >= 0 : f.est === 'cerradas' ? ['Hecha', 'No procede'].indexOf(o.estado) >= 0 : !f.est || o.estado === f.est) &&
+      (!f.tipo || o.tipo === f.tipo) && (!q || (o.texto + ' ' + o.vista + ' ' + o.periodo + ' ' + o.num + ' ' + o.respuesta).toLowerCase().indexOf(q) >= 0));
+  }
+  function pintarAnotaciones() {
+    const el = $('#anRes'); if (!el || !S.anot) return;
+    const all = S.anot.lista || [], l = anotFiltradas(), due = puede('dueno'), n = e => all.filter(o => o.estado === e).length;
+    const etq = e => `<span class="etq ${e === 'Hecha' ? 'ok' : e === 'Nueva' ? 'av' : e === 'Cambio en la app' ? 'mal' : ''}">${esc(e)}</span>`;
+    el.innerHTML = `<div class="kpis">${[['🆕 Nuevas', n('Nueva')], ['🔎 En revisión', n('En revisión')], ['🛠️ Cambio en la app', n('Cambio en la app')], ['✔ Hechas', n('Hecha')], ['✕ No procede', n('No procede')]]
+        .map(x => `<div class="kpi"><small>${x[0]}</small><b>${nf(x[1])}</b></div>`).join('')}</div>` +
+      tabla([{ t: '#', h: o => `<b>${esc(o.num)}</b>` }, { t: 'Fecha', h: o => esc(o.fecha) + `<br><small class="muted">${esc(o.usuario)}</small>` },
+        { t: 'Dónde', cls: 'ocultar-movil', h: o => esc(o.vista || '—') + (o.periodo ? `<br><small class="muted">Periodo ${esc(o.periodo)}</small>` : '') },
+        { t: 'Tipo', h: o => `<span class="etq">${esc(o.tipo)}</span>` + (o.monto !== null ? `<br><b>${$$(o.monto)}</b>` : '') },
+        { t: 'Anotación', h: o => esc(o.texto).replace(/\n/g, '<br>') + (o.respuesta ? `<br><small>↪️ <b>Respuesta${o.fechaResp ? ' (' + esc(o.fechaResp) + ')' : ''}:</b> ${esc(o.respuesta)}</small>` : '') },
+        { t: 'Estado', h: o => etq(o.estado) + (due ? `<br><button class="btn chico" style="margin-top:4px" onclick="App.responderObs('${o.id}')">Responder</button>` : '') }],
+        l, { vacio: 'No hay anotaciones con este filtro' });
+  }
+  /** Texto listo para pegarle a Claude: las marcadas "Cambio en la app" (o, si no hay, las que se ven en pantalla). */
+  async function copiarAnotClaude() {
+    const all = (S.anot && S.anot.lista) || [];
+    let l = all.filter(o => o.estado === 'Cambio en la app'), origen = 'marcadas como "Cambio en la app"';
+    if (!l.length) { l = anotFiltradas(); origen = 'que se ven en pantalla'; }
+    if (!l.length) return toast('No hay anotaciones para copiar', true);
+    const txt = 'Cambios que pide la contadora en la app (' + l.length + '):\n\n' + l.slice().reverse().map(o => `${o.num} · ${o.fecha} · ${o.tipo}${o.vista ? ' · Pantalla: ' + o.vista : ''}${o.periodo ? ' · Periodo ' + o.periodo : ''}${o.monto !== null ? ' · Importe ' + $$(o.monto) : ''}\n${o.texto}${o.respuesta ? '\nNota del dueño: ' + o.respuesta : ''}`).join('\n\n');
+    let ok = false; try { await navigator.clipboard.writeText(txt); ok = true; } catch (e) {}
+    modal('📋 Para pedir los cambios', `<p>${ok ? '✔ Copiado.' : 'Selecciona y copia el texto.'} Son ${l.length} anotaciones ${origen}. Pégalo en tu conversación con Claude; cuando quede cada cambio, márcalo <b>Hecha</b>.</p>
+      <textarea rows="14" style="width:100%;font-size:13px" onfocus="this.select()">${esc(txt)}</textarea><div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  async function excelAnot() {
+    const l = anotFiltradas(); if (!l.length) return toast('No hay anotaciones con este filtro', true);
+    try { const blob = await excelLocal('Anotaciones de la contadora', [{ nombre: 'Anotaciones', titulo: 'Anotaciones de la contadora', sub: ['Interés Veterinario® · ' + fechaTxt(hoyISO())],
+      cols: [{ t: '#', w: 8 }, { t: 'Fecha', w: 16 }, { t: 'Usuario', w: 18 }, { t: 'Pantalla', w: 26 }, { t: 'Periodo', w: 9 }, { t: 'Tipo', w: 16 }, { t: 'Importe', w: 13, fmt: 'mon' }, { t: 'Anotación', w: 60 }, { t: 'Estado', w: 16 }, { t: 'Respuesta', w: 40 }],
+      filas: l.map(o => ({ v: [o.num, o.fecha, o.usuario, o.vista, o.periodo, o.tipo, o.monto === null ? '' : o.monto, o.texto, o.estado, o.respuesta] })) }]);
+      entregarArchivo(blob, 'Anotaciones ' + hoyISO() + '.xlsx', 'Anotaciones de la contadora'); } catch (e) { toast('No se pudo armar el Excel', true); }
   }
   /** Botón flotante 💬 en todas las pantallas del contador. */
   function botonObservaciones() {
@@ -11812,7 +11882,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, pcTab, pcFiltro, pcVerRx, pdfFicha, fichaLab,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
