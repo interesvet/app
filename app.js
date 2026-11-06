@@ -2922,7 +2922,7 @@ const App = (() => {
       <label>Buscar<input id="fTxt" placeholder="Factura, nota, RFC o cliente"></label>
       ${S.tabFact === 'facturas' ? `<label>Cuadre<select id="fCuadre">${opts([['cuadra', 'Cuadra'], ['falta asignar', 'Falta asignar'], ['excede', 'Excede'], ['por definir', 'Montos por definir'], ['sin XML', 'Sin XML'], ['sin notas', 'Sin notas'], ['cancelada', 'Canceladas sin sustituir'], ['sustituida', 'Canceladas y sustituidas']], '', 'Todos')}</select></label>` : ''}
       <button class="btn primario fijo" onclick="App.cargarFacturacion()">Buscar</button>
-      ${S.tabFact === 'facturas' ? `<button class="btn fijo" onclick="App.formSubirFactura()">⬆️ Subir facturas (varias o carpeta)</button>` : ''}${S.tabFact === 'piezas' ? `<button class="btn fijo" onclick="App.excelPiezas()">📊 Excel</button>` : ''}
+      ${S.tabFact === 'facturas' ? `<button class="btn fijo" onclick="App.formSubirFactura()">⬆️ Subir facturas (varias o carpeta)</button><button class="btn fijo" onclick="App.formArmarGlobal()">🧾 Armar global del mes</button>` : ''}${S.tabFact === 'piezas' ? `<button class="btn fijo" onclick="App.excelPiezas()">📊 Excel</button>` : ''}
       ${S.tabFact === 'facturas' && U().rol === 'Administrador' ? `<button class="btn fijo" onclick="App.importarFacturas()">🔄 Importar de AppSheet</button>` : ''}</div></div>
       <div class="espacio"></div><div id="lFact"><div class="vacio">Cargando…</div></div>`;
     $('#fTxt').onkeydown = e => { if (e.key === 'Enter') cargarFacturacion(); };
@@ -3718,6 +3718,55 @@ const App = (() => {
           { t: 'Ya facturado', w: 13, fmt: 'mon', suma: 1 }, { t: 'Por reportar', w: 13, fmt: 'mon', suma: 1 }, { t: 'Estado', w: 16 }, { t: 'Factura(s)', w: 18 }, { t: 'Fecha factura', w: 13 }, { t: 'Método', w: 8 }],
         filas: l.map(x => ({ v: [x.fecha, x.folio, x.cliente, sucNom(x.suc), x.forma, x.banco, x.monto, x.montoFac, x.porReportar, x.fact, x.facturas, x.fechasFac, x.metodoFac], tono: x.nc ? 'gris' : x.montoFac === 0 ? 'mal' : x.porReportar ? 'av' : '' })) }]);
       entregarArchivo(blob, nom + '.xlsx', 'Excel de cobros');
+    } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
+  }
+  /* ---------- 🧾 ARMAR FACTURA GLOBAL DEL MES (un concepto por nota cobrada) ---------- */
+  function formArmarGlobal() {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+    const ini = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01', f2 = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const fin = f2.getFullYear() + '-' + String(f2.getMonth() + 1).padStart(2, '0') + '-' + String(f2.getDate()).padStart(2, '0');
+    S.ag = S.ag || { desde: ini, hasta: fin, suc: '', conRfc: false };
+    modal('🧾 Armar factura global', `<p class="muted">Junta lo <b>cobrado</b> en el periodo que aún no está en ninguna factura y lo acomoda como lo pide el SAT para la global: <b>un renglón por nota</b> (clave 01010101, unidad ACT, No. identificación = folio de la nota) con lo cobrado de ella. Si la nota tiene productos con IVA 16 % y 0 %, va un renglón por tasa. No hay que capturar productos ni cambiar precios.</p>
+      <div class="fila"><label>Desde<input type="date" id="agD" value="${S.ag.desde}"></label><label>Hasta<input type="date" id="agH" value="${S.ag.hasta}"></label>
+        ${U().todasSucursales ? `<label>Sucursal<select id="agS">${optsSuc(S.ag.suc, false, 'Todas')}</select></label>` : ''}
+        <label class="fijo" style="align-self:end"><input type="checkbox" id="agR" ${S.ag.conRfc ? 'checked' : ''}> Incluir clientes con RFC propio</label>
+        <button class="btn primario fijo" style="align-self:end" onclick="App.armarGlobal()">Armar</button></div>
+      <div id="agRes"></div>`);
+    armarGlobal();
+  }
+  async function armarGlobal() {
+    S.ag = { desde: $('#agD').value, hasta: $('#agH').value, suc: $('#agS') ? $('#agS').value : '', conRfc: $('#agR').checked };
+    const el = $('#agRes'); el.innerHTML = '<div class="vacio">Juntando cobros…</div>';
+    let r; try { r = await pedir('armarGlobal', { desde: S.ag.desde, hasta: S.ag.hasta, sucursal: S.ag.suc, incluirConRfc: S.ag.conRfc }, true); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message)}</div>`; return; }
+    S.agR = r; const t = r.totales, pc = x => (x * 100).toFixed(0) + ' %';
+    el.innerHTML = `<div class="kpis"><div class="kpi"><small>Total a facturar</small><b>${$$(t.total)}</b><span>${t.notas} notas · ${t.conceptos} renglones</span></div>
+        <div class="kpi"><small>Base IVA 16 %</small><b>${$$(t.base16)}</b><span>IVA ${$$(t.iva16)}</span></div><div class="kpi"><small>Base IVA 0 %</small><b>${$$(t.base0)}</b><span></span></div></div>
+      ${r.conRfc.length ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)">⚠️ <b>${r.conRfc.length} cobros de clientes con RFC propio</b> no se incluyeron (${$$(r.conRfc.reduce((s, x) => s + x.monto, 0))}): normalmente llevan su propia factura. <small>${esc(r.conRfc.slice(0, 8).map(x => x.folio + ' ' + x.cliente).join(' · '))}${r.conRfc.length > 8 ? '…' : ''}</small></div>` : ''}
+      ${r.revisar.length ? `<div class="tarjeta" style="border-color:var(--peligro)">❓ <b>${r.revisar.length} cobros por revisar</b> (su nota tiene una factura con monto por definir): ${esc(r.revisar.slice(0, 8).map(x => x.folio).join(', '))}</div>` : ''}
+      ${tabla([{ t: 'No. identificación', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', cls: 'ocultar-movil', h: x => esc(x.cliente) }, { t: 'Cobrado el', cls: 'ocultar-movil', h: x => esc(x.fechas) },
+        { t: 'IVA', h: x => pc(x.tasa) }, { t: 'Valor unitario (sin IVA)', num: 1, h: x => $$(x.base) }, { t: 'IVA $', num: 1, h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], r.conceptos, { vacio: 'No hay cobros por facturar en el periodo' })}
+      ${r.conceptos.length ? `<div class="acciones izq"><button class="btn" onclick="App.excelGlobal()">📊 Excel para capturar</button></div>
+      <div class="tarjeta" style="margin-top:10px"><b>Cuando la timbres:</b> súbela en Facturación → "⬆️ Subir facturas" y sus renglones se ligan solos a estos abonos (el No. identificación debe ser el folio de la nota). O lígala aquí:
+        <div class="fila" style="margin-top:6px"><label>XML de la global<input type="file" id="agX" accept=".xml,text/xml"></label><span class="muted fijo" style="align-self:end">o</span>
+          <label>Serie-folio<input id="agSF" placeholder="IV-300" style="max-width:120px"></label><button class="btn primario fijo" style="align-self:end" onclick="App.ligarArmada()">Ligar estos ${r.cobros.length} abonos</button></div></div>` : ''}`;
+  }
+  async function ligarArmada() {
+    const r = S.agR; if (!r || !r.cobros.length) return;
+    const fx = $('#agX').files[0], sf = $('#agSF').value.trim();
+    if (!fx && !sf) return toast('Elige el XML o escribe la serie-folio de la factura', true);
+    const p = { cobros: r.cobros };
+    if (fx) p.xml = await leerArchivo(fx, true); else { p.serieFolio = sf; p.total = r.totales.total; p.fecha = S.ag.hasta; }
+    try { const x = await pedir('ligarGlobal', p); toast('✔ ' + x.cobros + ' abonos de ' + x.notas + ' notas ligados a ' + x.sf + (x.dif !== null && Math.abs(x.dif) > 1 ? ' · diferencia ' + $$(x.dif) : '')); armarGlobal(); } catch (e) {}
+  }
+  async function excelGlobal() {
+    const r = S.agR; if (!r) return; const nom = 'Factura global ' + S.ag.desde + ' a ' + S.ag.hasta;
+    try {
+      const blob = await excelLocal(nom, [{ nombre: 'Conceptos', titulo: 'Factura global · público en general', sub: ['Cobros del ' + fechaTxt(S.ag.desde) + ' al ' + fechaTxt(S.ag.hasta) + ' · un concepto por nota (clave 01010101, unidad ACT)'],
+        resumen: [['Total', r.totales.total, 'mon'], ['Base IVA 16 %', r.totales.base16, 'mon'], ['IVA 16 %', r.totales.iva16, 'mon'], ['Base IVA 0 %', r.totales.base0, 'mon'], ['Renglones', r.totales.conceptos, 'num']],
+        cols: [{ t: 'Clave prod/serv', w: 13 }, { t: 'No. identificación', w: 16 }, { t: 'Cantidad', w: 9 }, { t: 'Clave unidad', w: 10 }, { t: 'Descripción', w: 12 }, { t: 'Valor unitario', w: 14, fmt: 'mon' }, { t: 'Importe', w: 14, fmt: 'mon', suma: 1 },
+          { t: 'Objeto imp.', w: 10 }, { t: 'Tasa IVA', w: 9 }, { t: 'IVA', w: 12, fmt: 'mon', suma: 1 }, { t: 'Total', w: 13, fmt: 'mon', suma: 1 }, { t: 'Cliente (referencia)', w: 30 }],
+        filas: r.conceptos.map(x => ({ v: ['01010101', x.folio, 1, 'ACT', 'Venta', x.base, x.base, '02', x.tasa.toFixed(6), x.iva, x.total, x.cliente] })) }]);
+      entregarArchivo(blob, nom + '.xlsx', 'Excel de la factura global');
     } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
   }
   /* ---------- FACTURA GLOBAL POR ABONOS (público en general) ---------- */
@@ -11439,6 +11488,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
