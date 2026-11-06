@@ -346,8 +346,14 @@ tr.grupo small { color: var(--texto-2); font-weight: 500; }
 /* Lista de precios en hojas carta ya armadas (se mide fuera de pantalla y se imprime en #zonaImpresion) */
 .lp-paginas { width: 186mm; background: #fff; color: #111; font-size: 9pt; }
 .lp-medir { position: fixed; left: -12000px; top: 0; visibility: hidden; pointer-events: none; }
-.lp-pagina { height: 246mm; display: flex; flex-direction: column; overflow: hidden; break-after: page; page-break-after: always; }
-.lp-pagina:last-child { break-after: auto; page-break-after: auto; }
+/* 215 mm: cabe aunque el navegador o la impresora usen márgenes grandes o encabezado/pie (Safari, iPhone/iPad).
+   Con 246 mm, en esos casos cada hoja se pasaba un poco y salía una hoja en blanco intercalada. */
+.lp-pagina { height: 215mm; display: flex; flex-direction: column; overflow: hidden; }
+.lp-pagina + .lp-pagina { break-before: page; page-break-before: always; }
+@media print {
+  #zonaImpresion .lp-pagina { height: auto; max-height: 215mm; break-inside: avoid; page-break-inside: avoid; }
+  #zonaImpresion .lp-p-pie { margin-top: 8px; }
+}
 .lp-paginas .lp-enc { display: flex !important; flex-direction: row !important; justify-content: space-between; align-items: flex-start; gap: 14px;
   background: #fff; border: 0; border-bottom: 2.5px solid #1f6f4a; border-radius: 0; padding: 0 0 7px; margin: 0 0 6px; }
 .lp-paginas .lp-enc-tit { text-align: right; max-width: 58%; }
