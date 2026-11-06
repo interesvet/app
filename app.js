@@ -10513,15 +10513,25 @@ const App = (() => {
   /* ---------- Perfil del cliente: histórico de compras y kardex de recetas ---------- */
   /* Receta: surtir en una sucursal o con uno de mis clientes (eligiendo con qué nombre aparece) */
   function rxSurtTipo(t) { $('#rxSurtSuc').classList.toggle('oculto', t === 'cli'); $('#rxSurtCliBox').classList.toggle('oculto', t !== 'cli'); }
-  function rxPintarSurtNom() {
+  /** Nombres del cliente donde se surte: se leen del registro completo del cliente (no de la copia del dispositivo). */
+  async function rxPintarSurtNom() {
     const el = $('#rxSurtNom'); if (!el || !S.rx) return;
-    const c = S.rx.surtCli ? cliente(S.rx.surtCli) : null; if (!c) { el.innerHTML = ''; return; }
-    const ops = [['Nombre del rancho o negocio', c.rancho], ['Razón social', c.razon], ['Nombre del cliente', c.nombre]].filter(x => String(x[1] || '').trim())
-      .filter((x, i, a) => a.findIndex(y => String(y[1]).trim().toUpperCase() === String(x[1]).trim().toUpperCase()) === i);
-    const sel = S.rx.surtNom && ops.some(x => x[1] === S.rx.surtNom) ? S.rx.surtNom : (ops[0] || [])[1];
-    el.innerHTML = ops.length ? `<p class="muted peq" style="margin:6px 0 4px">¿Con qué nombre aparece en la receta?</p>` + ops.map(x => `<label class="chk" style="display:flex;gap:8px;align-items:center;margin:4px 0">
-      <input type="radio" name="rxSurtN" value="${esc(x[1])}" ${x[1] === sel ? 'checked' : ''}> <span><small class="muted">${x[0]}:</small> <b>${esc(x[1])}</b></span></label>`).join('') : '';
+    const id = S.rx.surtCli; if (!id) { el.innerHTML = ''; return; }
+    const c0 = cliente(id) || {};
+    let x = null; el.innerHTML = '<span class="muted peq">Cargando los nombres del cliente…</span>';
+    try { x = await pedir('registro', { tabla: 'cliente', id: id }, true); } catch (e) {}
+    if (!S.rx || S.rx.surtCli !== id || !$('#rxSurtNom')) return;
+    const rancho = x ? x.Nombre_Rancho : c0.rancho, razon = x ? x.Razon_social : c0.razon, nombre = x ? x.Nombre_cliente : c0.nombre;
+    const dir = x ? [x.Calle, x.Colonia, x.Localidad, x['Municipio/Delegación'], x.Estado].filter(v => String(v || '').trim()).join(', ') : [c0.calle, c0.colonia, c0.localidad, c0.municipio, c0.estado].filter(Boolean).join(', ');
+    const ops = [['Nombre del rancho o negocio', rancho], ['Razón social', razon], ['Nombre del cliente', nombre]].filter(o => String(o[1] || '').trim())
+      .filter((o, i, a) => a.findIndex(y => String(y[1]).trim().toUpperCase() === String(o[1]).trim().toUpperCase()) === i);
+    const sel = S.rx.surtNom && ops.some(o => o[1] === S.rx.surtNom) ? S.rx.surtNom : (ops[0] || [])[1];
+    S.rx.surtNom = sel || '';
+    $('#rxSurtNom').innerHTML = ops.length ? `<p class="muted peq" style="margin:6px 0 4px">¿Con qué nombre aparece en la receta?</p>` + ops.map(o => `<label class="chk" style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <input type="radio" name="rxSurtN" value="${esc(o[1])}" ${o[1] === sel ? 'checked' : ''} onchange="App.rxSurtElegir(this.value)"> <span><small class="muted">${o[0]}:</small> <b>${esc(o[1])}</b></span></label>`).join('') +
+      `<p class="peq" style="margin:6px 0 0;padding:6px 8px;border:1px dashed var(--borde);border-radius:8px">En la receta: <b>Surta su receta en:</b> <span id="rxSurtPrev">${esc(sel || '')}</span>${dir ? ' · ' + esc(dir) : ''}</p>` : '';
   }
+  function rxSurtElegir(v) { if (S.rx) S.rx.surtNom = v; const p = $('#rxSurtPrev'); if (p) p.textContent = v; }
   async function cargarPerfilCompras(id) {
     const el = $('#pcCont'); if (!el || el.dataset.id !== String(id)) return;
     try { S.pc = await pedir('perfilCompras', { id: id }, true); S.pc._id = id; }
@@ -10957,7 +10967,7 @@ const App = (() => {
     const p = { ID_Receta: R.id, nueva: R.nueva, ID_Cliente: R.cli, propietario: g('#rxProp'), cel: g('#rxCel'), especie: $('#rxEsp').value, animal: g('#rxAni'), raza: g('#rxRaza'),
       edad: g('#rxEdad'), sexo: $('#rxSexo').value, peso: g('#rxPeso'), color: g('#rxColor'), motivo: g('#rxMot'), diagnostico: g('#rxDx'), obs: g('#rxObs'),
       vigencia: Number($('#rxVig').value) || 15, tratamientos: ts, firma: cv && cv._firmado ? cv.toDataURL('image/png') : '', idVisita: R.visita || '', sucCompra: $('#rxSurtTipo').value === 'cli' ? '' : $('#rxSuc').value,
-      surtirCli: $('#rxSurtTipo').value === 'cli' ? R.surtCli || '' : '', surtirNombre: $('#rxSurtTipo').value === 'cli' ? (($('input[name=rxSurtN]:checked') || {}).value || '') : '' };
+      surtirCli: $('#rxSurtTipo').value === 'cli' ? R.surtCli || '' : '', surtirNombre: $('#rxSurtTipo').value === 'cli' ? (($('input[name=rxSurtN]:checked') || {}).value || R.surtNom || '') : '' };
     if ($('#rxSurtTipo').value === 'cli' && !R.surtCli) return toast('Elige el cliente donde surtirá la receta, o cambia a sucursal', true);
     $('#rxGuardar').disabled = true;
     try { const r = await pedir('guardarReceta', p); toast('✔ Receta ' + r.folio + ' guardada'); if (S.vista === 'recetas') cargarRecetas(); verReceta(R.id); }
@@ -11958,7 +11968,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, rxSurtElegir, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
