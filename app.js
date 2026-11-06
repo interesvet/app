@@ -3480,7 +3480,8 @@ const App = (() => {
         <tr><td>⛽ Factura de gasto (cualquier otro emisor)</td><td class="muted">→ Gastos (con su categoría)</td></tr>
         <tr><td>🧾 Factura de venta que emitiste</td><td class="muted">→ Ventas › Facturación</td></tr>
         <tr><td>💵 Complemento de pago que emitiste</td><td class="muted">→ Facturación · cobranza (REP)</td></tr>
-        <tr><td>↩️ Nota de crédito que emitiste</td><td class="muted">→ su devolución (Ventas › Devoluciones)</td></tr></tbody></table>
+        <tr><td>↩️ Nota de crédito que emitiste</td><td class="muted">→ su devolución (Ventas › Devoluciones)</td></tr>
+        <tr><td>🚫 Acuse de cancelación del SAT (XML o PDF)</td><td class="muted">→ da de baja la factura donde esté: venta (queda Cancelada), gasto o proveedor</td></tr></tbody></table>
       <p class="muted">No se duplica nada: cada comprobante se reconoce por su UUID. El XML y su PDF se juntan por el nombre del archivo o por el UUID; un PDF solo se pega a la factura que ya esté registrada.</p>
       <div id="fgProg"></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="fgBtn" onclick="App.subirFacturasGasto()">Subir</button></div>`);
@@ -3503,7 +3504,8 @@ const App = (() => {
     const fsOk = fs.filter(f => f.size <= 15e6), estricto = fsOk.length > 2;
     if (fsOk.length > 40 && !confirm('Se subirán ' + fsOk.length + ' archivos en grupos pequeños. Puede tardar varios minutos: deja esta pantalla abierta hasta que termine. ¿Continuar?')) return;
     // lotes de ~8 MB, sin separar un XML de su PDF (mismo nombre base)
-    const base = n => n.replace(/\.[^.]+$/, '').toLowerCase(), grupos = {};
+    const base = n => n.replace(/\.[^.]+$/, '').toLowerCase(), grupos = {}, conXml = {};
+    fsOk.forEach(f => { if (/\.xml$/i.test(f.name)) conXml[base(f.name)] = 1; });
     fsOk.forEach(f => (grupos[base(f.name)] = grupos[base(f.name)] || []).push(f));
     const lotes = [[]]; let peso = 0;   // grupos pequeños (≤ 12 archivos, ≤ 8 MB) para que cada envío termine a tiempo
     Object.values(grupos).forEach(g => { const t = g.reduce((a, f) => a + f.size, 0), l = lotes[lotes.length - 1]; if ((peso + t > 8e6 || l.length + g.length > 12) && l.length) { lotes.push([]); peso = 0; } lotes[lotes.length - 1].push(...g); peso += t; });
@@ -3515,7 +3517,10 @@ const App = (() => {
         <div style="height:6px;background:var(--borde);border-radius:3px"><div style="height:6px;width:${Math.round(i / lotes.length * 100)}%;background:var(--marca);border-radius:3px"></div></div>`;
       let r = null;
       for (let intento = 0; intento < 2 && !r; intento++) {
-        try { const archivos = []; for (const f of lotes[i]) archivos.push({ nombre: f.name, dataUri: await leerArchivo(f) });
+        try { const archivos = []; for (const f of lotes[i]) { const a = { nombre: f.name, dataUri: await leerArchivo(f) };
+            // acuse de cancelación en PDF: se lee su texto aquí (el servidor no lee PDF)
+            if (S.subirDest === 'todo' && /\.pdf$/i.test(f.name) && (/acuse|cancel/i.test(f.name) || !conXml[base(f.name)])) { try { const t = await textoDePdf(f); if (/acuse/i.test(t) && /cancela/i.test(t)) a.texto = t.slice(0, 20000); } catch (e) {} }
+            archivos.push(a); }
           r = await pedir(S.subirDest === 'todo' ? 'subirComprobantes' : S.subirDest === 'compra' ? 'subirFacturasCompra' : S.subirDest === 'venta' ? 'subirFacturasVenta' : 'subirFacturasGasto', { archivos: archivos, estricto: estricto }, true); } catch (e) { if (intento) fallidos.push(lotes[i].map(f => f.name).join(', ')); }
       }
       if (r) { ['nuevas', 'duplicadas', 'omitidas', 'porClasificar'].forEach(k => tot[k] += r[k] || 0); tot.detalle.push(...r.detalle); }
@@ -3537,7 +3542,7 @@ const App = (() => {
       else if (S.vista === 'compras' && dd.compra) { if ($('#cCont') && S.tabCompras === 'cfdi') bandejaCfdi(); else if (verBandejaCfdi()) contarCfdi(); }
     } catch (e) {}
   }
-  const DESTINO_COMPROB = { compra: '🧾 Compras', gasto: '⛽ Gastos', venta: '🧾 Facturación', rep: '💵 Cobranza (REP)', nc: '↩️ Devoluciones' };
+  const DESTINO_COMPROB = { compra: '🧾 Compras', gasto: '⛽ Gastos', venta: '🧾 Facturación', rep: '💵 Cobranza (REP)', nc: '↩️ Devoluciones', acuse: '🚫 Cancelación' };
   function resumenDestinos(det) {
     const c = {}; det.forEach(x => { if (x.estado === 'nueva') c[x.destino || 'otro'] = (c[x.destino || 'otro'] || 0) + 1; });
     const k = Object.keys(c).filter(d => DESTINO_COMPROB[d]); if (!k.length) return '';
