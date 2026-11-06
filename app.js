@@ -6298,6 +6298,61 @@ const App = (() => {
   const nomCta = c => esc([c.banco, c.producto].filter(Boolean).join(' ')) + ' …' + esc(c.ult4 || String(c.numero || '').slice(-4));
   const MES_C = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
+  /* ---------- ⏱️ Movimientos previos: lo que se baja de la banca en línea antes del corte ---------- */
+  /** CSV con fechas dd/mm/aaaa: se lee como texto (sin que la librería confunda día y mes). */
+  function csvFilas(txt) {
+    const out = []; let f = [], c = '', q = false;
+    for (let i = 0; i < txt.length; i++) { const ch = txt[i];
+      if (q) { if (ch === '"') { if (txt[i + 1] === '"') { c += '"'; i++; } else q = false; } else c += ch; }
+      else if (ch === '"') q = true; else if (ch === ',' || ch === ';' || ch === '\t') { f.push(c); c = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && txt[i + 1] === '\n') i++; f.push(c); out.push(f); f = []; c = ''; } else c += ch; }
+    if (c || f.length) { f.push(c); out.push(f); }
+    return out.filter(r => r.some(x => String(x).trim()));
+  }
+  async function bnPrevios() {
+    try { await bnDatos(); } catch (e) { return toast('Requiere conexión', true); }
+    BN.prev = [];
+    modal('⏱️ Movimientos del mes en curso', `<p class="muted">Sube el archivo (CSV o Excel) que bajas de la <b>banca en línea</b> con los movimientos que todavía no salen en un estado de cuenta.
+      Se concilian desde ya; cuando subas el estado de cuenta oficial, cada movimiento se confirma con el suyo (sin duplicarse) y conserva lo que ya conciliaste.</p>
+      <label class="btn primario">📄 Elegir archivo(s)<input type="file" multiple accept=".csv,.xlsx,.xls,.txt" style="display:none" onchange="App.bnPreviosLeer(this.files)"></label>
+      <div id="bnPrevRes" style="margin-top:12px"></div><div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  async function bnPreviosLeer(files) {
+    const el = $('#bnPrevRes'), d = await bnDatos(); BN.prev = [];
+    for (const f of Array.from(files || [])) {
+      try {
+        let filas;
+        if (/\.(csv|txt)$/i.test(f.name)) filas = csvFilas(await f.text());
+        else { const X = await libLocal('xlsx'), wb = X.read(await leerBuf(f), { type: 'array', cellDates: true }); filas = X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' }); }
+        const mp = EDOCTA.mapaExcel(filas); if (!mp) throw new Error('no encontré los encabezados (Fecha, Concepto, Cargo/Abono)');
+        const r = EDOCTA.excel(filas, mp); r.movs.sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0); r.desde = r.movs[0].fecha; r.hasta = r.movs[r.movs.length - 1].fecha;
+        // tarjeta / cuenta: columna "Tarjeta"/"Cuenta" o el texto ***1234 antes de los movimientos
+        const jT = mp.encabezados.findIndex(h => /tarjeta|cuenta/i.test(h));
+        const txt = jT >= 0 ? filas.slice(mp.inicio).map(x => x[jT]).join(' ') : filas.slice(0, mp.inicio).map(x => x.join(' ')).join(' ');
+        const u4 = (String(txt).match(/(\d{4})\b/) || [])[1] || '';
+        r.movs.forEach(m => { const mm = String(m.desc).match(/\s*Referencia\s+(\S*)\s*$/i); if (mm) { if (!m.ref && mm[1]) m.ref = mm[1]; m.desc = m.desc.replace(mm[0], '').trim(); } m.tarjeta = u4 ? '***' + u4 : ''; });
+        const cta = u4 ? d.cuentas.find(c => String(c.numero || '').replace(/\D/g, '').slice(-4) === u4) : null;
+        BN.prev.push({ nombre: f.name, r: r, u4: u4, cuenta: cta ? cta.id : '' });
+      } catch (e) { BN.prev.push({ nombre: f.name, error: e.message || String(e) }); }
+    }
+    el.innerHTML = BN.prev.map((x, i) => x.error ? `<div class="fact-bloque"><b>${esc(x.nombre)}</b><p class="error">✕ ${esc(x.error)}</p></div>` :
+      `<div class="fact-bloque"><b>${esc(x.nombre)}</b> <span class="muted">· ${x.r.movs.length} movimientos · del ${esc(fechaTxt(x.r.desde))} al ${esc(fechaTxt(x.r.hasta))}${x.u4 ? ' · tarjeta/cuenta …' + esc(x.u4) : ''}</span>
+        <div class="fila" style="margin-top:6px"><label style="flex:2 1 240px">Cuenta<select id="bnPrevCta${i}">${opts([['', '— elige la cuenta —']].concat(d.cuentas.map(c => [c.id, [c.banco, c.producto].filter(Boolean).join(' ') + ' …' + (c.ult4 || String(c.numero || '').slice(-4))])), x.cuenta)}</select></label>
+        <div class="kpi"><small>Cargos</small><b>${$$(x.r.resumen.cargos)}</b></div><div class="kpi"><small>Abonos</small><b>${$$(x.r.resumen.abonos)}</b></div></div>
+        ${!x.cuenta ? `<p class="error peq">No reconocí la cuenta${x.u4 ? ' …' + esc(x.u4) : ''}: elígela de la lista.</p>` : ''}</div>`).join('') +
+      (BN.prev.some(x => !x.error) ? `<div class="acciones"><button class="btn primario" onclick="App.bnPreviosGuardar()">💾 Guardar movimientos</button></div>` : '');
+  }
+  async function bnPreviosGuardar() {
+    const res = [];
+    for (let i = 0; i < BN.prev.length; i++) { const x = BN.prev[i]; if (x.error) continue;
+      const cta = ($('#bnPrevCta' + i) || {}).value; if (!cta) return toast('Elige la cuenta de ' + x.nombre, true);
+      try { const r = await pedir('importarMovsPrevios', { cuenta: cta, movs: x.r.movs }); res.push(`<li><b>${esc(r.cuenta)}</b>: ${r.nuevos} nuevos${r.nuevos ? ' (del ' + esc(r.desde) + ' al ' + esc(r.hasta) + ')' : ''}${r.repetidos ? ' · ' + r.repetidos + ' ya estaban' : ''}${r.cubiertos ? ' · ' + r.cubiertos + ' ya vienen en un estado de cuenta (no se cargan)' : ''}</li>`); }
+      catch (e) { res.push(`<li class="error">${esc(x.nombre)}: ${esc(e.message || 'no se guardó')}</li>`); }
+    }
+    BN.datos = null; S.tabBan = 'conc';
+    modal('⏱️ Movimientos guardados', `<ul>${res.join('')}</ul><p class="muted">Ya aparecen en Bancos marcados como <span class="etq av">previo</span>. Concílialos como cualquier otro; al subir el estado de cuenta oficial se confirman solos.</p>
+      <div class="acciones"><button class="btn primario" onclick="App.cerrarModal();App.ir('bancos')">Ir a conciliar</button><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
   /* ---------- Estados de cuenta: resumen por cuenta, lista y carga ---------- */
   async function bnEstados() {
     let d; try { d = await bnDatos(true); } catch (e) { $('#bnCont').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
@@ -6307,6 +6362,7 @@ const App = (() => {
     $('#bnCont').innerHTML = `<div class="tarjeta"><div class="fila">
         <label>Año<select id="bnAnio" onchange="App.bnAnio(this.value)">${anios.map(y => `<option ${y === d.anio ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
         <button class="btn primario fijo" onclick="App.bnSubir()">📥 Subir estados de cuenta</button>
+        <button class="btn fijo" onclick="App.bnPrevios()" title="Movimientos que bajas de la banca en línea antes de que salga el estado de cuenta">⏱️ Movimientos del mes en curso</button>
         ${puede('dueno') ? '<button class="btn fijo" onclick="App.bnDrive()">📂 Desde Drive</button>' : ''}
         <button class="btn fijo" onclick="App.bnExcelEstados()">📊 Excel</button>
         <button class="btn fijo" onclick="App.bnZipEstados()">⬇️ PDFs (ZIP)</button></div>
@@ -6657,7 +6713,7 @@ const App = (() => {
       <div class="tarjeta fila no-imprimir" style="align-items:flex-end"><span class="muted peq" style="flex:1">Marca movimientos para clasificarlos juntos.</span>
         <label>Clasificar marcados como<select id="bmNuevaCat"><option value="">—</option>${cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></label><button class="btn fijo" onclick="App.bnClasificarSel()">Aplicar</button></div>` +
       tabla([{ t: '', h: m => `<input type="checkbox" style="width:auto" onchange="App.bnMarcar('${m.id}', this.checked)">` }, { t: 'Fecha', h: m => esc(m.fecha) },
-        { t: 'Cuenta', cls: 'ocultar-movil', h: m => `<small>${esc(m.cuenta)}</small>` }, { t: 'Descripción', h: m => `${esc(m.desc)}${m.ref ? `<br><small class="muted">Ref. ${esc(m.ref)}</small>` : ''}${m.tarjeta ? `<br><small class="muted">Tarjeta ${esc(m.tarjeta)}</small>` : ''}${m.notas ? `<br><small>📝 ${esc(m.notas)}</small>` : ''}` },
+        { t: 'Cuenta', cls: 'ocultar-movil', h: m => `<small>${esc(m.cuenta)}</small>` }, { t: 'Descripción', h: m => `${m.previo ? '<span class="etq av" title="Cargado de la banca en línea; se confirma al subir el estado de cuenta">previo</span> ' : ''}${esc(m.desc)}${m.ref ? `<br><small class="muted">Ref. ${esc(m.ref)}</small>` : ''}${m.tarjeta ? `<br><small class="muted">Tarjeta ${esc(m.tarjeta)}</small>` : ''}${m.notas ? `<br><small>📝 ${esc(m.notas)}</small>` : ''}` },
         { t: 'Cargo', num: 1, h: m => m.cargo ? `<span class="txt-mal">${$$(m.cargo)}</span>` : '' }, { t: 'Abono', num: 1, h: m => m.abono ? `<b>${$$(m.abono)}</b>` : '' },
         { t: 'Categoría', h: m => `<select onchange="App.bnClasificar('${m.id}', this.value)" style="min-width:150px"><option value="">❓ Sin clasificar</option>${cats.map(c => `<option ${m.categoria === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` },
         { t: '', h: m => `${m.abono && m.estado !== 'Conciliado' && (!m.categoria || m.categoria === 'Cobro a cliente') && puede('bancos') ? `<button class="btn chico" title="Buscar el cobro en la cobranza (meses anteriores incluidos)" onclick="App.bnConcManual('${m.id}')">🔗 Cobro</button> ` : m.estado === 'Conciliado' && m.liga ? `<small class="etq ok" title="${esc(m.liga)}">✔ ligado</small> ` : ''}<button class="icono" title="Nota" onclick="App.bnNota('${m.id}')">📝</button>` }], r.movs, { vacio: 'Sin movimientos con esos filtros' });
@@ -11882,7 +11938,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
