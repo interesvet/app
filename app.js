@@ -1781,7 +1781,7 @@ const App = (() => {
       ${htmlAdjCobro(d)}
       <div class="acciones no-imprimir">
         <button class="btn primario" onclick="App.pdfCobro('${d.id}')">📄 PDF para enviar / imprimir</button>
-        ${d.idVenta && puede('ventas') ? `<button class="btn" onclick="App.verVentaId('${d.idVenta}')">🧾 Ver nota ${esc(d.folioNota)}</button>` : ''}
+        ${d.idVenta && (puede('ventas') || esContador()) ? `<button class="btn" onclick="App.verVentaId('${d.idVenta}')">🧾 Ver nota ${esc(d.folioNota)}</button>` : ''}
         ${d.cel ? `<a class="btn" target="_blank" href="${WA_BASE}52${String(d.cel).replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent('Interés Veterinario® — Recibimos su pago de ' + $$(d.monto) + ' a la nota ' + d.folioNota + '. Saldo pendiente: ' + $$(Math.max(0, d.saldoDespues)) + '. ¡Gracias!')}">💬 WhatsApp</a>` : ''}
       </div>`;
   }
@@ -3011,7 +3011,7 @@ const App = (() => {
         ${d.sustituidaPor ? `Sustituida por <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituidaPor)}')"><b>${esc(d.sustituidaPor)}</b></a>: sus notas pasaron a esa factura.` : `Sus notas quedaron <b>por facturar</b> hasta que subas la factura nueva.<div class="acciones" style="justify-content:flex-start;margin-top:6px"><button class="btn primario" onclick="App.formSustituir('${d.id}')">🔁 Subir la factura que la sustituye</button></div>`}</div>` : ''}
       ${d.sustituye ? `<p class="muted peq">🔁 Sustituye a <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituye)}')">${esc(d.sustituye)}</a> (cancelada).</p>` : ''}${d.avisoSust ? `<div class="aviso-cand">⚠️ ${esc(d.avisoSust)}</div>` : ''}
       <p>${esc(d.receptor || '')} ${d.rfc ? '· RFC ' + esc(d.rfc) : ''}${d.uuid ? '<br><small class="muted">UUID ' + esc(d.uuid) + '</small>' : ''}${d.comentarios ? '<br><small class="muted">' + esc(d.comentarios) + '</small>' : ''}</p>
-      <div class="acciones" style="justify-content:flex-start">${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.ctCobrosFactura('${d.id}')">💵 Cobros y comprobantes</button>${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
       ${tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', h: x => esc(x.cliente) },
         { t: 'Total nota', num: 1, h: x => $$(x.totalNota) + (x.nc ? `<br><small class="muted">N/C −${$$(x.nc)} → a facturar ${$$(x.facturable)}</small>` : '') }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
         { t: 'Otras facturas', h: x => esc(x.otras.join(', ')) },
@@ -8906,6 +8906,7 @@ const App = (() => {
     const k = (ti, v, sub, cls) => `<div class="kpi"><small>${ti}</small><b class="${cls || ''}">${v}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
     const card = (ti, h) => `<div class="tarjeta"><h4 style="margin:0 0 8px">${ti}</h4>${h}</div>`;
     const etq = (x, cls) => `<span class="etq ${cls || ''}">${esc(x)}</span>`;
+    const btnAdjPago = x => `<button class="btn chico" ${x.adj ? '' : 'style="opacity:.5"'} title="${x.adj ? 'Ver los ' + x.adj + ' archivo(s) adjuntos' : 'Sin comprobante adjunto'}" onclick="App.verPagoProv('${x.id}')">📎 ${x.adj || 'Sin archivo'}</button>`;
     let h = `<div class="pestanas">${tabs.map(x => `<button class="${t === x[0] ? 'activo' : ''}" onclick="App.tabContable('${x[0]}')">${x[1]}</button>`).join('')}</div>`;
     if (t === 'resumen') {
       h += `<div class="kpis">${k('Facturado al SAT (ingresos)', $$(R.ingresos.total), 'subtotal ' + $$(R.ingresos.subtotal) + ' · IVA ' + $$(R.ingresos.iva))}
@@ -8925,7 +8926,7 @@ const App = (() => {
         { t: 'Tipo', h: x => etq(x.tipo, x.tipo === 'Global' ? 'av' : '') + (x.metodo ? ' ' + etq(x.metodo, x.metodo === 'PPD' ? 'av' : '') : '') },
         { t: 'Receptor', h: x => esc(x.receptor) + `<br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Notas', cls: 'ocultar-movil', h: x => `<small>${esc(x.notas || '—')}</small>` },
         { t: 'Subtotal', num: 1, h: x => $$(x.subtotal) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` },
-        { t: '', h: x => `<button class="btn chico" onclick="App.verFactura('${x.id}')">Ver</button>` }];
+        { t: '', h: x => `<button class="btn chico" onclick="App.verFactura('${x.id}')">Ver</button> <button class="btn chico" title="Cobros que respaldan esta factura y sus comprobantes" onclick="App.ctCobrosFactura('${x.id}')">💵 Cobros</button>` }];
       h += card(`Facturas de venta emitidas · ${esc(q.periodo.desde)} al ${esc(q.periodo.hasta)}`, `<p class="muted peq">Esto es lo que se reporta al SAT como ingreso: facturas a nombre del cliente y globales a público en general, vigentes.</p>` +
         tabla(cols, q.ingresos, { vacio: 'Sin facturas emitidas en el periodo' }) + `<p style="text-align:right"><b>Total ${$$(R.ingresos.total)}</b> · subtotal ${$$(R.ingresos.subtotal)} · IVA ${$$(R.ingresos.iva)}</p>`);
       if (q.canceladas.length) h += card('❌ Canceladas en el periodo', tabla(cols, q.canceladas));
@@ -8936,10 +8937,10 @@ const App = (() => {
         { t: 'Subtotal', num: 1, cls: 'ocultar-movil', h: x => $$(x.subtotal) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` },
         { t: 'Pagado', num: 1, h: x => $$(x.pagado) + (x.saldo > 0.009 ? `<br><small class="error">saldo ${$$(x.saldo)}</small>` : '') }], q.compras, { vacio: 'Sin compras en el periodo' }));
       h += card('💳 Pagos a proveedores (cuándo se pagó)', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Proveedor', h: x => esc(x.proveedor) }, { t: 'Orden / factura', h: x => esc(x.folioOC) + (x.factura ? ' · ' + esc(x.factura) : '') + (x.ppd ? ' ' + etq('PPD' + (x.rep ? ' · REP ✔' : ' · falta REP'), x.rep ? 'ok' : 'av') : '') },
-        { t: 'Forma', h: x => esc(x.forma) + (x.banco ? `<br><small class="muted">${esc(x.banco)}</small>` : '') }, { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }], q.pagos, { vacio: 'Sin pagos en el periodo' }) +
+        { t: 'Forma', h: x => esc(x.forma) + (x.banco ? `<br><small class="muted">${esc(x.banco)}</small>` : '') }, { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }, { t: 'Comprobante', h: btnAdjPago }], q.pagos, { vacio: 'Sin pagos en el periodo' }) +
         `<p style="text-align:right"><b>${$$(R.pagos.total)}</b></p>`);
       h += card('🧾 Notas de crédito de proveedores', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Proveedor', h: x => esc(x.proveedor) }, { t: 'N/C', h: x => `<b>${esc(x.nc)}</b>` + (x.uuidNC ? `<br><small class="muted">${esc(x.uuidNC.slice(0, 8))}…</small>` : '') },
-        { t: 'Motivo', h: x => esc(x.motivoNC || x.comentarios) }, { t: 'Aplicada a', h: x => esc(x.folioOC) + (x.factura ? ' · ' + esc(x.factura) : '') }, { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }], q.nc, { vacio: 'Sin notas de crédito en el periodo' }));
+        { t: 'Motivo', h: x => esc(x.motivoNC || x.comentarios) }, { t: 'Aplicada a', h: x => esc(x.folioOC) + (x.factura ? ' · ' + esc(x.factura) : '') }, { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }, { t: 'Archivos', h: btnAdjPago }], q.nc, { vacio: 'Sin notas de crédito en el periodo' }));
     } else if (t === 'gastos') {
       h += card('💸 Facturas de gastos del periodo', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Emisor', h: x => esc(x.emisor) + `<br><small class="muted">${esc(x.rfc)}</small>` },
         { t: 'Categoría', h: x => esc(x.cat || 'POR CLASIFICAR') + (puede('clasificar_gastos') && x.uuid ? ` <button class="icono" title="Cambiar la categoría" onclick="App.ctCatGasto('${esc(x.uuid)}')">✏️</button>` : '') + (x.grupo ? `<br><small class="muted">${esc(x.grupo)}</small>` : '') }, { t: 'Método', cls: 'ocultar-movil', h: x => esc(x.metodo || '') },
@@ -8969,6 +8970,15 @@ const App = (() => {
           { t: 'Estado', h: o => etq(o.estado, o.estado === 'Hecha' ? 'ok' : o.estado === 'Nueva' ? 'av' : '') + (due ? `<br><button class="btn chico" onclick="App.responderObs('${o.id}')">Responder</button>` : '') }], q.anotaciones, { vacio: 'Sin anotaciones en este periodo' }));
     }
     el.innerHTML = h;
+  }
+  async function ctCobrosFactura(id) {
+    let r; try { toast('Buscando los cobros…'); r = await pedir('cobrosFactura', { id: id }, true); } catch (e) { return; }
+    modal('💵 Cobros de la factura ' + r.factura, `<p class="muted peq">${r.global ? 'Abonos incluidos en esta factura global.' : 'Cobros de las notas que ampara esta factura.'} Toca <b>Ver</b> para abrir el comprobante de pago y sus archivos (foto, PDF o transferencia).</p>
+      <p>Factura: <b>${$$(r.total)}</b> · cobrado: <b>${$$(r.cobrado)}</b></p>` +
+      tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Nota', h: x => `<b>${esc(x.nota)}</b><br><small class="muted">${esc(x.cliente)}</small>` },
+        { t: 'Forma', h: x => esc(x.forma) + (x.banco ? `<br><small class="muted">${esc(x.banco)}</small>` : '') + (x.nc ? ' <span class="etq av">N/C</span>' : '') },
+        { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }, { t: 'Comprobante', h: x => `<button class="btn chico" onclick="App.verCobro('${x.id}')">${x.adj ? '📎 Ver (' + x.adj + ')' : 'Ver (sin archivo)'}</button>` }],
+        r.cobros, { vacio: 'Esta factura no tiene cobros ligados' }) + `<div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
   }
   function ctCatGasto(uuid) {
     const q = S.cont; if (!q) return;
@@ -11662,7 +11672,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
