@@ -11278,7 +11278,7 @@ const App = (() => {
       <div class="tarjeta"><h3>🏬 Sucursales</h3><p class="muted">${u.rol === 'Administrador' ? 'Toca una sucursal para poner o cambiar su foto (carpeta Sucursal_Images). Los demás datos se editan en la hoja Catalogo_Sucursal.' : 'Datos de tu sucursal.'}</p><div id="cfSucs"></div></div>
       ${u.rol === 'Administrador' ? `<div class="tarjeta"><h3>👥 Vendedores y usuarios</h3><p class="muted">Foto de cada vendedor (carpeta Vendedor_Images). Los demás datos se editan en la hoja Catalogo_Vendedor.</p><div id="cfVend"><span class="muted">Cargando…</span></div></div>` : ''}
       ${puede('configuracion') ? `<div class="tarjeta"><h3>Pagos y saldos de las notas</h3><p class="muted">La app calcula lo pagado y el saldo de cada nota sumando sus cobros de la hoja Cobranza (relacionados por ID_Venta). Aquí puedes ver qué notas tienen guardado en Nota_Venta un pagado o saldo distinto y corregirlas.</p>
-        <div class="fila"><button class="btn fijo" onclick="App.revisarSaldos(false)">Revisar notas</button></div><div id="cfSaldos" style="margin-top:12px"></div></div>` : ''}
+        <div class="fila"><button class="btn fijo" onclick="App.revisarSaldos(false)">Revisar notas y órdenes de compra</button></div><div id="cfSaldos" style="margin-top:12px"></div></div>` : ''}
       ${puede('dueno') ? `<div class="tarjeta"><h3>🔒 Grupos de gasto (hoja Egresos CFDI)</h3><p class="muted">Define en qué grupo cae cada factura de egreso. Las reglas por <b>Emisor</b> (el nombre contiene el texto) tienen prioridad sobre las de <b>Categoría</b>. Para Inversión puedes fijar la tasa de depreciación anual (vacío = vehículos 25 %, cómputo 30 %, otros 10 %). Operación se resta cada mes; Financiero va en su propio renglón; Inversión no se resta del mes; Excluir no se toma en cuenta.</p>
         <div class="fila"><button class="btn fijo" onclick="App.cargarGrupos()">Ver / editar grupos</button></div><div id="cfGrupos" style="margin-top:12px"></div></div>` : ''}
       ${puede('configuracion') ? `<div class="tarjeta"><h3>Registros de inventario</h3><p class="muted">Busca renglones de compras, ventas y traspasos que ya tienen su movimiento en <b>Movimientos_Inventario</b> pero aún dicen <i>Mov_Registrado = FALSE</i>, y órdenes o notas que ya deberían estar como recibidas / entregadas. La app nunca vuelve a meter al inventario un renglón que ya tiene movimiento.</p>
@@ -11308,15 +11308,19 @@ const App = (() => {
       <p class="muted peq">Para cambiar un permiso: hoja APP_Permisos (SI / NO por perfil). Para dar de baja a alguien: Catalogo_Vendedor › Useractive = NO.</p>`;
   }
   async function revisarSaldos(aplicar) {
-    if (aplicar && !confirm('¿Corregir en Nota_Venta el pagado y el saldo de estas notas según sus cobros?')) return;
+    if (aplicar && !confirm('¿Corregir el pagado y el saldo de estas notas de venta y órdenes de compra según sus cobros y pagos registrados?')) return;
     try {
-      const r = await pedir('revisarSaldos', { aplicar: aplicar });
-      if (aplicar) { toast('✔ ' + r.corregidas + ' notas corregidas'); return revisarSaldos(false); }
-      $('#cfSaldos').innerHTML = !r.diferencias.length ? '<div class="vacio">Todas las notas coinciden con sus cobros ✔</div>' :
-        `<p><b>${r.diferencias.length}</b> notas no coinciden:</p>` + tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Estatus', h: x => etqEstatus(x.estatus) },
+      const r = await pedir('revisarSaldos', { aplicar: aplicar }), oc = r.compras || [];
+      if (aplicar) { toast('✔ ' + r.corregidas + ' notas y ' + (r.corregidasOC || 0) + ' órdenes corregidas'); return revisarSaldos(false); }
+      const n = r.diferencias.length + oc.length;
+      $('#cfSaldos').innerHTML = !n ? '<div class="vacio">Todas las notas y órdenes coinciden con sus cobros y pagos ✔</div>' :
+        (r.diferencias.length ? `<p><b>${r.diferencias.length}</b> notas de venta no coinciden:</p>` + tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Estatus', h: x => etqEstatus(x.estatus) },
           { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pagado en la nota', num: 1, h: x => $$(x.cobradoHoja) }, { t: 'Pagado real (Cobranza)', num: 1, h: x => `<b>${$$(x.cobradoReal)}</b>` },
-          { t: 'Saldo en la nota', num: 1, h: x => $$(x.saldoHoja) }, { t: 'Saldo real', num: 1, h: x => `<b>${$$(x.saldoReal)}</b>` }], r.diferencias) +
-        `<div class="acciones"><button class="btn primario" onclick="App.revisarSaldos(true)">Corregir ${r.diferencias.length} notas</button></div>`;
+          { t: 'Saldo en la nota', num: 1, h: x => $$(x.saldoHoja) }, { t: 'Saldo real', num: 1, h: x => `<b>${$$(x.saldoReal)}</b>` }], r.diferencias) : '') +
+        (oc.length ? `<p style="margin-top:12px"><b>${oc.length}</b> órdenes de compra no coinciden con sus pagos y notas de crédito:</p>` + tabla([{ t: 'Orden', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Proveedor', k: 'proveedor' },
+          { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pagado en la orden', num: 1, h: x => $$(x.pagadoHoja) }, { t: 'Pagado real (pagos + N/C)', num: 1, h: x => `<b>${$$(x.pagadoReal)}</b>` },
+          { t: 'Saldo en la orden', num: 1, h: x => $$(x.saldoHoja) }, { t: 'Saldo real', num: 1, h: x => `<b>${$$(x.saldoReal)}</b>` }], oc) : '') +
+        `<div class="acciones"><button class="btn primario" onclick="App.revisarSaldos(true)">Corregir ${n} registros</button></div>`;
     } catch (e) {}
   }
   async function cargarGrupos() {
