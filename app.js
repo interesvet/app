@@ -8098,6 +8098,7 @@ const App = (() => {
       ${puede('seguimiento') ? `<div class="fc-sec"><h4>🤝 Seguimiento</h4><div id="fcSeg" data-id="${esc(c.id)}"><span class="muted">Cargando…</span></div>
         <div class="acciones izq"><button class="btn chico" onclick="App.formVisita({idCliente:'${esc(c.id)}'})">📅 Programar visita</button><button class="btn chico" onclick="App.formVisita({idCliente:'${esc(c.id)}', realizada:1})">✅ Registrar visita</button><button class="btn chico" onclick="App.visitasDeCliente('${esc(c.id)}')">📋 Sus visitas</button>
         ${puede('recetas') ? `<button class="btn chico" onclick="App.recetasDeCliente('${esc(c.id)}')">💊 Sus recetas</button>` : ''}</div></div>` : puede('recetas') ? `<div class="acciones izq"><button class="btn chico" onclick="App.recetasDeCliente('${esc(c.id)}')">💊 Sus recetas</button></div>` : ''}
+      <div class="fc-sec"><h4>🛒 Compras y recetas</h4><div class="pestanas" id="pcTabs"></div><div id="pcCont" data-id="${esc(c.id)}"><span class="muted">Cargando…</span></div></div>
       ${!admin ? '<p class="muted" style="margin-top:10px">🔒 Solo el administrador puede editar o eliminar clientes. Si algún dato está mal, solicita autorización.</p>' : ''}
       <div class="acciones">
         ${puede('seguimiento') || puede('recetas') || puede('ventas') ? `<button class="btn primario" onclick="App.historiaCliente('${esc(c.id)}')">📖 Historia e interacciones</button>` : ''}
@@ -8110,6 +8111,7 @@ const App = (() => {
         ${admin ? `<button class="btn primario" onclick="App.formCliente(${i})">✏️ Editar</button>` : ''}
       </div></div>`);
     if (puede('seguimiento')) cargarSegFicha(c.id);
+    cargarPerfilCompras(c.id);
   }
   async function eliminarCliente(id) {
     const c = (D().clientes || []).find(z => z.id === id) || {};
@@ -10382,6 +10384,58 @@ const App = (() => {
       toast('📴 Cliente guardado en el dispositivo; sus visitas y recetas se ligan al volver la conexión'); cerrarModal();
     }
   }
+  /* ---------- Perfil del cliente: histórico de compras y kardex de recetas ---------- */
+  async function cargarPerfilCompras(id) {
+    const el = $('#pcCont'); if (!el || el.dataset.id !== String(id)) return;
+    try { S.pc = await pedir('perfilCompras', { id: id }, true); S.pc._id = id; }
+    catch (e) { if ($('#pcCont')) $('#pcCont').innerHTML = `<span class="muted">${e.red ? 'El historial se consulta con conexión.' : esc(e.message || 'No disponible')}</span>`; return; }
+    S.pcTab = S.pcTab || 'productos'; S.pcQ = ''; pintarPerfilCompras();
+  }
+  function pcTab(t) { S.pcTab = t; pintarPerfilCompras(); }
+  function pcFiltro(q) { S.pcQ = q; pintarPerfilCompras(true); }
+  function pintarPerfilCompras(soloTabla) {
+    const r = S.pc, el = $('#pcCont'); if (!r || !el || el.dataset.id !== String(r._id)) return;
+    const t = S.pcTab, I = r.importes, q = String(S.pcQ || '').toLowerCase().trim(), nRx = r.recetas.length + r.externas.length;
+    const tabs = [['productos', '📦 Por producto · ' + r.productos.length], ['detalle', '🧾 Detalle de compras · ' + r.lineas.length], ['notas', '🗂️ Notas · ' + r.notas.length], ['recetas', '💊 Kardex de recetas · ' + nRx + (r.sinReceta.length ? ' ⚠️' : '')]];
+    if ($('#pcTabs')) $('#pcTabs').innerHTML = tabs.map(x => `<button class="${t === x[0] ? 'activo' : ''}" onclick="App.pcTab('${x[0]}')">${x[1]}</button>`).join('');
+    const fil = (l, f) => q ? l.filter(x => f(x).toLowerCase().indexOf(q) >= 0) : l;
+    const busca = ph => `<div class="fila" style="margin:8px 0"><input id="pcTxt" placeholder="${ph}" value="${esc(S.pcQ || '')}" oninput="App.pcFiltro(this.value)"></div>`;
+    const nota = (idv, fol) => idv && fol ? `<a href="#" onclick="event.preventDefault();App.verVentaId('${esc(idv)}')">${esc(fol)}</a>` : esc(fol || '');
+    let h = '';
+    if (t === 'productos') {
+      const l = fil(r.productos, x => x.nombre + ' ' + x.prod);
+      h = tabla([{ t: 'Producto', h: x => `<b>${esc(x.nombre)}</b>` }, { t: 'Veces', num: 1, h: x => nf(x.veces) }, { t: 'Piezas', num: 1, h: x => nf(x.cant) }, { t: 'Última compra', h: x => esc(x.ultFecha) }]
+        .concat(I ? [{ t: 'Último precio', num: 1, cls: 'ocultar-movil', h: x => $$(x.ultPrecio) }, { t: 'Total comprado', num: 1, h: x => $$(x.importe) }] : []), l, { vacio: 'Sin compras registradas' });
+      if (soloTabla && $('#pcTabla')) { $('#pcTabla').innerHTML = h; return; }
+      h = busca('Buscar producto') + `<div id="pcTabla">${h}</div>`;
+    } else if (t === 'detalle') {
+      const l = fil(r.lineas, x => x.nombre + ' ' + x.folio + ' ' + x.fecha + ' ' + x.lote);
+      h = tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Nota', h: x => nota(x.idVenta, x.folio) }, { t: 'Producto', h: x => esc(x.nombre) + (x.lote && !/^sin lote$/i.test(x.lote) ? `<br><small class="muted">Lote ${esc(x.lote)}</small>` : '') },
+        { t: 'Cant.', num: 1, h: x => nf(x.cant) }].concat(I ? [{ t: 'Precio', num: 1, cls: 'ocultar-movil', h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$(x.importe) }] : []), l.slice(0, 600), { vacio: 'Sin compras registradas' });
+      if (soloTabla && $('#pcTabla')) { $('#pcTabla').innerHTML = h; return; }
+      h = busca('Buscar producto, nota, fecha o lote') + `<div id="pcTabla">${h}</div>`;
+    } else if (t === 'notas') {
+      h = tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Nota', h: x => `<b>${nota(x.id, x.folio)}</b>` }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(x.suc) }]
+        .concat(I ? [{ t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Saldo', num: 1, h: x => x.saldo > 0.009 ? `<b class="error">${$$(x.saldo)}</b>` : '—' }] : [])
+        .concat([{ t: 'Estatus', h: x => `<span class="etq ${x.viva ? '' : 'mal'}">${esc(x.estatus)}</span>` }]), r.notas, { vacio: 'Sin notas' });
+    } else {
+      h = (r.sinReceta.length ? `<div class="rd-aviso" style="margin:8px 0;padding:8px 10px;border-radius:10px;background:var(--aviso-suave)"><b>⚠️ ${r.sinReceta.length} nota(s) con productos que piden receta y no tienen ninguna registrada:</b> ` +
+          r.sinReceta.map(x => `${nota(x.idVenta, x.folio)} <small class="muted">(${esc(x.fecha)} · ${esc(x.productos)})</small>`).join(' · ') + '</div>' : '') +
+        `<h4 style="margin:10px 0 4px">💊 Recetas elaboradas en la app · ${r.recetas.length}</h4>` +
+        tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Receta', h: x => `<b>${esc(x.folio)}</b><br><span class="etq ${x.vigente ? 'ok' : ''}">${x.vigente ? 'Vigente' : 'Vencida'}</span>` },
+          { t: 'Paciente / diagnóstico', h: x => esc(x.paciente || '—') + (x.diagnostico ? `<br><small>${esc(x.diagnostico)}</small>` : x.motivo ? `<br><small class="muted">${esc(x.motivo)}</small>` : '') },
+          { t: 'Tratamiento', cls: 'ocultar-movil', h: x => `<small>${x.tratamientos.map(esc).join('<br>')}</small>` }, { t: 'Nota', h: x => nota(x.idVenta, x.venta) || '—' },
+          { t: '', h: x => puede('recetas') ? `<button class="btn chico" onclick="App.verReceta('${esc(x.id)}')">Ver</button>` : '' }], r.recetas, { vacio: 'Sin recetas elaboradas' }) +
+        `<h4 style="margin:14px 0 4px">📄 Recetas de otros médicos (presentadas en la compra) · ${r.externas.length}</h4>` +
+        tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Nota', h: x => `<b>${nota(x.idVenta, x.folio)}</b>` }, { t: 'MVZ', h: x => esc(x.mvz || '—') }, { t: 'Cédula', h: x => esc(x.cedula || '—') },
+          { t: 'Documento', h: x => x.doc ? `<button class="btn chico" onclick="App.pcVerRx('${esc(x.idVenta)}')">📎 Ver receta</button>` : '<small class="muted">sin archivo</small>' }], r.externas, { vacio: 'Sin recetas externas registradas' });
+    }
+    el.innerHTML = h;
+  }
+  async function pcVerRx(idVenta) {
+    try { const r = await pedir('archivos', { tipo: 'ventaRx', id: idVenta }, true), a = r.archivos || [], x = a.find(y => y.actual) || a[0];
+      if (!x) return toast('La nota no tiene el documento de la receta', true); verArch('ventaRx', idVenta, x.id); } catch (e) {}
+  }
   /** Historia clínica: visitas, recetas (pacientes y diagnósticos), ventas y cotizaciones del cliente en una sola línea de tiempo. */
   const HC_ICO = { visita: ['📅', 'Visita'], receta: ['💊', 'Receta'], venta: ['🧾', 'Venta'], cotizacion: ['📝', 'Cotización'], interaccion: ['📞', 'Interacción'] };
   async function historiaCliente(id) {
@@ -11758,7 +11812,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, pdfFicha, fichaLab,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, pcTab, pcFiltro, pcVerRx, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
