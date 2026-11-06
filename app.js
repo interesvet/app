@@ -8167,7 +8167,7 @@ const App = (() => {
     if (c) { try { full = await pedir('registro', { tabla: 'cliente', id: c.id }, true); } catch (e) {} }
     const cat = D().catalogos, comercial = U().rol === 'Administrador' || U().rol === 'Gerente';
     const campos = [
-      { k: 'Nombre_cliente', t: 'Nombre del cliente', req: 1 }, { k: 'Razon_social', t: 'Razón social' }, { k: 'Nombre_Rancho', t: 'Nombre del rancho' }, { k: 'RFC', t: 'RFC' },
+      { k: 'Nombre_cliente', t: 'Nombre del cliente', req: 1 }, { k: 'Razon_social', t: 'Razón social' }, { k: 'Nombre_Rancho', t: 'Nombre del rancho o negocio' }, { k: 'RFC', t: 'RFC' },
       { k: 'Regimen_Fiscal', t: 'Régimen fiscal', tipo: 'select', ops: cat.regimen, vacio: '' }, { k: 'Uso_CFDI', t: 'Uso CFDI', tipo: 'select', ops: cat.usoCfdi, vacio: '' }, { k: 'C.P.', t: 'C.P.' },
       { k: 'Lista_de_Precios', t: 'Lista de precios', tipo: 'select', ops: cat.listas.map(x => [x, x]), dis: !comercial }, { k: 'D_Credito', t: 'Días de crédito', tipo: 'number', dis: !comercial }, { k: 'Limite_Credito', t: 'Límite de crédito $ (0 = sin límite)', tipo: 'number', dis: !(puede('dueno') || U().rol === 'Administrador') },
       { k: 'Clasificacion', t: 'Clasificación', tipo: 'select', ops: ['AAA', 'AA', 'A', 'B', 'C'].map(x => [x, x]), vacio: '' }, { k: 'Tipo', t: 'Tipo', tipo: 'select', ops: ['Productor', 'Farmacia', 'Clínica', 'MVZ', 'Distribuidor', 'Público'].map(x => [x, x]), vacio: '' },
@@ -10439,7 +10439,7 @@ const App = (() => {
     if (esVis && puede('recetas')) h += `<div class="fc-sec"><h4>💊 Recetas de esta visita</h4>${d.recetas && d.recetas.length ? `<div class="int-lista">${d.recetas.map(r => `<a href="#" class="int-item" onclick="App.verReceta('${esc(r.id)}');return false">℞ <b>${esc(r.folio)}</b> ${esc([r.especie, r.animal].filter(Boolean).join(' · '))}${r.diagnostico ? ` <span class="muted">— ${esc(r.diagnostico)}</span>` : ''}</a>`).join('')}</div>` : '<p class="muted" style="margin:0">Aún no hay recetas de esta visita.</p>'}
       <div class="acciones izq"><button class="btn chico" onclick="App.rxDesdeVisita()">💊 Hacer receta</button></div></div>`;
     if (!esVis) h += `<div class="fc-sec"><h4>🔗 Relacionado</h4><div class="fc-rejilla">
-      <div class="fc-dato"><small>Surtir en</small><span>${d.sucCompra ? '🏬 ' + esc(sucNom(d.sucCompra)) : '<span class="muted">Sin indicar</span>'}</span></div>
+      <div class="fc-dato"><small>Surtir en</small><span>${d.surtirCli ? '🤝 ' + esc(d.surtirNombre) : d.sucCompra ? '🏬 ' + esc(sucNom(d.sucCompra)) : '<span class="muted">Sin indicar</span>'}</span></div>
       ${d.visita ? `<div class="fc-dato"><small>Visita</small><span><a href="#" onclick="App.verVisita('${esc(d.visita.id)}');return false">📅 ${esc(d.visita.fecha)}${d.visita.motivo ? ' · ' + esc(d.visita.motivo) : ''}</a></span></div>` : ''}</div></div>`;
     const v = d.venta;
     if (esVis && !d.realizada && !v) return h;
@@ -10481,7 +10481,7 @@ const App = (() => {
     S.alta = { tipo: tipo, id: d.id, nombre: nom };
     const volver = tipo === 'visita' ? `App.verVisita('${esc(d.id)}')` : `App.verReceta('${esc(d.id)}')`;
     modal('➕ Dar de alta como cliente', `<p class="muted" style="margin-top:0">Se crea el cliente y se le ligan <b>sus visitas y recetas</b> registradas como prospecto con el nombre “${esc(nom)}”. Los datos fiscales, la lista de precios y el crédito los completa el administrador después.</p>
-      <div id="fAlta"><div class="fila"><label style="flex:2 1 220px">Nombre del cliente *<input id="alNom" value="${esc(nom || '')}"></label><label style="flex:2 1 200px">Nombre del rancho<input id="alRancho"></label></div>
+      <div id="fAlta"><div class="fila"><label style="flex:2 1 220px">Nombre del cliente *<input id="alNom" value="${esc(nom || '')}"></label><label style="flex:2 1 200px">Nombre del rancho o negocio<input id="alRancho"></label></div>
       <div class="fila"><label>Celular<input id="alCel" inputmode="tel" value="${esc(d.cel || '')}"></label><label>Correo<input id="alMail" type="email"></label>
         <label>Tipo<select id="alTipo">${opts(['Productor', 'Farmacia', 'Clínica', 'MVZ', 'Distribuidor', 'Público'], 'Productor')}</select></label></div>
       <div class="fila"><label>Localidad<input id="alLoc"></label><label>Municipio<input id="alMun"></label><label>Estado<input id="alEdo" value="Chiapas"></label></div>
@@ -10511,6 +10511,17 @@ const App = (() => {
     }
   }
   /* ---------- Perfil del cliente: histórico de compras y kardex de recetas ---------- */
+  /* Receta: surtir en una sucursal o con uno de mis clientes (eligiendo con qué nombre aparece) */
+  function rxSurtTipo(t) { $('#rxSurtSuc').classList.toggle('oculto', t === 'cli'); $('#rxSurtCliBox').classList.toggle('oculto', t !== 'cli'); }
+  function rxPintarSurtNom() {
+    const el = $('#rxSurtNom'); if (!el || !S.rx) return;
+    const c = S.rx.surtCli ? cliente(S.rx.surtCli) : null; if (!c) { el.innerHTML = ''; return; }
+    const ops = [['Nombre del rancho o negocio', c.rancho], ['Razón social', c.razon], ['Nombre del cliente', c.nombre]].filter(x => String(x[1] || '').trim())
+      .filter((x, i, a) => a.findIndex(y => String(y[1]).trim().toUpperCase() === String(x[1]).trim().toUpperCase()) === i);
+    const sel = S.rx.surtNom && ops.some(x => x[1] === S.rx.surtNom) ? S.rx.surtNom : (ops[0] || [])[1];
+    el.innerHTML = ops.length ? `<p class="muted peq" style="margin:6px 0 4px">¿Con qué nombre aparece en la receta?</p>` + ops.map(x => `<label class="chk" style="display:flex;gap:8px;align-items:center;margin:4px 0">
+      <input type="radio" name="rxSurtN" value="${esc(x[1])}" ${x[1] === sel ? 'checked' : ''}> <span><small class="muted">${x[0]}:</small> <b>${esc(x[1])}</b></span></label>`).join('') : '';
+  }
   async function cargarPerfilCompras(id) {
     const el = $('#pcCont'); if (!el || el.dataset.id !== String(id)) return;
     try { S.pc = await pedir('perfilCompras', { id: id }, true); S.pc._id = id; }
@@ -10621,7 +10632,7 @@ const App = (() => {
     S.rxVis = l;
     el.innerHTML = tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: r => `<b>${esc(r.folio)}</b>` }, { t: 'Propietario', h: r => esc(r.propietario) },
       { t: 'Paciente', cls: 'ocultar-movil', h: r => esc([r.especie, r.animal ? '#' + r.animal : '', r.raza].filter(Boolean).join(' · ')) },
-      { t: 'Diagnóstico', h: r => esc(r.diagnostico || r.motivo) }, { t: 'Surtir en', cls: 'ocultar-movil', h: r => r.sucCompra ? esc(sucNom(r.sucCompra)) : '<span class="muted">—</span>' },
+      { t: 'Diagnóstico', h: r => esc(r.diagnostico || r.motivo) }, { t: 'Surtir en', cls: 'ocultar-movil', h: r => r.surtirCli ? '🤝 ' + esc(r.surtirNombre) : r.sucCompra ? esc(sucNom(r.sucCompra)) : '<span class="muted">—</span>' },
       { t: 'Liga', cls: 'ocultar-movil', h: r => (r.idVisita ? '📅' : '') + (r.idVenta ? '🧾' : '') + (!r.idCliente ? ' <span class="etq">Prospecto</span>' : '') }, { t: 'Vigencia', h: r => `<span class="etq ${r.vigente ? 'ok' : ''}">${r.vigente ? 'Vigente' : 'Vencida'}</span><br><small class="muted">${esc(r.validez)}</small>` }],
       l, { clic: 'App.abrirReceta', vacio: 'Sin recetas en el periodo' });
   }
@@ -10768,14 +10779,18 @@ const App = (() => {
     const nueva = !d || !!duplicar;
     const cli0 = d ? d.idCliente : o.idCliente || '';
     S.rx = { id: nueva ? uid() + uid() : d.id, nueva: nueva, cli: cli0, lineas: d ? d.tratamientos.map(t => ({ prod: t.prod, texto: t.texto })) : [{ prod: '', texto: '' }], firma: '',
-      visita: o.idVisita || (d && !duplicar ? d.idVisita || '' : ''), suc: (d && d.sucCompra) || (cli0 && (cliente(cli0) || {}).suc) || sucTrabajo() };
+      visita: o.idVisita || (d && !duplicar ? d.idVisita || '' : ''), suc: (d && d.sucCompra) || (cli0 && (cliente(cli0) || {}).suc) || sucTrabajo(),
+      surtCli: d && d.surtirCli ? d.surtirCli : '', surtNom: d && d.surtirNombre ? d.surtirNombre : '' };
     const c = S.rx.cli ? cliente(S.rx.cli) : null, v = (k, def) => d && d[k] !== undefined ? esc(d[k]) : (def || '');
     modal(nueva ? '💊 Nueva receta' : 'Editar receta ' + d.folio, `<div id="fRx" class="form-rx">
       ${S.rx.visita ? `<p class="muted" style="margin:0 0 8px;font-size:13px">📅 Receta de la visita${S.ultimaVis && S.ultimaVis.id === S.rx.visita ? ' del ' + esc(S.ultimaVis.fecha) : ''}: quedará relacionada con ella.</p>` : ''}
       <div class="fc-sec"><h4>Propietario</h4>
         <label>Cliente (opcional; si es prospecto, déjalo vacío y escribe el propietario)<div class="buscador"><input id="rxCli" placeholder="Buscar cliente…" autocomplete="off" value="${c ? esc(c.razon || c.nombre) : ''}"></div></label>
         <div class="fila"><label style="flex:2 1 200px">Propietario<input id="rxProp" value="${v('propietario', c ? esc(c.nombre) : esc(o.propietario || ''))}"></label><label>Celular<input id="rxCel" inputmode="tel" value="${v('cel', c ? esc(c.cel || '') : esc(o.cel || ''))}"></label></div>
-        <label>🏬 Surtir en la sucursal<select id="rxSuc">${optsSuc(S.rx.suc, true)}</select></label></div>
+        <div class="fila"><label>🏬 Surtir en<select id="rxSurtTipo" onchange="App.rxSurtTipo(this.value)">${opts([['suc', 'Una sucursal de Interés Veterinario'], ['cli', 'Uno de mis clientes (farmacia, distribuidor…)']], S.rx.surtCli ? 'cli' : 'suc')}</select></label>
+        <label id="rxSurtSuc" class="${S.rx.surtCli ? 'oculto' : ''}">Sucursal<select id="rxSuc">${optsSuc(S.rx.suc, true)}</select></label></div>
+        <div id="rxSurtCliBox" class="${S.rx.surtCli ? '' : 'oculto'}"><label>Cliente donde surtirá<div class="buscador"><input id="rxSurtCli" placeholder="Buscar cliente…" autocomplete="off" value="${S.rx.surtCli ? esc((cliente(S.rx.surtCli) || {}).razon || (cliente(S.rx.surtCli) || {}).nombre || '') : ''}"></div></label>
+          <div id="rxSurtNom"></div></div></div>
       <div class="fc-sec"><h4>Paciente</h4><div class="fila">
         <label>Especie<select id="rxEsp">${opts(cfg.especies || RX_ESPECIES, d ? d.especie : 'Bovino')}</select></label><label>Nombre / arete<input id="rxAni" value="${v('animal')}"></label>
         <label>Raza / cruza<input id="rxRaza" value="${v('raza')}"></label></div><div class="fila">
@@ -10793,6 +10808,9 @@ const App = (() => {
     buscador($('#rxCli'), { fuente: fuenteClientes, alElegir: x => { S.rx.cli = x.id; const cc = cliente(x.id) || {}; if (!$('#rxProp').value.trim() || nueva) $('#rxProp').value = cc.nombre || cc.razon || ''; if (!$('#rxCel').value.trim()) $('#rxCel').value = cc.cel || ''; if (cc.suc && !S.rx.sucTocada) $('#rxSuc').value = cc.suc; } });
     $('#rxSuc').onchange = () => { S.rx.sucTocada = true; };
     $('#rxCli').addEventListener('input', e => { if (!e.target.value.trim()) S.rx.cli = ''; });
+    buscador($('#rxSurtCli'), { fuente: fuenteClientes, alElegir: x => { S.rx.surtCli = x.id; S.rx.surtNom = ''; rxPintarSurtNom(); } });
+    $('#rxSurtCli').addEventListener('input', e => { if (!e.target.value.trim()) { S.rx.surtCli = ''; rxPintarSurtNom(); } });
+    rxPintarSurtNom();
     pintarRxLineas(); padFirma($('#rxFirma'));
   }
   /** En la receta va el medicamento sin la presentación: "Ceftiofur 5%, Frasco de 100 ml." → "Ceftiofur 5%". */
@@ -10938,7 +10956,9 @@ const App = (() => {
     const cv = $('#rxFirma');
     const p = { ID_Receta: R.id, nueva: R.nueva, ID_Cliente: R.cli, propietario: g('#rxProp'), cel: g('#rxCel'), especie: $('#rxEsp').value, animal: g('#rxAni'), raza: g('#rxRaza'),
       edad: g('#rxEdad'), sexo: $('#rxSexo').value, peso: g('#rxPeso'), color: g('#rxColor'), motivo: g('#rxMot'), diagnostico: g('#rxDx'), obs: g('#rxObs'),
-      vigencia: Number($('#rxVig').value) || 15, tratamientos: ts, firma: cv && cv._firmado ? cv.toDataURL('image/png') : '', idVisita: R.visita || '', sucCompra: $('#rxSuc').value };
+      vigencia: Number($('#rxVig').value) || 15, tratamientos: ts, firma: cv && cv._firmado ? cv.toDataURL('image/png') : '', idVisita: R.visita || '', sucCompra: $('#rxSurtTipo').value === 'cli' ? '' : $('#rxSuc').value,
+      surtirCli: $('#rxSurtTipo').value === 'cli' ? R.surtCli || '' : '', surtirNombre: $('#rxSurtTipo').value === 'cli' ? (($('input[name=rxSurtN]:checked') || {}).value || '') : '' };
+    if ($('#rxSurtTipo').value === 'cli' && !R.surtCli) return toast('Elige el cliente donde surtirá la receta, o cambia a sucursal', true);
     $('#rxGuardar').disabled = true;
     try { const r = await pedir('guardarReceta', p); toast('✔ Receta ' + r.folio + ' guardada'); if (S.vista === 'recetas') cargarRecetas(); verReceta(R.id); }
     catch (e) {
@@ -11938,7 +11958,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
