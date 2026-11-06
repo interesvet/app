@@ -669,6 +669,7 @@ const App = (() => {
     { id: 'pedido', t: 'Pedido sugerido', i: '🛒', p: ['compras', 'traspasos'], oculto: 1 },
     { id: 'anCompras', t: 'Análisis de compras', i: '📊', p: 'compras', oculto: 1 },
     { id: 'precios', t: 'Lista de precios', i: '💲', p: 'listas_precios', oculto: 1 },
+    { id: 'ficha', t: 'Ficha rápida de producto', i: '🔎', p: ['inventario', 'listas_precios'], oculto: 1 },
     { id: 'productos', t: 'Productos', i: '💊', p: 'listas_precios' },
     { id: 'matriz', t: 'Actualizar desde Matriz', i: '🔄', p: 'productos_editar', oculto: 1 },
     { id: 'clientes', t: 'Clientes', i: '👥', p: 'clientes' },
@@ -705,7 +706,7 @@ const App = (() => {
     compras: { t: 'Compras', tabs: [
       { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: ['compras', 'traspasos'] }, { v: 'anCompras', t: '📊 Análisis de compras', p: 'compras' }] },
     productos: { t: 'Productos', tabs: [
-      { v: 'productos', a: 'cat', t: '💊 Catálogo', p: 'listas_precios' }, { v: 'productos', a: 'port', t: '📚 Portafolio de productos', p: 'listas_precios' }, { v: 'precios', t: '💲 Lista de precios', p: 'listas_precios' },
+      { v: 'ficha', t: '🔎 Ficha rápida', p: ['inventario', 'listas_precios'] }, { v: 'productos', a: 'cat', t: '💊 Catálogo', p: 'listas_precios' }, { v: 'productos', a: 'port', t: '📚 Portafolio de productos', p: 'listas_precios' }, { v: 'precios', t: '💲 Lista de precios', p: 'listas_precios' },
       { v: 'productos', a: 'margen', t: '📊 Análisis de precios', p: 'analisis_precios' },
       { v: 'matriz', t: '🔄 Actualizar desde Matriz', p: 'productos_editar' }] }
   };
@@ -7973,6 +7974,7 @@ const App = (() => {
     if (!editar) {
       modal(p.nombre, `${bloqueFoto(p)}<p><b>${esc(p.id)}</b> · ${esc(p.unidad)} · ${esc(p.categoria)} · ${esc(p.lab)} · Reg. ${esc(full.No_Registro || '')}</p>
         ${['Descripcion', 'Indicaciones', 'Especies', 'Dosis', 'Tiempo_retiro', 'Advertencias'].filter(k => full[k]).map(k => `<h4 style="margin-top:12px">${k.replace('_', ' ')}</h4><p style="white-space:pre-wrap">${esc(full[k])}</p>`).join('')}
+        <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.cerrarModal();App.verFicha('${esc(p.id)}')">🔎 Ficha para el cliente</button></div>
         <h4 style="margin-top:12px">Precios</h4>${tabla([{ t: 'Lista', k: 'l' }, { t: 'Precio', num: 1, h: x => $$(x.v) }], Object.keys(p.precios).map(k => ({ l: k, v: p.precios[k] })))}${bloqueArch('prodFicha', p.id)}`);
       cargarFotoGrande(p.id);
       return;
@@ -8874,6 +8876,55 @@ const App = (() => {
     let ok = false; try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': t.blob })]); ok = true; } } catch (e) {}
     const tel = String(c.cel || '').replace(/\D/g, '').slice(-10); window.open(WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(txt), '_blank');
     if (ok) toast('✔ Imagen copiada: pégala en el chat con ⌘V / Ctrl+V'); else { tarjetaBajar(); toast('Se descargó la imagen: adjúntala en el chat', true); }
+  }
+  /* ---------- 🔎 FICHA RÁPIDA DE PRODUCTO (para mostrar al cliente: solo especificaciones) ---------- */
+  V.ficha = () => {
+    $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><input id="fqTxt" type="search" autocomplete="off" placeholder="🔎 Busca por nombre, clave, laboratorio o código de barras" style="width:100%;font-size:17px">
+      <div id="fqRes" class="fq-res"></div></div><div id="fqFicha">${S.fqId ? '' : '<div class="vacio">Escribe o escanea un producto para ver su ficha. Aquí no aparecen precios, costos ni existencias: puedes mostrarla al cliente.</div>'}</div>`;
+    const inp = $('#fqTxt');
+    inp.oninput = () => fqBuscar(inp.value);
+    inp.onkeydown = ev => { if (ev.key === 'Enter') { const l = fqLista(inp.value); if (l.length) { ev.preventDefault(); abrirFicha(l[0].id); } } };
+    if (S.fqId) abrirFicha(S.fqId); else setTimeout(() => inp.focus(), 50);
+  };
+  function fqLista(q) {
+    q = String(q || '').trim().toLowerCase(); if (q.length < 2) return [];
+    const ps = (D().productos || []).filter(p => p.activo !== false && p.activo !== 'NO');
+    const cb = ps.filter(p => String(p.cb || '').split(',').some(c => c && c.toLowerCase() === q)); if (cb.length) return cb;
+    const pal = q.split(/\s+/);
+    return ps.filter(p => { const t = (p.id + ' ' + p.nombre + ' ' + (p.lab || '') + ' ' + (p.categoria || '')).toLowerCase(); return pal.every(w => t.indexOf(w) >= 0); }).slice(0, 40);
+  }
+  function fqBuscar(q) {
+    const l = fqLista(q), el = $('#fqRes'); if (!el) return;
+    el.innerHTML = !String(q || '').trim() ? '' : !l.length ? '<p class="muted">Sin resultados</p>' :
+      l.map(p => `<button class="fq-item" onclick="App.abrirFicha('${esc(p.id)}')"><b>${esc(p.nombre)}</b><small>${esc([p.lab, p.categoria].filter(Boolean).join(' · '))}</small></button>`).join('');
+  }
+  async function abrirFicha(id) {
+    S.fqId = id; S.fichas = S.fichas || {};
+    const el = $('#fqFicha'); if (!el) return; if ($('#fqRes')) $('#fqRes').innerHTML = '';
+    let f = S.fichas[id];
+    if (!f) { el.innerHTML = '<div class="vacio">Cargando ficha…</div>'; try { f = S.fichas[id] = await pedir('fichaProducto', { id: id }); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.red ? 'La ficha requiere conexión.' : e.message || 'No disponible')}</div>`; return; } }
+    if (S.fqId !== id || !$('#fqFicha')) return;
+    const dato = (k, v) => v ? `<div class="fq-dato"><small>${k}</small><b>${esc(v)}</b></div>` : '';
+    el.innerHTML = `<div class="tarjeta fq-ficha">
+      <div class="fq-cab">${f.foto ? `<div class="arch-foto fq-foto" data-grande="${esc(f.id)}"><span class="muted">Cargando foto…</span></div>` : ''}
+        <div class="fq-tit"><h2>${esc(f.base)}</h2>
+          <div class="fq-datos">${dato('Laboratorio', f.lab)}${dato('Categoría', f.cat)}${dato(/,| y /.test(f.pres || '') ? 'Presentaciones' : 'Presentación', f.pres || f.unidad)}${dato('No. de registro', f.registro)}</div></div></div>
+      ${f.secciones.length ? f.secciones.map(x => `<h4 class="fq-sec">${esc(x[0])}</h4><p class="fq-txt">${esc(x[1])}</p>`).join('') : '<p class="muted">Este producto aún no tiene especificaciones capturadas.</p>'}
+      <div class="acciones no-imprimir" style="justify-content:flex-start;margin-top:14px">
+        <button class="btn primario" onclick="App.pdfFicha('${esc(f.id)}')">📄 PDF para enviar (WhatsApp / correo)</button>
+        ${f.fichaLab ? `<button class="btn" onclick="App.fichaLab('${esc(f.id)}')">📑 Ficha técnica del laboratorio</button>` : ''}
+        <button class="btn" onclick="App.fqOtra()">🔎 Buscar otro</button></div></div>`;
+    if (f.foto) cargarFotoGrande(f.id);
+  }
+  function verFicha(id) { S.fqId = id; ir('ficha'); }
+  function fqOtra() { S.fqId = ''; V.ficha(); }
+  function pdfFicha(id) {
+    const f = (S.fichas || {})[id] || { base: id };
+    generarPdf('pdfFicha', { id: id }, { texto: 'Ficha de producto: ' + f.base + (f.lab ? ' (' + f.lab + ')' : '') + ' — Interés Veterinario®', asunto: 'Ficha de producto ' + f.base, volver: 'App.cerrarModal()' });
+  }
+  async function fichaLab(id) {
+    try { const r = await pedir('archivos', { tipo: 'prodFicha', id: id }, true), a = r.archivos || [], x = a.find(y => y.actual) || a[0];
+      if (!x) return toast('No hay ficha del laboratorio', true); verArch('prodFicha', id, x.id); } catch (e) {}
   }
   /* ---------- 🧮 CONTABILIDAD DEL MES (contadora y dueño) ---------- */
   V.contable = () => {
@@ -11672,7 +11723,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
