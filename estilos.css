@@ -979,6 +979,7 @@ input.busq { font-size: 16px; font-weight: 600; min-height: 44px; border: 2px so
 input.busq::placeholder { color: var(--marca); opacity: .8; font-weight: 500; }
 input.busq:focus { background-color: var(--superficie); box-shadow: 0 0 0 3px color-mix(in srgb, var(--marca) 28%, transparent); outline: none; }
 label.busq-lab { font-weight: 700; color: var(--marca); flex: 2 1 260px; }
+.comprob-barra{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;margin:2px 0 8px}
 .menu-num { margin-left: auto; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: var(--peligro); color: #fff; font-size: 11.5px; text-align: center; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;

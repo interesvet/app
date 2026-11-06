@@ -2590,7 +2590,7 @@ const App = (() => {
     tab = tab || S.tabVen || 'notas'; if (!tabs.some(x => x[0] === tab)) tab = tabs[0][0]; S.tabVen = tab;
     const h = hoyISO(), ini = h.slice(0, 5) + String(Math.floor((+h.slice(5, 7) - 1) / 3) * 3 + 1).padStart(2, '0') + '-01';   // trimestre en curso: del día 1 del trimestre a hoy
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaVentas('${id}')">${n}</button>`;
-    const barra = tabs.length > 1 ? `<div class="pestanas">${tabs.map(x => tb(x[0], x[1])).join('')}</div>` : '';
+    const barra = (tabs.length > 1 ? `<div class="pestanas">${tabs.map(x => tb(x[0], x[1])).join('')}</div>` : '') + (tab === 'fact' ? '' : barraComprob());
     if (tab === 'fact') return vistaFacturacion(barra);
     if (tab === 'cobranza') return V.cobranza(barra);
     if (tab === 'edocta') return vistaEdoCta(barra);
@@ -2928,7 +2928,7 @@ const App = (() => {
       <label>Buscar<input id="fTxt" placeholder="Factura, nota, RFC o cliente"></label>
       ${S.tabFact === 'facturas' ? `<label>Cuadre<select id="fCuadre">${opts([['cuadra', 'Cuadra'], ['falta asignar', 'Falta asignar'], ['excede', 'Excede'], ['por definir', 'Montos por definir'], ['sin XML', 'Sin XML'], ['sin notas', 'Sin notas'], ['cancelada', 'Canceladas sin sustituir'], ['sustituida', 'Canceladas y sustituidas']], '', 'Todos')}</select></label>` : ''}
       <button class="btn primario fijo" onclick="App.cargarFacturacion()">Buscar</button>
-      ${S.tabFact === 'facturas' ? `<button class="btn fijo" onclick="App.formSubirFactura()">⬆️ Subir facturas (varias o carpeta)</button><button class="btn fijo" onclick="App.formArmarGlobal()">🧾 Armar global del mes</button>` : ''}${S.tabFact === 'piezas' ? `<button class="btn fijo" onclick="App.excelPiezas()">📊 Excel</button>` : ''}
+      ${S.tabFact === 'facturas' ? `<button class="btn fijo" onclick="App.formComprobantes()">📥 Subir comprobantes (varios o carpeta)</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.correoGastos()">✉️ Revisar correo</button>' : ''}<button class="btn fijo" onclick="App.formArmarGlobal()">🧾 Armar global del mes</button>` : ''}${S.tabFact === 'piezas' ? `<button class="btn fijo" onclick="App.excelPiezas()">📊 Excel</button>` : ''}
       ${S.tabFact === 'facturas' && U().rol === 'Administrador' ? `<button class="btn fijo" onclick="App.importarFacturas()">🔄 Importar de AppSheet</button>` : ''}</div></div>
       <div class="espacio"></div><div id="lFact"><div class="vacio">Cargando…</div></div>`;
     $('#fTxt').onkeydown = e => { if (e.key === 'Enter') cargarFacturacion(); };
@@ -3173,7 +3173,7 @@ const App = (() => {
         <label>Categoría<select id="gCat"><option value="">Todas</option>${(S.catsGas || []).map(c => `<option ${c === f.categoria ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
         <label>Buscar<input id="gTxt" placeholder="Proveedor, RFC o UUID" value="${esc(f.texto)}"></label>
         <button class="btn primario fijo" onclick="App.cargarGastos()">Buscar</button><button class="btn fijo" onclick="App.pdfGastos()">📄 PDF</button>
-        ${lect ? '' : '<button class="btn fijo" onclick="App.formFacturasGasto()">📥 Subir facturas</button><button class="btn fijo" onclick="App.correoGastos()">✉️ Correo</button>'}</div></div>
+        ${lect ? '' : '<button class="btn fijo" onclick="App.formComprobantes()" title="Facturas de compra y de gastos, notas de crédito, complementos de pago y facturas de venta: cada uno se va a su sección">📥 Subir comprobantes</button>' + (puede('dueno') ? '<button class="btn fijo" onclick="App.correoGastos()">✉️ Revisar correo</button>' : '')}</div></div>
       <div id="gAviso"></div>
       <div class="espacio"></div><div id="gRes"><div class="vacio">Cargando…</div></div>`;
     agregarMesAnio('gDesde', 'gHasta', cargarGastos);
@@ -3464,8 +3464,30 @@ const App = (() => {
     toast('Abriendo PDF…');
     try { const r = await pedir('verPdfGasto', { uuid: uuid }); verPdf(b64aBytes(r.b64), r.nombre, { url: r.url }); if (r.generado) toast('No llegó PDF: se armó uno con los datos del XML'); } catch (e) {}
   }
+  /** Subida unificada (Compras, Gastos y Ventas): cada comprobante se va solo a su sección. */
+  const puedeComprob = () => !!(puede('dueno') || esContador() || puede('facturacion') || verBandejaCfdi());
+  const barraComprob = () => puedeComprob() ? `<div class="comprob-barra no-imprimir"><button class="btn fijo" onclick="App.formComprobantes()" title="Facturas de compra y de gastos, notas de crédito, complementos de pago y facturas de venta: cada uno se va a su sección">📥 Subir comprobantes</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.correoGastos()" title="Revisar el correo: las facturas que llegan se registran solas en su sección">✉️ Revisar correo</button>' : ''}</div>` : '';
+  function formComprobantes() {
+    S.subirDest = 'todo';
+    const carpeta = 'webkitdirectory' in document.createElement('input') && !/iPhone|iPad|iPod/.test(navigator.userAgent);
+    modal('📥 Subir comprobantes', `<p>Elige los <b>XML</b> (con sus <b>PDF</b>), archivos <b>.zip</b>${carpeta ? ' o una <b>carpeta completa</b>' : ''}. Puedes mezclar todo: la app reconoce cada comprobante y lo manda a su lugar.</p>
+      <div class="fila"><label>Archivos<input type="file" id="fgArch" multiple accept=".xml,.pdf,.zip,text/xml,application/pdf,application/zip"></label>
+        ${carpeta ? `<label>…o una carpeta completa<input type="file" id="fgCarp" webkitdirectory multiple></label>` : ''}</div>
+      <table class="peq" style="margin:6px 0"><tbody>
+        <tr><td>🧾 Factura de un proveedor del catálogo</td><td class="muted">→ Compras (se liga a su orden)</td></tr>
+        <tr><td>↩️ Nota de crédito de proveedor</td><td class="muted">→ Compras (se aplica a la orden de su factura)</td></tr>
+        <tr><td>💳 Complemento de pago de proveedor</td><td class="muted">→ Compras · pagos</td></tr>
+        <tr><td>⛽ Factura de gasto (cualquier otro emisor)</td><td class="muted">→ Gastos (con su categoría)</td></tr>
+        <tr><td>🧾 Factura de venta que emitiste</td><td class="muted">→ Ventas › Facturación</td></tr>
+        <tr><td>💵 Complemento de pago que emitiste</td><td class="muted">→ Facturación · cobranza (REP)</td></tr>
+        <tr><td>↩️ Nota de crédito que emitiste</td><td class="muted">→ su devolución (Ventas › Devoluciones)</td></tr></tbody></table>
+      <p class="muted">No se duplica nada: cada comprobante se reconoce por su UUID. El XML y su PDF se juntan por el nombre del archivo o por el UUID; un PDF solo se pega a la factura que ya esté registrada.</p>
+      <div id="fgProg"></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="fgBtn" onclick="App.subirFacturasGasto()">Subir</button></div>`);
+  }
   function formFacturasGasto(dest) {
-    S.subirDest = dest === 'compra' ? 'compra' : dest === 'venta' ? 'venta' : 'gasto';
+    if (dest !== 'compra' && dest !== 'venta' && dest !== 'gasto') return formComprobantes();
+    S.subirDest = dest;
     const ven = S.subirDest === 'venta';
     modal(S.subirDest === 'compra' ? 'Subir facturas de proveedores' : ven ? 'Subir facturas de venta' : 'Subir facturas de gastos', `<p>Elige los <b>XML</b> (y sus <b>PDF</b>) de tus facturas${S.subirDest === 'compra' ? ' y notas de crédito de proveedores' : ven ? ' a clientes' : ' de gastos'}; también puedes subir archivos <b>.zip</b>. Puedes elegir muchos a la vez.</p>
       <div class="fila"><label>Archivos<input type="file" id="fgArch" multiple accept=".xml,.pdf,.zip,text/xml,application/pdf,application/zip"></label>
@@ -3494,24 +3516,43 @@ const App = (() => {
       let r = null;
       for (let intento = 0; intento < 2 && !r; intento++) {
         try { const archivos = []; for (const f of lotes[i]) archivos.push({ nombre: f.name, dataUri: await leerArchivo(f) });
-          r = await pedir(S.subirDest === 'compra' ? 'subirFacturasCompra' : S.subirDest === 'venta' ? 'subirFacturasVenta' : 'subirFacturasGasto', { archivos: archivos, estricto: estricto }, true); } catch (e) { if (intento) fallidos.push(lotes[i].map(f => f.name).join(', ')); }
+          r = await pedir(S.subirDest === 'todo' ? 'subirComprobantes' : S.subirDest === 'compra' ? 'subirFacturasCompra' : S.subirDest === 'venta' ? 'subirFacturasVenta' : 'subirFacturasGasto', { archivos: archivos, estricto: estricto }, true); } catch (e) { if (intento) fallidos.push(lotes[i].map(f => f.name).join(', ')); }
       }
       if (r) { ['nuevas', 'duplicadas', 'omitidas', 'porClasificar'].forEach(k => tot[k] += r[k] || 0); tot.detalle.push(...r.detalle); }
     }
     if (fallidos.length) fallidos.forEach(n => tot.detalle.push({ estado: 'omitida', archivo: n.slice(0, 120), motivo: 'No se pudo subir (vuelve a subir estos; los que ya entraron no se duplican)' }));
     if (fallidos.length) tot.omitidas += fallidos.length;
     if (S.subirDest === 'venta') tot.detalle.forEach(x => { x.emisor = [x.sf, x.receptor].filter(Boolean).join(' · ') || x.archivo; });
-    resultadoFacturasGasto('Facturas subidas', tot); if (S.subirDest === 'venta') { if ($('#lFact')) cargarFacturacion(); } else if (S.subirDest === 'compra') { if ($('#cCont')) bandejaCfdi(); } else { S.datGasKey = ''; cargarGastos(); }
+    resultadoFacturasGasto(S.subirDest === 'todo' ? 'Comprobantes subidos' : 'Facturas subidas', tot);
+    if (S.subirDest === 'todo') { const dd = {}; tot.detalle.forEach(x => { if (x.estado !== 'omitida') dd[x.destino] = 1; }); refrescarTrasComprob(dd); }
+    else if (S.subirDest === 'venta') { if ($('#lFact')) cargarFacturacion(); } else if (S.subirDest === 'compra') { if ($('#cCont')) bandejaCfdi(); } else { S.datGasKey = ''; cargarGastos(); }
+  }
+  /** Después de subir o revisar el correo: recarga lo que esté en pantalla y lo que cambió. */
+  function refrescarTrasComprob(dd) {
+    dd = dd || {};
+    if (dd.gasto) S.datGasKey = '';
+    try {
+      if (S.vista === 'gastos' && (dd.gasto || dd.compra) && typeof cargarGastos === 'function') cargarGastos();
+      else if ($('#lFact') && (dd.venta || dd.rep)) cargarFacturacion();
+      else if (S.vista === 'compras' && dd.compra) { if ($('#cCont') && S.tabCompras === 'cfdi') bandejaCfdi(); else if (verBandejaCfdi()) contarCfdi(); }
+    } catch (e) {}
+  }
+  const DESTINO_COMPROB = { compra: '🧾 Compras', gasto: '⛽ Gastos', venta: '🧾 Facturación', rep: '💵 Cobranza (REP)', nc: '↩️ Devoluciones' };
+  function resumenDestinos(det) {
+    const c = {}; det.forEach(x => { if (x.estado === 'nueva') c[x.destino || 'otro'] = (c[x.destino || 'otro'] || 0) + 1; });
+    const k = Object.keys(c).filter(d => DESTINO_COMPROB[d]); if (!k.length) return '';
+    return `<p class="peq" style="margin:4px 0 8px">Nuevos por sección: ${k.map(d => `<span class="etq">${DESTINO_COMPROB[d]}: <b>${nf(c[d])}</b></span>`).join(' ')}</p>`;
   }
   function resultadoFacturasGasto(tit, r, extra) {
     const ic = { nueva: '✔', duplicada: '=', omitida: '✕' };
     modal(tit, `<div class="kpis">${[['Nuevas', r.nuevas], ['Ya estaban', r.duplicadas], ['Omitidas', r.omitidas], ['Por clasificar', r.porClasificar || r.detalle.filter(x => x.categoria === 'POR CLASIFICAR').length]].slice(0, S.subirDest === 'venta' ? 3 : 4).map(k => `<div class="kpi"><small>${k[0]}</small><b>${nf(k[1])}</b></div>`).join('')}</div>` +
-      (r.detalle.length ? tabla([{ t: '', h: x => ic[x.estado] || '' }, { t: S.subirDest === 'venta' ? 'Factura · cliente' : 'Proveedor', h: x => `<b>${esc(x.emisor || x.archivo || '')}</b>${x.de ? `<br><small class="muted">${esc(x.de)}</small>` : ''}` },
-        { t: 'Total', num: 1, h: x => x.total ? $$(x.total) : '' }, { t: 'Resultado', h: x => x.compra && x.estado === 'nueva' ? `🧾 Compra · ${esc(x.accion || '')}${x.motivo ? '<br><small class="muted">' + esc(x.motivo) + '</small>' : ''}` : esc(x.estado === 'nueva' ? (x.categoria || x.motivo || '') : x.motivo || '') }], r.detalle) : '<p class="muted">No había facturas nuevas.</p>') +
+      (S.subirDest === 'todo' ? resumenDestinos(r.detalle) : '') +
+      (r.detalle.length ? tabla([{ t: '', h: x => ic[x.estado] || '' }].concat(S.subirDest === 'todo' ? [{ t: 'Va a', h: x => `<span class="etq">${esc(DESTINO_COMPROB[x.destino] || '—')}</span>` }] : []).concat([{ t: S.subirDest === 'venta' ? 'Factura · cliente' : S.subirDest === 'todo' ? 'Emisor / factura' : 'Proveedor', h: x => `<b>${esc(x.emisor || x.archivo || '')}</b>${x.de ? `<br><small class="muted">${esc(x.de)}</small>` : ''}` },
+        { t: 'Total', num: 1, h: x => x.total ? $$(x.total) : '' }, { t: 'Resultado', h: x => x.compra && x.estado === 'nueva' ? `🧾 Compra · ${esc(x.accion || '')}${x.motivo ? '<br><small class="muted">' + esc(x.motivo) + '</small>' : ''}` : esc(x.estado === 'nueva' ? (x.categoria || x.motivo || '') : x.motivo || '') }]), r.detalle) : '<p class="muted">No había facturas nuevas.</p>') +
       (extra || '') + `<div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Listo</button></div>`);
   }
   async function correoGastos() {
-    modal('Facturas por correo', '<div class="vacio">Cargando…</div>');
+    modal('✉️ Comprobantes por correo', '<div class="vacio">Cargando…</div>');
     let e; try { e = await pedir('estadoCorreoGastos', {}); } catch (x) { $('#modalCuerpo').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     const fh = s => s ? new Date(s).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca';
     $('#modalCuerpo').innerHTML = `<p>${e.activo ? '🟢 <b>Revisión automática activa</b> (cada hora)' : '⚪ <b>Revisión automática apagada</b> — se activa desde el editor de Apps Script (función <code>activarCorreoGastos</code>).'}</p>
@@ -3528,7 +3569,7 @@ const App = (() => {
   }
   async function revisarCorreoGastos() {
     $('#cgBtn').disabled = true; $('#cgBtn').textContent = 'Revisando…';
-    try { const r = await pedir('revisarCorreoGastos', {}); S.cfdiCompras = null; resultadoFacturasGasto('Revisión de correo · ' + nf(r.revisados) + ' correo(s)', r, r.pendientes ? `<p class="muted">Quedan ${nf(r.pendientes)} correos por revisar: vuelve a tocar "Revisar ahora" o espera la revisión automática.</p>` : ''); S.datGasKey = ''; cargarGastos(); }
+    try { const r = await pedir('revisarCorreoGastos', {}); S.cfdiCompras = null; S.subirDest = 'todo'; resultadoFacturasGasto('Revisión de correo · ' + nf(r.revisados) + ' correo(s)', r, r.pendientes ? `<p class="muted">Quedan ${nf(r.pendientes)} correos por revisar: vuelve a tocar "Revisar ahora" o espera la revisión automática.</p>` : ''); const dd = { gasto: 1 }; (r.detalle || []).forEach(x => { if (x.estado !== 'omitida') dd[x.destino || 'gasto'] = 1; }); refrescarTrasComprob(dd); }
     catch (x) { if ($('#cgBtn')) { $('#cgBtn').disabled = false; $('#cgBtn').textContent = '✉️ Revisar ahora'; } }
   }
   function filtrarCatGasto(cat) { S.fgas.categoria = cat; S.tabGas = 'facturas'; V.gastos('facturas'); $('#gCat').value = cat; cargarGastos(); }
@@ -3900,10 +3941,11 @@ const App = (() => {
   V.compras = (tab) => {
     tab = tab || 'lista';
     if (tab === 'pagos' && !puede('pagos_proveedor')) tab = 'lista';
+    S.tabCompras = tab;
     $('#vista').innerHTML = `<div class="pestanas"><button class="${tab === 'lista' ? 'activo' : ''}" onclick="App.vistaCompras('lista')">Órdenes de compra</button>
       ${puede('pagos_proveedor') ? `<button class="${tab === 'pagos' ? 'activo' : ''}" onclick="App.vistaCompras('pagos')">💳 Pagos a proveedores</button>` : ''}
       ${verBandejaCfdi() ? `<button class="${tab === 'cfdi' ? 'activo' : ''}" onclick="App.vistaCompras('cfdi')">🧾 Facturas de proveedores<span id="cfdiN"></span></button>` : ''}
-      <button class="${tab === 'nueva' ? 'activo' : ''}" onclick="App.vistaCompras('nueva')">${S.oc && S.oc.editId ? '✏️ Editando ' + esc(S.oc.folio) : '+ Nueva orden'}</button></div><div id="cCont"></div>`;
+      <button class="${tab === 'nueva' ? 'activo' : ''}" onclick="App.vistaCompras('nueva')">${S.oc && S.oc.editId ? '✏️ Editando ' + esc(S.oc.folio) : '+ Nueva orden'}</button></div>${tab === 'cfdi' ? '' : barraComprob()}<div id="cCont"></div>`;
     tab === 'lista' ? listaCompras() : tab === 'pagos' ? listaPagosProv() : tab === 'cfdi' && verBandejaCfdi() ? bandejaCfdi() : nuevaCompra();
     if (tab !== 'cfdi' && verBandejaCfdi()) contarCfdi();
   };
@@ -3947,7 +3989,7 @@ const App = (() => {
         ${x.tipo === 'Factura' ? `<button class="btn fijo" onclick="App.ocDesdeCfdi('${esc(x.uuid)}')">➕ Crear orden</button>` : ''}
         <button class="btn fijo" onclick="App.descartarCfdi('${esc(x.uuid)}')">Descartar</button></div></div>`;
     $('#cCont').innerHTML = `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>Facturas, notas de crédito y complementos de pago de proveedores</b><br><small class="muted">Se reconocen por el RFC del catálogo de proveedores. Las claras se ligan solas a su orden (mismo proveedor y mismo total), las notas de crédito con factura relacionada se aplican solas y los complementos de pago (REP) se ligan al pago capturado del mismo monto. Aquí quedan las que necesitan que elijas.${U().rol === 'Administrador' || puede('dueno') ? ' Las que llegan por correo se revisan cada hora (Gastos › ✉️ Correo).' : ''}</small></div>
-      <button class="btn fijo" onclick="App.formFacturasGasto('compra')">📥 Subir facturas</button></div></div>
+      <button class="btn fijo" onclick="App.formComprobantes()">📥 Subir comprobantes</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.correoGastos()">✉️ Revisar correo</button>' : ''}</div></div>
       <h3 style="margin:12px 0 6px">Por ligar (${r.pendientes.length})</h3>${r.pendientes.length ? r.pendientes.map(tarjeta).join('') : '<div class="vacio">✔ No hay facturas pendientes</div>'}
       <div class="tarjeta"><h3>Últimas ligadas o aplicadas</h3>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Tipo', h: x => `<span class="etq">${esc(x.tipo)}</span>` }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.folio)}</small>` },
         { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Estado', h: x => esc(x.estado) + (x.nota ? `<br><small class="muted">${esc(x.nota)}</small>` : '') }, { t: 'Orden', h: x => { const ids = String(x.idOC || '').split(/\s*,\s*/).filter(String), fs = String(x.orden || '').split(/\s*,\s*/); return ids.map((id, k) => `<a href="#" onclick="App.abrirCompraId('${esc(id)}');return false">${esc(fs[k] || id)}</a>`).join('<br>'); } },
@@ -11981,7 +12023,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
