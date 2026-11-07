@@ -201,7 +201,7 @@ const App = (() => {
     opc = opc || {};
     if (!filas.length) return `<div class="vacio">${esc(opc.vacio || 'Sin registros')}</div>`;
     return `<div class="tabla-cont"><table><thead><tr>${cols.map(c => `<th class="${c.num ? 'num' : ''} ${c.cls || ''}">${esc(c.t)}</th>`).join('')}</tr></thead><tbody>` +
-      filas.map((f, i) => `<tr class="${opc.clic ? 'clic' : ''}" ${opc.clic ? `onclick="${opc.clic}(${i})"` : ''}>` +
+      filas.map((f, i) => `<tr class="${opc.clic ? 'clic' : ''}" ${opc.clic ? `onclick="${opc.clic}(${i})"` : ''}${opc.filaId ? ` id="${esc(opc.filaId(f))}"` : ''}>` +
         cols.map(c => `<td class="${c.num ? 'num' : ''} ${c.cls || ''}">${c.h ? c.h(f) : esc(f[c.k])}</td>`).join('') + '</tr>').join('') +
       '</tbody></table></div>';
   }
@@ -3191,6 +3191,7 @@ const App = (() => {
     const h = hoyISO(), f = alDia(S.fgas || (S.fgas = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, grupo: '', categoria: '', texto: '' }));
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
     if (tab === 'reglas') return vistaReglasGasto();
+    if (tab === 'creditos') return vistaCreditos();
     $('#vista').innerHTML = `<div class="pestanas">${pestanasGas(tab)}</div>
       <div class="tarjeta no-imprimir"><div class="fila">
         <label>Desde<input type="date" id="gDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="gHasta" value="${f.hasta}"></label>
@@ -3211,9 +3212,139 @@ const App = (() => {
   const editaGas = () => puede('dueno') || (puede('ver_gastos') && puede('clasificar_gastos'));
   function pestanasGas(tab) {
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
-    return tb('resumen', 'Estado de gastos') + tb('mes', 'Por mes') + tb('facturas', 'Facturas') + tb('inversion', 'Inversiones') + tb('emisores', 'Proveedores') +
+    return tb('resumen', 'Estado de gastos') + tb('mes', 'Por mes') + tb('facturas', 'Facturas') + tb('inversion', 'Inversiones') + tb('creditos', '🚗 Créditos') + tb('emisores', 'Proveedores') +
       (editaGas() ? tb('clasificar', '🏷️ Por clasificar') + tb('reglas', '⚙️ Reglas y depreciación') : '');
   }
+
+  /* ---------- 🚗 Créditos: corrida financiera (PDF) ligada a los cargos de cada mes ---------- */
+  const puedeCred = () => !!(puede('dueno') || esContador());
+  async function vistaCreditos() {
+    S.tabGas = 'creditos';
+    $('#vista').innerHTML = `<div class="pestanas">${pestanasGas('creditos')}</div><div id="crRes"><div class="vacio">Cargando…</div></div>`;
+    try { S.cred = await pedir('creditos', {}); } catch (e) { $('#crRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    pintarCreditos();
+  }
+  function pintarCreditos() {
+    const L = (S.cred || {}).creditos || [];
+    $('#crRes').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center"><h3 style="flex:1 1 260px;margin:0">🚗 Créditos y su corrida financiera</h3>
+        ${puedeCred() ? '<button class="btn primario fijo" onclick="App.formCredito()">+ Nuevo crédito</button>' : ''}</div>
+      <p class="muted">Sube el PDF de la corrida (tabla de pagos) que te dio la financiera. La app la liga a cada cargo mensual: la factura de intereses del acreedor y el cargo del estado de cuenta. En cada uno aparece 📑 para abrir la corrida.</p></div>` +
+      (L.length ? L.map((c, i) => `<div class="tarjeta"><div class="fila" style="align-items:center"><div style="flex:3 1 280px"><h3 style="margin:0">${esc(c.nombre)}</h3>
+          <small class="muted">${esc(c.acreedor)}${c.rfc ? ' · ' + esc(c.rfc) : ''}${c.monto ? ' · financiado ' + $$(c.monto) : ''}${c.plazo ? ' · ' + nf(c.plazo) + ' meses' : ''}${c.pago ? ' · pago ' + $$(c.pago) : ''}${c.inicio ? ' · primer pago ' + esc(c.inicio) : ''}</small></div>
+          <button class="btn fijo" onclick="App.verCorrida('${esc(c.id)}')">📑 Ver corrida (PDF)</button>${puedeCred() ? `<button class="btn fijo" onclick="App.formCredito(${i})">✏️</button>` : ''}</div>
+        ${c.tabla.length ? `<div class="kpis"><div class="kpi"><small>Capital</small><b>${$$(c.totales.capital)}</b></div><div class="kpi"><small>Intereses (corrida)</small><b>${$$(c.totales.interes)}</b></div>
+          <div class="kpi"><small>IVA de intereses</small><b>${$$(c.totales.iva)}</b></div><div class="kpi"><small>Intereses facturados</small><b>${$$(c.totales.facturado)}</b><span>${nf(c.facturas.length)} facturas del acreedor</span></div></div>` +
+          tabla([{ t: 'No.', num: 1, k: 'n' }, { t: 'Fecha', h: x => esc(x.fecha ? fechaTxt(x.fecha) : '') }, { t: 'Pago', num: 1, h: x => $$(x.pago) }, { t: 'Capital', num: 1, cls: 'ocultar-movil', h: x => $$(x.capital) },
+            { t: 'Interés', num: 1, h: x => $$(x.interes) }, { t: 'IVA', num: 1, h: x => $$(x.iva) }, { t: 'Saldo', num: 1, cls: 'ocultar-movil', h: x => $$(x.saldo) },
+            { t: 'Factura del mes', h: x => x.factura ? `<button class="btn chico" onclick="App.verPdfGasto('${esc(x.factura.uuid)}')">📄</button> ${esc(x.factura.fecha)} · ${$$(x.factura.sub)} + IVA ${$$(x.factura.iva)}${Math.abs(x.factura.difInt) > 1 || Math.abs(x.factura.difIva) > 1 ? `<br><small class="error">dif. interés ${$$(x.factura.difInt)} · IVA ${$$(x.factura.difIva)}</small>` : ' <span class="ok-txt">✔</span>'}` : '<small class="muted">—</small>' },
+            { t: 'Cargo en banco', cls: 'ocultar-movil', h: x => x.cargo ? `${esc(x.cargo.fecha)} · ${$$(x.cargo.monto)}${Math.abs(x.cargo.dif) > 1 ? ` <small class="error">(${$$(x.cargo.dif)})</small>` : ' <span class="ok-txt">✔</span>'}<br><small class="muted">${esc(x.cargo.cuenta)}</small>` : '<small class="muted">—</small>' }],
+            c.tabla, { filaId: x => 'cr-' + c.id + '-' + x.n }) : `<p class="muted">No se leyó la tabla de pagos del PDF; la corrida está guardada y se abre con 📑.${puedeCred() ? ' Con ✏️ puedes volver a subirla para leer la tabla.' : ''}</p>`}
+        ${c.facturas.length ? `<details style="margin-top:8px"><summary>${nf(c.facturas.length)} facturas de ${esc(c.acreedor)}</summary>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Sin IVA', num: 1, h: f => $$(f.sub) }, { t: 'IVA', num: 1, h: f => $$(f.iva) }, { t: 'Total', num: 1, h: f => $$(f.total) }, { t: 'Grupo', k: 'grupo' }, { t: '', h: f => `<button class="btn chico" onclick="App.verPdfGasto('${esc(f.uuid)}')">📄</button>` }], c.facturas) + '</details>' : ''}
+        ${c.notas ? `<p class="muted peq">${esc(c.notas)}</p>` : ''}</div>`).join('') : '<div class="vacio">Sin créditos registrados</div>');
+    if (S.credFoco) { const el = document.getElementById(S.credFoco); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('resaltar'); } S.credFoco = null; }
+  }
+  async function verCorrida(id) { toast('Abriendo corrida…'); try { const r = await pedir('verCorrida', { id: id }); verPdf(b64aBytes(r.b64), r.nombre, { url: r.url }); } catch (e) {} }
+  /** 📑 desde una factura o un cargo: abre el crédito en su renglón y la corrida. */
+  async function abrirCredito(id, fecha) {
+    S.tabGas = 'creditos'; if (S.vista !== 'gastos') { S.vista = 'gastos'; }
+    await vistaCreditos();
+    const c = ((S.cred || {}).creditos || []).find(x => x.id === id); if (!c) return;
+    const ym = String(fecha || '').split('/').reverse().join('-').slice(0, 7);
+    const r = c.tabla.find(x => x.fecha && x.fecha.slice(0, 7) === ym);
+    if (r) { S.credFoco = 'cr-' + c.id + '-' + r.n; pintarCreditos(); toast('Pago ' + r.n + ' de la corrida: interés ' + $$(r.interes) + ' + IVA ' + $$(r.iva) + ' · pago ' + $$(r.pago)); }
+    verCorrida(id);
+  }
+  /** Lee la tabla de pagos del PDF: renglones con número de pago y varios importes. */
+  async function lineasPdf(file) {
+    const L = await cargarPdfJs(), doc = await L.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise, out = [];
+    for (let i = 1; i <= Math.min(doc.numPages, 15); i++) {
+      const items = (await (await doc.getPage(i)).getTextContent()).items.filter(x => x.str && x.str.trim()), filas = [];
+      items.forEach(x => { const y = x.transform[5]; let f = filas.find(r => Math.abs(r.y - y) < 3); if (!f) filas.push(f = { y: y, it: [] }); f.it.push(x); });
+      filas.sort((a, b) => b.y - a.y).forEach(f => out.push(f.it.sort((a, b) => a.transform[4] - b.transform[4]).map(x => x.str.trim()).join(' ')));
+    }
+    return out;
+  }
+  const MESES_CR = { ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6, JUL: 7, AGO: 8, SEP: 9, SEPT: 9, OCT: 10, NOV: 11, DIC: 12, JAN: 1, APR: 4, AUG: 8, DEC: 12 };
+  function leerCorrida(lineas) {
+    const rx = /-?\$?\s?\d{1,3}(?:,\d{3})*\.\d{2}|-?\$?\s?\d+\.\d{2}/g, filas = [];
+    lineas.forEach(l => {
+      const t = l.replace(/\s+/g, ' ').trim();
+      let fecha = '', m = t.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/), sinF = t;
+      if (m) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; fecha = y + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0'); sinF = t.replace(m[0], ' '); }
+      else if ((m = t.match(/(\d{1,2})[\s\/\-]([A-Za-z]{3,4})[a-z]*[\s\/\-](\d{2,4})/)) && MESES_CR[m[2].toUpperCase()]) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; fecha = y + '-' + String(MESES_CR[m[2].toUpperCase()]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0'); sinF = t.replace(m[0], ' '); }
+      const nm = sinF.match(/^\s*(\d{1,3})\b(?![.,]\d)/); if (!nm) return;
+      const imps = (sinF.slice(nm[0].length).match(rx) || []).map(v => Number(v.replace(/[$,\s]/g, '')));
+      if (imps.length >= 3) filas.push({ n: Number(nm[1]), fecha: fecha, v: imps });
+    });
+    if (filas.length < 2) return { filas: [], cols: 0, map: {} };
+    // el número de columnas más común
+    const cnt = {}; filas.forEach(f => cnt[f.v.length] = (cnt[f.v.length] || 0) + 1);
+    const nc = +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0], F = filas.filter(f => f.v.length === nc);
+    const ok = fn => F.filter(fn).length / F.length;
+    let best = null;
+    for (let i = 0; i < nc; i++) for (let v = 0; v < nc; v++) { if (v === i) continue;
+      const sIva = ok(f => f.v[i] > 0 ? Math.abs(f.v[v] - f.v[i] * 0.16) <= Math.max(0.05, f.v[i] * 0.003) : f.v[v] === 0); if (sIva < 0.7) continue;
+      for (let k = 0; k < nc; k++) { if (k === i || k === v) continue;
+        for (let p = 0; p < nc; p++) { if ([i, v, k].indexOf(p) >= 0) continue;
+          const sP = ok(f => Math.abs(f.v[p] - (f.v[k] + f.v[i] + f.v[v])) <= 1.5); if (sP < 0.6) continue;
+          const sc = sIva + sP; if (!best || sc > best.sc) best = { sc: sc, interes: i, iva: v, capital: k, pago: p }; } } }
+    const map = best ? { interes: best.interes, iva: best.iva, capital: best.capital, pago: best.pago } : {};
+    if (best) { // saldo: la columna que baja y termina más cerca de 0 (fuera de las anteriores)
+      let sb = null; for (let s = 0; s < nc; s++) { if (Object.values(map).indexOf(s) >= 0) continue; const baja = ok((f, j) => true) && F.slice(1).every((f, j) => f.v[s] <= F[j].v[s] + 0.01);
+        if (baja && (sb === null || F[F.length - 1].v[s] < F[F.length - 1].v[sb])) sb = s; }
+      if (sb !== null) map.saldo = sb; }
+    return { filas: F, cols: nc, map: map };
+  }
+  function tablaCorrida() {
+    const P = S.crPdf; if (!P || !P.filas.length) return [];
+    const g = k => { const s = $('#crCol_' + k); const j = s ? s.value : P.map[k]; return j === '' || j === undefined ? null : +j; };
+    const ix = { capital: g('capital'), interes: g('interes'), iva: g('iva'), pago: g('pago'), saldo: g('saldo') };
+    return P.filas.map(f => ({ n: f.n, fecha: f.fecha, capital: ix.capital !== null ? f.v[ix.capital] : 0, interes: ix.interes !== null ? f.v[ix.interes] : 0, iva: ix.iva !== null ? f.v[ix.iva] : 0, pago: ix.pago !== null ? f.v[ix.pago] : 0, saldo: ix.saldo !== null ? f.v[ix.saldo] : 0 }));
+  }
+  function pintarPrevCorrida() {
+    const P = S.crPdf, el = $('#crPrev'); if (!el) return;
+    if (!P) { el.innerHTML = ''; return; }
+    if (!P.filas.length) { el.innerHTML = '<p class="error peq">No encontré la tabla de pagos en el PDF (puede ser una imagen escaneada). Se guarda el PDF igual y se abre con 📑 en cada cargo.</p>'; return; }
+    const opC = k => `<label class="fijo">${k[1]}<select id="crCol_${k[0]}" onchange="App.crPrev()"><option value="">—</option>${Array.from({ length: P.cols }, (_, j) => `<option value="${j}" ${P.map[k[0]] === j || (+($('#crCol_' + k[0]) || {}).value === j && $('#crCol_' + k[0]).value !== '') ? 'selected' : ''}>Columna ${j + 1} (${nf(P.filas[0].v[j])})</option>`).join('')}</select></label>`;
+    const t = tablaCorrida();
+    el.innerHTML = `<p class="${P.map.pago !== undefined ? 'ok-txt' : 'error'} peq">${P.map.pago !== undefined ? '✔ Leí ' + P.filas.length + ' pagos y reconocí las columnas. Revísalas:' : 'Leí ' + P.filas.length + ' renglones; indica qué columna es cada dato:'}</p>
+      <div class="fila">${[['pago', 'Pago total'], ['capital', 'Capital'], ['interes', 'Interés'], ['iva', 'IVA'], ['saldo', 'Saldo']].map(opC).join('')}</div>` +
+      tabla([{ t: 'No.', num: 1, k: 'n' }, { t: 'Fecha', k: 'fecha' }, { t: 'Pago', num: 1, h: x => $$(x.pago) }, { t: 'Capital', num: 1, h: x => $$(x.capital) }, { t: 'Interés', num: 1, h: x => $$(x.interes) }, { t: 'IVA', num: 1, h: x => $$(x.iva) }, { t: 'Saldo', num: 1, h: x => $$(x.saldo) }], t.slice(0, 6)) +
+      `<p class="muted peq">Primeros 6 de ${t.length} pagos · intereses ${$$(t.reduce((a, x) => a + x.interes, 0))} · capital ${$$(t.reduce((a, x) => a + x.capital, 0))}</p>`;
+  }
+  function formCredito(i) {
+    const c = i === undefined ? {} : (S.cred.creditos[i] || {}); S.crPdf = null; S.crEdit = c.id || '';
+    const act = ((S.datGas || {}).activos || []);
+    modal(c.id ? 'Editar crédito' : '🚗 Nuevo crédito', `<div class="fila">
+        <label style="flex:2 1 220px">Nombre<input id="crNom" value="${esc(c.nombre || '')}" placeholder="Crédito camioneta Toyota"></label>
+        <label style="flex:2 1 220px">Acreedor (como aparece en facturas / estado de cuenta)<input id="crAcr" value="${esc(c.acreedor || '')}" placeholder="TOYOTA FINANCIAL"></label>
+        <label>RFC del acreedor<input id="crRfc" value="${esc(c.rfc || '')}" placeholder="Opcional"></label></div>
+      <div class="fila"><label>Monto financiado $<input type="number" step="0.01" id="crMonto" value="${c.monto || ''}"></label><label>Plazo (meses)<input type="number" id="crPlazo" value="${c.plazo || ''}"></label>
+        <label>Pago mensual $<input type="number" step="0.01" id="crPago" value="${c.pago || ''}"></label><label>Primer pago<input type="date" id="crIni" value="${c.inicio ? c.inicio.split('/').reverse().join('-') : ''}"></label></div>
+      <div class="fila"><label style="flex:1 1 100%">Bien financiado (factura del activo)<select id="crAct"><option value="">—</option>${act.map(a => `<option value="${esc(a.uuid)}" ${a.uuid === c.activo ? 'selected' : ''}>${esc(a.fecha)} · ${esc(a.emisor)} · ${$$(a.monto)}</option>`).join('')}</select></label></div>
+      <label>📑 PDF de la corrida financiera ${c.id ? '<small class="muted">(solo si la reemplazas)</small>' : ''}<input type="file" id="crPdf" accept="application/pdf,.pdf" onchange="App.crLeerPdf(this.files[0])"></label>
+      <div id="crPrev" style="margin-top:8px"></div>
+      <label>Notas<input id="crNotas" value="${esc(c.notas || '')}" placeholder="Opcional"></label>
+      <div class="acciones">${c.id ? `<button class="btn peligro" onclick="App.quitarCredito('${esc(c.id)}')">Quitar</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="crBtn" onclick="App.guardarCredito()">💾 Guardar</button></div>`);
+  }
+  async function crLeerPdf(f) {
+    if (!f) return; $('#crPrev').innerHTML = '<div class="vacio">Leyendo la corrida…</div>';
+    try { const ls = await lineasPdf(f); S.crPdf = leerCorrida(ls); S.crPdf.file = f;
+      if (S.crPdf.filas.length) { const t = tablaCorrida(); if (!$('#crPlazo').value) $('#crPlazo').value = t.length; if (!$('#crPago').value && t[0]) $('#crPago').value = t[0].pago; if (!$('#crIni').value && t[0] && t[0].fecha) $('#crIni').value = t[0].fecha;
+        if (!$('#crMonto').value && t.length) $('#crMonto').value = Math.round((t[0].saldo ? t[0].saldo + t[0].capital : t.reduce((a, x) => a + x.capital, 0)) * 100) / 100; }
+    } catch (e) { S.crPdf = { filas: [], cols: 0, map: {}, file: f }; }
+    pintarPrevCorrida();
+  }
+  async function guardarCredito() {
+    const f = S.crPdf && S.crPdf.file;
+    const p = { ID_Credito: S.crEdit, Nombre: $('#crNom').value, Acreedor: $('#crAcr').value, RFC_Acreedor: $('#crRfc').value, Monto_Financiado: $('#crMonto').value, Plazo_Meses: $('#crPlazo').value,
+      Pago_Mensual: $('#crPago').value, Fecha_Primer_Pago: $('#crIni').value, UUID_Activo: $('#crAct').value, Notas: $('#crNotas').value };
+    if (f) { p.pdf = await leerArchivo(f); p.pdfNombre = f.name; p.tabla = tablaCorrida(); }
+    else if (!S.crEdit) return toast('Sube el PDF de la corrida', true);
+    $('#crBtn').disabled = true;
+    try { const r = await pedir('guardarCredito', p); cerrarModal(); toast('✔ Crédito guardado' + (r.pagos ? ' · ' + r.pagos + ' pagos de la corrida' : '')); vistaCreditos(); } catch (e) { $('#crBtn').disabled = false; }
+  }
+  async function quitarCredito(id) { if (!confirm('¿Quitar este crédito? (el PDF se queda en Drive)')) return; try { await pedir('quitarCredito', { id: id }); cerrarModal(); vistaCreditos(); } catch (e) {} }
   /** Pestaña de reglas: grupo de cada categoría / proveedor, tasa de depreciación, meses a repartir y criterios generales de depreciación. */
   async function vistaReglasGasto() {
     S.tabGas = 'reglas';
@@ -3314,7 +3445,7 @@ const App = (() => {
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
           { t: 'Sucursal', h: (x) => lectSuc ? esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) : `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
           ...(puede('equipo') ? [{ t: 'Empleado', cls: 'ocultar-movil', h: x => x.grupo === 'Operación' || x.grupo === 'Financiero' ? `<select class="chico" onchange="App.asignarEmpGasto('${esc(x.uuid)}', this.value)"><option value="">—</option>${(D().vendedores || []).filter(v => !/contador/i.test(v.rol || '')).map(v => `<option value="${esc(v.id)}" ${String(v.id) === String(x.emp || '') ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('')}</select>` : '' }] : []),
-          { t: 'Factura', h: x => `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>${x.xml ? `<button class="btn chico" title="Descargar el XML" onclick="App.bajarXmlGasto('${esc(x.uuid)}')">XML</button>` : ''}` },
+          { t: 'Factura', h: x => (x.credito ? `<button class="btn chico" title="Corrida financiera del crédito: renglón de este mes" onclick="App.abrirCredito('${esc(x.credito)}','${esc(x.fecha)}')">📑</button>` : '') + `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>${x.xml ? `<button class="btn chico" title="Descargar el XML" onclick="App.bajarXmlGasto('${esc(x.uuid)}')">XML</button>` : ''}` },
           ...(lect ? [] : [{ t: 'Flete', h: x => x.flete ? `<button class="btn chico" style="color:var(--ok);border-color:var(--ok)" title="Flete ligado a ${x.flete} documento(s) (órdenes de compra / notas de venta)" onclick="App.fleteLigar('${esc(x.uuid)}')">🚚 ${x.flete}</button>`
             : `<button class="btn chico" ${x.fleteSug ? 'title="Parece flete: ligarlo a sus compras o ventas"' : 'style="opacity:.4" title="Si es un flete que pagaste, ligarlo a sus compras o ventas"'} onclick="App.fleteLigar('${esc(x.uuid)}')">🚚${x.fleteSug ? ' Ligar' : ''}</button>` }]),
           { t: 'UUID', cls: 'ocultar-movil', h: x => `<small class="muted">${esc(String(x.uuid).slice(0, 8))}…</small>` }], r.facturas, { vacio: 'Sin facturas' }) + '</div>';
@@ -6812,7 +6943,7 @@ const App = (() => {
       <div class="tarjeta fila no-imprimir" style="align-items:flex-end"><span class="muted peq" style="flex:1">Marca movimientos para clasificarlos juntos.</span>
         <label>Clasificar marcados como<select id="bmNuevaCat"><option value="">—</option>${cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></label><button class="btn fijo" onclick="App.bnClasificarSel()">Aplicar</button></div>` +
       tabla([{ t: '', h: m => `<input type="checkbox" style="width:auto" onchange="App.bnMarcar('${m.id}', this.checked)">` }, { t: 'Fecha', h: m => esc(m.fecha) },
-        { t: 'Cuenta', cls: 'ocultar-movil', h: m => `<small>${esc(m.cuenta)}</small>` }, { t: 'Descripción', h: m => `${m.previo ? '<span class="etq av" title="Cargado de la banca en línea; se confirma al subir el estado de cuenta">previo</span> ' : ''}${esc(m.desc)}${m.ref ? `<br><small class="muted">Ref. ${esc(m.ref)}</small>` : ''}${m.tarjeta ? `<br><small class="muted">Tarjeta ${esc(m.tarjeta)}</small>` : ''}${m.notas ? `<br><small>📝 ${esc(m.notas)}</small>` : ''}` },
+        { t: 'Cuenta', cls: 'ocultar-movil', h: m => `<small>${esc(m.cuenta)}</small>` }, { t: 'Descripción', h: m => `${m.previo ? '<span class="etq av" title="Cargado de la banca en línea; se confirma al subir el estado de cuenta">previo</span> ' : ''}${m.credito && (puede('dueno') || esContador()) ? `<button class="btn chico" title="Pago de un crédito: ver su renglón en la corrida financiera" onclick="event.stopPropagation();App.abrirCredito('${esc(m.credito)}','${esc(m.fecha)}')">📑</button> ` : ''}${esc(m.desc)}${m.ref ? `<br><small class="muted">Ref. ${esc(m.ref)}</small>` : ''}${m.tarjeta ? `<br><small class="muted">Tarjeta ${esc(m.tarjeta)}</small>` : ''}${m.notas ? `<br><small>📝 ${esc(m.notas)}</small>` : ''}` },
         { t: 'Cargo', num: 1, h: m => m.cargo ? `<span class="txt-mal">${$$(m.cargo)}</span>` : '' }, { t: 'Abono', num: 1, h: m => m.abono ? `<b>${$$(m.abono)}</b>` : '' },
         { t: 'Categoría', h: m => `<select onchange="App.bnClasificar('${m.id}', this.value)" style="min-width:150px"><option value="">❓ Sin clasificar</option>${cats.map(c => `<option ${m.categoria === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>` },
         { t: '', h: m => `${m.abono && m.estado !== 'Conciliado' && (!m.categoria || m.categoria === 'Cobro a cliente') && puede('bancos') ? `<button class="btn chico" title="Buscar el cobro en la cobranza (meses anteriores incluidos)" onclick="App.bnConcManual('${m.id}')">🔗 Cobro</button> ` : m.estado === 'Conciliado' && m.liga ? `<small class="etq ok" title="${esc(m.liga)}">✔ ligado</small> ` : ''}<button class="icono" title="Nota" onclick="App.bnNota('${m.id}')">📝</button>` }], r.movs, { vacio: 'Sin movimientos con esos filtros' });
@@ -12085,7 +12216,7 @@ const App = (() => {
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
-    vistaCompras: t => V.compras(t), buscarCompras, actualizarApp, actualizarAhora, buscarPagosProv, verPagoProv, formEditarPago, guardarEdicionPago, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
+    vistaCompras: t => V.compras(t), buscarCompras, actualizarApp, actualizarAhora, vistaCreditos, verCorrida, abrirCredito, formCredito, crLeerPdf, crPrev: () => pintarPrevCorrida(), guardarCredito, quitarCredito, buscarPagosProv, verPagoProv, formEditarPago, guardarEdicionPago, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
     pdfCompra: (id, conCostos) => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', conCostos ? { ID_O_Compra: id, conCostos: true } : { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario® — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive, eliminarPortafolio,
