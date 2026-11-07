@@ -123,6 +123,8 @@ const App = (() => {
   /** Existencia de todos los productos de una vez (suc vacío = todas). */
   const mapaExist = suc => { const m = {}; (D().stock || []).forEach(s => { if (!suc || s.s === suc) m[s.p] = (m[s.p] || 0) + s.q; }); return m; };
   /** Orden de productos: primero con existencia (mayor a menor), luego sin existencia por orden alfabético. */
+  /** Productos en orden alfabético (todas las listas de productos, menos inventarios, que van de más a menos piezas). */
+  const porNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }) || String(a.id || '').localeCompare(String(b.id || ''));
   const porExistencia = (m, idDe, nomDe) => (a, b) => {
     const qa = m[idDe(a)] > 0.0001 ? m[idDe(a)] : 0, qb = m[idDe(b)] > 0.0001 ? m[idDe(b)] : 0;
     if (qa > 0 && qb > 0) return qb - qa || String(nomDe(a)).localeCompare(String(nomDe(b)));
@@ -4665,7 +4667,7 @@ const App = (() => {
       cargarTraspasos();
       return;
     }
-    if (!S.tr) S.tr = { ori: sucTrabajo(), des: '', recibio: '', com: '', lineas: [], paq: '', guia: '', flete: '' };
+    if (!S.tr) S.tr = { ori: sucTrabajo(), des: '', recibio: '', com: '', lineas: [], paq: '', guia: '', flete: '', pagaFlete: true, entregado: false };
     const t = S.tr;
     $('#tCont').innerHTML = (t.req ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">📑 Surtiendo la <b>requisición ${esc(t.req.folio)}</b>: al registrar el traspaso se marca lo surtido.</div><button class="btn fijo chico" onclick="App.quitarReqTr()">Desligar</button></div></div>` : '') +
       `<div class="tarjeta"><div class="folio-fila"><div class="folio" id="trFolio"></div></div><div class="rejilla"><label>Origen<select id="trOri">${optsSuc(t.ori)}</select></label>
@@ -4673,13 +4675,18 @@ const App = (() => {
       <label>Recibe<input id="trRec" value="${esc(t.recibio)}"></label><label>Comentarios<input id="trCom" value="${esc(t.com)}"></label>
       <label>Método de envío *<select id="trPaq">${opts(paqueterias(), t.paq, 'Selecciona…')}</select></label>
       <label>No. de guía<input id="trGuia" value="${esc(t.guia)}" placeholder="Si va por paquetería"></label>
-      ${verImpC() ? `<label>Costo de flete $<input type="number" id="trFlete" step="0.01" min="0" value="${esc(t.flete)}" placeholder="Costo estimado o real"></label>` : ''}</div></div>
+      ${verImpC() ? `<label>Costo de flete $<input type="number" id="trFlete" step="0.01" min="0" value="${esc(t.flete)}" placeholder="Costo estimado o real"></label>
+      <label class="check fijo" style="align-self:end" title="Sí: el flete se suma al total del traspaso (lo paga la sucursal). No: lo absorbe Matriz."><input type="checkbox" id="trPagaFlete" ${t.pagaFlete !== false ? 'checked' : ''} style="width:auto"> La sucursal paga el flete</label>` : ''}</div>
+      <div class="fila" style="margin-top:8px"><label class="check fijo"><input type="checkbox" id="trEntregado" ${t.entregado ? 'checked' : ''} style="width:auto"> ✅ Ya se entregó: mover el inventario ahora</label>
+        <span class="muted peq" id="trEstTxt" style="flex:1 1 260px">${t.entregado ? 'Sale hoy de ' + esc(sucNom(t.ori)) + ' y entra a ' + esc(t.des ? sucNom(t.des) : 'la sucursal destino') + '.' : '🚚 Queda <b>En tránsito</b>: el inventario no se mueve hasta que lo marques <b>Entregado</b> (en ese momento sale del origen y entra al destino).'}</span></div></div>
       <div class="tarjeta"><div class="buscador buscador-prod"><input id="trProd" enterkeyhint="search" placeholder="🔍 Agregar producto con existencia en origen…" autocomplete="off"></div><div class="espacio"></div><div class="doc-lineas" id="trLineas"></div>
-      <div class="acciones"><button class="btn peligro" onclick="App.limpiarTraspaso()">Descartar</button><button class="btn primario" id="trGuardar" onclick="App.guardarTraspaso()">🚚 Registrar traspaso</button></div></div>`;
+      <div class="acciones"><button class="btn peligro" onclick="App.limpiarTraspaso()">Descartar</button><button class="btn primario" id="trGuardar" onclick="App.guardarTraspaso()">${t.entregado ? '✅ Registrar y entregar' : '🚚 Registrar (en tránsito)'}</button></div></div>`;
     $('#trOri').onchange = e => { t.ori = e.target.value; t.lineas = []; V.traspasos('nuevo'); };
     mostrarFolio('trFolio', t.ori, 'Traspaso');
     $('#trDes').onchange = e => { t.des = e.target.value; pintarLineasTr(); }; $('#trRec').oninput = e => t.recibio = e.target.value; $('#trCom').oninput = e => t.com = e.target.value;
     $('#trPaq').onchange = e => t.paq = e.target.value; $('#trGuia').oninput = e => t.guia = e.target.value; if ($('#trFlete')) $('#trFlete').oninput = e => t.flete = e.target.value;
+    if ($('#trPagaFlete')) $('#trPagaFlete').onchange = e => t.pagaFlete = e.target.checked;
+    $('#trEntregado').onchange = e => { t.entregado = e.target.checked; $('#trEstTxt').innerHTML = t.entregado ? 'Sale hoy de ' + esc(sucNom(t.ori)) + ' y entra a ' + esc(t.des ? sucNom(t.des) : 'la sucursal destino') + '.' : '🚚 Queda <b>En tránsito</b>: el inventario no se mueve hasta que lo marques <b>Entregado</b> (en ese momento sale del origen y entra al destino).'; $('#trGuardar').innerHTML = t.entregado ? '✅ Registrar y entregar' : '🚚 Registrar (en tránsito)'; };
     buscador($('#trProd'), { fuente: q => fuenteProductos(t.ori, null, false)(q).filter(x => existencia(x.id, t.ori) > 0), limpiar: true, alElegir: x => { t.lineas.push({ id: x.id, cant: 1, lote: '' }); pintarLineasTr(); } });
     pintarLineasTr();
   };
@@ -4727,6 +4734,7 @@ const App = (() => {
     const tot = `<div class="kpis">
       <div class="kpi"><small>Traspasos</small><b>${nf(r.totales.docs)}</b><span>${esc(S.ftr.desde)} a ${esc(S.ftr.hasta)}</span></div>
       <div class="kpi"><small>Piezas</small><b>${nf(r.totales.piezas)}</b><span></span></div>
+      ${r.totales.transito ? `<div class="kpi kpi-clic" onclick="App.trSoloTransito()"><small>🚚 En tránsito</small><b>${nf(r.totales.transito)}</b><span>por marcar entregado</span></div>` : ''}
       ${imp ? `<div class="kpi"><small>Valor de traspaso</small><b>${$$(r.totales.valor)}</b><span>precio de la lista de la tienda destino</span></div>` : ''}
       ${verC ? `<div class="kpi"><small>${U().costoLista ? 'A costo de lista' : 'A costo real'}</small><b>${$$(r.totales.costo)}</b><span>${U().costoLista ? 'precio costo de la lista' : 'costo de compra de los lotes'}</span></div>` : ''}
       ${imp && r.totales.flete !== undefined ? `<div class="kpi"><small>Costo de fletes</small><b>${$$(r.totales.flete)}</b><span>${r.totales.sinEnvio ? `<span class="txt-mal">${nf(r.totales.sinEnvio)} sin envío capturado</span>` : 'paquetería de los traspasos'}</span></div>` : ''}</div>`;
@@ -4744,7 +4752,21 @@ const App = (() => {
       { t: 'Piezas', num: 1, h: x => nf(x.piezas) }].concat(imp ? [{ t: 'Valor', num: 1, h: x => $$(x.valor) }] : []).concat(verC ? [{ t: U().costoLista ? 'Costo lista' : 'Costo real', num: 1, cls: 'ocultar-movil', h: x => $$(x.costo) }] : [])
       .concat([{ t: 'Envío', cls: 'ocultar-movil', h: x => x.envio ? `${esc(x.envio)}${x.guia ? `<br><small class="muted">Guía ${esc(x.guia)}</small>` : ''}` : (x.editable ? '<span class="etq av">Sin capturar</span>' : '<span class="muted">—</span>') }])
       .concat(imp ? [{ t: 'Flete', num: 1, cls: 'ocultar-movil', h: x => x.flete !== null && x.flete !== undefined ? $$(x.flete) : '<span class="muted">—</span>' }] : [])
-      .concat([{ t: 'Recibió', k: 'recibio', cls: 'ocultar-movil' }]), r.docs, { clic: 'App.abrirTraspaso', vacio: 'Sin traspasos en el periodo' });
+      .concat([{ t: 'Estatus', h: x => etqTr(x.estatus) }, { t: 'Recibió', k: 'recibio', cls: 'ocultar-movil' }]), r.docs, { clic: 'App.abrirTraspaso', vacio: 'Sin traspasos en el periodo' });
+  }
+  const etqTr = e => { e = e || 'Entregado'; return `<span class="etq ${e === 'Entregado' ? 'ok' : e === 'Cancelado' ? 'mal' : 'av'}">${e === 'En tránsito' ? '🚚 ' : ''}${esc(e)}</span>`; };
+  function trSoloTransito() { const r = S.repTr; if (!r) return; S.lista = r.docs.filter(x => x.estatus === 'En tránsito');
+    modal('🚚 Traspasos en tránsito', tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Origen', h: x => esc(sucNom(x.origen)) }, { t: 'Destino', h: x => esc(sucNom(x.destino)) }, { t: 'Piezas', num: 1, h: x => nf(x.piezas) }], S.lista, { clic: 'App.abrirTraspaso' })); }
+  async function entregarTraspaso() {
+    const d = S.trDet; if (!d) return;
+    const rec = ($('#trEntRec') || {}).value || '';
+    if (!confirm('¿Marcar el traspaso ' + d.folio + ' como ENTREGADO?\n\nSale hoy de ' + d.origenNombre + ' y entra a ' + d.destinoNombre + '.')) return;
+    try { const r = await pedir('entregarTraspaso', { ID_Traspaso: d.id, folio: d.folio, Recibio: rec }); toast('✔ Traspaso ' + r.folio + ' entregado · inventario movido'); refrescarStock(); verTraspaso(d.folio); if ($('#trRes')) cargarTraspasos(); } catch (e) {}
+  }
+  async function cancelarTraspaso() {
+    const d = S.trDet; if (!d) return;
+    const m = prompt('Motivo para cancelar el traspaso ' + d.folio + ' (no ha movido inventario):'); if (!m || !m.trim()) return;
+    try { await pedir('cancelarTraspaso', { ID_Traspaso: d.id, folio: d.folio, motivo: m.trim() }); toast('✔ Traspaso ' + d.folio + ' cancelado'); verTraspaso(d.folio); if ($('#trRes')) cargarTraspasos(); } catch (e) {}
   }
   function pdfReporteTraspasos() {
     const f = leerFiltrosTr();
@@ -4758,8 +4780,8 @@ const App = (() => {
     if (!t.paq) { toast('Indica el método de envío (o "Entrega física")', true); const s = $('#trPaq'); if (s) s.focus(); return; }
     try {
       const r = await pedir('guardarTraspaso', { Sucursal_Origen: t.ori, Sucursal_Destino: t.des, Recibio: t.recibio, Comentarios: t.com,
-        ID_Flete: t.paq, No_Guia: t.guia, Costo_flete: t.flete, ID_Requisicion: t.req ? t.req.id : '', lineas: t.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, lote: l.lote, Precio: l.precio !== undefined && l.precio !== '' ? l.precio : '' })) });
-      toast('✔ Traspaso ' + r.folio + ' registrado' + (r.requisicion ? ' · requisición ' + r.requisicion.folio + ': ' + r.requisicion.estado.toLowerCase() + (r.requisicion.nueva ? '; lo pendiente (' + nf(r.requisicion.nueva.piezas) + ' pzs) pasó a la ' + r.requisicion.nueva.folio : '') : '')); S.tr = null; refrescarStock(); S.tabTr = 'lista'; V.traspasos('lista');
+        ID_Flete: t.paq, No_Guia: t.guia, Costo_flete: t.flete, Sucursal_Paga_Flete: t.pagaFlete === false ? 'NO' : 'SI', Entregado: !!t.entregado, ID_Requisicion: t.req ? t.req.id : '', lineas: t.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, lote: l.lote, Precio: l.precio !== undefined && l.precio !== '' ? l.precio : '' })) });
+      toast('✔ Traspaso ' + r.folio + (r.estatus === 'En tránsito' ? ' registrado en tránsito (márcalo Entregado al recibirlo)' : ' registrado y entregado') + (r.requisicion ? ' · requisición ' + r.requisicion.folio + ': ' + r.requisicion.estado.toLowerCase() + (r.requisicion.nueva ? '; lo pendiente (' + nf(r.requisicion.nueva.piezas) + ' pzs) pasó a la ' + r.requisicion.nueva.folio : '') : '')); S.tr = null; refrescarStock(); S.tabTr = 'lista'; V.traspasos('lista');
     } catch (e) {}
   }
   async function verTraspaso(folio) {
@@ -4769,22 +4791,26 @@ const App = (() => {
       const filas = d.lineas.map((l, i) => { const im = imp ? Math.round(l.cant * (l.precio || 0) * 100) / 100 : 0, iv = imp ? (l.iva !== null && l.iva !== undefined ? l.iva : Math.round(im * (l.tasa || 0) * 100) / 100) : 0; sub += im; iva += iv;
         return `<tr class="${i % 2 ? 'par' : ''}"><td class="num"><b>${nf(l.cant)}</b></td><td>${esc(l.nombre)}${l.lab ? `<small>${esc(l.lab)}</small>` : ''}</td><td class="nowrap">${esc(l.lote)}<small>${esc(l.cad)}</small></td>
           ${imp ? `<td class="num">${$$(l.precio)}</td><td class="num">${$$(im)}</td><td class="num">${$$(iv)}</td><td class="num"><b>${$$(im + iv)}</b></td>` : ''}</tr>`; }).join('');
-      const flete = imp && d.flete !== null && d.flete !== undefined ? d.flete : 0, total = Math.round((sub + iva + flete) * 100) / 100;
+      const absorbe = d.pagaFlete === 'NO', fleteCap = imp && d.flete !== null && d.flete !== undefined ? d.flete : 0, flete = absorbe ? 0 : fleteCap, total = Math.round((sub + iva + flete) * 100) / 100;
+      const transito = d.estatus === 'En tránsito';
       const sd = (D().sucursales || []).find(x => x.id === d.origen) || {};
       modal('Traspaso ' + d.folio, `<div class="imprimible"><div class="tr-doc">${window.LOGO ? `<img class="tr-marca" src="${window.LOGO}" alt="">` : ''}
         <div class="tr-enc"><div class="tr-emp">${logoHtml()}${fotoSucDoc(d.origen)}<div><b>Interés Veterinario®</b><small>${esc([sd.direccion, sd.tel ? 'Tel. ' + sd.tel : '', sd.email].filter(Boolean).join(' · '))}</small></div></div>
-          <div class="tr-folio"><small>TRASPASO ENTRE ALMACENES</small><b>${esc(d.folio)}</b><span>${esc(d.fecha)}${d.hora ? ' · ' + esc(d.hora) : ''}</span></div></div>
+          <div class="tr-folio"><small>TRASPASO ENTRE ALMACENES</small><b>${esc(d.folio)}</b><span>${esc(d.fecha)}${d.hora ? ' · ' + esc(d.hora) : ''}</span><span>${etqTr(d.estatus)}${d.fechaEntrega && !transito ? ' <small class="muted">' + esc(d.fechaEntrega) + '</small>' : ''}</span></div></div>
         <div class="tr-ruta"><div class="tr-linea"></div>
           <div class="tr-punto"><i class="o"></i><small>ALMACÉN ORIGEN</small><b>${esc(String(d.origenNombre || '').toUpperCase())}</b><span>Sale ${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</span></div>
           <div class="tr-punto envio"><small>ENVÍO</small><b>${esc(d.envio || 'Sin indicar')}</b><span>${d.guia ? 'Guía ' + esc(d.guia) : ''}</span></div>
           <div class="tr-punto"><i class="d"></i><small>ALMACÉN DESTINO</small><b>${esc(String(d.destinoNombre || '').toUpperCase())}</b><span>${d.recibio ? 'Recibe ' + esc(d.recibio) : ''}</span></div></div>
         <div class="tabla-cont"><table class="tr-tabla"><thead><tr><th class="num">Cant.</th><th>Producto</th><th>Lote / Cad.</th>${imp ? '<th class="num">Precio</th><th class="num">Importe</th><th class="num">IVA $</th><th class="num">Total</th>' : ''}</tr></thead><tbody>${filas}${imp ? `<tr class="res-total"><td colspan="4" class="num"><b>Suma de los productos</b></td><td class="num"><b>${$$(sub)}</b></td><td class="num"><b>${$$(iva)}</b></td><td class="num"><b>${$$(sub + iva)}</b></td></tr>` : ''}</tbody></table></div>
         <div class="tr-pie"><div class="muted"><b>${nf(pzs)} piezas</b> · ${d.lineas.length} productos${d.comentarios ? `<br><b>Comentarios:</b> ${esc(d.comentarios)}` : ''}</div>
-          ${imp ? `<table class="tr-tot"><tr><td>Subtotal</td><td class="num">${$$(sub)}</td></tr><tr><td>IVA</td><td class="num">${$$(iva)}</td></tr><tr><td>Flete</td><td class="num">${$$(flete)}</td></tr><tr class="total"><td>TOTAL</td><td class="num">${$$(total)}</td></tr></table>` : ''}</div>
+          ${imp ? `<table class="tr-tot"><tr><td>Subtotal</td><td class="num">${$$(sub)}</td></tr><tr><td>IVA</td><td class="num">${$$(iva)}</td></tr><tr><td>Flete${absorbe ? `<small class="muted"> (lo absorbe Matriz${fleteCap ? ': ' + $$(fleteCap) : ''})</small>` : ''}</td><td class="num">${$$(flete)}</td></tr><tr class="total"><td>TOTAL</td><td class="num">${$$(total)}</td></tr></table>` : ''}</div>
         <div class="tr-firmas"><div><span></span><b>Entregó</b><small>Almacén ${esc(d.origenNombre)}</small></div><div><span></span><b>Transportista</b><small>${esc([d.envio, d.guia].filter(Boolean).join(' · ') || '—')}</small></div><div><span></span><b>Recibió</b><small>${d.recibio ? esc(d.recibio) + ' · ' : ''}Almacén ${esc(d.destinoNombre)}</small></div></div>
       </div></div>
+        ${transito && d.id && puede('traspasos') ? `<div class="tarjeta no-imprimir" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">🚚 <b>En tránsito</b>: todavía no se mueve el inventario. Al marcarlo <b>Entregado</b> sale de ${esc(d.origenNombre)} y entra a ${esc(d.destinoNombre)} con fecha de hoy.</div>
+          <label class="fijo">Recibió<input id="trEntRec" value="${esc(d.recibio || '')}" placeholder="Nombre"></label>
+          <button class="btn primario fijo" onclick="App.entregarTraspaso()">✅ Marcar entregado</button><button class="btn peligro fijo" onclick="App.cancelarTraspaso()">✕ Cancelar</button></div></div>` : ''}
         ${d.id ? bloqueArch('trGuia', d.id) + bloqueArch('trFirma', d.id) : ''}
-        <div class="acciones no-imprimir">${d.editable ? `<button class="btn" onclick="App.formEditarTraspaso()">✏️ Editar envío y datos</button>` : ''}<button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button><button class="btn primario" onclick="App.pdfTraspaso('${esc(d.folio)}')">📄 PDF para enviar</button></div>`);
+        <div class="acciones no-imprimir">${d.editable && d.estatus !== 'Cancelado' ? `<button class="btn" onclick="App.formEditarTraspaso()">✏️ Editar envío y datos</button>` : ''}<button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button><button class="btn primario" onclick="App.pdfTraspaso('${esc(d.folio)}')">📄 PDF para enviar</button></div>`);
       S.trDet = d; } catch (e) {}
   }
   const verImpC = () => { const per = U().permisos || {}; return per.ver_importes !== undefined ? !!per.ver_importes : U().rol !== 'Almacenista'; };
@@ -4792,11 +4818,12 @@ const App = (() => {
   function formEditarTraspaso() {
     const d = S.trDet; if (!d) return;
     const paqs = paqueterias(), actual = (paqs.find(x => norm(x.nombre).trim() === norm(d.envio).trim()) || {}).id || '';
-    modal('Editar traspaso ' + d.folio, `<p class="muted" style="margin-top:0">${esc(d.origenNombre)} → ${esc(d.destinoNombre)} · ${esc(d.fecha)}. Los productos y cantidades no cambian (ya se movió el inventario).</p>
+    modal('Editar traspaso ' + d.folio, `<p class="muted" style="margin-top:0">${esc(d.origenNombre)} → ${esc(d.destinoNombre)} · ${esc(d.fecha)}. Los productos y cantidades no cambian${d.estatus === 'En tránsito' ? '' : ' (ya se movió el inventario)'}.</p>
       <div class="rejilla">
         <label>Método de envío *<select id="etPaq">${opts(paqs, actual, 'Selecciona…')}</select></label>
         <label>No. de guía<input id="etGuia" value="${esc(d.guia || '')}"></label>
-        ${verImpC() ? `<label>Costo de flete $<input type="number" id="etFlete" step="0.01" min="0" value="${d.flete !== null && d.flete !== undefined ? d.flete : ''}"></label>` : ''}
+        ${verImpC() ? `<label>Costo de flete $<input type="number" id="etFlete" step="0.01" min="0" value="${d.flete !== null && d.flete !== undefined ? d.flete : ''}"></label>
+        <label class="check fijo" style="align-self:end"><input type="checkbox" id="etPagaFlete" ${d.pagaFlete !== 'NO' ? 'checked' : ''} style="width:auto"> La sucursal paga el flete</label>` : ''}
         <label>Recibió<input id="etRec" value="${esc(d.recibio || '')}"></label>
         <label style="grid-column:1/-1">Comentarios<input id="etCom" value="${esc(d.comentarios || '')}"></label>
       </div>
@@ -4807,6 +4834,7 @@ const App = (() => {
     if (!paq) return toast('Indica el método de envío', true);
     const prm = { ID_Traspaso: d.id, folio: d.folio, ID_Flete: paq, No_Guia: $('#etGuia').value, Recibio: $('#etRec').value, Comentarios: $('#etCom').value };
     if ($('#etFlete')) prm.Costo_flete = $('#etFlete').value;
+    if ($('#etPagaFlete')) prm.Sucursal_Paga_Flete = $('#etPagaFlete').checked ? 'SI' : 'NO';
     try { await pedir('editarTraspaso', prm); toast('✔ Traspaso ' + d.folio + ' actualizado'); verTraspaso(d.folio); if ($('#trRes')) cargarTraspasos(); } catch (e) {}
   }
   function pdfTraspaso(folio) { generarPdf('pdfTraspaso', { folio: folio }, { asunto: 'Traspaso ' + folio, texto: 'Interés Veterinario® — Traspaso ' + folio, volver: `App.verTraspaso('${folio}')` }); }
@@ -5589,7 +5617,7 @@ const App = (() => {
     const precio = (p, x) => f.iva ? p.precios[x] * (1 + (p.iva || 0)) : p.precios[x];
     const gk = p => f.grupo === 'lab' ? (p.lab || 'Sin laboratorio') : f.grupo === 'categoria' ? (p.categoria || 'Sin categoría') : '';
     const l = lpFiltrados().filter(p => !f.solo || f.marc[p.id])
-      .sort((ex => (a, b) => gk(a).localeCompare(gk(b)) || ex(a, b))(porExistencia(mapaExist(suc), p => p.id, p => p.nombre)));
+      .sort((a, b) => gk(a).localeCompare(gk(b)) || porNombre(a, b));
     const titulo = (f.titulo || '').trim() || lpTituloAuto();
     const sub = [f.modo === 'cliente' ? 'Perfil ' + lista + ' · crédito ' + c.credito + ' días' : (f.modo === 'todas' ? '' : 'Lista ' + lista), f.cat, f.lab === '__varios' ? f.labs.join(', ') : f.lab, f.iva ? 'Precios con IVA incluido' : 'Precios más IVA donde aplique', l.length + ' productos'].filter(Boolean).join(' · ');
     const otra = f.grupo === 'lab' ? 'Categoría' : 'Laboratorio';
@@ -6000,7 +6028,7 @@ const App = (() => {
   function prodFiltrados() {
     const txt = $('#pfTxt').value, cat = $('#pfCat').value, lab = $('#pfLab').value, act = $('#pfAct').value;
     return (D().productos || []).filter(p => (!txt || coincide(p.id + ' ' + p.nombre, txt)) && (!cat || p.categoria === cat) && (!lab || p.lab === lab) && (!act || (act === 'SI') === p.activo))
-      .sort(porExistencia(mapaExist(sucFiltro()), p => p.id, p => p.nombre));
+      .sort(porNombre);
   }
   const enlazarFiltros = fn => ['#pfTxt', '#pfCat', '#pfLab', '#pfAct', '#pfLista'].forEach(s => enlazarFiltro(s, fn));
   function prodCatalogo() {
@@ -12065,7 +12093,7 @@ const App = (() => {
     bienvenida, bienvIr, salirBienv, prepararRuta, cerrarVisor, zoomVisor, compartirVisor, verPdfLocal: () => { const x = S.pdfLocal; if (x) verPdf(x.bytes, x.nombre); },
     subDev, cargarDev, nuevaDevolucion, buscarNotaDev, elegirNotaDevI: i => elegirNotaDev(S.devRes[i].id), abrirDev: i => verDev(S.lista[i].id), verDev, pdfDev, guardarDev, cancelarCapturaDev,
     vistaReq: t => V.requisiciones(t), cargarReq, exportReq, excelTraspasos, excelCobros, excelPiezas, cuadrarPiezas, confirmarEquiv, formCancelarFactura, guardarCancelarFactura, formSustituir, guardarSustituir, abrirPiezaNota: i => verVenta(S.lista[i].idVenta), abrirPiezaFactura: i => verFactura(S.piezasRep.sobran[i].idFactura), formGlobal, glSuma, glMarcar, glGuardar, abrirReq: i => verReq(S.lista[i].id), verReq, pdfReq, editarReq, reqATraspaso, reqAOrden, cancelarReq, reabrirReq, limpiarReq, guardarReq, quitarReqTr: () => { if (S.tr) { delete S.tr.req; V.traspasos('nuevo'); } }, quitarReqOc: () => { if (S.oc) { delete S.oc.req; V.compras('nueva'); } }, quitarCfdiOc: () => { if (S.oc) { delete S.oc.cfdi; V.compras('nueva'); } }, cargarAnCompras, tabAnCompras, ordenAnCompras, anProducto, anProveedor, excelAnCompras, ligarCfdi, sumaCfdi, aplicarRep, cambiarOrdenesCfdi, sumaCfdiCambio, guardarCambioCfdi, descartarCfdi, verPdfCfdi, ocDesdeCfdi,
-    vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
+    vistaTraspasos: t => V.traspasos(t), abrirTraspaso: i => verTraspaso(S.lista[i].folio), verTraspaso, entregarTraspaso, cancelarTraspaso, trSoloTransito, pdfTraspaso, formEditarTraspaso, guardarEdicionTraspaso, cargarTraspasos, pdfReporteTraspasos, limpiarTraspaso, guardarTraspaso,
     limpiarAjuste, guardarAjuste, crearConteo, abrirConteoI: i => abrirConteo(S.lista[i].id), guardarConteo: () => guardarConteo(false), formEncontrado, agregarEncontrado,
     vistaAjustes: t => V.ajustes(t), buscarAjustes, abrirAjuste: verAjuste, formCerrarConteo, cerrarConteo, cancelarConteo, eliminarConteo, ajustarConteo, pdfConteo, salirConteo, vistaInventario: t => V.inventario(t), abrirExistencia: verLotes, invVerPL, invVerCad, invUsarReal, invMarcarCostos, invUsarRealMarcados,
     actualizarStock: async () => { await refrescarStock(); pintarExist(); toast('Existencias actualizadas'); },
