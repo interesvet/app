@@ -857,16 +857,40 @@ const App = (() => {
       top.innerHTML = vieja ? '✨ Actualizar a ' + esc(n.n || 'nueva') : (a.n ? 'v' + esc(a.n) : '') + (v.srv ? (a.n ? ' · ' : '') + 's' + esc(v.srv) : '') + (v.nueva ? ' ✔' : '');
       top.onclick = vieja ? () => App.actualizarApp() : null; top.style.cursor = vieja ? 'pointer' : '';
     }
+    // botón general 🔄 (todas las pantallas): con versión nueva se ilumina
+    const ba = $('#btnAct');
+    if (ba) { ba.classList.toggle('aviso', !!vieja); ba.innerHTML = vieja ? '✨ Actualizar' : '🔄';
+      ba.title = vieja ? 'Hay una versión nueva' + (n.n ? ' (' + n.n + ')' : '') + ': toca para aplicarla sin salir de esta sección' : 'Actualizar: revisa si hay versión nueva y recarga esta sección'; }
   }
+  /** Botón general 🔄: si hay versión nueva la aplica y regresa a la misma sección; si no, recarga los datos de la sección. */
+  async function actualizarAhora() {
+    if (navigator.onLine === false) return toast('Necesitas señal para actualizar', true);
+    const ba = $('#btnAct'); if (ba) { ba.disabled = true; ba.innerHTML = '⏳'; }
+    try {
+      await revisarVersionApp();
+      const v = S.ver || {};
+      if (v.nueva && v.act && v.nueva !== v.act) return actualizarApp();
+      if (S.cola.length) { try { await sincronizar(); } catch (e) {} }
+      try { await refrescarDatos(true); } catch (e) {}
+      ir(S.vista, true);
+      toast('✔ Al día' + (v.act ? ' · versión ' + (textoVersion(v.act).n || v.act) : '') + (v.srv ? ' · servidor ' + v.srv : ''));
+    } finally { if (ba) ba.disabled = false; pintarVersion(); }
+  }
+  /** Para volver a la misma sección después de recargar (actualización de la app). */
+  function guardarVolver() { try { if (S.vista && S.token) LS.set('volverA', { v: S.vista, t: Date.now() }); } catch (e) {} }
+  window.addEventListener('pagehide', guardarVolver);
   /** Baja de nuevo los archivos de la app (no toca la sesión ni lo pendiente de enviar). */
   function actualizarApp() {
     if (navigator.onLine === false) return toast('Necesitas señal para actualizar la app', true);
-    location.href = location.pathname + '?reiniciar';
+    guardarVolver(); location.href = location.pathname + '?reiniciar';
   }
   function mostrarApp() {
     $('#login').classList.add('oculto'); $('#app').classList.remove('oculto');
-    marcarRed(S.online); pintarCola(); ir(S.vista); setTimeout(() => contarAnotaciones(), 5000);
-    botonBienvenida(); if (!abrirDesdeQR()) bienvenida();   // al abrir la app (o desde el QR de una tarjeta: directo a la venta): siempre la pantalla de bienvenida con el menú (celular, iPad y Mac)
+    const volver = LS.get('volverA', null); LS.set('volverA', null);
+    const regreso = volver && volver.v && Date.now() - (volver.t || 0) < 3 * 60000;   // recién recargada (actualización): a la misma sección
+    marcarRed(S.online); pintarCola(); ir(regreso ? volver.v : S.vista, !!regreso); setTimeout(() => contarAnotaciones(), 5000);
+    botonBienvenida(); if (!abrirDesdeQR() && !regreso) bienvenida();
+    if (regreso) setTimeout(() => toast('✨ App actualizada' + (S.ver && S.ver.act ? ' · versión ' + (textoVersion(S.ver.act).n || '') : '')), 1500);   // al abrir la app (o desde el QR de una tarjeta: directo a la venta): siempre la pantalla de bienvenida con el menú (celular, iPad y Mac)
     revisarVersionApp(); revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => { revisarVersion(); revisarVersionApp(); }, 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { revisarVersion(); revisarVersionApp(); } }); }
     // logotipos de sucursal guardados con fondo blanco: el administrador los deja sin fondo (una vez, en segundo plano)
     if (U().rol === 'Administrador' && LS.get('minisSucRev', '') !== hoyISO()) setTimeout(() => { try { LS.set('minisSucRev', hoyISO()); repararMinisSuc(D().sucursales || []); } catch (e) {} }, 30000);
@@ -12033,7 +12057,7 @@ const App = (() => {
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
-    vistaCompras: t => V.compras(t), buscarCompras, actualizarApp, buscarPagosProv, verPagoProv, formEditarPago, guardarEdicionPago, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
+    vistaCompras: t => V.compras(t), buscarCompras, actualizarApp, actualizarAhora, buscarPagosProv, verPagoProv, formEditarPago, guardarEdicionPago, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
     pdfCompra: (id, conCostos) => { const d = S.ultimaCompra || {}; generarPdf('pdfCompra', conCostos ? { ID_O_Compra: id, conCostos: true } : { ID_O_Compra: id }, { asunto: 'Orden de compra ' + (d.folio || ''), texto: 'Interés Veterinario® — Orden de compra ' + (d.folio || ''), volver: `App.abrirCompraId('${id}')` }); },
     bajarPortafolios, bajarPortafolio, compartirPortafolio, abrirPortafolio, quitarPortafolioLocal, quitarPortafolioDrive, eliminarPortafolio,

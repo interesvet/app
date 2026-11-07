@@ -691,6 +691,9 @@ body.con-visor { overflow: hidden; }
 .ver-app:empty { display: none; }
 .por-llegar { color: var(--aviso); white-space: nowrap; display: inline-block; }
 .ver-top { font-variant-numeric: tabular-nums; opacity: .85; }
+.btn-act { cursor: pointer; font-size: 13px; }
+.btn-act.aviso { background: var(--acento, #1f7a4d); color: #fff; border-color: transparent; font-weight: 600; }
+.btn-act:disabled { opacity: .6; }
 @media (max-width: 760px) { .ver-top { display: none; } }
 .ver-app .ver-ok { color: var(--ok); }
 .ver-app .ver-nueva { color: var(--aviso); font-weight: 600; }
