@@ -10406,6 +10406,7 @@ const App = (() => {
           <div class="kpi"><small>${plural} con movimiento en ${a}${tbCorte() ? ' (al ' + r.corte + ')' : ''}</small><b>${nf(movA)}</b><span>${b}: ${nf(movB)}</span></div>
           <div class="kpi kpi-clic" onclick="App.tbFiltro('nuevos')"><small>✨ Nuevos en ${a}</small><b>${nf(nuevos)}</b><span>no estaban en ${b}</span></div>
           <div class="kpi kpi-clic" onclick="App.tbFiltro('perdidos')"><small>⚠️ Ya no aparecen en ${a}</small><b>${nf(perdidos)}</b><span>sí estaban en ${b}</span></div></div></div>
+      <div id="tbSerie">${tbGraficasHtml('tbS', tab, (f.q || f.filtro || f.lab ? '📊 Gráficas de lo filtrado (' + nf(l.length) + ' ' + plural.toLowerCase() + ')' : '📊 Gráficas de todos los ' + plural.toLowerCase()) + (f.cli ? ' · cliente ' + esc(f.cliN || f.cli) : '') + ' <small class="muted">· toca un renglón de la tabla para ver las de uno solo</small>')}</div>
       <div class="rejilla-2"><div class="tarjeta"><h3>🏆 Top 15 de ${a}${tbSel().length > 1 ? ' contra ' + tbSel().slice(1).join(', ') : ''}</h3><div class="grafica" style="height:${Math.max(260, top.length * (10 + 11 * tbSel().length) + 60)}px"><canvas id="tbE1"></canvas></div></div>
         <div class="tarjeta"><h3>🥧 Participación en ${a}</h3><div class="grafica" style="height:${Math.max(260, top.length * 26 + 60)}px"><canvas id="tbE2"></canvas></div></div></div>
       <div class="tarjeta"><div class="tabla-cont"><table class="tb-tabla"><thead><tr><th class="num">#</th>${th('n', nombre)}${th('a', a, 1)}${tbSel().slice(1).map((y, i) => i === 0 ? th('b', y, 1) : `<th class="num">${y}</th>`).join('')}${th('dif', 'Diferencia vs ' + b, 1)}${th('pct', 'Cambio vs ' + b, 1)}<th class="num">Participación</th><th class="num">Lugar en ${b}</th></tr></thead><tbody>
@@ -10427,21 +10428,78 @@ const App = (() => {
     const ot = Math.max(0, totA2 - top.slice(0, 8).reduce((t, x) => t + tbVal(x, a, met), 0));
     grafica('tbE2', { type: 'doughnut', data: { labels: top.slice(0, 8).map(etq).concat(ot > 0 ? ['Otros'] : []), datasets: [{ data: top.slice(0, 8).map(x => tbVal(x, a, met)).concat(ot > 0 ? [ot] : []), backgroundColor: TB_COL.concat(['#9ca3af']) }] },
       options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: c => c.label + ': ' + fmt(c.parsed) + (totA2 ? ' (' + (c.parsed / totA2 * 100).toFixed(1) + '%)' : '') } } } } });
+    tbSerieTab(tab, f.q || f.filtro || f.lab ? l.map(x => x.id) : null, met);
   }
   function tbOrden(k) { const f = S.fTb; f.orden = f.orden === k && k === 'dif' ? 'difm' : k; pintarTablero(); }
   function tbFiltro(k) { S.fTb.filtro = S.fTb.filtro === k ? '' : k; pintarTablero(); }
+  /* ---------- Gráficas año con año de lo que se ve en cada pestaña (todos, lo filtrado o uno solo) ----------
+   *  serie = [{ anio, meses: 12 × { v venta, q piezas, c compras, u utilidad, n notas/órdenes } }] (api_analisis con detalle) */
+  function tbGraficasHtml(px, tab, titulo) {
+    const r = S.tb, prov = tab === 'proveedores', u = r.verUtil && !prov;
+    return `${titulo ? `<h3 style="margin:4px 0 10px">${titulo}</h3>` : ''}<div class="rejilla-2"><div class="tarjeta"><h3 id="${px}T1">📈 Mes a mes, año con año</h3><div class="grafica" style="height:280px"><canvas id="${px}1"></canvas></div></div>
+      <div class="tarjeta"><h3>📊 Totales por año</h3><div class="grafica" style="height:280px"><canvas id="${px}2"></canvas></div></div></div>
+      ${u ? `<div class="rejilla-2"><div class="tarjeta"><h3>💰 Utilidad bruta mes a mes</h3><div class="grafica" style="height:250px"><canvas id="${px}3"></canvas></div></div>
+        <div class="tarjeta"><h3>📐 Margen bruto mes a mes</h3><div class="grafica" style="height:250px"><canvas id="${px}4"></canvas></div></div></div>` : ''}
+      ${prov ? `<div class="tarjeta"><h3>🧾 Órdenes de compra por mes</h3><div class="grafica" style="height:230px"><canvas id="${px}3"></canvas></div></div>` : ''}`;
+  }
+  function tbGraficasPintar(px, tab, serie, met) {
+    const r = S.tb, f = S.fTb, sel = tbSel(), prov = tab === 'proveedores', din = r.dinero, hoy = new Date();
+    if (!document.getElementById(px + '1')) return;
+    const anios = r.anios, col = y => TB_COL[(anios.length - 1 - anios.indexOf(+y)) % TB_COL.length];
+    const ss = serie.filter(s => sel.indexOf(String(s.anio)) >= 0).sort((a, b) => a.anio - b.anio);
+    const futuro = (s, i) => s.anio === hoy.getFullYear() && i > hoy.getMonth();
+    const nm = tbCorte() ? hoy.getMonth() + 1 : 12;   // "a la misma fecha": enero → mes actual en todos los años
+    const val = (m, k) => k === 'margen' ? (m.v ? Math.round(m.u / m.v * 1000) / 10 : null) : (m[k] || 0);
+    const lineas = k => ss.map(s => ({ label: String(s.anio), data: s.meses.map((m, i) => futuro(s, i) ? null : val(m, k)), borderColor: col(s.anio), backgroundColor: col(s.anio), tension: .3,
+      borderWidth: String(s.anio) === String(f.a) ? 3.5 : 2, pointRadius: String(s.anio) === String(f.a) ? 3 : 1.5, spanGaps: false }));
+    const esP = k => k === 'margen', esN = k => k === 'q' || k === 'n' || !din;
+    const fmtK = k => v => v === null || v === undefined ? '—' : esP(k) ? v + '%' : esN(k) ? nf(v) : $$(v);
+    const opc = k => ({ maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmtK(k)(c.parsed.y) } } },
+      scales: { y: esP(k) ? { ticks: { callback: v => v + '%' } } : { beginAtZero: true, ticks: { callback: esN(k) ? v => nf(v) : tickMoneda } } } });
+    const nomMet = { v: 'Ventas', q: 'Piezas vendidas', u: 'Utilidad bruta', c: 'Compras' }[met] || 'Ventas';
+    const t1 = document.getElementById(px + 'T1'); if (t1) t1.textContent = '📈 ' + nomMet + ' mes a mes, año con año';
+    grafica(px + '1', { type: 'line', data: { labels: MES3, datasets: lineas(met) }, options: opc(met) });
+    // totales por año (con "a la misma fecha", solo los meses transcurridos de cada año)
+    const tot = (s, k) => s.meses.slice(0, nm).reduce((t, m) => t + (m[k] || 0), 0);
+    const ds = [];
+    if (!prov && din) ds.push({ label: 'Ventas', data: ss.map(s => tot(s, 'v')), backgroundColor: '#1f6f4a' });
+    if (!prov && (!din || met === 'q')) ds.push({ label: 'Piezas', data: ss.map(s => tot(s, 'q')), backgroundColor: '#199e70', yAxisID: din ? 'y2' : 'y' });
+    if (r.verCompras && din && (prov || tab === 'productos')) ds.push({ label: 'Compras', data: ss.map(s => tot(s, 'c')), backgroundColor: '#2a78d6' });
+    if (r.verUtil && din && !prov) ds.push({ label: 'Utilidad', data: ss.map(s => tot(s, 'u')), backgroundColor: '#c79a00' });
+    const escalas = { y: { beginAtZero: true, ticks: { callback: din ? tickMoneda : v => nf(v) } } };
+    if (ds.some(d => d.yAxisID === 'y2')) escalas.y2 = { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => nf(v) } };
+    grafica(px + '2', { type: 'bar', data: { labels: ss.map(s => String(s.anio) + (tbCorte() ? ' al ' + r.corte : '')), datasets: ds },
+      options: { maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + (c.dataset.label === 'Piezas' || !din ? nf(c.parsed.y) : $$(c.parsed.y)) } } }, scales: escalas } });
+    if (r.verUtil && !prov) { grafica(px + '3', { type: 'line', data: { labels: MES3, datasets: lineas('u') }, options: opc('u') }); grafica(px + '4', { type: 'line', data: { labels: MES3, datasets: lineas('margen') }, options: opc('margen') }); }
+    if (prov) grafica(px + '3', { type: 'line', data: { labels: MES3, datasets: lineas('n') }, options: opc('n') });
+  }
+  /** Gráficas de la pestaña con lo que está filtrado (sin filtro: todos los de esa pestaña). */
+  async function tbSerieTab(tab, ids, met) {
+    const r = S.tb, f = S.fTb, cont = $('#tbSerie'); if (!cont) return;
+    const clave = [r._t, tab, f.suc, f.cli, ids ? ids.length + ':' + ids.slice(0, 400).join('|') : 'todos'].join('§');
+    S.tbSer = S.tbSer || {}; const tk = S.tbSerTk = (S.tbSerTk || 0) + 1;
+    let d = S.tbSer[clave];
+    if (!d) {
+      cont.querySelectorAll('.grafica').forEach(g => g.style.opacity = '.35');
+      try { d = await pedir('analisis', { sucursal: f.suc, cliente: f.cli || '', detalle: ids ? { tipo: TB_TIPO[tab], ids: ids } : { tipo: TB_TIPO[tab] } }, true); S.tbSer[clave] = d; }
+      catch (e) { if (tk === S.tbSerTk && $('#tbSerie')) $('#tbSerie').innerHTML = '<div class="tarjeta"><div class="vacio">Las gráficas mes a mes necesitan conexión.</div></div>'; return; }
+    }
+    if (tk !== S.tbSerTk || !$('#tbSerie')) return;
+    $('#tbSerie').querySelectorAll('.grafica').forEach(g => g.style.opacity = '');
+    tbGraficasPintar('tbS', tab, d.serie, met);
+  }
   async function tbDetalle(tab, id) {
     const r = S.tb, f = S.fTb, x = (r[tab] || []).find(z => String(z.id) === String(id)); if (!x) return;
     const tipo = TB_TIPO[tab], mets = tbMetricas(tab), din = r.dinero;
     modal('📊 ' + x.n, `<div class="tabla-cont"><table><thead><tr><th>Año</th>${mets.map(m => `<th class="num">${m[1]}</th>`).join('')}<th class="num">Crecimiento</th>${tab === 'productos' && r.verCompras ? '<th class="num">Piezas compradas</th>' : ''}</tr></thead><tbody>
         ${r.anios.slice().reverse().map((y, i, l) => `<tr><td><b>${y}</b></td>${mets.map(m => `<td class="num">${m[0] === 'q' ? nf(tbVal(x, y, 'q')) : $$(tbVal(x, y, m[0]))}</td>`).join('')}<td class="num">${l[i + 1] ? tbVar(tbVal(x, y, mets[0][0]), tbVal(x, l[i + 1], mets[0][0]), tab === 'proveedores') : '—'}</td>${tab === 'productos' && r.verCompras ? `<td class="num">${nf(tbVal(x, y, 'qc'))}</td>` : ''}</tr>`).join('')}
-      </tbody></table></div><h4 style="margin:14px 0 6px">Mes a mes, año con año</h4><div class="grafica" style="height:280px"><canvas id="tbD1"></canvas></div>
+      </tbody></table></div>${mets.length > 1 ? `<div class="fila" style="margin:12px 0 4px"><label>Medir por<select id="tbDMet">${mets.map(([k, t]) => `<option value="${k}" ${k === f.met ? 'selected' : ''}>${t}</option>`).join('')}</select></label></div>` : ''}
+      <div id="tbDSer" style="margin-top:8px">${tbGraficasHtml('tbD', tab)}</div>
       <div class="acciones">${tab === 'clientes' && cliente(id) ? `<button class="btn" onclick="App.cerrarModal();App.fichaCliente('${esc(id)}')">👤 Ficha del cliente</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
-    let d; try { d = await pedir('analisis', { sucursal: f.suc, detalle: { tipo: tipo, id: id } }, true); } catch (e) { const c = $('#tbD1'); if (c) c.parentElement.innerHTML = '<div class="vacio">El detalle mes a mes necesita conexión.</div>'; return; }
-    const k = tab === 'proveedores' ? 'c' : din ? 'v' : 'q', anios = d.anios, col = y => TB_COL[(anios.length - 1 - anios.indexOf(y)) % TB_COL.length], hoy = new Date();
-    if (!$('#tbD1')) return;
-    grafica('tbD1', { type: 'line', data: { labels: MES3, datasets: d.serie.filter(s => tbSel().indexOf(String(s.anio)) >= 0).map(s => ({ label: String(s.anio), data: s.meses.map((m, i) => s.anio === hoy.getFullYear() && i > hoy.getMonth() ? null : m[k]), borderColor: col(s.anio), backgroundColor: col(s.anio), tension: .3, borderWidth: String(s.anio) === String(f.a) ? 3.5 : 2 })) },
-      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { callbacks: { label: c => c.dataset.label + ': ' + (k === 'q' ? nf(c.parsed.y) : $$(c.parsed.y)) } } }, scales: { y: { beginAtZero: true, ticks: { callback: k === 'q' ? v => v : tickMoneda } } } } });
+    let d; try { d = await pedir('analisis', { sucursal: f.suc, cliente: f.cli || '', detalle: { tipo: tipo, id: id } }, true); } catch (e) { const c = $('#tbDSer'); if (c) c.innerHTML = '<div class="vacio">Las gráficas mes a mes necesitan conexión.</div>'; return; }
+    const pintar = met => { ['tbD1', 'tbD2', 'tbD3', 'tbD4'].forEach(cid => { const c = document.getElementById(cid), ch = c && window.Chart && Chart.getChart(c); if (ch) { ch.destroy(); S.charts = S.charts.filter(z => z !== ch); } }); tbGraficasPintar('tbD', tab, d.serie, met); };
+    const m0 = mets.some(m => m[0] === f.met) ? f.met : mets[0][0];
+    pintar(m0); if ($('#tbDMet')) $('#tbDMet').onchange = e => pintar(e.target.value);
   }
   function tbCsv(tab) {
     const r = S.tb, f = S.fTb, mets = tbMetricas(tab), q = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
