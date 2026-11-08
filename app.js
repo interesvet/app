@@ -437,9 +437,40 @@ const App = (() => {
   }
   async function pedir(accion, params, silencioso) {
     if (!silencioso) cargando(true);
-    try { return await call(accion, params); }
+    try {
+      try { return await call(accion, params); }
+      catch (e) {   // inventarios y solicitud de factura: el servidor pide la contraseña de quien lo hace
+        const m = String(e.message || ''); if (m.indexOf('CLAVE_REQUERIDA::') !== 0) throw e;
+        let msg = m.slice(17);
+        for (let i = 0; i < 3; i++) {
+          if (!silencioso) cargando(false);
+          const clave = await pedirClave(msg); if (!clave) { const x = new Error('Operación cancelada: falta tu contraseña'); x.cancelada = true; throw x; }
+          if (!silencioso) cargando(true);
+          try { return await call(accion, Object.assign({}, params || {}, { __clave: clave })); }
+          catch (e2) { const m2 = String(e2.message || ''); if (m2.indexOf('CLAVE_REQUERIDA::') !== 0) throw e2; msg = m2.slice(17); }
+        }
+        throw new Error('Contraseña incorrecta');
+      }
+    }
     catch (e) { if (!silencioso && String(e.message || '').indexOf('LIMITE_CREDITO::') !== 0) toast(e.message, true); throw e; }
     finally { if (!silencioso) cargando(false); }
+  }
+  /** Ventana encima de todo (también de otra ventana abierta) para confirmar con la contraseña. → texto | null */
+  function pedirClave(msg) {
+    return new Promise(res => {
+      const d = document.createElement('div'); d.className = 'modal clave-modal';
+      d.innerHTML = `<div class="modal-caja" style="max-width:380px"><div class="modal-cab"><h3>🔐 Confirma con tu contraseña</h3></div><div class="modal-cuerpo">
+        <p class="${/incorrecta/i.test(msg) ? 'error' : 'muted'}" style="margin-top:0">${esc(msg || 'Confirma con tu contraseña para continuar')}</p>
+        <label>Tu contraseña<input type="password" id="clvIn" autocomplete="current-password"></label>
+        <p class="muted peq">Se pide en los movimientos de inventario y en las solicitudes de factura. No se guarda.</p>
+        <div class="acciones"><button class="btn" data-x>Cancelar</button><button class="btn primario" data-ok>Confirmar</button></div></div></div>`;
+      document.body.appendChild(d);
+      const fin = v => { d.remove(); res(v); }, inp = d.querySelector('#clvIn');
+      d.querySelector('[data-x]').onclick = () => fin(null);
+      d.querySelector('[data-ok]').onclick = () => fin(inp.value || null);
+      inp.onkeydown = ev => { if (ev.key === 'Enter') fin(inp.value || null); if (ev.key === 'Escape') fin(null); };
+      setTimeout(() => inp.focus(), 50);
+    });
   }
 
   /* ---------------- sesión ---------------- */
@@ -644,6 +675,7 @@ const App = (() => {
     { id: 'inicio', t: 'Inicio', i: '🏠' },
     { id: 'tablero', t: 'Dashboard', i: '📊', p: 'dashboard' },
     { id: 'resumen', t: 'Resumen del día', i: '📋', p: 'dueno' },
+    { id: 'autorizar', t: 'Por autorizar', i: '🔐', p: ['dueno', 'ventas', 'ajustes', 'mermas', 'inventario_fisico'] },
     { id: 'venta', t: 'Nueva venta', i: '🛒', p: 'ventas' },
     { id: 'pos', t: 'Venta rápida', i: '⚡', p: 'ventas' },
     { id: 'ventas', t: 'Ventas', i: '🧾', p: ['ventas', 'cobranza'] },
@@ -669,7 +701,7 @@ const App = (() => {
     { id: 'ajustes', t: 'Ajustes y mermas', i: '⚖️', p: ['ajustes', 'mermas'], oculto: 1 },
     { id: 'inventario', t: 'Inventario', i: '🏷️', p: 'inventario', oculto: 1 },
     { id: 'conteo', t: 'Conteo físico', i: '📋', p: 'inventario_fisico', oculto: 1 },
-    { id: 'pedido', t: 'Pedido sugerido', i: '🛒', p: ['compras', 'traspasos'], oculto: 1 },
+    { id: 'pedido', t: 'Pedido sugerido', i: '🛒', p: 'dueno', oculto: 1 },
     { id: 'anCompras', t: 'Análisis de compras', i: '📊', p: 'compras', oculto: 1 },
     { id: 'precios', t: 'Lista de precios', i: '💲', p: 'listas_precios', oculto: 1 },
     { id: 'ficha', t: 'Ficha rápida de producto', i: '🔎', p: ['inventario', 'listas_precios'], oculto: 1 },
@@ -684,7 +716,7 @@ const App = (() => {
     const u = U();
     $('#menu').innerHTML = `<div class="cab">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : '<b>🐾 Interés Veterinario®</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
       <nav>${MENU.filter(m => !m.oculto && puedeVer(m.id, m.p)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
-        return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(e.t)}${m.id === 'anotaciones' && S.obsNuevas ? `<b class="menu-num">${S.obsNuevas}</b>` : ''}</button>`; }).join('')}</nav>
+        return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(m.id === 'autorizar' && !puede('dueno') ? 'Mis solicitudes' : e.t)}${m.id === 'anotaciones' && S.obsNuevas ? `<b class="menu-num">${S.obsNuevas}</b>` : ''}${m.id === 'autorizar' && S.autN ? `<b class="menu-num">${S.autN}</b>` : ''}</button>`; }).join('')}</nav>
       <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
       <div class="fila" style="gap:6px"><button class="btn chico" onclick="App.ir('config')">${puede('dueno') ? '⚙️ Configuración' : '👤 Mi cuenta y sincronización'}</button><button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div><div class="ver-app"></div></div>`;
     cargarAvatares($('#menu')); pintarVersion();
@@ -707,7 +739,7 @@ const App = (() => {
     seguimiento: { t: 'Seguimiento de clientes', tabs: [
       { v: 'radar', t: '🎯 Radar', p: 'seguimiento' }, { v: 'prospectos', t: '🧲 Prospectos y embudo', p: 'seguimiento' }, { v: 'metas', t: '🏆 Metas', p: 'seguimiento' }, { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
     compras: { t: 'Compras', tabs: [
-      { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: ['compras', 'traspasos'] }, { v: 'anCompras', t: '📊 Análisis de compras', p: 'compras' }] },
+      { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: 'dueno' }, { v: 'anCompras', t: '📊 Análisis de compras', p: 'compras' }] },
     productos: { t: 'Productos', tabs: [
       { v: 'ficha', t: '🔎 Ficha rápida', p: ['inventario', 'listas_precios'] }, { v: 'productos', a: 'cat', t: '💊 Catálogo', p: 'listas_precios' }, { v: 'productos', a: 'port', t: '📚 Portafolio de productos', p: 'listas_precios' }, { v: 'precios', t: '💲 Lista de precios', p: 'listas_precios' },
       { v: 'productos', a: 'margen', t: '📊 Análisis de precios', p: 'analisis_precios' },
@@ -757,6 +789,7 @@ const App = (() => {
     $('#vista').innerHTML = ''; quitarAvisoCache();
     (V[m.id] || V.inicio)();
     if (m.id === 'config' && !puede('dueno')) $('#titulo').textContent = 'Mi cuenta';
+    if (m.id === 'autorizar' && !puede('dueno')) $('#titulo').textContent = 'Mis solicitudes';
     pintarFab(m.id); botonObservaciones();
     window.scrollTo(0, 0);
   }
@@ -890,7 +923,7 @@ const App = (() => {
     $('#login').classList.add('oculto'); $('#app').classList.remove('oculto');
     const volver = LS.get('volverA', null); LS.set('volverA', null);
     const regreso = volver && volver.v && Date.now() - (volver.t || 0) < 3 * 60000;   // recién recargada (actualización): a la misma sección
-    marcarRed(S.online); pintarCola(); ir(regreso ? volver.v : S.vista, !!regreso); setTimeout(() => contarAnotaciones(), 5000);
+    marcarRed(S.online); pintarCola(); ir(regreso ? volver.v : S.vista, !!regreso); setTimeout(() => contarAnotaciones(), 5000); setTimeout(() => contarAutorizaciones(), 6000);
     botonBienvenida(); if (!abrirDesdeQR() && !regreso) bienvenida();
     if (regreso) setTimeout(() => toast('✨ App actualizada' + (S.ver && S.ver.act ? ' · versión ' + (textoVersion(S.ver.act).n || '') : '')), 1500);   // al abrir la app (o desde el QR de una tarjeta: directo a la venta): siempre la pantalla de bienvenida con el menú (celular, iPad y Mac)
     revisarVersionApp(); revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => { revisarVersion(); revisarVersionApp(); }, 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { revisarVersion(); revisarVersionApp(); } }); }
@@ -1373,18 +1406,23 @@ const App = (() => {
     if (!ed) mostrarFolio('vFolio', v.suc, 'Nota de Venta');
     pintarLineasVenta();
   };
+  /** Precio de venta de un producto con la lista elegida; en una sucursal nunca abajo de su mínimo (su lista asignada + 10 %). */
+  const precioVta = (p, lista) => { const v = Number(((p || {}).precios || {})[lista]) || 0, m = Number((p || {}).pmin) || 0; return m && v < m ? m : v; };
+  /** Renglones con precio abajo del mínimo de la sucursal (texto para el aviso) o ''. */
+  const bajoMinimo = lineas => { const l = lineas.filter(x => { const p = prod(x.id); return p && p.pmin && Number(x.precio) * (1 - (Number(x.desc) || 0) / 100) < p.pmin - 0.005; });
+    return l.length ? l.map(x => prod(x.id).nombre.split(',')[0] + ' (mínimo ' + $$(prod(x.id).pmin) + ')').join(', ') : ''; };
   function elegirClienteVenta(id) {
     const v = S.venta, c = cliente(id);
-    v.cli = id; v.lista = c.lista && D().catalogos.listas.indexOf(c.lista) >= 0 ? c.lista : 'Publico';
+    v.cli = id; v.lista = c.lista && D().catalogos.listas.indexOf(c.lista) >= 0 ? c.lista : (D().catalogos.listaBase || 'Publico');
     v.dias = c.credito || 0; v.metodo = v.dias > 0 ? 'PPD' : 'PUE';
-    v.lineas.forEach(l => { const p = prod(l.id); if (p) l.precio = p.precios[v.lista] || 0; });
+    v.lineas.forEach(l => { const p = prod(l.id); if (p) l.precio = precioVta(p, v.lista); });
     guardarBorrador(); V.venta();
   }
   function agregarLineaVenta(id) {
     const v = S.venta, p = prod(id);
     const ya = v.lineas.find(l => l.id === id && !l.lote);
     if (ya) ya.cant = Number(ya.cant) + 1;
-    else v.lineas.push({ id: id, cant: 1, precio: p.precios[v.lista] || 0, desc: 0, lote: '' });
+    else v.lineas.push({ id: id, cant: 1, precio: precioVta(p, v.lista), desc: 0, lote: '' });
     if (existencia(id, v.suc) <= 0) toast('⚠️ ' + p.nombre + ' no tiene existencia en esta sucursal', true);
     guardarBorrador(); pintarLineasVenta();
     setTimeout(() => { const ins = document.querySelectorAll('#vLineas [data-f=cant]'); if (ins.length) ins[ins.length - 1].focus(); }, 30);
@@ -1406,10 +1444,10 @@ const App = (() => {
           <div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)} · Exist. ${nf(existencia(l.id, v.suc))}${p.iva ? ' · IVA <span data-iva></span>' : ''}</small></div>
           <div>${p.usaLote === false && !ls.length ? '<small class="muted">Sin lote</small>' : `<select data-f="lote"><option value="">Auto (caduca primero)</option>${ls.map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)}${x.q !== '' ? ' · ' + nf(x.q) : ''}</option>`).join('')}</select>`}</div>
           <div><input type="number" data-f="cant" min="0" step="any" value="${l.cant}" inputmode="decimal"></div>
-          <div><input type="number" data-f="precio" step="0.01" value="${l.precio}" ${editarPrecio ? '' : 'readonly'} inputmode="decimal"><span data-ref>${refPrecio(p.precios[v.lista], l.precio)}</span></div>
+          <div><input type="number" data-f="precio" step="0.01" value="${l.precio}" ${editarPrecio ? '' : 'readonly'} inputmode="decimal"><span data-ref>${refPrecio(p.precios[v.lista], l.precio)}</span>${p.pmin ? `<small class="muted" title="Tu sucursal no vende abajo de su lista + 10 %">mín ${$$(p.pmin)}</small>` : ''}</div>
           <div><input type="number" data-f="desc" step="0.01" value="${l.desc}" ${editarPrecio ? '' : 'readonly'} inputmode="decimal"></div>
           <div class="num" data-imp></div>
-          <div class="lin-btns">${editarPrecio ? '<button class="icono" data-regalo title="Sin cargo ($0.01)">🎁</button>' : ''}<button class="icono" data-del title="Quitar">✕</button></div></div>`;
+          <div class="lin-btns">${editarPrecio && !p.pmin ? '<button class="icono" data-regalo title="Sin cargo ($0.01)">🎁</button>' : ''}<button class="icono" data-del title="Quitar">✕</button></div></div>`;
       }).join('');
     cont.oninput = e => {
       const f = e.target.dataset.f, row = e.target.closest('[data-i]'); if (!f || !row) return;
@@ -1486,6 +1524,7 @@ const App = (() => {
     if (!v.cli) return toast('Selecciona un cliente', true);
     if (!v.lineas.length) return toast('Agrega productos', true);
     if (v.lineas.some(l => !(l.cant > 0))) return toast('Revisa las cantidades', true);
+    { const bm = bajoMinimo(v.lineas); if (bm) return toast('Precio abajo del mínimo de tu sucursal (tu lista + 10 %): ' + bm, true); }
     const t = calcVenta(v);
     const cobro = Math.min(Number(v.cobro.monto) || 0, t.total);
     const params = {
@@ -1748,6 +1787,7 @@ const App = (() => {
         ${!offline && d.id && bloq && viva && puede('devoluciones') ? `<button class="btn peligro" onclick="App.nuevaDevolucion('${d.id}')">↩️ Devolución de la nota completa</button>` : ''}
         ${d.devolucion && puede('devoluciones') ? `<button class="btn" onclick="App.verDev('${esc(d.devolucion.id)}')">↩️ Ver devolución ${esc(d.devolucion.folio)}</button>` : ''}
         ${!offline && d.id && d.estatus !== 'Cancelado' && puede('ventas') ? `<button class="btn" onclick="App.rclDesde('Cliente','${d.id}')">📣 Reclamación</button>` : ''}
+        ${!offline && d.id && viva && puede('ventas') && !esMatrizU() && !/XAXX010101000/i.test(String(d.rfc || '')) ? `<button class="btn" onclick="App.formSolFactura('${d.id}')">🧾 Solicitar factura</button>` : ''}
         ${!offline && d.id && puede('dueno') ? `<button class="btn" onclick="App.comiNota('${d.id}','${esc(d.folio)}')">💼 Comisión</button>` : ''}
       </div>${!offline && d.id && d.estatus !== 'Cancelado' && puede('facturacion') ? '<div id="notaFact" class="no-imprimir fact-bloque"><span class="muted">Cargando facturación…</span></div>' : ''}${!offline && d.id && d.estatus !== 'Cancelado' && d.lineas.some(l => l.cant > 0 && prodRx(l.prod)) ? '<div id="notaRx" class="no-imprimir fact-bloque"><span class="muted">Revisando receta…</span></div>' : ''}${!offline && d.id && puede('ventas') ? bloqueArch('ventaGuia', d.id) + (d.estatus === 'Entregado' ? bloqueArch('ventaFirma', d.id) : '') : ''}${bloq ? `<p class="muted no-imprimir" style="text-align:right;margin-top:6px">🔒 Nota ${[d.facturada ? 'facturada' : '', pagada ? 'pagada al 100 %' : ''].filter(Boolean).join(' y ')}: ya no se pueden quitar productos, editarla ni cancelarla.${puede('devoluciones') ? ' Si el cliente regresa la mercancía, usa “Devolución de la nota completa”' + (d.facturada ? ' con el acuse de cancelación o la nota de crédito.' : '.') : ''}</p>` : ''}`;
   }
@@ -2416,13 +2456,13 @@ const App = (() => {
   }
   function elegirClienteCot(id) {
     const v = S.cot, c = cliente(id);
-    v.cli = id; v.lista = c.lista && D().catalogos.listas.indexOf(c.lista) >= 0 ? c.lista : 'Publico';
-    v.lineas.forEach(l => { const p = prod(l.id); if (p) l.precio = p.precios[v.lista] || 0; });
+    v.cli = id; v.lista = c.lista && D().catalogos.listas.indexOf(c.lista) >= 0 ? c.lista : (D().catalogos.listaBase || 'Publico');
+    v.lineas.forEach(l => { const p = prod(l.id); if (p) l.precio = precioVta(p, v.lista); });
     guardarBorradorCot(); V.cotizaciones('nueva');
   }
   function agregarLineaCot(id) {
     const v = S.cot, p = prod(id), ya = v.lineas.find(l => l.id === id);
-    if (ya) ya.cant = Number(ya.cant) + 1; else v.lineas.push({ id: id, cant: 1, precio: p.precios[v.lista] || 0, desc: 0 });
+    if (ya) ya.cant = Number(ya.cant) + 1; else v.lineas.push({ id: id, cant: 1, precio: precioVta(p, v.lista), desc: 0 });
     guardarBorradorCot(); pintarLineasCot();
     setTimeout(() => { const ins = document.querySelectorAll('#cLineas [data-f=cant]'); if (ins.length) ins[ins.length - 1].focus(); }, 30);
   }
@@ -5227,7 +5267,8 @@ const App = (() => {
       <label>Sucursal<select id="ajSuc">${optsSuc(a.suc)}</select></label>
       <label>Motivo *<input id="ajMot" list="ajMotivos" value="${esc(a.motivo)}"><datalist id="ajMotivos"><option>Caducado</option><option>Dañado</option><option>Pérdida</option><option>Ajuste por conteo físico</option><option>Muestra médica</option><option>Inventario inicial</option></datalist></label></div></div>
       <div class="tarjeta"><div class="buscador buscador-prod"><input id="ajProd" enterkeyhint="search" placeholder="🔍 Agregar producto…" autocomplete="off"></div><div class="espacio"></div><div class="doc-lineas" id="ajLineas"></div>
-      <div class="acciones"><button class="btn peligro" onclick="App.limpiarAjuste()">Descartar</button><button class="btn primario" id="ajGuardar" onclick="App.guardarAjuste()">💾 Registrar</button></div></div>`;
+      <div class="acciones"><button class="btn peligro" onclick="App.limpiarAjuste()">Descartar</button><button class="btn primario" id="ajGuardar" onclick="App.guardarAjuste()">${U().permisos.dueno ? '💾 Registrar' : '📨 Solicitar autorización'}</button></div>
+      ${U().permisos.dueno ? '' : '<p class="muted peq" style="margin:8px 0 0">El inventario no cambia hasta que el dueño revise y autorice este movimiento. Se te pedirá tu contraseña.</p>'}</div>`;
     $('#ajTipo').onchange = e => { a.tipo = e.target.value; a.lineas = []; V.ajustes(); };
     $('#ajSuc').onchange = e => { a.suc = e.target.value; a.lineas = []; V.ajustes(); };
     mostrarFolio('ajFolio', a.suc, a.tipo === 'Merma' ? 'Merma' : 'Ajuste');
@@ -5304,11 +5345,11 @@ const App = (() => {
     try {
       if (a.tipo === 'Merma') {
         const p = { ID_Sucursal: a.suc, Motivo: a.motivo, lineas: lineas };
-        try { const r = await pedir('guardarMerma', p); toast('✔ Merma registrada: ' + r.folios.join(', ')); }
-        catch (e) { if (!e.red) throw e; encolar('guardarMerma', p, 'Merma (' + a.motivo + ')'); toast('📴 Merma guardada en el dispositivo'); }
+        try { const r = await pedir('guardarMerma', p); toast(r.pendiente ? '📨 Merma enviada al dueño para autorizar (el inventario no cambia todavía)' : '✔ Merma registrada: ' + r.folios.join(', ')); }
+        catch (e) { if (!e.red) throw e; if (!U().permisos.dueno) return toast('Necesitas señal para solicitar la autorización de la merma', true); encolar('guardarMerma', p, 'Merma (' + a.motivo + ')'); toast('📴 Merma guardada en el dispositivo'); }
       } else {
         const r = await pedir('guardarAjuste', { ID_Sucursal: a.suc, Tipo_Ajuste: a.tipo, Motivo: a.motivo, lineas: lineas });
-        toast('✔ Ajuste ' + r.folio + ' registrado');
+        toast(r.pendiente ? '📨 Ajuste enviado al dueño para autorizar (el inventario no cambia todavía)' : '✔ Ajuste ' + r.folio + ' registrado');
       }
       S.aj = null; refrescarStock(); S.tabAj = 'hist'; V.ajustes('hist');
     } catch (e) {}
@@ -5374,7 +5415,7 @@ const App = (() => {
           <button class="btn primario" onclick="App.guardarConteo()">💾 Guardar avance</button><button class="btn primario" onclick="App.formCerrarConteo()">✔ Cerrar conteo</button>
           <button class="btn peligro" onclick="App.cancelarConteo()">Cancelar conteo</button>${contados === 0 && !pend ? '<button class="btn peligro" onclick="App.eliminarConteo()">🗑️ Eliminar conteo</button>' : ''}` :
           `<button class="btn primario" onclick="App.pdfConteo(false,false)">📄 Reporte PDF (diferencias)</button><button class="btn" onclick="App.pdfConteo(false,true)">📄 Reporte completo</button>
-           ${d.estatus === 'Cerrado' && puede('ajustes') && (r.faltPzs || r.sobPzs) ? '<button class="btn peligro" onclick="App.ajustarConteo()">⚖️ Aplicar ajustes al inventario</button>' : ''}
+           ${d.estatus === 'Cerrado' && U().permisos.dueno && (r.faltPzs || r.sobPzs) ? '<button class="btn peligro" onclick="App.ajustarConteo()">⚖️ Aplicar ajustes al inventario</button>' : ''}${d.estatus === 'Cerrado' && !U().permisos.dueno && (r.faltPzs || r.sobPzs) ? '<span class="etq av">⏳ Esperando que el dueño revise y aplique los ajustes</span>' : ''}
            ${d.estatus === 'Cancelado' && !d.lineas.some(l => l.fisico !== null && l.fisico !== '') ? '<button class="btn peligro" onclick="App.eliminarConteo()">🗑️ Eliminar conteo</button>' : ''}`}
       </div></div>
       <div class="tarjeta no-imprimir"><div class="fila"><label>Buscar<input id="ctTxt" placeholder="Producto, clave o lote" value="${esc(S.ctoTxt || '')}"></label>
@@ -5460,14 +5501,17 @@ const App = (() => {
       ${sin ? `<p><b>${nf(sin)}</b> renglones no tienen cantidad capturada. ¿Qué hacemos con ellos?</p>
         <label class="check"><input type="radio" name="ccSin" value="no" checked> No tomarlos en cuenta (no se contaron)</label>
         <label class="check"><input type="radio" name="ccSin" value="cero"> Tomarlos como 0 piezas (no hay en anaquel → faltante)</label>` : '<p>Todos los renglones están contados ✔</p>'}
-      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Volver</button><button class="btn primario" onclick="App.cerrarConteo()">✔ Cerrar conteo</button></div>`);
+      ${U().permisos.dueno ? '' : '<p class="muted">Al cerrar firmarás el conteo y confirmarás con tu contraseña. Los ajustes al inventario los aplica el dueño después de revisarlo.</p>'}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Volver</button><button class="btn primario" onclick="App.cerrarConteo()">${U().permisos.dueno ? '✔ Cerrar conteo' : '✍️ Firmar y cerrar conteo'}</button></div>`);
   }
   async function cerrarConteo() {
     const r = document.querySelector('input[name=ccSin]:checked');
     const sinCero = r ? r.value === 'cero' : false;
+    let firma = '';
+    if (!U().permisos.dueno) { const fz = await capturarFirma({ titulo: 'Firma de cierre del conteo ' + S.cto.folio, nombre: false, okTxt: 'Firmar y cerrar' }); if (!fz || !fz.png) return; firma = fz.png; }
     try {
-      const d = await pedir('cerrarConteo', { id: S.cto.id, lineas: pendientesConteo(), sinCapturaCero: sinCero });
-      LS.del(ctoDraftKey(S.cto.id)); cerrarModal(); S.cto = d; S.ctoFiltro = 'dif'; toast('✔ Conteo cerrado'); pintarConteo();
+      const d = await pedir('cerrarConteo', { id: S.cto.id, lineas: pendientesConteo(), sinCapturaCero: sinCero, firma: firma });
+      LS.del(ctoDraftKey(S.cto.id)); cerrarModal(); S.cto = d; S.ctoFiltro = 'dif'; toast(firma ? '✔ Conteo cerrado y enviado al dueño para aplicar los ajustes' : '✔ Conteo cerrado'); pintarConteo();
     } catch (e) {}
   }
   async function cancelarConteo() {
@@ -7145,6 +7189,110 @@ const App = (() => {
     $('#anQ').oninput = e => { f.q = e.target.value; pintarAnotaciones(); };
     cargarAnotaciones();
   };
+  /* ---------- 🔐 POR AUTORIZAR (dueño) / MIS SOLICITUDES (sucursales): facturas, ajustes, mermas y conteos ---------- */
+  const esMatrizU = () => !!(U().todasSucursales || U().sucursal === 'SUC_MAT_1');
+  async function contarAutorizaciones() {
+    if (!puede('dueno') || navigator.onLine === false) return;
+    try { const r = await pedir('porAutorizar', {}, true); if (S.autN !== r.n) { S.autN = r.n || 0; pintarMenu(); } } catch (e) {}
+  }
+  const AUT_EST = { Pendiente: 'av', Aprobada: 'ok', Atendida: 'ok', Rechazada: 'mal' };
+  V.autorizar = () => {
+    const f = S.fAut = S.fAut || { est: 'Pendiente', tipo: '' }, d = puede('dueno');
+    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
+        <label>Estado<select id="auEst">${opts([['Pendiente', '⏳ Pendientes'], ['Resueltas', '✔ Resueltas'], ['', 'Todas']], f.est)}</select></label>
+        <label>Tipo<select id="auTipo">${opts([['', 'Todos'], ['FACTURA', '🧾 Factura'], ['AJUSTE', '⚖️ Ajuste'], ['MERMA', '🗑️ Merma'], ['CONTEO', '📋 Conteo físico']], f.tipo)}</select></label>
+        <button class="btn fijo" onclick="App.cargarAut()">⟳ Actualizar</button></div>
+        <p class="muted peq" style="margin:8px 0 0">${d ? 'Aquí llegan las solicitudes de las sucursales: facturas a sus clientes, ajustes y mermas (no mueven el inventario hasta que los apruebes) y conteos físicos cerrados por aplicar.' : 'Tus solicitudes al dueño y su estado: facturas, ajustes, mermas y conteos físicos.'}</p></div>
+      <div id="auRes"><div class="vacio">Cargando…</div></div>`;
+    $('#auEst').onchange = e => { f.est = e.target.value; cargarAut(); };
+    $('#auTipo').onchange = e => { f.tipo = e.target.value; cargarAut(); };
+    cargarAut();
+  };
+  async function cargarAut() {
+    const f = S.fAut || {}, el = $('#auRes'); if (!el) return;
+    try { S.aut = await pedir('solicitudes', { estado: f.est === 'Resueltas' ? 'resueltas' : f.est, tipo: f.tipo }, true); }
+    catch (e) { el.innerHTML = `<div class="vacio">${e.red ? 'Necesitas conexión para ver las solicitudes.' : esc(e.message)}</div>`; return; }
+    if (S.aut.dueno && S.autN !== S.aut.pendientes) { S.autN = S.aut.pendientes; pintarMenu(); }
+    pintarAut();
+  }
+  function pintarAut() {
+    const r = S.aut, el = $('#auRes'); if (!r || !el) return;
+    const l = r.solicitudes;
+    if (!l.length) { el.innerHTML = '<div class="tarjeta"><div class="vacio">No hay solicitudes con ese filtro.</div></div>'; return; }
+    el.innerHTML = l.map(x => {
+      const D2 = x.datos || {}, pend = x.estado === 'Pendiente';
+      let det = '';
+      if (x.tipo === 'FACTURA') { const c = D2.cliente || {};
+        det = `<div class="aut-det"><div><b>${esc(c.nombre || '')}</b><br><small class="muted">RFC ${esc(c.rfc || '—')} · régimen ${esc(c.regimen || '—')} · C.P. ${esc(c.cp || '—')}${c.correo ? ' · ' + esc(c.correo) : ''}</small></div>
+          <div><small class="muted">Uso CFDI</small> ${esc(D2.uso || '—')} · <small class="muted">Método</small> ${esc(D2.metodo || '—')} · <small class="muted">Forma</small> ${esc(D2.forma || '—')}</div>
+          <div>${(D2.ventas || []).map(v => `<button class="btn chico" onclick="App.verVentaId('${esc(v.id)}')">🧾 ${esc(v.folio)} · ${esc(v.fecha)} · ${$$(v.total)}</button>`).join(' ')} <b>Total ${$$(D2.total || 0)}</b></div>
+          ${D2.comentario ? `<div class="muted">💬 ${esc(D2.comentario)}</div>` : ''}
+          ${x.facturada ? '<span class="etq ok">✔ Ya tiene factura ligada</span>' : ''}</div>`; }
+      else if (x.tipo === 'AJUSTE' || x.tipo === 'MERMA') { const P = D2.params || {};
+        det = `<div class="aut-det"><div><small class="muted">Motivo</small> ${esc(P.Motivo || '')}${x.tipo === 'AJUSTE' ? ` · <b>${esc(P.Tipo_Ajuste === 'Entrada' ? '➕ Entrada' : '➖ Salida')}</b>` : ''}</div>
+          ${tabla([{ t: 'Producto', h: l2 => `<b>${esc((prod(l2.ID_Producto) || {}).nombre || l2.ID_Producto)}</b>` }, { t: 'Lote', h: l2 => esc(l2.Lote || (l2.lote ? String(l2.lote).split('-').slice(-2, -1)[0] || 'elegido' : 'auto (caduca primero)')) }, { t: 'Piezas', num: 1, h: l2 => nf(l2.Cantidad) },
+            { t: 'Existencia hoy', num: 1, cls: 'ocultar-movil', h: l2 => nf(existencia(l2.ID_Producto, P.ID_Sucursal)) }], P.lineas || [])}</div>`; }
+      else if (x.tipo === 'CONTEO') { const R = (D2.resumen || {});
+        det = `<div class="aut-det"><div>${nf(R.contados || 0)} de ${nf(R.renglones || 0)} renglones contados · coinciden ${nf(R.coinciden || 0)}</div>
+          <div><span class="error">Faltan ${nf(R.faltPzs || 0)} pzs</span> · <span class="ok-txt">sobran ${nf(R.sobPzs || 0)} pzs</span>${puede('ver_costos') ? ` · valor ${$$(-(R.faltVal || 0) + (R.sobVal || 0))}` : ''}</div>
+          <div><button class="btn chico" onclick="App.abrirConteoAut('${esc(x.ref)}')">📋 Ver el conteo</button></div></div>`; }
+      const arch = x.archivo ? `<button class="btn chico fijo" onclick="App.verArchAut('${esc(x.id)}')">${x.tipo === 'CONTEO' ? '✍️ Ver firma' : '📄 Constancia fiscal'}</button>` : '';
+      const acc = r.dueno && pend ? (x.tipo === 'FACTURA'
+        ? `<button class="btn primario" onclick="App.resolverAut('${esc(x.id)}','atendida')">✔ Ya la facturé</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`
+        : `<button class="btn primario" onclick="App.resolverAut('${esc(x.id)}','aprobar')">✔ Aprobar${x.tipo === 'CONTEO' ? ' y aplicar ajustes' : ' y mover inventario'}</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`) : '';
+      return `<div class="tarjeta aut-card ${pend ? 'aut-pend' : ''}"><div class="fila" style="justify-content:space-between;align-items:flex-start">
+          <div><b>${esc(x.tipoTxt)}</b> <span class="etq ${AUT_EST[x.estado] || ''}">${esc(x.estado)}</span><br><small class="muted">${esc(x.sucNombre)} · ${esc(x.usuario)} · ${esc(x.fecha)}</small></div>
+          <div class="fila" style="gap:6px">${arch}</div></div>
+        <p style="margin:8px 0">${esc(x.resumen)}</p>${det}
+        ${!pend ? `<p class="muted peq" style="margin:8px 0 0">${esc(x.estado)} por ${esc(x.resueltoPor)} · ${esc(x.resuelto)}${x.resultado ? ' · ' + esc(x.resultado) : ''}${x.comentario ? ' · 💬 ' + esc(x.comentario) : ''}</p>` : ''}
+        ${acc ? `<div class="acciones">${acc}</div>` : ''}</div>`;
+    }).join('');
+  }
+  async function resolverAut(id, accion) {
+    const x = (S.aut.solicitudes || []).find(s => s.id === id); if (!x) return;
+    let comentario = '', resultado = '';
+    if (accion === 'rechazar') { comentario = prompt('Motivo del rechazo (lo verá la sucursal):', ''); if (comentario === null) return; }
+    else if (accion === 'atendida') { resultado = prompt('Serie y folio de la factura que hiciste (opcional):', ''); if (resultado === null) return; }
+    else if (!confirm(x.tipo === 'CONTEO' ? 'Se registrarán los ajustes de entrada y salida para que el inventario quede igual a lo contado. ¿Continuar?' : 'Se registrará el movimiento y el inventario cambiará. ¿Aprobar?')) return;
+    try {
+      let r;
+      try { r = await pedir('resolverSolicitud', { id: id, accion: accion, comentario: comentario, resultado: resultado }); }
+      catch (e) { if (e.red || x.tipo !== 'CONTEO' || !/movimientos después del cierre/.test(e.message) || !confirm(e.message + '\n\n¿Aplicar de todos modos?')) throw e;
+        r = await pedir('resolverSolicitud', { id: id, accion: accion, forzar: true }); }
+      toast('✔ ' + r.estado + (r.resultado ? ' · ' + r.resultado : '')); if (x.tipo !== 'FACTURA' && accion !== 'rechazar') refrescarStock(); cargarAut();
+    } catch (e) {}
+  }
+  async function verArchAut(id) {
+    toast('Abriendo archivo…');
+    try { const r = await pedir('verArchivoSolicitud', { id: id });
+      if (/pdf/.test(r.mime)) verPdf(b64aBytes(r.b64), r.nombre, {});
+      else modal(r.nombre, `<div style="text-align:center"><img src="data:${esc(r.mime)};base64,${r.b64}" style="max-width:100%;max-height:70vh;background:#fff;border-radius:8px"></div><div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+    } catch (e) {}
+  }
+  function abrirConteoAut(id) { S.ctoId = id; ir('conteo'); }
+  /** Sucursal: pedir a Matriz la factura de una nota (constancia de situación fiscal obligatoria). */
+  function formSolFactura(id) {
+    const d = S.ultimaVenta && S.ultimaVenta.id === id ? S.ultimaVenta : null; if (!d) return;
+    const cat = D().catalogos || {};
+    modal('🧾 Solicitar factura · nota ' + d.folio, `<p>Se le envía al dueño para que haga la factura de <b>${esc(d.razon || d.cliente || '')}</b> por <b>${$$(d.total)}</b>. Te avisará en "Mis solicitudes".</p>
+      <label>Constancia de situación fiscal del SAT * <small class="muted">(PDF o foto, vigente)</small><input type="file" id="sfCsf" accept="application/pdf,image/*"></label>
+      <div class="rejilla"><label>Uso de CFDI<select id="sfUso">${opts((cat.usoCfdi || []).map(u => [u.id, u.id + ' · ' + u.nombre]), d.uso || '', 'Elegir…')}</select></label>
+        <label>Método de pago<select id="sfMet">${opts([['PUE', 'PUE · una sola exhibición'], ['PPD', 'PPD · parcialidades o diferido']], d.saldo > 0.009 ? 'PPD' : 'PUE')}</select></label>
+        <label>Forma de pago<select id="sfForma">${opts((cat.formasPago || []).map(u => [u.id, u.id + ' · ' + u.nombre]), '', 'Elegir…')}</select></label></div>
+      <label>Comentario para Matriz<input id="sfCom" maxlength="300" placeholder="Ej. el cliente la necesita hoy; enviar a su correo"></label>
+      <p class="muted peq">Se te pedirá tu contraseña para enviar la solicitud.</p>
+      <div class="acciones"><button class="btn" onclick="App.verVentaId('${esc(id)}')">Volver</button><button class="btn primario" id="sfBtn" onclick="App.enviarSolFactura('${esc(id)}')">📨 Enviar solicitud</button></div>`);
+  }
+  async function enviarSolFactura(id) {
+    const f = $('#sfCsf').files[0]; if (!f) return toast('Sube la constancia de situación fiscal del cliente', true);
+    if (f.size > 8 * 1024 * 1024) return toast('El archivo es muy grande (máx. 8 MB)', true);
+    if (!$('#sfUso').value) return toast('Elige el uso de CFDI', true);
+    const b = $('#sfBtn'); b.disabled = true; b.textContent = 'Enviando…';
+    try { const csf = await leerArchivo(f);
+      await pedir('solicitarFactura', { notas: [id], csf: csf, uso: $('#sfUso').value, metodo: $('#sfMet').value, forma: $('#sfForma').value, comentario: $('#sfCom').value });
+      cerrarModal(); toast('📨 Solicitud de factura enviada al dueño'); }
+    catch (e) { if (b) { b.disabled = false; b.textContent = '📨 Enviar solicitud'; } }
+  }
   /** Número de anotaciones nuevas en el menú del dueño (para que no se pierdan de vista). */
   async function contarAnotaciones() {
     if (!puede('dueno') || navigator.onLine === false) return;
@@ -9109,7 +9257,7 @@ const App = (() => {
   function posCliente(id) {
     const v = S.pos, c = cliente(id); if (!c) return;
     v.cli = id; v.lista = c.lista && (D().catalogos.listas || []).indexOf(c.lista) >= 0 ? c.lista : 'Publico'; v.dias = c.credito || 0; v.metodo = v.dias > 0 ? 'PPD' : 'PUE';
-    v.lineas.forEach(l => { const p = prod(l.id); if (p && !l.manual) l.precio = p.precios[v.lista] || 0; });
+    v.lineas.forEach(l => { const p = prod(l.id); if (p && !l.manual) l.precio = precioVta(p, v.lista); });
     posGuardar(); if (S.vista === 'pos' && !S.lector) V.pos(); else pintarPos();
     toast('👤 ' + (c.razon || c.nombre) + ' · lista ' + v.lista);
   }
@@ -9118,7 +9266,7 @@ const App = (() => {
     const v = S.pos, p = prod(id); if (!p) return;
     const ya = v.lineas.find(l => l.id === id);
     if (ya) { ya.cant = r2(Number(ya.cant) + 1); v.lineas.splice(v.lineas.indexOf(ya), 1); v.lineas.unshift(ya); }
-    else v.lineas.unshift({ id: id, cant: 1, precio: p.precios[v.lista] || 0, desc: 0, lote: '' });
+    else v.lineas.unshift({ id: id, cant: 1, precio: precioVta(p, v.lista), desc: 0, lote: '' });
     if (existencia(id, v.suc) < (ya ? ya.cant : 1)) toast('⚠️ ' + p.nombre + ': existencia ' + nf(existencia(id, v.suc)) + ' en esta sucursal', true);
     posGuardar(); pintarPos();
   }
@@ -9171,6 +9319,7 @@ const App = (() => {
     if (!v.cli) return toast('Elige el cliente (o da de alta "PÚBLICO EN GENERAL")', true);
     if (!v.lineas.length) return toast('Agrega productos', true);
     if (v.lineas.some(l => !(l.cant > 0))) return toast('Revisa las cantidades', true);
+    { const bm = bajoMinimo(v.lineas); if (bm) return toast('Precio abajo del mínimo de tu sucursal (tu lista + 10 %): ' + bm, true); }
     const t = calcVenta(v); let monto = t.total, forma = '', banco = '', ref = '', term = '';
     if (v.pago === 'efectivo') {
       const rec = Number(v.recibido) || 0; forma = formaPor(/efectivo/i) || '1'; banco = bancoPor(/efecti/i) || 'EFECTI10';
@@ -12414,7 +12563,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
