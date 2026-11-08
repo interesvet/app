@@ -2970,8 +2970,9 @@ const App = (() => {
       let r; try { r = await pedir('facturas', p); } catch (e) { if ($('#lFact')) $('#lFact').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
       if (!$('#lFact')) return;
       S.lista = r.facturas;
-      $('#lFact').innerHTML = `<div class="kpis"><div class="kpi"><small>Facturas</small><b>${nf(r.totales.facturas)}</b><span></span></div>
-        <div class="kpi"><small>Total facturado</small><b>${$$(r.totales.total)}</b><span>según XML</span></div>
+      $('#lFact').innerHTML = `<div class="kpis"><div class="kpi"><small>Facturas vigentes</small><b>${nf(r.totales.facturas)}</b><span>${r.totales.canceladas ? '+ ' + nf(r.totales.canceladas) + ' cancelada(s) en la lista' : ''}</span></div>
+        <div class="kpi"><small>Total facturado</small><b>${$$(r.totales.total)}</b><span>según XML · solo vigentes</span></div>${r.totales.canceladas ? `
+        <div class="kpi"><small>🚫 Canceladas (no suman)</small><b>${$$(r.totales.montoCanceladas)}</b><span>${nf(r.totales.canceladas)} factura(s)${r.totales.sustituidas ? ' · ' + nf(r.totales.sustituidas) + ' sustituida(s) por otra' : ''}</span></div>` : ''}
         <div class="kpi"><small>Asignado a notas</small><b>${$$(r.totales.asignado)}</b><span></span></div></div>` +
         (r.facturas.length ? '' : '<p class="muted">¿Aún no hay facturas? ' + (U().rol === 'Administrador' ? 'Usa <b>🔄 Importar de AppSheet</b> para traer los XML y las anotaciones que ya tienes.' : 'Pide al administrador que importe las facturas.') + '</p>') +
         tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Factura', h: x => `<b>${esc(x.sf)}</b>${x.global ? ' <span class="etq">Global</span>' : ''}` },
@@ -9344,11 +9345,11 @@ const App = (() => {
           ${k('Cobrado sin factura', $$(R.ingresos.cobradoSinFactura), nf(R.ingresos.nCobradoSinFactura) + ' abonos · van a la global', R.ingresos.cobradoSinFactura > 0.009 ? 'error' : '')}
           ${k('Compras', $$(R.compras.total), nf(R.compras.conFactura) + ' de ' + nf(R.compras.n) + ' con factura · IVA ' + $$(R.compras.iva))}
           ${k('Pagos a proveedores', $$(R.pagos.total), nf(R.pagos.n) + ' pagos · N/C ' + $$(R.nc.total))}
-          ${k('Gastos (facturas)', $$(R.gastos.total), nf(R.gastos.n) + ' facturas · IVA ' + $$(R.gastos.iva))}
+          ${k('Gastos de operación + financieros', $$(R.gastos.cargado), 'sin IVA, igual que en 💸 Gastos · ' + nf(R.gastos.n) + ' facturas por ' + $$(R.gastos.total) + ' con IVA (incluye inversiones y excluidos)')}
           ${k('Bancos', nf(R.bancos.estados) + ' estados', !R.bancos.estados ? 'falta cargar los estados de cuenta del periodo' : R.bancos.sinCuadrar ? R.bancos.sinCuadrar + ' no cuadran' : 'todos cuadran', !R.bancos.estados || R.bancos.sinCuadrar ? 'error' : 'ok-txt')}
           ${k('Por conciliar', nf(R.bancos.pendientes) + ' movs.', nf(R.bancos.sinClasificar) + ' sin clasificar', R.bancos.pendientes ? 'error' : 'ok-txt')}</div>
         ${card('IVA del periodo (referencia)', tabla([{ t: 'Concepto', h: x => esc(x[0]) }, { t: 'Importe', num: 1, h: x => `<b>${$$(x[1])}</b>` }],
-          [['IVA trasladado en facturas emitidas', R.ingresos.iva], ['IVA en facturas de compras', R.compras.iva], ['IVA en facturas de gastos', R.gastos.iva]]) +
+          [['IVA trasladado en facturas emitidas', R.ingresos.iva], ['IVA en facturas de compras', R.compras.iva], ['IVA acreditable de gastos (sin excluidos)', R.gastos.ivaAcreditable]]) +
           '<p class="muted peq">Montos de las facturas del periodo. El IVA acreditable depende de cuándo se pagó (flujo de efectivo); los pagos están en "Compras y pagos".</p>')}
         ${R.ingresos.sinXml || R.ingresos.canceladas ? card('⚠️ Para revisar', (R.ingresos.sinXml ? `<p>🧾 ${R.ingresos.sinXml} facturas emitidas sin XML guardado (sus importes pueden estar incompletos).</p>` : '') + (R.ingresos.canceladas ? `<p>❌ ${R.ingresos.canceladas} facturas canceladas en el periodo (se listan aparte en Ingresos).</p>` : '')) : ''}`;
     } else if (t === 'ingresos') {
@@ -9372,6 +9373,11 @@ const App = (() => {
       h += card('🧾 Notas de crédito de proveedores', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Proveedor', h: x => esc(x.proveedor) }, { t: 'N/C', h: x => `<b>${esc(x.nc)}</b>` + (x.uuidNC ? `<br><small class="muted">${esc(x.uuidNC.slice(0, 8))}…</small>` : '') },
         { t: 'Motivo', h: x => esc(x.motivoNC || x.comentarios) }, { t: 'Aplicada a', h: x => esc(x.folioOC) + (x.factura ? ' · ' + esc(x.factura) : '') }, { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` }, { t: 'Archivos', h: btnAdjPago }], q.nc, { vacio: 'Sin notas de crédito en el periodo' }));
     } else if (t === 'gastos') {
+      const G = R.gastos;
+      h += card('🧮 Cuadre con la sección 💸 Gastos (mismo periodo, sin IVA)', tabla([{ t: 'Recuadro en Gastos', h: x => x[2] ? `<b>${esc(x[0])}</b>` : esc(x[0]) }, { t: 'Importe', num: 1, h: x => x[2] ? `<b>${$$(x[1])}</b>` : $$(x[1]) }],
+        [['Gastos de operación', G.operacion], ['Gastos financieros', G.financiero], ['= Operación + financieros (la depreciación va aparte)', G.cargado, 1], ['Inversiones del periodo (activo fijo)', G.inversion],
+          ['🚚 Fletes ligados a compras / ventas', G.fleteCosto], ['Excluidos (personales / no del negocio)', G.excluir], ['= Subtotal de todas las facturas del periodo', G.subtotal, 1], ['IVA acreditable (sin excluidos)', G.ivaAcreditable], ['IVA de todas las facturas', G.iva], ['Total con IVA de todas las facturas', G.total, 1]]) +
+        '<p class="muted peq">Antes este recuadro mostraba solo el total con IVA de todas las facturas (incluidas inversiones y excluidos), por eso no coincidía con Gastos. Las facturas canceladas ante el SAT no se cuentan. Un pago que cubre varios meses (p. ej. seguro anual) se reparte por mes igual que en Gastos.</p>');
       h += card('💸 Facturas de gastos del periodo', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Emisor', h: x => esc(x.emisor) + `<br><small class="muted">${esc(x.rfc)}</small>` },
         { t: 'Categoría', h: x => esc(x.cat || 'POR CLASIFICAR') + (puede('clasificar_gastos') && x.uuid ? ` <button class="icono" title="Cambiar la categoría" onclick="App.ctCatGasto('${esc(x.uuid)}')">✏️</button>` : '') + (x.grupo ? `<br><small class="muted">${esc(x.grupo)}</small>` : '') }, { t: 'Método', cls: 'ocultar-movil', h: x => esc(x.metodo || '') },
         { t: 'Subtotal', num: 1, cls: 'ocultar-movil', h: x => $$(x.subtotal) }, { t: 'IVA', num: 1, h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], q.gastos, { vacio: 'Sin facturas de gastos en el periodo' }) +
@@ -9440,7 +9446,7 @@ const App = (() => {
       { nombre: 'Resumen', titulo: 'Resumen contable', sub: sub('Periodo'), cols: [{ t: 'Concepto', w: 46 }, { t: 'Importe', w: 16, fmt: 'mon' }, { t: 'Cantidad', w: 10, fmt: 'num' }],
         filas: [['Facturado al SAT (total)', R.ingresos.total, R.ingresos.n], ['  Subtotal', R.ingresos.subtotal, ''], ['  IVA trasladado', R.ingresos.iva, ''], ['  Nominativas', R.ingresos.nominativas, ''], ['  Globales', R.ingresos.globales, ''],
           ['  PPD', R.ingresos.ppd, ''], ['Cobrado sin factura', R.ingresos.cobradoSinFactura, R.ingresos.nCobradoSinFactura], ['Compras (total)', R.compras.total, R.compras.n], ['  IVA de compras', R.compras.iva, ''],
-          ['Pagos a proveedores', R.pagos.total, R.pagos.n], ['Notas de crédito de proveedores', R.nc.total, R.nc.n], ['Gastos (total)', R.gastos.total, R.gastos.n], ['  IVA de gastos', R.gastos.iva, ''],
+          ['Pagos a proveedores', R.pagos.total, R.pagos.n], ['Notas de crédito de proveedores', R.nc.total, R.nc.n], ['Gastos de operación (sin IVA)', R.gastos.operacion, ''], ['Gastos financieros (sin IVA)', R.gastos.financiero, ''], ['Inversiones (sin IVA)', R.gastos.inversion, ''], ['Fletes ligados (sin IVA)', R.gastos.fleteCosto, ''], ['Excluidos (sin IVA)', R.gastos.excluir, ''], ['Gastos (total con IVA, todas)', R.gastos.total, R.gastos.n], ['  IVA de gastos (todas)', R.gastos.iva, ''], ['  IVA acreditable (sin excluidos)', R.gastos.ivaAcreditable, ''],
           ['Estados de cuenta del periodo', '', R.bancos.estados], ['  que no cuadran', '', R.bancos.sinCuadrar], ['Movimientos bancarios por conciliar', '', R.bancos.pendientes]].map(x => ({ v: x })) },
       { nombre: 'Ingresos SAT', titulo: 'Facturas de venta emitidas (vigentes)', sub: sub('Lo que se reporta al SAT'), cols: ing, filas: q.ingresos.map(filaIng) },
       { nombre: 'Canceladas', titulo: 'Facturas de venta canceladas', sub: sub('Canceladas'), cols: ing, filas: q.canceladas.map(filaIng) },
