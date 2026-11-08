@@ -11220,7 +11220,7 @@ const App = (() => {
   V.mensajes = () => {
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila" style="justify-content:space-between;align-items:center;margin:0">
         <p style="margin:0">Mensajes listos para enviar desde <b>tu WhatsApp</b>, sin costo. Toca <b>💬 Enviar</b>: se abre con el texto escrito y aún puedes corregirlo o no mandarlo.</p>
-        <span class="fila" style="margin:0;gap:6px"><button class="btn fijo" onclick="App.formPlantillas()">✏️ Redactar mensajes</button><button class="btn fijo" onclick="App.cargarMensajes(true)">⟳ Actualizar</button></span></div></div><div id="msjRes"><div class="vacio">Juntando los mensajes del día…</div></div>`;
+        <button class="btn fijo" onclick="App.cargarMensajes(true)">⟳ Actualizar</button></div></div><div id="msjRes"><div class="vacio">Juntando los mensajes del día…</div></div>`;
     cargarMensajes();
   };
   async function cargarMensajes(forzar) {
