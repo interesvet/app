@@ -10434,7 +10434,7 @@ const App = (() => {
 
   /* ---------- 📊 DASHBOARD: análisis y comparativos por año (cliente, producto, proveedor, categoría, sucursal, vendedor) ---------- */
   const TB_COL = ['#1f6f4a', '#2a78d6', '#d95926', '#8e44ad', '#c79a00', '#199e70', '#6b7280', '#b03a6b'];
-  const TB_TABS = [['resumen', '📈 Resumen por año'], ['clientes', '👥 Clientes'], ['cartera', '🔄 Cartera'], ['productos', '💊 Productos'], ['proveedores', '🏭 Proveedores'], ['categorias', '🏷️ Categorías'], ['sucursales', '🏬 Sucursales'], ['vendedores', '👤 Vendedores'], ['tipos', '🧑‍🌾 Tipo de cliente'], ['listas', '💲 Listas de precio']];
+  const TB_TABS = [['resumen', '📈 Resumen por año'], ['clientes', '👥 Clientes'], ['cartera', '🔄 Cartera'], ['productos', '💊 Productos'], ['proveedores', '🏭 Proveedores'], ['categorias', '🏷️ Categorías'], ['sucursales', '🏬 Sucursales'], ['vendedores', '👤 Vendedores'], ['tipos', '🧑‍🌾 Tipo de cliente'], ['listas', '💲 Listas de precio'], ['inventario', '📦 Inventario y rotación']];
   const TB_TIPO = { clientes: 'cliente', productos: 'producto', proveedores: 'proveedor', categorias: 'categoria', sucursales: 'sucursal', vendedores: 'vendedor', tipos: 'tipo', listas: 'lista' };
   const MES3 = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   V.tablero = (tab) => {
@@ -10484,12 +10484,13 @@ const App = (() => {
     const an = r.anios.slice().reverse(), colA = y => TB_COL[(r.anios.length - 1 - r.anios.indexOf(+y)) % TB_COL.length];
     $('#tbAnios').innerHTML = an.map(y => { const on = f.sel.indexOf(String(y)) >= 0; return `<button class="chip-op ${on ? 'on' : ''}" onclick="App.tbAnio(${y})" style="${on ? `border-color:${colA(y)};box-shadow:inset 0 -3px 0 ${colA(y)}` : ''}">${on ? '✔ ' : ''}${y}${y === new Date().getFullYear() ? ' <small>(en curso)</small>' : ''}</button>`; }).join('');
     $('#tbFechaL').style.display = +f.a === new Date().getFullYear() && f.sel.length > 1 ? '' : 'none';
-    const tabs = TB_TABS.filter(([k]) => k !== 'proveedores' || r.verCompras).filter(([k]) => k !== 'sucursales' || r.sucursales).filter(([k]) => (k !== 'tipos' && k !== 'listas') || r[k]);
+    const tabs = TB_TABS.filter(([k]) => k !== 'proveedores' || r.verCompras).filter(([k]) => k !== 'sucursales' || r.sucursales).filter(([k]) => (k !== 'tipos' && k !== 'listas') || r[k]).filter(([k]) => k !== 'inventario' || puedeRotacion());
     if (!tabs.some(t => t[0] === f.tab)) f.tab = 'resumen';
     $('#tbTabs').innerHTML = tabs.map(([k, t]) => `<button class="${f.tab === k ? 'activo' : ''}" onclick="App.tbTab('${k}')">${t}</button>`).join('');
     if (!r.anios.length) { el.innerHTML = '<div class="vacio">Aún no hay ventas registradas.</div>'; return; }
     if (f.tab === 'resumen') return pintarTbResumen(el);
     if (f.tab === 'cartera') { $('#tbAnios').parentElement.style.opacity = '.45'; return pintarTbCartera(el); }
+    if (f.tab === 'inventario') { $('#tbAnios').parentElement.style.opacity = '.45'; return pintarTbRotacion(el); }
     $('#tbAnios').parentElement.style.opacity = '';
     pintarTbEntidad(el, f.tab);
   }
@@ -10761,6 +10762,76 @@ const App = (() => {
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } } });
     grafica('ctG2', { type: 'doughnut', data: { labels: CT_EST, datasets: [{ data: CT_EST.map(e => por(e).length), backgroundColor: CT_EST.map(e => CT_COL[e]) }] },
       options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' } }, onClick: (e, els) => { if (els[0]) ctEstado(CT_EST[els[0].index]); } } });
+  }
+  /* ---------- 📦 INVENTARIO Y ROTACIÓN (dueño, Administrador; Gerente solo su sucursal) ---------- */
+  const RT_EST = ['Por agotarse', 'Sano', 'Lento', 'Exceso', 'Sin movimiento', 'Agotado'];
+  const RT_COL = { 'Por agotarse': '#e08a00', 'Sano': '#1f7a3a', 'Lento': '#c79a00', 'Exceso': '#c23b32', 'Sin movimiento': '#555b63', 'Agotado': '#2a78d6' };
+  const RT_TXT = { 'Por agotarse': 'menos de 15 días de inventario', 'Sano': '15 a 60 días', 'Lento': '61 a 180 días', 'Exceso': 'más de 180 días', 'Sin movimiento': 'con existencia y sin venta en 180 días', 'Agotado': 'se vende y no hay existencia' };
+  const puedeRotacion = () => { const u = U() || {}; return puede('dueno') || u.rol === 'Administrador' || u.rol === 'Gerente'; };
+  async function pintarTbRotacion(el, forzar) {
+    const f = S.fTb; f.rt = f.rt || { est: '', q: '', orden: 'val', dias: 90 };
+    const c = f.rt;
+    if (forzar || !S.rt || S.rt._suc !== f.suc || S.rt.dias !== c.dias || Date.now() - S.rt._t > 900000) {
+      el.innerHTML = '<div class="vacio">📦 Revisando existencias, lotes y rotación…</div>';
+      try { S.rt = await pedir('rotacion', { sucursal: f.suc, dias: c.dias }, true); S.rt._suc = f.suc; S.rt._t = Date.now(); }
+      catch (e) { el.innerHTML = `<div class="vacio">${e.red ? 'Esta vista necesita conexión la primera vez.' : /desconocida/i.test(e.message) ? '📦 Se activa en cuanto se publique la actualización del servidor (219).' : esc(e.message)}</div>`; return; }
+      if (S.fTb !== f || f.tab !== 'inventario') return;
+    }
+    const r = S.rt, vc = r.verCostos, todas = r.filas, suma = (l, k) => l.reduce((t, x) => t + (x[k] || 0), 0);
+    const por = e => todas.filter(x => x.estado === e), conEx = todas.filter(x => x.ex > 0);
+    const varias = !r.suc && new Set(todas.map(x => x.s)).size > 1;
+    let l = todas.filter(x => (!c.est || (c.est === 'cad' ? x.cad > 0 : c.est === 'riesgo' ? x.rz > 0 : x.estado === c.est)) && (!c.q || coincide(x.n + ' ' + x.p + ' ' + x.lab + ' ' + x.cat + ' ' + x.sn, c.q)));
+    const ord = { val: (a, b) => (vc ? (b.val || 0) - (a.val || 0) : b.ex - a.ex), ex: (a, b) => b.ex - a.ex, dInv: (a, b) => (b.dInv === null ? 9e9 : b.dInv) - (a.dInv === null ? 9e9 : a.dInv), vend: (a, b) => b.vend - a.vend,
+      sin: (a, b) => (b.sinVenta === null ? 9e9 : b.sinVenta) - (a.sinVenta === null ? 9e9 : a.sinVenta), rz: (a, b) => (vc ? (b.vRz || 0) - (a.vRz || 0) : b.rz - a.rz), n: (a, b) => a.n.localeCompare(b.n) };
+    l.sort(ord[c.orden] || ord.val);
+    const vTot = suma(conEx, 'val'), costoDia = conEx.reduce((t, x) => t + (x.ex > 0 && x.dd > 0 ? x.dd * (x.val / x.ex) : 0), 0);
+    const estanc = todas.filter(x => x.estado === 'Sin movimiento' || x.estado === 'Exceso');
+    const fv = (v, q) => vc ? $$(v) : nf(q) + ' pzas';
+    const kp = (k, t, b, s, col) => `<div class="kpi kpi-clic ${c.est === k ? 'activo' : ''}" onclick="App.rtEstado('${k}')" ${col ? `style="box-shadow:inset 4px 0 0 ${col}"` : ''}><small>${t}</small><b>${b}</b><span>${s}</span></div>`;
+    const th = (k, t, num) => `<th class="${num ? 'num' : ''} ordenable" onclick="App.rtOrden('${k}')">${t}${c.orden === k ? ' ▾' : ''}</th>`;
+    el.innerHTML = `<div class="tarjeta"><h3 style="margin-top:0">📦 Inventario y rotación <small class="muted">· al ${esc(r.hoy)}${r.suc ? ' · ' + esc(sucNom(r.suc)) : ' · todas las sucursales'} · ritmo de venta de los últimos ${r.dias} días</small></h3>
+        <div class="kpis" style="margin:0">
+          ${kp('', vc ? 'Inventario valorizado' : 'Piezas en inventario', vc ? $$(vTot) : nf(suma(conEx, 'ex')), nf(conEx.length) + ' productos con existencia' + (varias ? ' (por sucursal)' : ''))}
+          <div class="kpi"><small>Días de inventario (global)</small><b>${vc && costoDia ? Math.round(vTot / costoDia) + ' días' : '—'}</b><span>${vc ? 'lo que tienes ÷ lo que vendes al día, a costo' : 'requiere ver costos'}</span></div>
+          ${kp('Sin movimiento', '💤 Dinero parado', fv(suma(estanc, 'val'), suma(estanc, 'ex')), nf(estanc.length) + ' sin movimiento o con exceso (más de 180 días)', '#555b63')}
+          ${kp('riesgo', '⏳ Caducará antes de venderse', fv(suma(todas, 'vRz'), suma(todas, 'rz')), nf(todas.filter(x => x.rz > 0).length) + ' productos al ritmo actual', '#e08a00')}
+          ${kp('cad', '⛔ Ya caducado en existencia', fv(suma(todas, 'vCad'), suma(todas, 'cad')), nf(todas.filter(x => x.cad > 0).length) + ' productos', '#c23b32')}
+          ${kp('Por agotarse', '🔻 Por agotarse', nf(por('Por agotarse').length), nf(por('Agotado').length) + ' ya agotados que sí se venden', '#e08a00')}
+        </div>
+        <div class="kpis" style="margin:10px 0 0">${RT_EST.map(e => kp(e, e, nf(por(e).length), (vc && e !== 'Agotado' ? $$(suma(por(e), 'val')) + ' · ' : '') + RT_TXT[e], RT_COL[e])).join('')}</div>
+        <div class="fila" style="margin-top:10px"><label>Ritmo de venta<select id="rtDias">${opts([[30, 'Últimos 30 días'], [60, 'Últimos 60 días'], [90, 'Últimos 90 días'], [180, 'Últimos 180 días'], [365, 'Últimos 12 meses']], String(c.dias))}</select></label></div></div>
+      <div class="rejilla-2"><div class="tarjeta"><h3>🥧 ${vc ? 'Valor' : 'Piezas'} del inventario por estado</h3><div class="grafica" style="height:290px"><canvas id="rtG1"></canvas></div></div>
+        <div class="tarjeta"><h3>💤 Top 15 de dinero parado <small class="muted">(sin movimiento o exceso)</small></h3><div class="grafica" style="height:290px"><canvas id="rtG2"></canvas></div></div></div>
+      <div class="tarjeta"><div class="fila"><label style="flex:2 1 240px">Buscar<input id="rtQ" value="${esc(c.q)}" placeholder="Producto, laboratorio, categoría${varias ? ' o sucursal' : ''}"></label>
+        <label>Mostrar<select id="rtEst">${opts([['', 'Todos'], ['riesgo', '⏳ Caducará antes de venderse'], ['cad', '⛔ Con caducado']].concat(RT_EST.map(e => [e, e])), c.est)}</select></label>
+        <button class="btn fijo" onclick="App.rtCsv()">⬇️ Excel (CSV)</button><button class="btn fijo" onclick="App.rtRecargar()">⟳ Actualizar</button></div>
+        <p class="muted peq">${nf(l.length)} renglones${vc ? ' · valor ' + $$(suma(l, 'val')) : ''}</p>
+        <div class="tabla-cont"><table><thead><tr>${th('n', 'Producto')}${varias ? '<th>Sucursal</th>' : ''}<th>Estado</th>${th('ex', 'Existencia', 1)}${vc ? th('val', 'Valor', 1) : ''}${th('vend', 'Vendido ' + r.dias + ' d', 1)}${th('dInv', 'Días de inventario', 1)}${th('sin', 'Días sin venta', 1)}<th class="num">Caduca primero</th>${th('rz', 'No se alcanza a vender', 1)}<th class="num">Caducado</th></tr></thead><tbody>
+          ${l.slice(0, 600).map(x => `<tr class="clic" onclick="App.verFicha('${esc(x.p)}')" title="Abrir la ficha rápida del producto"><td><b>${esc(String(x.n).split(',')[0])}</b><br><small class="muted">${esc([x.lab, x.cat].filter(Boolean).join(' · '))}</small></td>${varias ? `<td>${esc(x.sn)}</td>` : ''}
+            <td><span class="etq" style="background:${RT_COL[x.estado]}22;color:${RT_COL[x.estado]}">${esc(x.estado)}</span></td><td class="num">${nf(x.ex)}</td>${vc ? `<td class="num">${$$(x.val)}</td>` : ''}<td class="num">${nf(x.vend)}</td>
+            <td class="num">${x.dInv === null ? '—' : nf(x.dInv)}</td><td class="num">${x.sinVenta === null ? '<span class="muted">nunca</span>' : nf(x.sinVenta)}</td><td class="num">${esc(x.prox || '—')}</td>
+            <td class="num">${x.rz > 0 ? `<b class="txt-mal">${nf(x.rz)}</b>${vc ? '<br><small>' + $$(x.vRz) + '</small>' : ''}` : '—'}</td><td class="num">${x.cad > 0 ? `<b class="txt-mal">${nf(x.cad)}</b>${vc ? '<br><small>' + $$(x.vCad) + '</small>' : ''}` : '—'}</td></tr>`).join('') || '<tr><td colspan="11" class="vacio">Sin productos</td></tr>'}
+        </tbody></table></div>${l.length > 600 ? `<p class="muted peq">Se muestran 600 de ${nf(l.length)}; usa el buscador o descarga el CSV.</p>` : ''}
+        <p class="muted peq">“No se alcanza a vender”: piezas que caducarán antes de venderse al ritmo actual, surtiendo primero lo que caduca antes (como el Pedido sugerido).</p></div>`;
+    $('#rtQ').oninput = e => { c.q = e.target.value; clearTimeout(S.rtQT); S.rtQT = setTimeout(() => { pintarTbRotacion(el); const i = $('#rtQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); };
+    $('#rtEst').onchange = e => { c.est = e.target.value; pintarTbRotacion(el); };
+    $('#rtDias').onchange = e => { c.dias = +e.target.value; pintarTbRotacion(el, true); };
+    const est5 = RT_EST.filter(e => e !== 'Agotado');
+    grafica('rtG1', { type: 'doughnut', data: { labels: est5, datasets: [{ data: est5.map(e => vc ? suma(por(e), 'val') : suma(por(e), 'ex')), backgroundColor: est5.map(e => RT_COL[e]) }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: x => x.label + ': ' + (vc ? $$(x.parsed) : nf(x.parsed) + ' pzas') } } }, onClick: (e, els) => { if (els[0]) rtEstado(est5[els[0].index]); } } });
+    const top = estanc.slice().sort((a, b) => vc ? (b.val || 0) - (a.val || 0) : b.ex - a.ex).slice(0, 15);
+    grafica('rtG2', { type: 'bar', data: { labels: top.map(x => { const t = String(x.n).split(',')[0] + (varias ? ' · ' + x.sn : ''); return t.length > 30 ? t.slice(0, 29) + '…' : t; }), datasets: [{ label: vc ? 'Valor' : 'Piezas', data: top.map(x => vc ? x.val : x.ex), backgroundColor: top.map(x => RT_COL[x.estado]) }] },
+      options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => (vc ? $$(x.parsed.x) : nf(x.parsed.x) + ' pzas') + ' · ' + top[x.dataIndex].estado + (top[x.dataIndex].sinVenta !== null ? ' · ' + top[x.dataIndex].sinVenta + ' días sin venta' : '') } } }, scales: { x: { beginAtZero: true, ticks: { callback: vc ? tickMoneda : v => nf(v) } } } } });
+  }
+  function rtEstado(k) { const c = S.fTb.rt; c.est = c.est === k ? '' : k; pintarTablero(); }
+  function rtOrden(k) { S.fTb.rt.orden = k; pintarTablero(); }
+  function rtRecargar() { const el = $('#tbRes'); if (el) pintarTbRotacion(el, true); }
+  function rtCsv() {
+    const r = S.rt; if (!r) return; const q = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
+    const cab = ['Clave', 'Producto', 'Laboratorio', 'Categoría', 'Sucursal', 'Estado', 'Existencia'].concat(r.verCostos ? ['Valor'] : []).concat(['Vendido ' + r.dias + ' días', 'Venta diaria', 'Días de inventario', 'Última venta', 'Días sin venta', 'Caduca primero', 'No se alcanza a vender']).concat(r.verCostos ? ['Valor en riesgo'] : []).concat(['Caducado']).concat(r.verCostos ? ['Valor caducado'] : []);
+    const filas = r.filas.map(x => [x.p, x.n, x.lab, x.cat, x.sn, x.estado, x.ex].concat(r.verCostos ? [x.val] : []).concat([x.vend, x.dd, x.dInv === null ? '' : x.dInv, x.ult, x.sinVenta === null ? '' : x.sinVenta, x.prox, x.rz]).concat(r.verCostos ? [x.vRz] : []).concat([x.cad]).concat(r.verCostos ? [x.vCad] : []));
+    const csv = '﻿' + [cab].concat(filas).map(fl => fl.map(q).join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'Inventario y rotación.csv'; a.click();
   }
   function ctEstado(k) { const c = S.fTb.ct; c.est = c.est === k ? '' : k; pintarTablero(); }
   function ctOrden(k) { S.fTb.ct.orden = k; pintarTablero(); }
@@ -12778,7 +12849,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbReset, tbQuitarCli, tbOrden, tbFiltro, tbDetalle, tbCsv, ctEstado, ctOrden, ctRecargar, ctCliente, ctCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, comiRecibo, liqAccion, lqMarca, lqTodas, lqPagar, lqAjustar, lqAjustarOk, lpBuscarNC, lpSumaNC, comiPeriodo, comiPrecioAdd, comiPrecioQuitar, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbReset, tbQuitarCli, tbOrden, tbFiltro, tbDetalle, tbCsv, ctEstado, ctOrden, ctRecargar, ctCliente, ctCsv, rtEstado, rtOrden, rtRecargar, rtCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, comiRecibo, liqAccion, lqMarca, lqTodas, lqPagar, lqAjustar, lqAjustarOk, lpBuscarNC, lpSumaNC, comiPeriodo, comiPrecioAdd, comiPrecioQuitar, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
