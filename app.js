@@ -3397,16 +3397,17 @@ const App = (() => {
     S.charts.forEach(c => c.destroy()); S.charts = [];
     const pct = v => r.ventas ? (v / r.ventas * 100).toFixed(1) + '%' : '—';
     const vari = (a, b) => b ? `<span class="${a > b ? 'error' : 'ok-txt'}">${a > b ? '▲' : '▼'} ${Math.abs((a - b) / b * 100).toFixed(1)}%</span>` : '<span class="muted">—</span>';
-    const kpi = (ti, v, sub) => `<div class="kpi"><small>${ti}</small><b>${v}</b><span>${sub || ''}</span></div>`;
+    const kpi = (ti, v, sub, dk) => `<div class="kpi${dk ? ' clic' : ''}"${dk ? ` onclick="App.detKpi('g','${dk}')" title="Ver las facturas y cómo se calcula"` : ''}><small>${ti}</small><b>${v}</b><span>${sub || ''}</span></div>`;
     const cargado = t.operacion + t.depreciacion + t.financiero;
     let html = `<div class="kpis">
-      ${kpi('Gastos de operación', $$(t.operacion), (r.ventas === null ? '' : pct(t.operacion) + ' de ventas · ') + 'vs anterior ' + vari(t.operacion, t.anterior.operacion))}
-      ${kpi('Depreciación (estimada)', $$(t.depreciacion), 'de las inversiones del negocio')}
-      ${kpi('Gastos financieros', $$(t.financiero), 'vs anterior ' + vari(t.financiero, t.anterior.financiero))}
-      ${kpi('Total cargado a resultados', $$(cargado), r.ventas === null ? 'sin IVA' : pct(cargado) + ' de ventas (' + $$(r.ventas) + ')')}
-      ${kpi('Inversiones del periodo', $$(t.inversion), 'activo fijo · no se cargan completas')}
-      ${kpi('Excluidos', $$(t.excluir), 'personales / no del negocio')}${t.fleteCosto ? kpi('🚚 Fletes ligados', $$(t.fleteCosto), 'a compras (costo de productos) o ventas (utilidad de la nota)') : ''}
-      ${kpi('IVA acreditable', $$(t.iva), nf(t.facturas) + ' facturas')}</div>`;
+      ${kpi('Gastos de operación', $$(t.operacion), (r.ventas === null ? '' : pct(t.operacion) + ' de ventas · ') + 'vs anterior ' + vari(t.operacion, t.anterior.operacion), 'operacion')}
+      ${kpi('Depreciación (estimada)', $$(t.depreciacion), 'de las inversiones del negocio', 'depreciacion')}
+      ${kpi('Gastos financieros', $$(t.financiero), 'vs anterior ' + vari(t.financiero, t.anterior.financiero), 'financiero')}
+      ${kpi('Total cargado a resultados', $$(cargado), r.ventas === null ? 'sin IVA' : pct(cargado) + ' de ventas (' + $$(r.ventas) + ')', 'cargado')}
+      ${kpi('Inversiones del periodo', $$(t.inversion), 'activo fijo · no se cargan completas', 'inversion')}
+      ${kpi('Excluidos', $$(t.excluir), 'personales / no del negocio', 'excluir')}${t.fleteCosto ? kpi('🚚 Fletes ligados', $$(t.fleteCosto), 'a compras (costo de productos) o ventas (utilidad de la nota)', 'flete') : ''}
+      ${kpi('IVA acreditable', $$(t.iva), nf(t.facturas) + ' facturas', 'iva')}</div>
+      <p class="muted peq no-imprimir" style="margin:-6px 0 12px">🔍 Toca un recuadro para ver las facturas que lo forman, las que quedaron fuera y cómo se calcula.</p>`;
     if (tab === 'resumen') {
       html += `<div class="rejilla-2"><div class="tarjeta"><h3>Estado de gastos · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3>
         <p class="muted" style="margin-bottom:8px">Comparado contra ${esc(r.periodo.anterior)} (mismo número de días).</p>` +
@@ -9322,6 +9323,120 @@ const App = (() => {
     agregarMesAnio('ctDesde', 'ctHasta', cargarContable);
     cargarContable();
   };
+  /* ---------- Detalle de cada recuadro (Gastos y Contabilidad del mes): qué registros suman, cuáles quedaron fuera y cómo se calcula ---------- */
+  const colsGasDet = () => [
+    { t: 'Fecha', h: x => esc(x.fecha), x: x => x.fecha, w: 11 },
+    { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc || '')}</small>`, x: x => x.emisor, w: 38 },
+    { t: 'RFC', x: x => x.rfc || '', w: 15 },
+    { t: 'Categoría', cls: 'ocultar-movil', h: x => esc(x.cat || '') + `<br><small class="muted">${esc(x.grupo || '')}${x.flete ? ' · 🚚 flete ligado' : ''}${x.peso && x.peso < 1 ? ' · ' + (x.peso * 100).toFixed(1) + '% (prorrateo)' : ''}</small>`, x: x => x.cat || '', w: 22 },
+    { t: 'Grupo', x: x => x.grupo || '', w: 12 },
+    { t: 'Sin IVA', num: 1, h: x => $$(x.monto), x: x => x.monto, fmt: 'mon', w: 14, suma: 1 },
+    { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva), x: x => x.iva, fmt: 'mon', w: 12, suma: 1 },
+    { t: 'Total', num: 1, cls: 'ocultar-movil', h: x => $$(x.total), x: x => x.total, fmt: 'mon', w: 14, suma: 1 },
+    { t: 'UUID', x: x => x.uuid || '', w: 38 }];
+  const colsFueraDet = () => [{ t: 'Fecha', cls: 'ocultar-movil', h: x => esc(x.fecha), x: x => x.fecha, w: 11 }, { t: 'Concepto', h: x => `<b>${esc(x.emisor)}</b>${x.rfc ? `<br><small class="muted">${esc(x.rfc)}</small>` : ''}`, x: x => x.emisor, w: 38 },
+    { t: 'Importe', num: 1, h: x => $$(x.total), x: x => x.total, fmt: 'mon', w: 14 }, { t: 'Por qué no se incluye', h: x => `<small>${esc(x.motivo)}</small>`, x: x => x.motivo, w: 60 }, { t: 'UUID', x: x => x.uuid || '', w: 38 }];
+  function detKpiGastos(k) {
+    const r = S.datGas; if (!r) return null;
+    const t = r.totales, F = r.facturas, per = r.periodo.desde + ' al ' + r.periodo.hasta;
+    const base = ['Se toman las facturas de egreso <b>vigentes</b> con fecha del ' + esc(per) + '.', 'Cada factura cae en un grupo según su regla (por proveedor o por categoría, en ⚙️ Reglas y depreciación).'];
+    const fin = ['Se suma el <b>subtotal menos descuento (sin IVA)</b> de cada factura.', 'Un pago que cubre varios meses (p. ej. un seguro anual) se reparte en partes iguales, una por mes; aquí entra solo la parte del periodo (el proveedor dice "parte k/n").']
+      .concat(r.sucursal ? ['Filtraste la sucursal <b>' + esc(sucNom(r.sucursal)) + '</b>: sus facturas cuentan al 100% y las de "Prorrateo" en proporción a lo que vendió.'] : []);
+    const fuera = r.fuera || [];
+    const G = (ti, filtro, total, lineas, opc) => Object.assign({ titulo: ti + ' · ' + per, total: total, filas: F.filter(filtro), cols: colsGasDet(), valor: x => x.monto, gasto: 1,
+      formula: base.concat(lineas, fin), fuera: fuera, colsFuera: colsFueraDet() }, opc || {});
+    if (k === 'operacion') return G('Gastos de operación', x => x.grupo === 'Operación', t.operacion, ['Entran las del grupo <b>Operación</b> (gasolina, casetas, alimentos, renta, servicios, papelería, etc.).']);
+    if (k === 'financiero') return G('Gastos financieros', x => x.grupo === 'Financiero', t.financiero, ['Entran las del grupo <b>Financiero</b>: intereses y comisiones de bancos y financieras. El pago a capital de un crédito no es gasto.']);
+    if (k === 'inversion') return G('Inversiones del periodo', x => x.grupo === 'Inversión', t.inversion, ['Entran las del grupo <b>Inversión</b> (activo fijo: vehículos, equipo de cómputo, mobiliario). No se cargan completas a resultados: se deprecian mes a mes (ver Depreciación).']);
+    if (k === 'excluir') return G('Excluidos', x => x.grupo === 'Excluir' && !x.flete, t.excluir, ['Entran las del grupo <b>Excluir</b>: personales o que no son del negocio. No se restan de la utilidad y su IVA no se acredita.']);
+    if (k === 'flete') return G('Fletes ligados', x => x.flete, t.fleteCosto, ['Fletes que ligaste (🚚) a órdenes de compra o a notas de venta. Ya están en el costo de los productos o en la utilidad de la nota, por eso no se cuentan otra vez como gasto.']);
+    if (k === 'iva') return G('IVA acreditable', x => x.grupo !== 'Excluir' || x.flete, t.iva, [], { valor: x => x.iva,
+      formula: base.concat(['Se suma el <b>IVA</b> de todas las facturas, excepto las del grupo Excluir (los fletes ligados sí cuentan).', 'Es el IVA de las facturas del periodo; el acreditable fiscal depende de cuándo se pagó (flujo de efectivo).']) });
+    if (k === 'cargado') { const c = G('Total cargado a resultados', x => x.grupo === 'Operación' || x.grupo === 'Financiero', r2(t.operacion + t.depreciacion + t.financiero), []);
+      c.extra = t.depreciacion; c.extraTxt = 'de depreciación (ver su recuadro)';
+      c.formula = ['<b>Operación</b> ' + $$(t.operacion) + ' + <b>Depreciación</b> ' + $$(t.depreciacion) + ' + <b>Financieros</b> ' + $$(t.financiero) + ' = <b>' + $$(c.total) + '</b>.'].concat(c.formula.slice(0, 2), fin, ['Abajo: las facturas de operación y financieras; la depreciación se detalla en su propio recuadro. Inversiones y excluidos no se cargan.']);
+      return c; }
+    if (k === 'depreciacion') return { titulo: 'Depreciación (estimada) · ' + per, total: t.depreciacion, filas: r.activos.filter(a => a.periodo > 0.004), valor: a => a.periodo, gasto: 1, fuera: [],
+      formula: ['Se toman las facturas del grupo <b>Inversión</b> (activo fijo) hasta el corte ' + esc(r.periodo.corte) + '.', '<b>Base depreciable</b> = monto sin IVA, o el tope de automóviles / el monto ajustado en ⚙️ Reglas y depreciación.',
+        '<b>Depreciación mensual</b> = base × tasa anual ÷ 12 (línea recta).', 'Empieza el mes siguiente a la compra (o el mes de inicio ajustado) y termina al depreciar el 100%.', '<b>Del periodo</b> = mensual × meses del periodo ya transcurridos (no se deprecian meses futuros).'],
+      cols: [{ t: 'Compra', h: a => esc(a.fecha), x: a => a.fecha, w: 11 }, { t: 'Proveedor', h: a => `<b>${esc(a.emisor)}</b><br><small class="muted">${esc(a.cat)}${a.vehiculo ? ' · vehículo' : ''}${a.ajuste ? ' · ajustado' : ''}</small>`, x: a => a.emisor, w: 38 },
+        { t: 'Categoría', x: a => a.cat, w: 20 }, { t: 'Monto sin IVA', num: 1, cls: 'ocultar-movil', h: a => $$(a.monto), x: a => a.monto, fmt: 'mon', w: 14 },
+        { t: 'Base', num: 1, h: a => $$(a.base), x: a => a.base, fmt: 'mon', w: 14 }, { t: 'Tasa', num: 1, h: a => a.tasa + '%', x: a => a.tasa, fmt: 'num', w: 8 },
+        { t: 'Mensual', num: 1, h: a => $$(a.mensual), x: a => a.mensual, fmt: 'mon', w: 13 }, { t: 'Desde', cls: 'ocultar-movil', h: a => esc(a.inicio || ''), x: a => a.inicio || '', w: 10 },
+        { t: 'Del periodo', num: 1, h: a => `<b>${$$(a.periodo)}</b>`, x: a => a.periodo, fmt: 'mon', w: 14, suma: 1 }, { t: 'UUID', x: a => a.uuid || '', w: 38 }] };
+    return null;
+  }
+  function detKpiCont(k) {
+    const q = S.cont; if (!q) return null;
+    const R = q.resumen, per = q.periodo.desde + ' al ' + q.periodo.hasta;
+    const colsIng = [{ t: 'Fecha', h: x => esc(x.fecha), x: x => x.fecha, w: 11 }, { t: 'Serie-folio', h: x => `<b>${esc(x.sf)}</b>`, x: x => x.sf, w: 12 },
+      { t: 'Tipo', h: x => esc(x.tipo) + (x.metodo ? ' · ' + esc(x.metodo) : ''), x: x => x.tipo + (x.metodo ? ' ' + x.metodo : ''), w: 16 },
+      { t: 'Receptor', h: x => esc(x.receptor) + `<br><small class="muted">${esc(x.rfc)}</small>`, x: x => x.receptor, w: 36 }, { t: 'RFC', x: x => x.rfc, w: 15 },
+      { t: 'Subtotal', num: 1, cls: 'ocultar-movil', h: x => $$(x.subtotal), x: x => x.subtotal, fmt: 'mon', w: 14, suma: 1 }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva), x: x => x.iva, fmt: 'mon', w: 12, suma: 1 },
+      { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>`, x: x => x.total, fmt: 'mon', w: 14, suma: 1 }, { t: '', h: x => `<button class="btn chico" onclick="App.verFactura('${esc(x.id)}')">Ver</button>` }, { t: 'UUID', x: x => x.uuid, w: 38 }];
+    const canc = q.canceladas.map(x => ({ fecha: x.fecha, emisor: x.sf + ' · ' + x.receptor, rfc: x.rfc, uuid: x.uuid, total: x.total, motivo: 'Cancelada ante el SAT' + (x.sustituidaPor ? '; la sustituye ' + x.sustituidaPor + ', que es la que cuenta' : '') }));
+    const baseIng = ['Facturas de venta (CFDI emitidos) con fecha del ' + esc(per) + ': nominativas y globales a público en general.', 'Solo <b>vigentes</b>: las canceladas ante el SAT no suman (si otra factura la sustituyó, cuenta la nueva).', 'Importes tomados del XML: total = subtotal − descuento + IVA.'];
+    if (k === 'ingresos') return { titulo: 'Facturado al SAT (ingresos) · ' + per, total: R.ingresos.total, filas: q.ingresos, valor: x => x.total, cols: colsIng, fuera: canc, colsFuera: colsFueraDet(), formula: baseIng };
+    if (k === 'tipos') return { titulo: 'Nominativas y globales · ' + per, total: r2(R.ingresos.nominativas + R.ingresos.globales), filas: q.ingresos.slice().sort((a, b) => a.tipo.localeCompare(b.tipo)), valor: x => x.total, cols: colsIng, fuera: canc, colsFuera: colsFueraDet(),
+      formula: baseIng.concat(['<b>Nominativas</b> (a nombre del cliente): ' + $$(R.ingresos.nominativas) + ' · <b>Globales</b> (público en general): ' + $$(R.ingresos.globales) + '.', 'PPD (se pagan después y requieren complemento de pago): ' + $$(R.ingresos.ppd) + '.']) };
+    if (k === 'sinFactura') return { titulo: 'Cobrado sin factura · ' + per, total: R.ingresos.cobradoSinFactura, filas: q.sinFacturaLista || [], valor: x => x.porReportar,
+      formula: ['Abonos (cobranza) con fecha del ' + esc(per) + ', sin contar notas de crédito ni devoluciones.', 'A cada abono se le resta la parte que ya ampara una factura (nominativa o global).', 'Lo que queda es lo que falta reportar al SAT; normalmente va en la factura global del mes (Ventas › Facturación › 🧾 Armar global).'],
+      cols: [{ t: 'Fecha', h: x => esc(x.fecha), x: x => x.fecha, w: 11 }, { t: 'Nota', h: x => `<b>${esc(x.nota)}</b>`, x: x => x.nota, w: 14 }, { t: 'Cliente', h: x => esc(x.cliente), x: x => x.cliente, w: 34 },
+        { t: 'Forma', cls: 'ocultar-movil', h: x => esc(x.forma), x: x => x.forma, w: 14 }, { t: 'Cobrado', num: 1, h: x => $$(x.monto), x: x => x.monto, fmt: 'mon', w: 13, suma: 1 },
+        { t: 'Ya facturado', num: 1, cls: 'ocultar-movil', h: x => $$(x.facturado), x: x => x.facturado, fmt: 'mon', w: 13, suma: 1 }, { t: 'Por reportar', num: 1, h: x => `<b>${$$(x.porReportar)}</b>`, x: x => x.porReportar, fmt: 'mon', w: 13, suma: 1 },
+        { t: 'Estado', x: x => x.estado, w: 24 }] };
+    if (k === 'compras') return { titulo: 'Compras · ' + per, total: R.compras.total, filas: q.compras, valor: x => x.total,
+      formula: ['Órdenes de compra con fecha del ' + esc(per) + ', sin las canceladas.', 'Se suma el <b>total de la orden</b> (subtotal − descuentos + IVA, con su flete si lo trae).', nf(R.compras.conFactura) + ' de ' + nf(R.compras.n) + ' ya tienen la factura del proveedor ligada; las demás aparecen como "sin factura".'],
+      cols: [{ t: 'Fecha', h: x => esc(x.fecha), x: x => x.fecha, w: 11 }, { t: 'Orden', h: x => `<b>${esc(x.folio)}</b>`, x: x => x.folio, w: 18 }, { t: 'Proveedor', h: x => esc(x.proveedor) + `<br><small class="muted">${esc(x.rfc)}</small>`, x: x => x.proveedor, w: 34 },
+        { t: 'Factura', h: x => x.conFactura ? esc(x.factura) : '<span class="etq av">sin factura</span>', x: x => x.conFactura ? x.factura : 'sin factura', w: 14 }, { t: 'Subtotal', num: 1, cls: 'ocultar-movil', h: x => $$(x.subtotal), x: x => x.subtotal, fmt: 'mon', w: 14, suma: 1 },
+        { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva), x: x => x.iva, fmt: 'mon', w: 12, suma: 1 }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>`, x: x => x.total, fmt: 'mon', w: 14, suma: 1 },
+        { t: 'Saldo', num: 1, cls: 'ocultar-movil', h: x => x.saldo > 0.009 ? `<span class="error">${$$(x.saldo)}</span>` : '—', x: x => x.saldo, fmt: 'mon', w: 13 }, { t: 'UUID', x: x => x.uuid, w: 38 }] };
+    if (k === 'pagos') return { titulo: 'Pagos a proveedores · ' + per, total: R.pagos.total, filas: q.pagos, valor: x => x.monto,
+      fuera: q.nc.map(x => ({ fecha: x.fecha, emisor: x.proveedor + ' · N/C ' + x.nc, total: x.monto, motivo: 'Nota de crédito: rebaja el saldo de la orden pero no es salida de dinero (se suma aparte: ' + $$(R.nc.total) + ')' })), colsFuera: colsFueraDet(),
+      formula: ['Pagos a proveedores registrados con fecha del ' + esc(per) + ' (es cuándo salió el dinero, no cuándo se compró).', 'Las notas de crédito del proveedor se registran igual pero no son pago: van aparte.'],
+      cols: [{ t: 'Fecha', h: x => esc(x.fecha), x: x => x.fecha, w: 11 }, { t: 'Proveedor', h: x => esc(x.proveedor), x: x => x.proveedor, w: 34 }, { t: 'Orden / factura', h: x => esc(x.folioOC) + (x.factura ? ' · ' + esc(x.factura) : ''), x: x => x.folioOC + (x.factura ? ' · ' + x.factura : ''), w: 26 },
+        { t: 'Forma', h: x => esc(x.forma) + (x.banco ? `<br><small class="muted">${esc(x.banco)}</small>` : ''), x: x => x.forma + (x.banco ? ' · ' + x.banco : ''), w: 22 }, { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>`, x: x => x.monto, fmt: 'mon', w: 14, suma: 1 }] };
+    if (k === 'gastos') { const G = R.gastos, gs = q.gastos.map(x => Object.assign({}, x, { monto: x.subtotal, flete: x.alCosto }));
+      const otro = x => x.alCosto ? 'Flete ligado a compras o ventas (ya está en el costo o en la utilidad de la nota)' : x.grupo === 'Inversión' ? 'Inversión (activo fijo): no se carga completa, se deprecia' : x.grupo === 'Excluir' ? 'Excluido: personal o no es del negocio' : '';
+      return { titulo: 'Gastos de operación + financieros · ' + per, total: G.cargado, filas: gs.filter(x => !x.alCosto && (x.grupo === 'Operación' || x.grupo === 'Financiero')), valor: x => x.monto, gasto: 1, cols: colsGasDet(),
+        fuera: gs.filter(x => otro(x)).map(x => ({ fecha: x.fecha, emisor: x.emisor, rfc: x.rfc, uuid: x.uuid, total: x.monto, motivo: otro(x) + ' · importe sin IVA' })).concat(q.gastosFuera || []), colsFuera: colsFueraDet(),
+        formula: ['Mismo cálculo que 💸 Gastos: facturas de egreso <b>vigentes</b> del ' + esc(per) + ', clasificadas por su regla (proveedor o categoría).', '<b>Operación</b> ' + $$(G.operacion) + ' + <b>Financieros</b> ' + $$(G.financiero) + ' = <b>' + $$(G.cargado) + '</b> (sin IVA; la depreciación va aparte).',
+          'No entran: inversiones ' + $$(G.inversion) + ', fletes ligados ' + $$(G.fleteCosto) + ' y excluidos ' + $$(G.excluir) + ' (aparecen abajo con su motivo), ni las canceladas ante el SAT.', 'Un pago que cubre varios meses se reparte en partes iguales, una por mes.'] }; }
+    if (k === 'bancos') return { titulo: 'Estados de cuenta · ' + per, total: R.bancos.estados, filas: q.estados, valor: () => 1, cuenta: 1,
+      formula: ['Estados de cuenta cargados cuyo periodo se cruza con el ' + esc(per) + '.', '<b>Cuadra</b> si saldo inicial + abonos − cargos = saldo final (en tarjetas de crédito: + cargos − abonos).', 'Si falta una cuenta activa, cárgala en Bancos › 📥 Estados de cuenta.'],
+      cols: [{ t: 'Cuenta', h: x => `<b>${esc(x.cuenta)}</b>`, x: x => x.cuenta, w: 30 }, { t: 'Del', h: x => esc(x.desde), x: x => x.desde, w: 11 }, { t: 'Al', h: x => esc(x.hasta), x: x => x.hasta, w: 11 },
+        { t: 'Saldo inicial', num: 1, cls: 'ocultar-movil', h: x => $$(x.saldoInicial), x: x => x.saldoInicial, fmt: 'mon', w: 14 }, { t: 'Abonos', num: 1, h: x => $$(x.abonos), x: x => x.abonos, fmt: 'mon', w: 14 }, { t: 'Cargos', num: 1, h: x => $$(x.cargos), x: x => x.cargos, fmt: 'mon', w: 14 },
+        { t: 'Saldo final', num: 1, h: x => $$(x.saldoFinal), x: x => x.saldoFinal, fmt: 'mon', w: 14 }, { t: 'Cuadra', h: x => x.cuadra ? '<span class="ok-txt">✔</span>' : '<span class="error">✘</span>', x: x => x.cuadra ? 'Sí' : 'No', w: 8 }] };
+    if (k === 'conciliar') return { titulo: 'Movimientos por conciliar · ' + per, total: R.bancos.pendientes, filas: q.movs.filter(m => m.estado !== 'Conciliado' && m.estado !== 'No aplica'), valor: () => 1, cuenta: 1,
+      formula: ['Movimientos de banco con fecha del ' + esc(per) + ' que aún no están ligados a un cobro, pago, gasto o traspaso.', 'No cuentan los marcados <b>Conciliado</b> ni <b>No aplica</b>.', 'Se concilian en Bancos › 🧾 Conciliación.'],
+      cols: [{ t: 'Fecha', h: x => esc(x.fecha), x: x => x.fecha, w: 11 }, { t: 'Cuenta', cls: 'ocultar-movil', h: x => esc(x.cuenta), x: x => x.cuenta, w: 26 }, { t: 'Descripción', h: x => `<small>${esc(x.desc)}</small>`, x: x => x.desc, w: 50 },
+        { t: 'Cargo', num: 1, h: x => x.cargo ? $$(x.cargo) : '', x: x => x.cargo, fmt: 'mon', w: 13, suma: 1 }, { t: 'Abono', num: 1, h: x => x.abono ? $$(x.abono) : '', x: x => x.abono, fmt: 'mon', w: 13, suma: 1 },
+        { t: 'Categoría', cls: 'ocultar-movil', h: x => esc(x.categoria), x: x => x.categoria, w: 18 }, { t: 'Estado', h: x => esc(x.estado), x: x => x.estado, w: 12 }] };
+    return null;
+  }
+  function detKpi(fuente, clave) {
+    const c = fuente === 'g' ? detKpiGastos(clave) : detKpiCont(clave); if (!c) return;
+    S.detK = c;
+    const f = v => c.cuenta ? nf(v) : $$(v);
+    const suma = r2(c.filas.reduce((a, x) => a + (Number(c.valor(x)) || 0), 0) + (c.extra || 0)), cuadra = Math.abs(suma - c.total) < 0.05;
+    const cols = c.cols.filter(x => x.h).concat(c.gasto ? [{ t: '', h: x => x.uuid ? `<button class="btn chico" title="Ver la factura" onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>` : '' }] : []);
+    const colsF = (c.colsFuera || []).filter(x => x.h).concat([{ t: '', h: x => x.uuid ? `<button class="btn chico" title="Ver la factura" onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>` : '' }]);
+    modal(c.titulo, `<div class="det-calc"><b>🧮 Cómo se calcula</b><ol>${c.formula.map(l => `<li>${l}</li>`).join('')}</ol></div>
+      <p class="${cuadra ? 'ok-txt' : 'error'}" style="margin:10px 0">${cuadra ? '✔' : '⚠️'} ${c.cuenta ? 'Registros' : 'Suma del detalle'}: <b>${f(suma)}</b>${c.extra ? ' (incluye ' + $$(c.extra) + ' ' + esc(c.extraTxt) + ')' : ''} · recuadro: <b>${f(c.total)}</b>${cuadra ? ' — coincide' : ' — diferencia ' + f(r2(suma - c.total))}</p>
+      ${c.filas.length ? tabla(cols, c.filas) : '<div class="vacio">Sin registros en el periodo</div>'}
+      ${c.fuera && c.fuera.length ? `<h4 style="margin:16px 0 6px">🚫 No incluidas en este recuadro (${nf(c.fuera.length)})</h4>` + tabla(colsF, c.fuera) : ''}
+      <div class="acciones"><button class="btn" onclick="App.excelDetKpi()">⬇️ Excel</button><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  async function excelDetKpi() {
+    const c = S.detK; if (!c) return;
+    const txt = h => String(h).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
+    const xc = c.cols.filter(x => x.x), xf = (c.colsFuera || []).filter(x => x.x);
+    const hojas = [{ nombre: 'Detalle', titulo: c.titulo, sub: ['Recuadro: ' + (c.cuenta ? nf(c.total) : $$(c.total)) + ' · ' + nf(c.filas.length) + ' registros'],
+        cols: xc.map(x => ({ t: x.t, w: x.w || 14, fmt: x.fmt, suma: x.suma })), filas: c.filas.map(r => ({ v: xc.map(x => x.x(r)) })) },
+      { nombre: 'Cómo se calcula', titulo: c.titulo, sub: ['Cómo se obtiene la cifra del recuadro'], cols: [{ t: 'Paso', w: 6 }, { t: 'Explicación', w: 120 }], filas: c.formula.map((l, i) => ({ v: [i + 1, txt(l)] })) }];
+    if (c.fuera && c.fuera.length) hojas.push({ nombre: 'No incluidas', titulo: 'No incluidas en: ' + c.titulo, sub: ['Registros del periodo que no suman en este recuadro, con su motivo'], cols: xf.map(x => ({ t: x.t, w: x.w || 14, fmt: x.fmt })), filas: c.fuera.map(r => ({ v: xf.map(x => x.x(r)) })) });
+    try { toast('Armando el Excel…'); const nom = txt(c.titulo).replace(/[\\/:*?"<>|]+/g, '-'); entregarArchivo(await excelLocal(nom, hojas), nom + '.xlsx', 'Detalle del recuadro'); } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e)); }
+  }
   async function cargarContable() {
     if (!$('#ctRes')) return;
     S.fcont = { desde: $('#ctDesde').value, hasta: $('#ctHasta').value };
@@ -9334,20 +9449,21 @@ const App = (() => {
     const q = S.cont, el = $('#ctRes'); if (!q || !el) return;
     const R = q.resumen, t = S.tabCont || 'resumen';
     const tabs = [['resumen', '📋 Resumen'], ['ingresos', '🧾 Ingresos (SAT) · ' + R.ingresos.n], ['compras', '📦 Compras y pagos · ' + R.compras.n], ['gastos', '💸 Gastos · ' + R.gastos.n], ['bancos', '🏦 Bancos · ' + R.bancos.estados], ['anot', '📝 Anotaciones · ' + R.anotaciones]];
-    const k = (ti, v, sub, cls) => `<div class="kpi"><small>${ti}</small><b class="${cls || ''}">${v}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
+    const k = (ti, v, sub, cls, dk) => `<div class="kpi${dk ? ' clic' : ''}"${dk ? ` onclick="App.detKpi('c','${dk}')" title="Ver el detalle y cómo se calcula"` : ''}><small>${ti}</small><b class="${cls || ''}">${v}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
     const card = (ti, h) => `<div class="tarjeta"><h4 style="margin:0 0 8px">${ti}</h4>${h}</div>`;
     const etq = (x, cls) => `<span class="etq ${cls || ''}">${esc(x)}</span>`;
     const btnAdjPago = x => `<button class="btn chico" ${x.adj ? '' : 'style="opacity:.5"'} title="${x.adj ? 'Ver los ' + x.adj + ' archivo(s) adjuntos' : 'Sin comprobante adjunto'}" onclick="App.verPagoProv('${x.id}')">📎 ${x.adj || 'Sin archivo'}</button>`;
     let h = `<div class="pestanas">${tabs.map(x => `<button class="${t === x[0] ? 'activo' : ''}" onclick="App.tabContable('${x[0]}')">${x[1]}</button>`).join('')}</div>`;
     if (t === 'resumen') {
-      h += `<div class="kpis">${k('Facturado al SAT (ingresos)', $$(R.ingresos.total), 'subtotal ' + $$(R.ingresos.subtotal) + ' · IVA ' + $$(R.ingresos.iva))}
-          ${k('Nominativas / globales', $$(R.ingresos.nominativas) + ' / ' + $$(R.ingresos.globales), R.ingresos.ppd ? 'PPD ' + $$(R.ingresos.ppd) : 'sin PPD')}
-          ${k('Cobrado sin factura', $$(R.ingresos.cobradoSinFactura), nf(R.ingresos.nCobradoSinFactura) + ' abonos · van a la global', R.ingresos.cobradoSinFactura > 0.009 ? 'error' : '')}
-          ${k('Compras', $$(R.compras.total), nf(R.compras.conFactura) + ' de ' + nf(R.compras.n) + ' con factura · IVA ' + $$(R.compras.iva))}
-          ${k('Pagos a proveedores', $$(R.pagos.total), nf(R.pagos.n) + ' pagos · N/C ' + $$(R.nc.total))}
-          ${k('Gastos de operación + financieros', $$(R.gastos.cargado), 'sin IVA, igual que en 💸 Gastos · ' + nf(R.gastos.n) + ' facturas por ' + $$(R.gastos.total) + ' con IVA (incluye inversiones y excluidos)')}
-          ${k('Bancos', nf(R.bancos.estados) + ' estados', !R.bancos.estados ? 'falta cargar los estados de cuenta del periodo' : R.bancos.sinCuadrar ? R.bancos.sinCuadrar + ' no cuadran' : 'todos cuadran', !R.bancos.estados || R.bancos.sinCuadrar ? 'error' : 'ok-txt')}
-          ${k('Por conciliar', nf(R.bancos.pendientes) + ' movs.', nf(R.bancos.sinClasificar) + ' sin clasificar', R.bancos.pendientes ? 'error' : 'ok-txt')}</div>
+      h += `<div class="kpis">${k('Facturado al SAT (ingresos)', $$(R.ingresos.total), 'subtotal ' + $$(R.ingresos.subtotal) + ' · IVA ' + $$(R.ingresos.iva), '', 'ingresos')}
+          ${k('Nominativas / globales', $$(R.ingresos.nominativas) + ' / ' + $$(R.ingresos.globales), R.ingresos.ppd ? 'PPD ' + $$(R.ingresos.ppd) : 'sin PPD', '', 'tipos')}
+          ${k('Cobrado sin factura', $$(R.ingresos.cobradoSinFactura), nf(R.ingresos.nCobradoSinFactura) + ' abonos · van a la global', R.ingresos.cobradoSinFactura > 0.009 ? 'error' : '', 'sinFactura')}
+          ${k('Compras', $$(R.compras.total), nf(R.compras.conFactura) + ' de ' + nf(R.compras.n) + ' con factura · IVA ' + $$(R.compras.iva), '', 'compras')}
+          ${k('Pagos a proveedores', $$(R.pagos.total), nf(R.pagos.n) + ' pagos · N/C ' + $$(R.nc.total), '', 'pagos')}
+          ${k('Gastos de operación + financieros', $$(R.gastos.cargado), 'sin IVA, igual que en 💸 Gastos · ' + nf(R.gastos.n) + ' facturas por ' + $$(R.gastos.total) + ' con IVA (incluye inversiones y excluidos)', '', 'gastos')}
+          ${k('Bancos', nf(R.bancos.estados) + ' estados', !R.bancos.estados ? 'falta cargar los estados de cuenta del periodo' : R.bancos.sinCuadrar ? R.bancos.sinCuadrar + ' no cuadran' : 'todos cuadran', !R.bancos.estados || R.bancos.sinCuadrar ? 'error' : 'ok-txt', 'bancos')}
+          ${k('Por conciliar', nf(R.bancos.pendientes) + ' movs.', nf(R.bancos.sinClasificar) + ' sin clasificar', R.bancos.pendientes ? 'error' : 'ok-txt', 'conciliar')}</div>
+        <p class="muted peq no-imprimir" style="margin:-6px 0 12px">🔍 Toca un recuadro para ver los registros que lo forman, los que quedaron fuera y cómo se calcula.</p>
         ${card('IVA del periodo (referencia)', tabla([{ t: 'Concepto', h: x => esc(x[0]) }, { t: 'Importe', num: 1, h: x => `<b>${$$(x[1])}</b>` }],
           [['IVA trasladado en facturas emitidas', R.ingresos.iva], ['IVA en facturas de compras', R.compras.iva], ['IVA acreditable de gastos (sin excluidos)', R.gastos.ivaAcreditable]]) +
           '<p class="muted peq">Montos de las facturas del periodo. El IVA acreditable depende de cuándo se pagó (flujo de efectivo); los pagos están en "Compras y pagos".</p>')}
@@ -12217,7 +12333,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
