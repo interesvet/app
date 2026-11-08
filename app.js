@@ -10434,8 +10434,8 @@ const App = (() => {
 
   /* ---------- 📊 DASHBOARD: análisis y comparativos por año (cliente, producto, proveedor, categoría, sucursal, vendedor) ---------- */
   const TB_COL = ['#1f6f4a', '#2a78d6', '#d95926', '#8e44ad', '#c79a00', '#199e70', '#6b7280', '#b03a6b'];
-  const TB_TABS = [['resumen', '📈 Resumen por año'], ['clientes', '👥 Clientes'], ['cartera', '🔄 Cartera'], ['productos', '💊 Productos'], ['proveedores', '🏭 Proveedores'], ['categorias', '🏷️ Categorías'], ['sucursales', '🏬 Sucursales'], ['vendedores', '👤 Vendedores']];
-  const TB_TIPO = { clientes: 'cliente', productos: 'producto', proveedores: 'proveedor', categorias: 'categoria', sucursales: 'sucursal', vendedores: 'vendedor' };
+  const TB_TABS = [['resumen', '📈 Resumen por año'], ['clientes', '👥 Clientes'], ['cartera', '🔄 Cartera'], ['productos', '💊 Productos'], ['proveedores', '🏭 Proveedores'], ['categorias', '🏷️ Categorías'], ['sucursales', '🏬 Sucursales'], ['vendedores', '👤 Vendedores'], ['tipos', '🧑‍🌾 Tipo de cliente'], ['listas', '💲 Listas de precio']];
+  const TB_TIPO = { clientes: 'cliente', productos: 'producto', proveedores: 'proveedor', categorias: 'categoria', sucursales: 'sucursal', vendedores: 'vendedor', tipos: 'tipo', listas: 'lista' };
   const MES3 = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   V.tablero = (tab) => {
     const f = S.fTb = S.fTb || { tab: 'resumen', suc: '', a: '', b: '', met: '', q: '', filtro: '', orden: 'a', aFecha: true };
@@ -10484,7 +10484,7 @@ const App = (() => {
     const an = r.anios.slice().reverse(), colA = y => TB_COL[(r.anios.length - 1 - r.anios.indexOf(+y)) % TB_COL.length];
     $('#tbAnios').innerHTML = an.map(y => { const on = f.sel.indexOf(String(y)) >= 0; return `<button class="chip-op ${on ? 'on' : ''}" onclick="App.tbAnio(${y})" style="${on ? `border-color:${colA(y)};box-shadow:inset 0 -3px 0 ${colA(y)}` : ''}">${on ? '✔ ' : ''}${y}${y === new Date().getFullYear() ? ' <small>(en curso)</small>' : ''}</button>`; }).join('');
     $('#tbFechaL').style.display = +f.a === new Date().getFullYear() && f.sel.length > 1 ? '' : 'none';
-    const tabs = TB_TABS.filter(([k]) => k !== 'proveedores' || r.verCompras).filter(([k]) => k !== 'sucursales' || r.sucursales);
+    const tabs = TB_TABS.filter(([k]) => k !== 'proveedores' || r.verCompras).filter(([k]) => k !== 'sucursales' || r.sucursales).filter(([k]) => (k !== 'tipos' && k !== 'listas') || r[k]);
     if (!tabs.some(t => t[0] === f.tab)) f.tab = 'resumen';
     $('#tbTabs').innerHTML = tabs.map(([k, t]) => `<button class="${f.tab === k ? 'activo' : ''}" onclick="App.tbTab('${k}')">${t}</button>`).join('');
     if (!r.anios.length) { el.innerHTML = '<div class="vacio">Aún no hay ventas registradas.</div>'; return; }
@@ -10623,15 +10623,15 @@ const App = (() => {
     // metas (vendedores y sucursales, al medir por venta)
     const MT = r.metas && met === 'v' && (tab === 'vendedores' || tab === 'sucursales') ? r.metas[tab] : null;
     const metaDe = x => { const o = MT && MT[x.id] && MT[x.id][a]; return o ? (tbCorte() ? o.f : o.y) : 0; };
-    const conK = ['clientes', 'productos', 'sucursales', 'vendedores'].indexOf(tab) >= 0, conTk = conK && tab !== 'productos', conMg = r.verUtil && r.dinero && tab !== 'proveedores';
+    const conK = ['clientes', 'productos', 'sucursales', 'vendedores', 'tipos', 'listas'].indexOf(tab) >= 0, conTk = conK && tab !== 'productos', conMg = r.verUtil && r.dinero && tab !== 'proveedores';
     const dif = x => tbVal(x, a, met) - tbVal(x, b, met), pct = x => tbVal(x, b, met) ? dif(x) / tbVal(x, b, met) : (tbVal(x, a, met) ? 9e9 : 0);
     const ord = { a: (p, q) => tbVal(q, a, met) - tbVal(p, a, met), b: (p, q) => tbVal(q, b, met) - tbVal(p, b, met), dif: (p, q) => dif(q) - dif(p), difm: (p, q) => dif(p) - dif(q), pct: (p, q) => pct(q) - pct(p), n: (p, q) => p.n.localeCompare(q.n) };
     l.sort(ord[f.orden] || ord.a);
     const nuevos = base.filter(x => tbVal(x, a, met) > 0 && !tbVal(x, b, met)).length, perdidos = base.filter(x => tbVal(x, b, met) > 0 && !tbVal(x, a, met)).length;
     // las tarjetas y gráficas se calculan con lo filtrado
     const filtrado = !!(f.q || f.filtro || f.lab || f.cli), totA2 = l.reduce((t, x) => t + tbVal(x, a, met), 0), movA = l.filter(x => tbVal(x, a, met) > 0).length, movB = l.filter(x => tbVal(x, b, met) > 0).length;
-    const nombre = { clientes: 'Cliente', productos: 'Producto', proveedores: 'Proveedor', categorias: 'Categoría', sucursales: 'Sucursal', vendedores: 'Vendedor' }[tab];
-    const plural = { clientes: 'Clientes', productos: 'Productos', proveedores: 'Proveedores', categorias: 'Categorías', sucursales: 'Sucursales', vendedores: 'Vendedores' }[tab];
+    const nombre = { clientes: 'Cliente', productos: 'Producto', proveedores: 'Proveedor', categorias: 'Categoría', sucursales: 'Sucursal', vendedores: 'Vendedor', tipos: 'Tipo de cliente', listas: 'Lista de precio' }[tab];
+    const plural = { clientes: 'Clientes', productos: 'Productos', proveedores: 'Proveedores', categorias: 'Categorías', sucursales: 'Sucursales', vendedores: 'Vendedores', tipos: 'Tipos de cliente', listas: 'Listas de precio' }[tab];
     const th = (k, t, num) => `<th class="${num ? 'num' : ''} ordenable" onclick="App.tbOrden('${k}')">${t}${f.orden === k ? ' ▾' : ''}</th>`;
     const top = l.filter(x => tbVal(x, a, met) > 0).sort(ord.a).slice(0, 15);
     const labs = tab === 'productos' ? [...new Set(lista.map(x => x.lab).filter(Boolean))].sort() : [];
