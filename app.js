@@ -10523,6 +10523,7 @@ const App = (() => {
       ${r.verUtil ? `<div class="rejilla-2"><div class="tarjeta"><h3>💰 Utilidad bruta mes a mes</h3><div class="grafica" style="height:260px"><canvas id="tbG3"></canvas></div></div>
         <div class="tarjeta"><h3>📐 Margen bruto mes a mes</h3><div class="grafica" style="height:260px"><canvas id="tbG4"></canvas></div></div></div>` : ''}
       ${r.verCompras && din ? `<div class="tarjeta"><h3>📦 Compras contra ventas, mes a mes (${f.a})</h3><div class="grafica" style="height:260px"><canvas id="tbG5"></canvas></div></div>` : ''}
+      ${tbTrimestresHtml(sel, anu)}${tbMesAMesHtml(A, B)}
       <div class="tarjeta"><h3>🗓️ Resumen de cada año</h3><div class="tabla-cont"><table><thead><tr><th>Año</th>${din ? '<th class="num">Ventas</th><th class="num">Crecimiento</th>' : ''}${r.verUtil ? '<th class="num">Utilidad</th><th class="num">Margen</th>' : ''}${r.verCompras && din ? '<th class="num">Compras</th>' : ''}${din ? '<th class="num">Mermas</th>' : ''}<th class="num">Notas</th>${din ? '<th class="num">Ticket</th>' : ''}<th class="num">Clientes</th></tr></thead><tbody>
         ${r.anual.slice().reverse().map((x, i, l) => { const prev = l[i + 1]; return `<tr><td><b>${x.anio}</b>${x.anio === new Date().getFullYear() ? ' <small class="muted">(en curso)</small>' : ''}</td>${din ? `<td class="num">${$$(x.ventas)}</td><td class="num">${prev ? tbVar(x.ventas, prev.ventas) : '—'}</td>` : ''}${r.verUtil ? `<td class="num">${$$(x.utilidad)}</td><td class="num">${x.margen !== null ? x.margen + '%' : '—'}</td>` : ''}${r.verCompras && din ? `<td class="num">${$$(x.compras)}</td>` : ''}${din ? `<td class="num">${$$(x.mermas)}</td>` : ''}<td class="num">${nf(x.notas)}</td>${din ? `<td class="num">${x.notas ? $$(x.ventas / x.notas) : '—'}</td>` : ''}<td class="num">${nf(x.clientes)}</td></tr>`; }).join('')}
       </tbody></table></div><p class="muted peq">El crecimiento compara año completo contra año completo; el año en curso todavía no está completo (arriba lo comparas a la misma fecha).</p></div>`;
@@ -10543,6 +10544,29 @@ const App = (() => {
       grafica('tbG4', { type: 'line', data: { labels: MES3, datasets: lineas('margen') }, options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: tip('margen') }, scales: { y: { ticks: { callback: v => v + '%' } } } } });
     }
     if (r.verCompras && din) grafica('tbG5', { type: 'bar', data: { labels: MES3, datasets: [{ label: 'Ventas ' + f.a, data: A.meses.map(m => m.v), backgroundColor: '#1f6f4a' }, { label: 'Compras ' + f.a, data: A.meses.map(m => m.c), backgroundColor: '#2a78d6' }] }, options: { maintainAspectRatio: false, plugins: { tooltip: tip('v') }, scales: { y: ejeY('v') } } });
+  }
+  /** 📆 Trimestres de cada año elegido (venta, cambio contra el mismo trimestre del año de abajo y margen). */
+  function tbTrimestresHtml(sel, anu) {
+    const r = S.tb, din = r.dinero, hoy = new Date(), act = hoy.getFullYear(), qAct = Math.floor(hoy.getMonth() / 3), nc = r.verUtil ? 3 : 2;
+    const q = (X, i, k) => !X ? 0 : X.meses.slice(i * 3, i * 3 + 3).reduce((t, m) => t + (m[k] || 0), 0);
+    const ys = sel.map(y => anu(y)).filter(Boolean); if (!ys.length) return '';
+    const celda = (X, i, j) => { if (+X.anio === act && i > qAct) return `<td class="num muted" colspan="${nc}">—</td>`;
+      const v = din ? q(X, i, 'v') : q(X, i, 'n'), P = ys[j + 1], vp = P ? (din ? q(P, i, 'v') : q(P, i, 'n')) : null, u = q(X, i, 'u');
+      return `<td class="num"><b>${din ? $$(v) : nf(v)}</b>${+X.anio === act && i === qAct ? '<br><small class="muted">en curso</small>' : ''}</td><td class="num">${vp !== null ? tbVar(v, vp) : '<span class="muted">—</span>'}</td>${r.verUtil ? `<td class="num">${v && din ? (u / v * 100).toFixed(1) + '%' : '—'}</td>` : ''}`; };
+    return `<div class="tarjeta"><h3>📆 Por trimestre <small class="muted">· el cambio es contra el mismo trimestre del año de abajo</small></h3><div class="tabla-cont"><table><thead><tr><th>Año</th>${['T1 · Ene–Mar', 'T2 · Abr–Jun', 'T3 · Jul–Sep', 'T4 · Oct–Dic'].map(t => `<th class="num" colspan="${nc}">${t}</th>`).join('')}</tr>
+      <tr><th></th>${[0, 1, 2, 3].map(() => `<th class="num peq">${din ? 'Venta' : 'Notas'}</th><th class="num peq">Cambio</th>${r.verUtil ? '<th class="num peq">Margen</th>' : ''}`).join('')}</tr></thead><tbody>
+      ${ys.map((X, j) => `<tr><td><b>${X.anio}</b></td>${[0, 1, 2, 3].map(i => celda(X, i, j)).join('')}</tr>`).join('')}</tbody></table></div></div>`;
+  }
+  /** 🔁 Cada mes del año principal contra el mes anterior y contra el mismo mes del año comparado. */
+  function tbMesAMesHtml(A, B) {
+    const r = S.tb, din = r.dinero, hoy = new Date(); if (!A) return '';
+    const k = din ? 'v' : 'n', fm = v => din ? $$(v) : nf(v), ult = +A.anio === hoy.getFullYear() ? hoy.getMonth() : 11, hayB = B && B !== A;
+    const prevDe = i => i > 0 ? A.meses[i - 1] : ((r.anual.find(x => +x.anio === +A.anio - 1) || { meses: [] }).meses[11]);
+    const filas = A.meses.slice(0, ult + 1).map((m, i) => { const p = prevDe(i), b = hayB ? B.meses[i] : null, n = m.n || 0;
+      return `<tr><td><b>${MES3[i]}</b>${i === hoy.getMonth() && +A.anio === hoy.getFullYear() ? ' <small class="muted">(en curso)</small>' : ''}</td><td class="num"><b>${fm(m[k] || 0)}</b></td><td class="num">${p ? tbVar(m[k] || 0, p[k] || 0) : '<span class="muted">—</span>'}</td>
+        <td class="num">${b ? tbVar(m[k] || 0, b[k] || 0) : '<span class="muted">—</span>'}</td>${r.verUtil ? `<td class="num">${m.v ? (m.u / m.v * 100).toFixed(1) + '%' : '—'}</td>` : ''}<td class="num">${nf(n)}</td>${din ? `<td class="num">${n ? $$(m.v / n) : '—'}</td>` : ''}</tr>`; }).reverse().join('');
+    return `<div class="tarjeta"><h3>🔁 ${A.anio} mes por mes <small class="muted">· contra el mes anterior${hayB ? ' y contra el mismo mes de ' + B.anio : ''}</small></h3><div class="tabla-cont"><table><thead><tr><th>Mes</th><th class="num">${din ? 'Venta' : 'Notas'}</th><th class="num">vs mes anterior</th><th class="num">vs ${hayB ? B.anio : '—'}</th>${r.verUtil ? '<th class="num">Margen</th>' : ''}<th class="num">Notas</th>${din ? '<th class="num">Ticket prom.</th>' : ''}</tr></thead><tbody>${filas}</tbody></table></div>
+      <p class="muted peq">El mes en curso todavía no termina; tómalo en cuenta al compararlo.</p></div>`;
   }
   /** valor de una entidad en un año con la métrica elegida (v venta · q piezas · u utilidad · c compras) */
   const tbCorte = () => { const f = S.fTb; return !!(f && f.aFecha && +f.a === new Date().getFullYear()); };
@@ -10573,6 +10597,21 @@ const App = (() => {
     if (f.filtro === 'caen') l = l.filter(x => tbVal(x, a, met) < tbVal(x, b, met) && tbVal(x, a, met) > 0);
     if (f.filtro === 'nuevos') l = l.filter(x => tbVal(x, a, met) > 0 && !tbVal(x, b, met));
     if (f.filtro === 'perdidos') l = l.filter(x => tbVal(x, b, met) > 0 && !tbVal(x, a, met));
+    // Pareto 80/20 (clientes y productos): A = hacen el 80 % del año principal, B = el siguiente 15 %, C = el 5 % restante
+    const conPareto = tab === 'clientes' || tab === 'productos', clase = {};
+    let par = null;
+    if (conPareto) {
+      const ord0 = base.filter(x => tbVal(x, a, met) > 0).sort((p, q) => tbVal(q, a, met) - tbVal(p, a, met)), tot0 = ord0.reduce((t, x) => t + tbVal(x, a, met), 0);
+      let acum = 0; const curva = [];
+      ord0.forEach(x => { const antes = acum; acum += tbVal(x, a, met); clase[x.id] = antes < tot0 * 0.8 ? 'A' : antes < tot0 * 0.95 ? 'B' : 'C'; curva.push(tot0 ? acum / tot0 * 100 : 0); });
+      const n = k => ord0.filter(x => clase[x.id] === k).length, sm = k => ord0.filter(x => clase[x.id] === k).reduce((t, x) => t + tbVal(x, a, met), 0);
+      par = { ord: ord0, tot: tot0, curva: curva, A: n('A'), B: n('B'), C: n('C'), sA: sm('A'), sB: sm('B'), sC: sm('C') };
+      if (/^clase[ABC]$/.test(f.filtro)) l = l.filter(x => clase[x.id] === f.filtro.slice(-1));
+    }
+    // metas (vendedores y sucursales, al medir por venta)
+    const MT = r.metas && met === 'v' && (tab === 'vendedores' || tab === 'sucursales') ? r.metas[tab] : null;
+    const metaDe = x => { const o = MT && MT[x.id] && MT[x.id][a]; return o ? (tbCorte() ? o.f : o.y) : 0; };
+    const conK = ['clientes', 'productos', 'sucursales', 'vendedores'].indexOf(tab) >= 0, conTk = conK && tab !== 'productos', conMg = r.verUtil && r.dinero && tab !== 'proveedores';
     const dif = x => tbVal(x, a, met) - tbVal(x, b, met), pct = x => tbVal(x, b, met) ? dif(x) / tbVal(x, b, met) : (tbVal(x, a, met) ? 9e9 : 0);
     const ord = { a: (p, q) => tbVal(q, a, met) - tbVal(p, a, met), b: (p, q) => tbVal(q, b, met) - tbVal(p, b, met), dif: (p, q) => dif(q) - dif(p), difm: (p, q) => dif(p) - dif(q), pct: (p, q) => pct(q) - pct(p), n: (p, q) => p.n.localeCompare(q.n) };
     l.sort(ord[f.orden] || ord.a);
@@ -10587,24 +10626,35 @@ const App = (() => {
     el.innerHTML = `<div class="tarjeta"><div class="fila">
         ${mets.length > 1 ? `<label>Medir por<select id="tbMet">${mets.map(([k, t]) => `<option value="${k}" ${k === met ? 'selected' : ''}>${t}</option>`).join('')}</select></label>` : ''}
         <label style="flex:2 1 220px">Buscar<input id="tbQ" value="${esc(f.q)}" placeholder="${nombre}${tab === 'productos' ? ', laboratorio o categoría' : ''}"></label>
-        <label>Mostrar<select id="tbFil">${[['', 'Todos'], ['crecen', '▲ Crecen'], ['caen', '▼ Caen'], ['nuevos', '✨ Nuevos en ' + a], ['perdidos', '⚠️ Ya no en ' + a]].map(([k, t]) => `<option value="${k}" ${k === f.filtro ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label>Mostrar<select id="tbFil">${[['', 'Todos'], ['crecen', '▲ Crecen'], ['caen', '▼ Caen'], ['nuevos', '✨ Nuevos en ' + a], ['perdidos', '⚠️ Ya no en ' + a]].concat(conPareto ? [['claseA', '🅰️ Clase A (80 %)'], ['claseB', '🅱️ Clase B (15 %)'], ['claseC', '©️ Clase C (5 %)']] : []).map(([k, t]) => `<option value="${k}" ${k === f.filtro ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         ${tab === 'productos' ? `<label>Laboratorio<select id="tbLab">${opts(labs.map(x => [x, x]), f.lab || '', 'Todos')}</select></label>
           <label style="flex:2 1 220px">Cliente${f.cli ? ` <span class="etq ok">${esc(f.cliN || f.cli)} <a href="#" onclick="event.preventDefault();App.tbQuitarCli()" title="Quitar">✕</a></span>` : ''}<div class="buscador"><input id="tbCli" placeholder="Solo lo que compró un cliente…" autocomplete="off"></div></label>` : ''}
         <button class="btn fijo" onclick="App.tbReset()" title="Quitar todos los filtros">↺ Restablecer</button>
         <button class="btn fijo" onclick="App.tbCsv('${tab}')">⬇️ Excel (CSV)</button></div>
-        ${filtrado ? `<p class="muted peq" style="margin:8px 0 0">🔎 Filtrado: ${[f.q ? '“' + esc(f.q) + '”' : '', f.lab ? 'laboratorio ' + esc(f.lab) : '', f.cli ? 'cliente ' + esc(f.cliN || f.cli) : '', f.filtro ? esc(({ crecen: 'los que crecen', caen: 'los que caen', nuevos: 'nuevos', perdidos: 'los que ya no aparecen' })[f.filtro]) : ''].filter(Boolean).join(' · ')}. Las tarjetas y gráficas muestran solo lo filtrado.</p>` : ''}
+        ${filtrado ? `<p class="muted peq" style="margin:8px 0 0">🔎 Filtrado: ${[f.q ? '“' + esc(f.q) + '”' : '', f.lab ? 'laboratorio ' + esc(f.lab) : '', f.cli ? 'cliente ' + esc(f.cliN || f.cli) : '', f.filtro ? esc(({ crecen: 'los que crecen', caen: 'los que caen', nuevos: 'nuevos', perdidos: 'los que ya no aparecen', claseA: 'clase A', claseB: 'clase B', claseC: 'clase C' })[f.filtro]) : ''].filter(Boolean).join(' · ')}. Las tarjetas y gráficas muestran solo lo filtrado.</p>` : ''}
         <div class="kpis" style="margin:10px 0 0"><div class="kpi"><small>Total ${a}${tbCorte() ? ' al ' + r.corte : ''}${filtrado ? ' (filtrado)' : ''}</small><b>${fmt(totA2)}</b><span class="tb-cmps">${tbSel().slice(1).map(y => { const t = l.reduce((s2, x) => s2 + tbVal(x, y, met), 0); return `<span>${tbVar(totA2, t, tab === 'proveedores')} vs ${y}: ${fmt(t)}</span>`; }).join('')}${filtrado && totA ? `<span class="muted">${(totA2 / totA * 100).toFixed(1)}% del total (${fmt(totA)})</span>` : ''}</span></div>
           <div class="kpi"><small>${plural} con movimiento en ${a}${tbCorte() ? ' (al ' + r.corte + ')' : ''}</small><b>${nf(movA)}</b><span>${b}: ${nf(movB)}</span></div>
           <div class="kpi kpi-clic" onclick="App.tbFiltro('nuevos')"><small>✨ Nuevos en ${a}</small><b>${nf(nuevos)}</b><span>no estaban en ${b}</span></div>
-          <div class="kpi kpi-clic" onclick="App.tbFiltro('perdidos')"><small>⚠️ Ya no aparecen en ${a}</small><b>${nf(perdidos)}</b><span>sí estaban en ${b}</span></div></div></div>
+          <div class="kpi kpi-clic" onclick="App.tbFiltro('perdidos')"><small>⚠️ Ya no aparecen en ${a}</small><b>${nf(perdidos)}</b><span>sí estaban en ${b}</span></div>
+          ${conTk && r.dinero ? (() => { const v = l.reduce((t, x) => t + tbVal(x, a, 'v'), 0), k = l.reduce((t, x) => t + tbVal(x, a, 'k'), 0), vb = l.reduce((t, x) => t + tbVal(x, b, 'v'), 0), kb = l.reduce((t, x) => t + tbVal(x, b, 'k'), 0);
+            return `<div class="kpi"><small>Ticket promedio ${a}</small><b>${k ? $$(v / k) : '—'}</b><span>${nf(k)} notas${kb && k ? ' · ' + tbVar(v / k, vb / kb) + ' vs ' + b + ': ' + $$(vb / kb) : ''}</span></div>`; })() : ''}
+          ${MT ? (() => { const mt = l.reduce((t, x) => t + metaDe(x), 0), vt = l.filter(x => metaDe(x)).reduce((t, x) => t + tbVal(x, a, 'v'), 0);
+            return mt ? `<div class="kpi"><small>🏆 Meta de venta ${a}${tbCorte() ? ' al ' + r.corte : ''}</small><b>${Math.round(vt / mt * 100)}%</b><span>${$$(vt)} de ${$$(mt)}${vt < mt ? ' · faltan ' + $$(mt - vt) : ''}</span></div>` : ''; })() : ''}</div>
+        ${par && par.ord.length ? `<p class="muted peq" style="margin:10px 0 0">📐 <b>Pareto ${a}:</b> ${nf(par.A)} ${plural.toLowerCase()} (${(par.A / par.ord.length * 100).toFixed(0)}% de los que se movieron) hacen el 80% · <a href="#" onclick="event.preventDefault();App.tbFiltro('claseA')">ver clase A</a> · B: ${nf(par.B)} · C: ${nf(par.C)}</p>` : ''}</div>
       <div id="tbSerie">${tbGraficasHtml('tbS', tab, (f.q || f.filtro || f.lab ? '📊 Gráficas de lo filtrado (' + nf(l.length) + ' ' + plural.toLowerCase() + ')' : '📊 Gráficas de todos los ' + plural.toLowerCase()) + (f.cli ? ' · cliente ' + esc(f.cliN || f.cli) : '') + ' <small class="muted">· toca un renglón de la tabla para ver las de uno solo</small>')}</div>
       <div class="rejilla-2"><div class="tarjeta"><h3>🏆 Top 15 de ${a}${tbSel().length > 1 ? ' contra ' + tbSel().slice(1).join(', ') : ''}</h3><div class="grafica" style="height:${Math.max(260, top.length * (10 + 11 * tbSel().length) + 60)}px"><canvas id="tbE1"></canvas></div></div>
         <div class="tarjeta"><h3>🥧 Participación en ${a}</h3><div class="grafica" style="height:${Math.max(260, top.length * 26 + 60)}px"><canvas id="tbE2"></canvas></div></div></div>
-      <div class="tarjeta"><div class="tabla-cont"><table class="tb-tabla"><thead><tr><th class="num">#</th>${th('n', nombre)}${th('a', a, 1)}${tbSel().slice(1).map((y, i) => i === 0 ? th('b', y, 1) : `<th class="num">${y}</th>`).join('')}${th('dif', 'Diferencia vs ' + b, 1)}${th('pct', 'Cambio vs ' + b, 1)}<th class="num">Participación</th><th class="num">Lugar en ${b}</th></tr></thead><tbody>
+      ${par && par.ord.length > 2 ? `<div class="tarjeta"><h3>📐 Pareto 80/20 de ${a} <small class="muted">· barras: cada ${nombre.toLowerCase()} de mayor a menor · línea: % acumulado</small></h3><div class="grafica" style="height:280px"><canvas id="tbE3"></canvas></div>
+        <div class="kpis" style="margin:10px 0 0">${['A', 'B', 'C'].map(k => `<div class="kpi kpi-clic" onclick="App.tbFiltro('clase${k}')"><small>Clase ${k} · ${k === 'A' ? 'el 80 %' : k === 'B' ? 'el siguiente 15 %' : 'el último 5 %'}</small><b>${nf(par[k])} ${plural.toLowerCase()}</b><span>${fmt(par['s' + k])} · ${par.tot ? (par['s' + k] / par.tot * 100).toFixed(1) : 0}%</span></div>`).join('')}</div></div>` : ''}
+      <div class="tarjeta"><div class="tabla-cont"><table class="tb-tabla"><thead><tr><th class="num">#</th>${th('n', nombre)}${th('a', a, 1)}${tbSel().slice(1).map((y, i) => i === 0 ? th('b', y, 1) : `<th class="num">${y}</th>`).join('')}${th('dif', 'Diferencia vs ' + b, 1)}${th('pct', 'Cambio vs ' + b, 1)}<th class="num">Participación</th>${conPareto ? '<th title="Pareto: A hace el 80 %, B el 15 %, C el 5 %">Clase</th>' : ''}${conK ? `<th class="num">Notas ${a}</th>` : ''}${conTk && r.dinero ? '<th class="num">Ticket prom.</th>' : ''}${conMg ? '<th class="num">Margen</th>' : ''}${MT ? `<th class="num">Meta ${a}</th><th class="num">Cumplimiento</th>` : ''}<th class="num">Lugar en ${b}</th></tr></thead><tbody>
         ${l.slice(0, 500).map(x => { const va = tbVal(x, a, met), vb = tbVal(x, b, met), d = va - vb;
           return `<tr class="clic" onclick="App.tbDetalle('${tab}','${esc(String(x.id)).replace(/'/g, '&#39;')}')"><td class="num muted">${rA[x.id] || '—'}</td><td><b>${esc(tab === 'productos' ? String(x.n).split(',')[0] : x.n)}</b>${tab === 'productos' ? `<small class="muted"> ${esc(String(x.n).split(',').slice(1).join(',').trim())}${x.cat ? ' · ' + esc(x.cat) : ''}</small>` : ''}</td>
             <td class="num">${fmt(va)}</td>${tbSel().slice(1).map(y => `<td class="num muted">${fmt(tbVal(x, y, met))}</td>`).join('')}<td class="num ${d > 0 ? 'ok-txt' : d < 0 ? 'error' : ''}">${d > 0 ? '+' : ''}${fmt(d)}</td><td class="num">${tbVar(va, vb, tab === 'proveedores')}</td>
-            <td class="num">${totA2 ? (va / totA2 * 100).toFixed(1) + '%' : '—'}</td><td class="num muted">${rB[x.id] ? '#' + rB[x.id] : '—'}</td></tr>`; }).join('') || `<tr><td colspan="${7 + tbSel().length}" class="vacio">Sin resultados</td></tr>`}
+            <td class="num">${totA2 ? (va / totA2 * 100).toFixed(1) + '%' : '—'}</td>${conPareto ? `<td>${clase[x.id] ? `<span class="etq ${clase[x.id] === 'A' ? 'ok' : clase[x.id] === 'B' ? 'av' : ''}">${clase[x.id]}</span>` : '<span class="muted">—</span>'}</td>` : ''}
+            ${conK ? `<td class="num">${nf(tbVal(x, a, 'k'))}</td>` : ''}${conTk && r.dinero ? `<td class="num">${tbVal(x, a, 'k') ? $$(tbVal(x, a, 'v') / tbVal(x, a, 'k')) : '—'}</td>` : ''}
+            ${conMg ? (() => { const v = tbVal(x, a, 'v'), m = v ? tbVal(x, a, 'u') / v * 100 : null; return `<td class="num">${m === null ? '—' : `<span class="etq ${m < 10 ? 'mal' : m < 20 ? 'av' : 'ok'}">${m.toFixed(1)}%</span>`}</td>`; })() : ''}
+            ${MT ? (() => { const mt = metaDe(x); return mt ? `<td class="num">${$$(mt)}</td><td class="num"><span class="etq ${va >= mt ? 'ok' : va >= mt * 0.8 ? 'av' : 'mal'}">${Math.round(va / mt * 100)}%</span></td>` : '<td class="num muted">—</td><td class="num muted">—</td>'; })() : ''}
+            <td class="num muted">${rB[x.id] ? '#' + rB[x.id] : '—'}</td></tr>`; }).join('') || `<tr><td colspan="${12 + tbSel().length}" class="vacio">Sin resultados</td></tr>`}
       </tbody></table></div>${l.length > 500 ? `<p class="muted peq">Se muestran 500 de ${nf(l.length)}; usa el buscador o descarga el CSV.</p>` : ''}</div>`;
     if ($('#tbMet')) $('#tbMet').onchange = e => { f.met = e.target.value; pintarTablero(); };
     $('#tbQ').oninput = e => { f.q = e.target.value; clearTimeout(S.tbQT); S.tbQT = setTimeout(() => { pintarTablero(); const i = $('#tbQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); };
@@ -10619,6 +10669,13 @@ const App = (() => {
     const ot = Math.max(0, totA2 - top.slice(0, 8).reduce((t, x) => t + tbVal(x, a, met), 0));
     grafica('tbE2', { type: 'doughnut', data: { labels: top.slice(0, 8).map(etq).concat(ot > 0 ? ['Otros'] : []), datasets: [{ data: top.slice(0, 8).map(x => tbVal(x, a, met)).concat(ot > 0 ? [ot] : []), backgroundColor: TB_COL.concat(['#9ca3af']) }] },
       options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: c => c.label + ': ' + fmt(c.parsed) + (totA2 ? ' (' + (c.parsed / totA2 * 100).toFixed(1) + '%)' : '') } } } } });
+    if (par && par.ord.length > 2 && $('#tbE3')) { const pt = par.ord.slice(0, 60);
+      grafica('tbE3', { type: 'bar', data: { labels: pt.map(etq), datasets: [
+        { type: 'line', label: '% acumulado', data: par.curva.slice(0, pt.length).map(v => Math.round(v * 10) / 10), borderColor: '#c79a00', backgroundColor: '#c79a00', yAxisID: 'y2', tension: .2, pointRadius: 0, borderWidth: 2.5 },
+        { type: 'bar', label: String(a), data: pt.map(x => tbVal(x, a, met)), backgroundColor: pt.map(x => clase[x.id] === 'A' ? '#1f6f4a' : clase[x.id] === 'B' ? '#7fb89a' : '#c9d6cd') }] },
+        options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.dataset.yAxisID === 'y2' ? 'Acumulado: ' + c.parsed.y + '% · clase ' + (clase[pt[c.dataIndex].id] || '') : fmt(c.parsed.y) } } },
+          scales: { x: { ticks: { display: pt.length <= 25, autoSkip: true, maxRotation: 60 } }, y: { beginAtZero: true, ticks: { callback: esDin ? tickMoneda : v => nf(v) } }, y2: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } } },
+          onClick: (e, els) => { if (els[0]) tbDetalle(tab, pt[els[0].index].id); } } }); }
     tbSerieTab(tab, f.q || f.filtro || f.lab ? l.map(x => x.id) : null, met);
   }
   function tbOrden(k) { const f = S.fTb; f.orden = f.orden === k && k === 'dif' ? 'difm' : k; pintarTablero(); }
