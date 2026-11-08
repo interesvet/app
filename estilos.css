@@ -58,6 +58,9 @@ a { color: var(--marca); }
 .subnav:not(.oculto) + .vista { padding-top: 14px; }
 .subnav-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
 .subnav-tabs::-webkit-scrollbar { display: none; }
+/* que todas las pestañas de cada sección se vean (en varios renglones si no caben) */
+.subnav-tabs { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; }
+.pestanas { flex-wrap: wrap; overflow-x: visible; }
 .subnav-tabs button { flex: 0 0 auto; border: 1px solid var(--borde); background: var(--superficie); color: var(--texto-2); border-radius: 999px; padding: 8px 15px; font: inherit; font-size: 14px; cursor: pointer; white-space: nowrap; }
 .subnav-tabs button:hover { border-color: var(--marca-2); color: var(--texto); }
 .subnav-tabs button.activo { background: var(--marca-fuerte); border-color: var(--marca-fuerte); color: #fff; font-weight: 600; }
@@ -117,6 +120,10 @@ textarea { min-height: 70px; resize: vertical; }
 .aviso-mal { background: #fdecea; color: #8a1f17; border-radius: 8px; padding: 8px 10px; }
 .reu-op { margin: 0 0 6px; } .reu-op label { flex: 1 1 140px; }
 .reu-card { margin-bottom: 10px; }
+/* Mensajes del día */
+.msj-fila { padding: 10px 0; border-top: 1px solid var(--borde); } .msj-fila:first-of-type { border-top: 0; }
+.msj-hecho { opacity: .6; }
+.msj-pre { white-space: pre-wrap; font: inherit; font-size: 13px; background: var(--fondo-2, rgba(0,0,0,.04)); padding: 8px 10px; border-radius: 8px; margin: 6px 0 0; }
 
 /* KPI */
 .kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 14px; }

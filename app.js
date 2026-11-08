@@ -704,6 +704,7 @@ const App = (() => {
     { id: 'prospectos', t: 'Prospectos y embudo', i: '🧲', p: 'seguimiento', oculto: 1 },
     { id: 'visitas', t: 'Visitas', i: '📅', p: 'seguimiento', oculto: 1 },
     { id: 'reuniones', t: 'Reuniones con clientes', i: '🤝', p: 'reuniones', oculto: 1 },
+    { id: 'mensajes', t: 'Mensajes del día', i: '📲', p: 'seguimiento', oculto: 1 },
     { id: 'radar', t: 'Radar comercial', i: '🎯', p: 'seguimiento', oculto: 1 },
     { id: 'metas', t: 'Metas y comisiones', i: '🏆', p: 'seguimiento', oculto: 1 },
     { id: 'recetas', t: 'Recetas', i: '💊', p: 'recetas', oculto: 1 },
@@ -758,7 +759,7 @@ const App = (() => {
       { v: 'traspasos', t: '🚚 Traspasos', p: 'traspasos' }, { v: 'requisiciones', t: '📑 Requisición de traspaso', p: 'requisiciones' }, { v: 'ajustes', t: '⚖️ Ajustes y mermas', p: ['ajustes', 'mermas'] },
       { v: 'conteo', t: '📋 Conteo físico', p: 'inventario_fisico' }] },
     seguimiento: { t: 'Seguimiento de clientes', tabs: [
-      { v: 'radar', t: '🎯 Radar', p: 'seguimiento' }, { v: 'prospectos', t: '🧲 Prospectos y embudo', p: 'seguimiento' }, { v: 'metas', t: '🏆 Metas', p: 'seguimiento' }, { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'reuniones', t: '🤝 Reuniones', p: 'reuniones' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
+      { v: 'radar', t: '🎯 Radar', p: 'seguimiento' }, { v: 'prospectos', t: '🧲 Prospectos y embudo', p: 'seguimiento' }, { v: 'metas', t: '🏆 Metas', p: 'seguimiento' }, { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'reuniones', t: '🤝 Reuniones', p: 'reuniones' }, { v: 'mensajes', t: '📲 Mensajes del día', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
     compras: { t: 'Compras', tabs: [
       { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: 'dueno' }, { v: 'anCompras', t: '📊 Análisis de compras', p: 'compras' }] },
     productos: { t: 'Productos', tabs: [
@@ -11214,6 +11215,44 @@ const App = (() => {
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.reuRealizadaOk('${esc(id)}')">Guardar</button></div>`);
   }
   async function reuRealizadaOk(id) { try { await pedir('realizarReunion', { id: id, notas: $('#reuNotas').value }); cerrarModal(); toast('🏁 Reunión registrada'); S.reu = null; cargarReuniones(); } catch (e) {} }
+  /* ---------------- 📲 MENSAJES DEL DÍA (WhatsApp con un toque, sin costo) ---------------- */
+  const MSJ_T = { reunion: ['🤝', 'Reuniones de mañana'], visita: ['📅', 'Visitas de mañana'], porVencer: ['⏰', 'Notas por vencer'], vencida: ['💰', 'Cobranza vencida'], compra: ['🛒', 'Les toca comprar'], cumple: ['🎂', 'Cumpleaños de hoy'] };
+  V.mensajes = () => {
+    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila" style="justify-content:space-between;align-items:center;margin:0">
+        <p style="margin:0">Mensajes listos para enviar desde <b>tu WhatsApp</b>, sin costo. Toca <b>💬 Enviar</b>: se abre con el texto escrito y aún puedes corregirlo o no mandarlo.</p>
+        <button class="btn fijo" onclick="App.cargarMensajes(true)">⟳ Actualizar</button></div></div><div id="msjRes"><div class="vacio">Juntando los mensajes del día…</div></div>`;
+    cargarMensajes();
+  };
+  async function cargarMensajes(forzar) {
+    if (!S.msj || forzar || S.msj._d !== hoyISO()) {
+      try { S.msj = await pedir('mensajesDia', {}, true); S.msj._d = hoyISO(); }
+      catch (e) { const el = $('#msjRes'); if (el) el.innerHTML = `<div class="vacio">${/desconocida/i.test(e.message) ? '📲 Se activa en cuanto se publique la actualización del servidor (221).' : esc(e.message)}</div>`; return; }
+    }
+    pintarMensajes();
+  }
+  function msjWa(x) { const tel = String(x.cel || '').replace(/\D/g, '').slice(-10); return WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(x.texto); }
+  function pintarMensajes() {
+    const el = $('#msjRes'); if (!el || !S.msj) return;
+    const it = S.msj.items, pend = it.filter(x => !x.hecho), hechos = it.filter(x => x.hecho);
+    const fila = (x, i) => `<div class="msj-fila ${x.hecho ? 'msj-hecho' : ''}"><div class="msj-txt"><b>${esc(x.cliente)}</b>${x.cel ? '' : ' <span class="etq mal">sin celular</span>'}<br><small class="muted">${esc(x.detalle)}</small>
+        <details><summary class="peq">Ver mensaje</summary><pre class="msj-pre">${esc(x.texto)}</pre></details></div>
+      <div class="acciones izq" style="margin:6px 0 0">${x.hecho ? `<span class="etq ${x.hecho === 'Enviado' ? 'ok' : ''}">${esc(x.hecho)}${x.por ? ' · ' + esc(String(x.por).split(' ')[0]) : ''}</span><button class="btn chico" onclick="App.msjAccion(${i},'deshacer')">↩️ Deshacer</button>` :
+        `${x.cel ? `<a class="btn chico primario" target="_blank" href="${msjWa(x)}" onclick="App.msjAccion(${i},'enviado')">💬 Enviar</a>` : `<button class="btn chico" onclick="App.msjCopiar(${i})">📋 Copiar texto</button>`}
+        <button class="btn chico" onclick="App.msjAccion(${i},'hoy')">⏭️ Hoy no</button><button class="btn chico" onclick="App.msjAccion(${i},'3dias')">⏰ En 3 días</button><button class="btn chico" onclick="App.msjAccion(${i},'nunca')">🚫 No volver a sugerir</button>`}</div></div>`;
+    const grupos = Object.keys(MSJ_T).map(t => { const l = pend.map((x, i) => [x, it.indexOf(x)]).filter(([x]) => x.tipo === t); return l.length ? `<div class="tarjeta"><h3 style="margin-top:0">${MSJ_T[t][0]} ${MSJ_T[t][1]} <span class="etq">${l.length}</span></h3>${l.map(([x, i]) => fila(x, i)).join('')}</div>` : ''; }).join('');
+    el.innerHTML = `<div class="kpis" style="margin-bottom:12px">${Object.keys(MSJ_T).map(t => `<div class="kpi"><small>${MSJ_T[t][0]} ${MSJ_T[t][1]}</small><b>${pend.filter(x => x.tipo === t).length}</b></div>`).join('')}<div class="kpi"><small>✔ Atendidos hoy</small><b>${hechos.length}</b></div></div>` +
+      (grupos || '<div class="tarjeta vacio">🎉 No hay mensajes pendientes por hoy.</div>') +
+      (hechos.length ? `<details class="tarjeta"><summary><b>✔ Atendidos hoy (${hechos.length})</b></summary>${hechos.map(x => fila(x, it.indexOf(x))).join('')}</details>` : '');
+  }
+  async function msjAccion(i, accion) {
+    const x = S.msj && S.msj.items[i]; if (!x) return;
+    const antes = x.hecho;
+    x.hecho = accion === 'deshacer' ? '' : ({ enviado: 'Enviado', hoy: 'Hoy no', '3dias': 'En 3 días', nunca: 'No sugerir' })[accion]; x.por = accion === 'deshacer' ? '' : U().nombre;
+    setTimeout(pintarMensajes, accion === 'enviado' ? 600 : 0);
+    try { await pedir('marcarMensaje', { clave: x.clave, accion: accion, cliente: x.cliente, tipo: x.tipo }); }
+    catch (e) { x.hecho = antes; pintarMensajes(); }
+  }
+  function msjCopiar(i) { const x = S.msj && S.msj.items[i]; if (!x) return; try { navigator.clipboard.writeText(x.texto); toast('📋 Texto copiado'); } catch (e) { prompt('Copia el texto:', x.texto); } }
   V.visitas = () => {
     const f = S.fVis = alDia(S.fVis || { desde: sumaDias(hoyISO(), -7), hasta: sumaDias(hoyISO(), 60), hastaHoy: '', vend: '', estado: '' });
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
@@ -12981,6 +13020,7 @@ const App = (() => {
   return {
     formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, rxSurtElegir, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
+    cargarMensajes, msjAccion, msjCopiar,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
