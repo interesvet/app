@@ -8305,22 +8305,45 @@ const App = (() => {
          <b>Colchón</b> = cuánto está tu costo de lista arriba del costo real. Margen = (precio − costo) / precio. <span class="etq mal">rojo</span> &lt; 10% · <span class="etq av">ámbar</span> &lt; 20%.</p>`
       : (U().costoLista ? '<p>Margen calculado con el precio costo de la lista de precios.</p>' : '<p>Sin conexión: se muestra el margen con el costo de lista.</p>');
     const cr = p => CR && CR.productos[p.id] ? CR.productos[p.id] : null;
-    const base = p => $('#pfBase').value === 'real' && cr(p) && cr(p).costoReal ? cr(p).costoReal : (p.costo || 0);
+    const simb = p => !(Number(p.costo) >= 0.105);   // costo de lista en $0–$0.10: precio de bonificación copiado como costo
+    if (CR && CR.simbolicos) $('#pNota').insertAdjacentHTML('afterbegin', `<div class="aviso-cand">⚠️ <b>${nf(CR.simbolicos)} productos</b> tienen el <b>costo de lista en $0 – $0.10</b> (casi siempre el precio de una bonificación que se quedó como costo). Su costo real de compra sí está bien calculado; corrige el de lista para que no afecte márgenes ni a quien trabaja con costo de lista. <button class="btn chico" onclick="App.revisarCostosSimb()">Revisar y corregir</button></div>`);
+    const base = p => $('#pfBase').value === 'real' && cr(p) && cr(p).costoReal ? cr(p).costoReal : simb(p) && cr(p) && cr(p).costoReal ? cr(p).costoReal : (p.costo || 0);
     const mg = (p, l) => p.precios[l] ? (p.precios[l] - base(p)) / p.precios[l] * 100 : null;
     const pintar = () => {
       const bajo = $('#pfBajo').checked;
       const l = prodFiltrados().filter(p => !bajo || listas.some(x => { const m = mg(p, x); return m !== null && m < 10; }));
-      const cols = [{ t: 'Producto', h: p => `<b>${esc(p.nombre)}</b><br><small class="muted">${esc(p.id)}</small>` }, { t: 'Costo lista', num: 1, h: p => $$(p.costo) }];
+      const cols = [{ t: 'Producto', h: p => `<b>${esc(p.nombre)}</b><br><small class="muted">${esc(p.id)}</small>` }, { t: 'Costo lista', num: 1, h: p => $$(p.costo) + (simb(p) ? '<br><span class="etq mal" title="Costo de lista simbólico: corrígelo con Revisar y corregir">simbólico</span>' : '') }];
       if (CR) cols.push(
         { t: 'Costo real', num: 1, h: p => { const c = cr(p); if (!c) return '<span class="muted">sin compras</span>';
           if (!c.costoReal) return '<span class="etq av">solo bonificación</span>';
           return `<b>${$$(c.costoReal)}</b><br><small class="muted">últ. ${$$(c.ultimoCosto)} · ${esc(c.ultimaCompra)}${c.bonificadas ? '<br>' + nf(c.bonificadas) + ' de ' + nf(c.piezas) + ' pzs bonif.' + (c.bonifEspecial ? ' (' + nf(c.bonifEspecial) + ' regalo)' : '') : ''}</small>`; } },
-        { t: 'Colchón', num: 1, h: p => { const c = cr(p); if (!c || !c.costoReal || !p.costo) return '<span class="muted">—</span>';
+        { t: 'Colchón', num: 1, h: p => { const c = cr(p); if (!c || !c.costoReal || simb(p)) return '<span class="muted">—</span>';
           const d = (p.costo - c.costoReal) / c.costoReal * 100; return `<span class="etq ${d < 0 ? 'mal' : 'ok'}">${d >= 0 ? '+' : ''}${d.toFixed(1)}%</span>`; } });
       $('#pRes').innerHTML = `<p class="muted">${l.length} productos</p>` + tabla(cols.concat(listas.map(x => ({ t: x, num: 1, h: p => { const m = mg(p, x); if (m === null) return '<span class="muted">—</span>';
           return `${$$(p.precios[x])}<br><span class="etq ${m < 10 ? 'mal' : m < 20 ? 'av' : 'ok'}">${m.toFixed(1)}%</span>`; } }))), l.slice(0, 800), { clic: 'App.abrirProducto' });
     };
     enlazarFiltros(pintar); $('#pfBajo').onchange = pintar; $('#pfBase').onchange = pintar; pintar();
+  }
+  /* Costo de lista simbólico ($0 – $0.10): se propone el último costo real de compra (bonificadas y flete incluidos). */
+  async function revisarCostosSimb() {
+    modal('Costos de lista en $0 – $0.10', '<div class="vacio">Revisando…</div>');
+    let r; try { r = await pedir('costosSimbolicos', {}); } catch (e) { $('#modalCuerpo').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    r.lista.forEach((x, i) => x.i = i); S.costSimb = r.lista; const edita = puede('productos_editar');
+    $('#modalCuerpo').innerHTML = `<p class="muted">El <b>costo real</b> de cada compra = lo pagado (con descuentos) ÷ <b>todas</b> las piezas recibidas, incluidas las bonificadas, + su parte del flete. Ej.: 11 frascos a $450 + 5 de bonificación a $0.10 → $4,950 ÷ 16 = <b>$309.38</b> por frasco (más flete). Se sugiere el de la <b>última compra pagada</b>.</p>` +
+      tabla([{ t: '', h: x => edita && x.sugerido ? `<input type="checkbox" class="csSel" data-i="${x.i}" checked>` : '' },
+        { t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.id)}${x.activo ? '' : ' · inactivo'}</small>` },
+        { t: 'Hoy', num: 1, h: x => `<span class="error">${$$(x.actual)}</span>` },
+        { t: 'Última compra', num: 1, h: x => x.ultimoCosto ? `${$$(x.ultimoCosto)}<br><small class="muted">${esc(x.ultimaCompra)} · ${esc(x.ultimaOC)}</small>` : '<span class="muted">—</span>' },
+        { t: 'Promedio real', num: 1, cls: 'ocultar-movil', h: x => x.costoReal ? $$(x.costoReal) + (x.bonificadas ? `<br><small class="muted">${nf(x.bonificadas)} de ${nf(x.piezas)} pzs bonif.</small>` : '') : '<span class="muted">—</span>' },
+        { t: 'Nuevo costo de lista', num: 1, h: x => x.sugerido ? `<b>${$$(x.sugerido)}</b>` : '<small class="muted">sin compras pagadas: captúralo en el producto</small>' }], r.lista, { vacio: 'Ningún producto tiene costo simbólico' }) +
+      `<div class="acciones">${edita && r.lista.some(x => x.sugerido) ? '<button class="btn primario" id="csBtn" onclick="App.corregirCostosSimb()">✔ Corregir seleccionados</button>' : ''}<button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`;
+  }
+  async function corregirCostosSimb() {
+    const ids = [...document.querySelectorAll('.csSel:checked')].map(e => S.costSimb[+e.dataset.i].id); if (!ids.length) return toast('Elige al menos un producto', true);
+    const b = $('#csBtn'); if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
+    try { const r = await pedir('corregirCostosSimbolicos', { ids: ids }, true); toast('✔ ' + nf(r.corregidos) + ' costos de lista corregidos'); S.costosReales = null; cerrarModal();
+      try { await refrescarDatos(true); } catch (e) {} if (S.vista === 'productos') ir('productos', true);
+    } catch (e) { toast(e.message || 'No se pudo guardar', true); if (b) { b.disabled = false; b.textContent = '✔ Corregir seleccionados'; } }
   }
   async function formProducto(i) {
     const p = i === null ? null : S.lista[i];
@@ -12333,7 +12356,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
