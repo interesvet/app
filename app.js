@@ -10434,7 +10434,7 @@ const App = (() => {
 
   /* ---------- 📊 DASHBOARD: análisis y comparativos por año (cliente, producto, proveedor, categoría, sucursal, vendedor) ---------- */
   const TB_COL = ['#1f6f4a', '#2a78d6', '#d95926', '#8e44ad', '#c79a00', '#199e70', '#6b7280', '#b03a6b'];
-  const TB_TABS = [['resumen', '📈 Resumen por año'], ['clientes', '👥 Clientes'], ['productos', '💊 Productos'], ['proveedores', '🏭 Proveedores'], ['categorias', '🏷️ Categorías'], ['sucursales', '🏬 Sucursales'], ['vendedores', '👤 Vendedores']];
+  const TB_TABS = [['resumen', '📈 Resumen por año'], ['clientes', '👥 Clientes'], ['cartera', '🔄 Cartera'], ['productos', '💊 Productos'], ['proveedores', '🏭 Proveedores'], ['categorias', '🏷️ Categorías'], ['sucursales', '🏬 Sucursales'], ['vendedores', '👤 Vendedores']];
   const TB_TIPO = { clientes: 'cliente', productos: 'producto', proveedores: 'proveedor', categorias: 'categoria', sucursales: 'sucursal', vendedores: 'vendedor' };
   const MES3 = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   V.tablero = (tab) => {
@@ -10489,6 +10489,8 @@ const App = (() => {
     $('#tbTabs').innerHTML = tabs.map(([k, t]) => `<button class="${f.tab === k ? 'activo' : ''}" onclick="App.tbTab('${k}')">${t}</button>`).join('');
     if (!r.anios.length) { el.innerHTML = '<div class="vacio">Aún no hay ventas registradas.</div>'; return; }
     if (f.tab === 'resumen') return pintarTbResumen(el);
+    if (f.tab === 'cartera') { $('#tbAnios').parentElement.style.opacity = '.45'; return pintarTbCartera(el); }
+    $('#tbAnios').parentElement.style.opacity = '';
     pintarTbEntidad(el, f.tab);
   }
   function tbTab(k) { const f = S.fTb, habiaCli = !!f.cli; f.tab = k; f.q = ''; f.filtro = ''; f.orden = 'a'; f.met = ''; f.lab = ''; f.cli = ''; f.cliN = ''; if (habiaCli) cargarTablero(true); else pintarTablero(); }
@@ -10608,6 +10610,16 @@ const App = (() => {
       par = { ord: ord0, tot: tot0, curva: curva, A: n('A'), B: n('B'), C: n('C'), sA: sm('A'), sB: sm('B'), sC: sm('C') };
       if (/^clase[ABC]$/.test(f.filtro)) l = l.filter(x => clase[x.id] === f.filtro.slice(-1));
     }
+    // matriz de productos: venta (arriba/abajo de la mediana) × margen (arriba/abajo del margen de todos)
+    const MZ = { E: ['⭐ Estrellas', 'mucha venta y buen margen: cuídalos', '#1f6f4a'], V: ['🐄 Volumen', 'mucha venta con margen bajo: revisa precio o costo', '#2a78d6'], N: ['💎 Nicho', 'poca venta con buen margen: empújalos', '#c79a00'], R: ['⚠️ Revisar', 'poca venta y margen bajo: ¿vale la pena tenerlos?', '#c23b32'] };
+    const cuad = {}; let mz = null;
+    if (tab === 'productos' && r.verUtil && r.dinero) {
+      const conV = base.filter(x => tbVal(x, a, 'v') > 0), vs = conV.map(x => tbVal(x, a, 'v')).sort((p, q) => p - q), med = vs.length ? vs[Math.floor(vs.length / 2)] : 0;
+      const tv = conV.reduce((t, x) => t + tbVal(x, a, 'v'), 0), mg = tv ? conV.reduce((t, x) => t + tbVal(x, a, 'u'), 0) / tv * 100 : 0;
+      conV.forEach(x => { const m = tbVal(x, a, 'u') / tbVal(x, a, 'v') * 100, alto = tbVal(x, a, 'v') >= med; cuad[x.id] = alto ? (m >= mg ? 'E' : 'V') : (m >= mg ? 'N' : 'R'); });
+      mz = { med: med, mg: mg, l: conV };
+      if (/^mz[EVNR]$/.test(f.filtro)) l = l.filter(x => cuad[x.id] === f.filtro.slice(-1));
+    }
     // metas (vendedores y sucursales, al medir por venta)
     const MT = r.metas && met === 'v' && (tab === 'vendedores' || tab === 'sucursales') ? r.metas[tab] : null;
     const metaDe = x => { const o = MT && MT[x.id] && MT[x.id][a]; return o ? (tbCorte() ? o.f : o.y) : 0; };
@@ -10626,12 +10638,12 @@ const App = (() => {
     el.innerHTML = `<div class="tarjeta"><div class="fila">
         ${mets.length > 1 ? `<label>Medir por<select id="tbMet">${mets.map(([k, t]) => `<option value="${k}" ${k === met ? 'selected' : ''}>${t}</option>`).join('')}</select></label>` : ''}
         <label style="flex:2 1 220px">Buscar<input id="tbQ" value="${esc(f.q)}" placeholder="${nombre}${tab === 'productos' ? ', laboratorio o categoría' : ''}"></label>
-        <label>Mostrar<select id="tbFil">${[['', 'Todos'], ['crecen', '▲ Crecen'], ['caen', '▼ Caen'], ['nuevos', '✨ Nuevos en ' + a], ['perdidos', '⚠️ Ya no en ' + a]].concat(conPareto ? [['claseA', '🅰️ Clase A (80 %)'], ['claseB', '🅱️ Clase B (15 %)'], ['claseC', '©️ Clase C (5 %)']] : []).map(([k, t]) => `<option value="${k}" ${k === f.filtro ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label>Mostrar<select id="tbFil">${[['', 'Todos'], ['crecen', '▲ Crecen'], ['caen', '▼ Caen'], ['nuevos', '✨ Nuevos en ' + a], ['perdidos', '⚠️ Ya no en ' + a]].concat(conPareto ? [['claseA', '🅰️ Clase A (80 %)'], ['claseB', '🅱️ Clase B (15 %)'], ['claseC', '©️ Clase C (5 %)']] : []).concat(mz ? Object.keys(MZ).map(k => ['mz' + k, MZ[k][0]]) : []).map(([k, t]) => `<option value="${k}" ${k === f.filtro ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
         ${tab === 'productos' ? `<label>Laboratorio<select id="tbLab">${opts(labs.map(x => [x, x]), f.lab || '', 'Todos')}</select></label>
           <label style="flex:2 1 220px">Cliente${f.cli ? ` <span class="etq ok">${esc(f.cliN || f.cli)} <a href="#" onclick="event.preventDefault();App.tbQuitarCli()" title="Quitar">✕</a></span>` : ''}<div class="buscador"><input id="tbCli" placeholder="Solo lo que compró un cliente…" autocomplete="off"></div></label>` : ''}
         <button class="btn fijo" onclick="App.tbReset()" title="Quitar todos los filtros">↺ Restablecer</button>
         <button class="btn fijo" onclick="App.tbCsv('${tab}')">⬇️ Excel (CSV)</button></div>
-        ${filtrado ? `<p class="muted peq" style="margin:8px 0 0">🔎 Filtrado: ${[f.q ? '“' + esc(f.q) + '”' : '', f.lab ? 'laboratorio ' + esc(f.lab) : '', f.cli ? 'cliente ' + esc(f.cliN || f.cli) : '', f.filtro ? esc(({ crecen: 'los que crecen', caen: 'los que caen', nuevos: 'nuevos', perdidos: 'los que ya no aparecen', claseA: 'clase A', claseB: 'clase B', claseC: 'clase C' })[f.filtro]) : ''].filter(Boolean).join(' · ')}. Las tarjetas y gráficas muestran solo lo filtrado.</p>` : ''}
+        ${filtrado ? `<p class="muted peq" style="margin:8px 0 0">🔎 Filtrado: ${[f.q ? '“' + esc(f.q) + '”' : '', f.lab ? 'laboratorio ' + esc(f.lab) : '', f.cli ? 'cliente ' + esc(f.cliN || f.cli) : '', f.filtro ? esc(({ crecen: 'los que crecen', caen: 'los que caen', nuevos: 'nuevos', perdidos: 'los que ya no aparecen', claseA: 'clase A', claseB: 'clase B', claseC: 'clase C', mzE: 'estrellas', mzV: 'volumen', mzN: 'nicho', mzR: 'revisar' })[f.filtro]) : ''].filter(Boolean).join(' · ')}. Las tarjetas y gráficas muestran solo lo filtrado.</p>` : ''}
         <div class="kpis" style="margin:10px 0 0"><div class="kpi"><small>Total ${a}${tbCorte() ? ' al ' + r.corte : ''}${filtrado ? ' (filtrado)' : ''}</small><b>${fmt(totA2)}</b><span class="tb-cmps">${tbSel().slice(1).map(y => { const t = l.reduce((s2, x) => s2 + tbVal(x, y, met), 0); return `<span>${tbVar(totA2, t, tab === 'proveedores')} vs ${y}: ${fmt(t)}</span>`; }).join('')}${filtrado && totA ? `<span class="muted">${(totA2 / totA * 100).toFixed(1)}% del total (${fmt(totA)})</span>` : ''}</span></div>
           <div class="kpi"><small>${plural} con movimiento en ${a}${tbCorte() ? ' (al ' + r.corte + ')' : ''}</small><b>${nf(movA)}</b><span>${b}: ${nf(movB)}</span></div>
           <div class="kpi kpi-clic" onclick="App.tbFiltro('nuevos')"><small>✨ Nuevos en ${a}</small><b>${nf(nuevos)}</b><span>no estaban en ${b}</span></div>
@@ -10644,13 +10656,18 @@ const App = (() => {
       <div id="tbSerie">${tbGraficasHtml('tbS', tab, (f.q || f.filtro || f.lab ? '📊 Gráficas de lo filtrado (' + nf(l.length) + ' ' + plural.toLowerCase() + ')' : '📊 Gráficas de todos los ' + plural.toLowerCase()) + (f.cli ? ' · cliente ' + esc(f.cliN || f.cli) : '') + ' <small class="muted">· toca un renglón de la tabla para ver las de uno solo</small>')}</div>
       <div class="rejilla-2"><div class="tarjeta"><h3>🏆 Top 15 de ${a}${tbSel().length > 1 ? ' contra ' + tbSel().slice(1).join(', ') : ''}</h3><div class="grafica" style="height:${Math.max(260, top.length * (10 + 11 * tbSel().length) + 60)}px"><canvas id="tbE1"></canvas></div></div>
         <div class="tarjeta"><h3>🥧 Participación en ${a}</h3><div class="grafica" style="height:${Math.max(260, top.length * 26 + 60)}px"><canvas id="tbE2"></canvas></div></div></div>
+      ${mz && mz.l.length > 2 ? `<div class="tarjeta"><h3>🧭 Matriz de productos ${a}: venta contra margen <small class="muted">· líneas: venta mediana (${$$(mz.med)}) y margen de todos (${mz.mg.toFixed(1)}%)</small></h3>
+        <div class="grafica" style="height:340px"><canvas id="tbE4"></canvas></div>
+        <div class="kpis" style="margin:10px 0 0">${Object.keys(MZ).map(k => { const ll = mz.l.filter(x => cuad[x.id] === k), v = ll.reduce((t, x) => t + tbVal(x, a, 'v'), 0), u = ll.reduce((t, x) => t + tbVal(x, a, 'u'), 0);
+          return `<div class="kpi kpi-clic ${f.filtro === 'mz' + k ? 'activo' : ''}" onclick="App.tbFiltro('mz${k}')" style="box-shadow:inset 4px 0 0 ${MZ[k][2]}"><small>${MZ[k][0]} · ${nf(ll.length)}</small><b>${$$(v)}</b><span>utilidad ${$$(u)} · ${v ? (u / v * 100).toFixed(1) : 0}% · ${MZ[k][1]}</span></div>`; }).join('')}</div></div>` : ''}
       ${par && par.ord.length > 2 ? `<div class="tarjeta"><h3>📐 Pareto 80/20 de ${a} <small class="muted">· barras: cada ${nombre.toLowerCase()} de mayor a menor · línea: % acumulado</small></h3><div class="grafica" style="height:280px"><canvas id="tbE3"></canvas></div>
         <div class="kpis" style="margin:10px 0 0">${['A', 'B', 'C'].map(k => `<div class="kpi kpi-clic" onclick="App.tbFiltro('clase${k}')"><small>Clase ${k} · ${k === 'A' ? 'el 80 %' : k === 'B' ? 'el siguiente 15 %' : 'el último 5 %'}</small><b>${nf(par[k])} ${plural.toLowerCase()}</b><span>${fmt(par['s' + k])} · ${par.tot ? (par['s' + k] / par.tot * 100).toFixed(1) : 0}%</span></div>`).join('')}</div></div>` : ''}
-      <div class="tarjeta"><div class="tabla-cont"><table class="tb-tabla"><thead><tr><th class="num">#</th>${th('n', nombre)}${th('a', a, 1)}${tbSel().slice(1).map((y, i) => i === 0 ? th('b', y, 1) : `<th class="num">${y}</th>`).join('')}${th('dif', 'Diferencia vs ' + b, 1)}${th('pct', 'Cambio vs ' + b, 1)}<th class="num">Participación</th>${conPareto ? '<th title="Pareto: A hace el 80 %, B el 15 %, C el 5 %">Clase</th>' : ''}${conK ? `<th class="num">Notas ${a}</th>` : ''}${conTk && r.dinero ? '<th class="num">Ticket prom.</th>' : ''}${conMg ? '<th class="num">Margen</th>' : ''}${MT ? `<th class="num">Meta ${a}</th><th class="num">Cumplimiento</th>` : ''}<th class="num">Lugar en ${b}</th></tr></thead><tbody>
+      <div class="tarjeta"><div class="tabla-cont"><table class="tb-tabla"><thead><tr><th class="num">#</th>${th('n', nombre)}${th('a', a, 1)}${tbSel().slice(1).map((y, i) => i === 0 ? th('b', y, 1) : `<th class="num">${y}</th>`).join('')}${th('dif', 'Diferencia vs ' + b, 1)}${th('pct', 'Cambio vs ' + b, 1)}<th class="num">Participación</th>${conPareto ? '<th title="Pareto: A hace el 80 %, B el 15 %, C el 5 %">Clase</th>' : ''}${mz ? '<th title="Matriz venta × margen">Matriz</th>' : ''}${conK ? `<th class="num">Notas ${a}</th>` : ''}${conTk && r.dinero ? '<th class="num">Ticket prom.</th>' : ''}${conMg ? '<th class="num">Margen</th>' : ''}${MT ? `<th class="num">Meta ${a}</th><th class="num">Cumplimiento</th>` : ''}<th class="num">Lugar en ${b}</th></tr></thead><tbody>
         ${l.slice(0, 500).map(x => { const va = tbVal(x, a, met), vb = tbVal(x, b, met), d = va - vb;
           return `<tr class="clic" onclick="App.tbDetalle('${tab}','${esc(String(x.id)).replace(/'/g, '&#39;')}')"><td class="num muted">${rA[x.id] || '—'}</td><td><b>${esc(tab === 'productos' ? String(x.n).split(',')[0] : x.n)}</b>${tab === 'productos' ? `<small class="muted"> ${esc(String(x.n).split(',').slice(1).join(',').trim())}${x.cat ? ' · ' + esc(x.cat) : ''}</small>` : ''}</td>
             <td class="num">${fmt(va)}</td>${tbSel().slice(1).map(y => `<td class="num muted">${fmt(tbVal(x, y, met))}</td>`).join('')}<td class="num ${d > 0 ? 'ok-txt' : d < 0 ? 'error' : ''}">${d > 0 ? '+' : ''}${fmt(d)}</td><td class="num">${tbVar(va, vb, tab === 'proveedores')}</td>
             <td class="num">${totA2 ? (va / totA2 * 100).toFixed(1) + '%' : '—'}</td>${conPareto ? `<td>${clase[x.id] ? `<span class="etq ${clase[x.id] === 'A' ? 'ok' : clase[x.id] === 'B' ? 'av' : ''}">${clase[x.id]}</span>` : '<span class="muted">—</span>'}</td>` : ''}
+            ${mz ? `<td title="${cuad[x.id] ? esc(MZ[cuad[x.id]][1]) : ''}">${cuad[x.id] ? MZ[cuad[x.id]][0].split(' ')[0] : '<span class="muted">—</span>'}</td>` : ''}
             ${conK ? `<td class="num">${nf(tbVal(x, a, 'k'))}</td>` : ''}${conTk && r.dinero ? `<td class="num">${tbVal(x, a, 'k') ? $$(tbVal(x, a, 'v') / tbVal(x, a, 'k')) : '—'}</td>` : ''}
             ${conMg ? (() => { const v = tbVal(x, a, 'v'), m = v ? tbVal(x, a, 'u') / v * 100 : null; return `<td class="num">${m === null ? '—' : `<span class="etq ${m < 10 ? 'mal' : m < 20 ? 'av' : 'ok'}">${m.toFixed(1)}%</span>`}</td>`; })() : ''}
             ${MT ? (() => { const mt = metaDe(x); return mt ? `<td class="num">${$$(mt)}</td><td class="num"><span class="etq ${va >= mt ? 'ok' : va >= mt * 0.8 ? 'av' : 'mal'}">${Math.round(va / mt * 100)}%</span></td>` : '<td class="num muted">—</td><td class="num muted">—</td>'; })() : ''}
@@ -10669,6 +10686,16 @@ const App = (() => {
     const ot = Math.max(0, totA2 - top.slice(0, 8).reduce((t, x) => t + tbVal(x, a, met), 0));
     grafica('tbE2', { type: 'doughnut', data: { labels: top.slice(0, 8).map(etq).concat(ot > 0 ? ['Otros'] : []), datasets: [{ data: top.slice(0, 8).map(x => tbVal(x, a, met)).concat(ot > 0 ? [ot] : []), backgroundColor: TB_COL.concat(['#9ca3af']) }] },
       options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: c => c.label + ': ' + fmt(c.parsed) + (totA2 ? ' (' + (c.parsed / totA2 * 100).toFixed(1) + '%)' : '') } } } } });
+    if (mz && mz.l.length > 2 && $('#tbE4')) {
+      const pts = k => mz.l.filter(x => cuad[x.id] === k).map(x => ({ x: tbVal(x, a, 'v'), y: Math.round(tbVal(x, a, 'u') / tbVal(x, a, 'v') * 1000) / 10, id: x.id, n: etq(x) }));
+      const xs = mz.l.map(x => tbVal(x, a, 'v')), xmin = Math.max(1, Math.min(...xs)), xmax = Math.max(...xs);
+      grafica('tbE4', { type: 'scatter', data: { datasets: Object.keys(MZ).map(k => ({ label: MZ[k][0], data: pts(k), backgroundColor: MZ[k][2] + 'cc', pointRadius: 5, pointHoverRadius: 7 }))
+          .concat([{ type: 'line', label: 'Margen de todos', data: [{ x: xmin, y: Math.round(mz.mg * 10) / 10 }, { x: xmax, y: Math.round(mz.mg * 10) / 10 }], borderColor: '#9ca3af', borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5 },
+            { type: 'line', label: 'Venta mediana', data: [{ x: mz.med, y: Math.min(0, ...mz.l.map(x => tbVal(x, a, 'u') / tbVal(x, a, 'v') * 100)) }, { x: mz.med, y: Math.max(...mz.l.map(x => tbVal(x, a, 'u') / tbVal(x, a, 'v') * 100)) }], borderColor: '#9ca3af', borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5 }]) },
+        options: { maintainAspectRatio: false, plugins: { legend: { labels: { filter: it => it.text !== 'Margen de todos' && it.text !== 'Venta mediana' } }, tooltip: { filter: it => it.raw && it.raw.id, callbacks: { label: c => c.raw.n + ': ' + $$(c.raw.x) + ' · margen ' + c.raw.y + '%' } } },
+          scales: { x: { type: 'logarithmic', title: { display: true, text: 'Venta ' + a + ' (escala logarítmica)' }, ticks: { callback: v => [1, 2, 5].some(k => { const e = Math.log10(v / k); return Math.abs(e - Math.round(e)) < 1e-6; }) ? tickMoneda(v) : '' } }, y: { title: { display: true, text: 'Margen %' }, ticks: { callback: v => v + '%' } } },
+          onClick: (e, els) => { const it = els.find(z => z.element && z.element.$context && z.element.$context.raw && z.element.$context.raw.id); if (it) tbDetalle(tab, it.element.$context.raw.id); } } });
+    }
     if (par && par.ord.length > 2 && $('#tbE3')) { const pt = par.ord.slice(0, 60);
       grafica('tbE3', { type: 'bar', data: { labels: pt.map(etq), datasets: [
         { type: 'line', label: '% acumulado', data: par.curva.slice(0, pt.length).map(v => Math.round(v * 10) / 10), borderColor: '#c79a00', backgroundColor: '#c79a00', yAxisID: 'y2', tension: .2, pointRadius: 0, borderWidth: 2.5 },
@@ -10677,6 +10704,74 @@ const App = (() => {
           scales: { x: { ticks: { display: pt.length <= 25, autoSkip: true, maxRotation: 60 } }, y: { beginAtZero: true, ticks: { callback: esDin ? tickMoneda : v => nf(v) } }, y2: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } } },
           onClick: (e, els) => { if (els[0]) tbDetalle(tab, pt[els[0].index].id); } } }); }
     tbSerieTab(tab, f.q || f.filtro || f.lab ? l.map(x => x.id) : null, met);
+  }
+  /* ---------- 🔄 CARTERA: foto de hoy de cada cliente (mismos estados que Seguimiento › Por atender) ---------- */
+  const CT_EST = ['Al día', 'Toca comprar', 'Atrasado', 'Dormido', 'Perdido'];
+  const CT_COL = { 'Al día': '#1f7a3a', 'Toca comprar': '#7cb342', 'Atrasado': '#e08a00', 'Dormido': '#c23b32', 'Perdido': '#555b63' };
+  async function pintarTbCartera(el, forzar) {
+    const f = S.fTb; f.ct = f.ct || { est: '', q: '', orden: 'v12' };
+    if (forzar || !S.ct || S.ct._suc !== f.suc || Date.now() - S.ct._t > 900000) {
+      el.innerHTML = '<div class="vacio">🔄 Revisando la historia de cada cliente…</div>';
+      try { S.ct = await pedir('cartera', { sucursal: f.suc }, true); S.ct._suc = f.suc; S.ct._t = Date.now(); }
+      catch (e) { el.innerHTML = `<div class="vacio">${e.red ? 'La cartera necesita conexión la primera vez.' : /desconocida/i.test(e.message) ? '🔄 La cartera se activa en cuanto se publique la actualización del servidor (217).' : esc(e.message)}</div>`; return; }
+      if (S.fTb !== f || f.tab !== 'cartera') return;
+    }
+    const r = S.ct, c = f.ct, din = r.dinero, todos = r.clientes;
+    const por = e => todos.filter(x => x.estado === e), suma = (l, k) => l.reduce((t, x) => t + (x[k] || 0), 0);
+    const activos = todos.filter(x => x.estado !== 'Perdido' && x.estado !== 'Dormido'), nuevos90 = todos.filter(x => x.antig <= 90);
+    const conCada = todos.filter(x => x.cada && x.estado !== 'Perdido').map(x => x.cada).sort((a, b) => a - b), medCada = conCada.length ? conCada[Math.floor(conCada.length / 2)] : 0;
+    const riesgo = todos.filter(x => x.estado === 'Atrasado' || x.estado === 'Dormido');
+    let l = todos.filter(x => (!c.est || (c.est === 'nuevos' ? x.antig <= 90 : c.est === 'riesgo' ? (x.estado === 'Atrasado' || x.estado === 'Dormido') : x.estado === c.est)) && (!c.q || coincide(x.n + ' ' + x.id + ' ' + x.vend + ' ' + x.tipo, c.q)));
+    const ord = { v12: (a, b) => (b.v12 || 0) - (a.v12 || 0), venta: (a, b) => (b.venta || 0) - (a.venta || 0), u: (a, b) => (b.u || 0) - (a.u || 0), sin: (a, b) => b.sin - a.sin, cada: (a, b) => (a.cada || 9e9) - (b.cada || 9e9), compras: (a, b) => b.compras - a.compras, n: (a, b) => a.n.localeCompare(b.n), antig: (a, b) => a.antig - b.antig };
+    l.sort(ord[c.orden] || ord.v12);
+    const th = (k, t, num) => `<th class="${num ? 'num' : ''} ordenable" onclick="App.ctOrden('${k}')">${t}${c.orden === k ? ' ▾' : ''}</th>`;
+    const kp = (k, t, n, s, col) => `<div class="kpi kpi-clic ${c.est === k ? 'activo' : ''}" onclick="App.ctEstado('${k}')" ${col ? `style="box-shadow:inset 4px 0 0 ${col}"` : ''}><small>${t}</small><b>${nf(n)}</b><span>${s}</span></div>`;
+    const fv = v => din ? $$(v) : '—';
+    el.innerHTML = `<div class="tarjeta"><h3 style="margin-top:0">🔄 Cartera de clientes <small class="muted">· foto al ${esc(r.hoy)} con toda la historia de cada cliente${f.suc ? ' · ' + esc(sucNom(f.suc)) : ''}</small></h3>
+        <div class="kpis" style="margin:0">
+          ${kp('', 'Clientes con compras', todos.length, nf(activos.length) + ' activos (al día, toca comprar o atrasados)')}
+          ${kp('nuevos', '✨ Nuevos (últimos 90 días)', nuevos90.length, din ? 'compraron ' + $$(suma(nuevos90, 'v12')) : 'primera compra reciente')}
+          ${kp('riesgo', '⚠️ En riesgo', riesgo.length, din ? $$(suma(riesgo, 'v12')) + ' de venta en 12 meses' : 'atrasados + dormidos', '#e08a00')}
+          ${kp('Perdido', '💤 Perdidos', por('Perdido').length, 'más de 180 días sin comprar', '#555b63')}
+          <div class="kpi"><small>Compran cada (mediana)</small><b>${medCada ? medCada + ' días' : '—'}</b><span>de los clientes que han comprado más de una vez</span></div>
+        </div>
+        <div class="kpis" style="margin:10px 0 0">${CT_EST.map(e => kp(e, e, por(e).length, din ? fv(suma(por(e), 'v12')) + ' en 12 meses' : '', CT_COL[e])).join('')}</div>
+        <p class="muted peq" style="margin:8px 0 0">Estados como en Seguimiento › Por atender: <b>Toca comprar</b> ya llegó a su intervalo · <b>Atrasado</b> pasó 1.3 veces su intervalo · <b>Dormido</b> 2 veces o 90 días · <b>Perdido</b> más de 180 días. Toca una tarjeta para filtrar.</p></div>
+      <div class="rejilla-2"><div class="tarjeta"><h3>📊 Clientes que compraron cada mes</h3><div class="grafica" style="height:290px"><canvas id="ctG1"></canvas></div></div>
+        <div class="tarjeta"><h3>🥧 Cartera por estado</h3><div class="grafica" style="height:290px"><canvas id="ctG2"></canvas></div></div></div>
+      <div class="tarjeta"><div class="fila"><label style="flex:2 1 240px">Buscar<input id="ctQ" value="${esc(c.q)}" placeholder="Cliente, vendedor o tipo"></label>
+        <label>Estado<select id="ctEst">${opts([['', 'Todos'], ['nuevos', '✨ Nuevos (90 días)'], ['riesgo', '⚠️ En riesgo']].concat(CT_EST.map(e => [e, e])), c.est)}</select></label>
+        <button class="btn fijo" onclick="App.ctCsv()">⬇️ Excel (CSV)</button><button class="btn fijo" onclick="App.ctRecargar()">⟳ Actualizar</button></div>
+        <p class="muted peq">${nf(l.length)} clientes${din ? ' · venta 12 meses ' + $$(suma(l, 'v12')) + ' · histórica ' + $$(suma(l, 'venta')) : ''}${r.verUtil ? ' · utilidad histórica ' + $$(suma(l, 'u')) : ''}</p>
+        <div class="tabla-cont"><table><thead><tr>${th('n', 'Cliente')}<th>Estado</th>${th('sin', 'Días sin comprar', 1)}${th('cada', 'Compra cada', 1)}<th class="num">Última compra</th>${th('compras', 'Compras', 1)}${din ? th('v12', 'Venta 12 meses', 1) + th('venta', 'Venta histórica', 1) : ''}${r.verUtil ? th('u', 'Utilidad histórica', 1) + '<th class="num">Margen</th>' : ''}${th('antig', 'Cliente desde', 1)}<th class="ocultar-movil">Vendedor</th></tr></thead><tbody>
+          ${l.slice(0, 500).map(x => `<tr class="clic" onclick="App.ctCliente('${esc(String(x.id)).replace(/'/g, '&#39;')}')"><td><b>${esc(x.n)}</b>${x.tipo || (U().todasSucursales && x.suc) ? `<br><small class="muted">${esc([x.tipo, U().todasSucursales && x.suc ? sucNom(x.suc) : ''].filter(Boolean).join(' · '))}</small>` : ''}</td>
+            <td><span class="etq" style="background:${CT_COL[x.estado]}22;color:${CT_COL[x.estado]}">${esc(x.estado)}</span>${x.antig <= 90 ? ' <span class="etq ok">nuevo</span>' : ''}</td>
+            <td class="num">${nf(x.sin)}</td><td class="num">${x.cada ? x.cada + ' d' : '<span class="muted">1 compra</span>'}</td><td class="num">${esc(x.ultima)}</td><td class="num">${nf(x.compras)}</td>
+            ${din ? `<td class="num">${$$(x.v12)}</td><td class="num">${$$(x.venta)}</td>` : ''}${r.verUtil ? `<td class="num">${$$(x.u)}</td><td class="num">${x.venta ? (() => { const m = x.u / x.venta * 100; return `<span class="etq ${m < 10 ? 'mal' : m < 20 ? 'av' : 'ok'}">${m.toFixed(1)}%</span>`; })() : '—'}</td>` : ''}
+            <td class="num">${esc(x.primera)}</td><td class="ocultar-movil">${esc(x.vend)}</td></tr>`).join('') || '<tr><td colspan="12" class="vacio">Sin clientes</td></tr>'}
+        </tbody></table></div>${l.length > 500 ? `<p class="muted peq">Se muestran 500 de ${nf(l.length)}; usa el buscador o descarga el CSV.</p>` : ''}</div>`;
+    $('#ctQ').oninput = e => { c.q = e.target.value; clearTimeout(S.ctQT); S.ctQT = setTimeout(() => { pintarTbCartera(el); const i = $('#ctQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 350); };
+    $('#ctEst').onchange = e => { c.est = e.target.value; pintarTbCartera(el); };
+    const lbl = r.meses.map(m => MES3[+m.mes.slice(5) - 1] + ' ' + m.mes.slice(2, 4));
+    grafica('ctG1', { type: 'bar', data: { labels: lbl, datasets: [
+      { label: 'Nuevos', data: r.meses.map(m => m.nuevos), backgroundColor: '#2a78d6', stack: 'c' },
+      { label: 'Recurrentes', data: r.meses.map(m => m.recurrentes), backgroundColor: '#1f6f4a', stack: 'c' },
+      { label: 'Reactivados (volvieron tras 90+ días)', data: r.meses.map(m => m.reactivados), backgroundColor: '#c79a00', stack: 'c' },
+      { type: 'line', label: 'Se volvieron perdidos', data: r.meses.map(m => m.perdidos), borderColor: '#c23b32', backgroundColor: '#c23b32', tension: .3, pointRadius: 2 }] },
+      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } } });
+    grafica('ctG2', { type: 'doughnut', data: { labels: CT_EST, datasets: [{ data: CT_EST.map(e => por(e).length), backgroundColor: CT_EST.map(e => CT_COL[e]) }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { position: 'right' } }, onClick: (e, els) => { if (els[0]) ctEstado(CT_EST[els[0].index]); } } });
+  }
+  function ctEstado(k) { const c = S.fTb.ct; c.est = c.est === k ? '' : k; pintarTablero(); }
+  function ctOrden(k) { S.fTb.ct.orden = k; pintarTablero(); }
+  function ctRecargar() { const el = $('#tbRes'); if (el) pintarTbCartera(el, true); }
+  function ctCliente(id) { if (cliente(id)) fichaCliente(id); }
+  function ctCsv() {
+    const r = S.ct; if (!r) return; const q = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
+    const cab = ['Clave', 'Cliente', 'Sucursal', 'Tipo', 'Lista', 'Vendedor', 'Estado', 'Días sin comprar', 'Compra cada (días)', 'Primera compra', 'Última compra', 'Compras', 'Notas'].concat(r.dinero ? ['Venta 12 meses', 'Venta histórica'] : []).concat(r.verUtil ? ['Utilidad histórica'] : []);
+    const filas = r.clientes.map(x => [x.id, x.n, sucNom(x.suc), x.tipo, x.lista, x.vend, x.estado, x.sin, x.cada || '', x.primera, x.ultima, x.compras, x.notas].concat(r.dinero ? [x.v12, x.venta] : []).concat(r.verUtil ? [x.u] : []));
+    const csv = '﻿' + [cab].concat(filas).map(fl => fl.map(q).join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'Cartera de clientes.csv'; a.click();
   }
   function tbOrden(k) { const f = S.fTb; f.orden = f.orden === k && k === 'dif' ? 'difm' : k; pintarTablero(); }
   function tbFiltro(k) { S.fTb.filtro = S.fTb.filtro === k ? '' : k; pintarTablero(); }
@@ -12683,7 +12778,7 @@ const App = (() => {
     vistaProductos: t => V.productos(t), leerMatriz, mzFiltro, mzCampo, mzSel, mzSelTodo, mzAltaSel, mzAltaTodo, mzAltaForm, mzAltaTodos, mzAltaGuardar, mzAplicar, mzSinMatriz, verHistPrecios, subirFoto, fotoNuevaPrev, abrirProducto: i => formProducto(i), formProducto, verFicha, pdfCatalogo, compartirPdfLocal, firmaArch, guardarProducto,
     calcularPedido, pedTab, pedidoAOrden, pedidoATraspaso, riesgoATraspaso, riesgoAMerma,
     quitarFiltroCliente, quitarFiltroProv, ventasDeSucursal, comprasDeProveedor, traspasosDeSucursal,
-    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbReset, tbQuitarCli, tbOrden, tbFiltro, tbDetalle, tbCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, comiRecibo, liqAccion, lqMarca, lqTodas, lqPagar, lqAjustar, lqAjustarOk, lpBuscarNC, lpSumaNC, comiPeriodo, comiPrecioAdd, comiPrecioQuitar, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
+    cargarRadar, pedidoHabitual, mapaCapa, mapaIr, mapaCerca, formUbicar, ubicarGps, ubicarEnMapa, guardarUbicacion, tbAnio, cargarTablero, tbTab, tbReset, tbQuitarCli, tbOrden, tbFiltro, tbDetalle, tbCsv, ctEstado, ctOrden, ctRecargar, ctCliente, ctCsv, compProductos, compCsv, cargarMetas, formMeta, guardarMeta, comTab, formComi, comiTipo, comiProdAdd, comiProdQuitar, comAtajo, cargarNotasCom, ntMarca, ntTodas, ntAsignar, ntMonto, ntMontoOk, guardarComi, comiClientes, comiCliPintar, comiCliMarca, comiCliGuardar, comiCliente, comiClienteOk, comiNota, comiNotaOk, comiLiquidar, comiCalcular, comiGuardarLiq, verLiq, comiHist, comiPagar, comiCancelarLiq, comiPdf, comiRecibo, liqAccion, lqMarca, lqTodas, lqPagar, lqAjustar, lqAjustarOk, lpBuscarNC, lpSumaNC, comiPeriodo, comiPrecioAdd, comiPrecioQuitar, motCotElegir, motCotGuardar, reabrirCotOk, abrirCliente: i => verCliente(i), verCliente, eliminarCliente, formCliente, guardarCliente, ventasDeCliente, venderA,
     abrirProveedor: i => formProveedor(i), formProveedor, guardarProveedor, activarProveedor,
     multiSel, verArch, subirArch, quitarArch, cerrarVisor, prevArchNuevo, cargarVendedores, fotoVendedor, prepararLogo, cancelarLogo, guardarLogo, verPreciosProducto, lpMarcar, lpMarcarGrupo, venderProducto,
     cargarSeguimiento, segEstado, segMas, fichaCliente, cargarVisitas, formVisita, ubicVisita, guardarVisita, verVisita, cancelarVisita, visitasDeCliente, icsVisita, sincronizarCalendario, suscribirCalendario, copiarEnlaceCal,
