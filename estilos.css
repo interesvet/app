@@ -113,6 +113,10 @@ textarea { min-height: 70px; resize: vertical; }
 /* Dashboard: las pestañas se acomodan en varios renglones para que todas se vean (sin desplazar de lado) */
 #tbTabs { flex-wrap: wrap; overflow-x: visible; row-gap: 2px; }
 #tbTabs button { padding: 8px 12px; }
+/* Reuniones con clientes */
+.aviso-mal { background: #fdecea; color: #8a1f17; border-radius: 8px; padding: 8px 10px; }
+.reu-op { margin: 0 0 6px; } .reu-op label { flex: 1 1 140px; }
+.reu-card { margin-bottom: 10px; }
 
 /* KPI */
 .kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 14px; }
