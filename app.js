@@ -204,7 +204,18 @@ const App = (() => {
     clearTimeout(toastT); toastT = setTimeout(() => t.className = 'toast', mal ? 5000 : 2800);
   }
   const cargando = v => $('#cargando').classList.toggle('oculto', !v);
-  function modal(titulo, html) { $('#modalTit').textContent = titulo; $('#modalCuerpo').innerHTML = html; $('#modal').classList.remove('oculto'); if (html.indexOf('data-arch=') >= 0) setTimeout(() => cargarArchs($('#modalCuerpo')), 0); }
+  function modal(titulo, html) { $('#modalTit').textContent = titulo; $('#modalCuerpo').innerHTML = html; accionesArriba($('#modalCuerpo')); $('#modal').classList.remove('oculto'); if (html.indexOf('data-arch=') >= 0) setTimeout(() => cargarArchs($('#modalCuerpo')), 0); }
+  /** En las fichas y detalles (ventanas sin campos para capturar), los botones de acción que van al final se muestran arriba, siempre a la vista. */
+  function accionesArriba(c) {
+    try {
+      const cand = [...c.querySelectorAll(':scope > .acciones, :scope > div > .acciones')].filter(x => !x.classList.contains('izq') && !x.classList.contains('quedar') && x.querySelector('button, a.btn'));
+      const el = cand[cand.length - 1]; if (!el) return;
+      // formularios y confirmaciones (tienen "Cancelar"): Guardar / Cancelar se quedan abajo
+      if ([...el.querySelectorAll('button, a')].some(b => /^\s*(cancelar|no)\s*$/i.test(b.textContent))) return;
+      el.classList.add('acciones-arriba'); c.insertBefore(el, c.firstChild);
+    } catch (e) {}
+  }
+
   function cerrarModal() { if (S.lector) detenerEscaner(); $('#modal').classList.add('oculto'); $('#modalCuerpo').innerHTML = ''; }
   function tabla(cols, filas, opc) {
     opc = opc || {};

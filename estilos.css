@@ -493,6 +493,8 @@ tr.grupo small { color: var(--texto-2); font-weight: 500; }
 .pd-accion { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } .pd-acc-btns { margin-left: auto; display: flex; gap: 6px; }
 /* Seguimiento de clientes */
 .acciones.izq { justify-content: flex-start; margin-top: 10px; }
+/* botones de fichas y detalles arriba (siempre a la vista al desplazar) */
+.acciones.acciones-arriba { position: sticky; top: -18px; z-index: 3; margin: -18px 0 14px; padding: 14px 0 12px; background: var(--superficie); border-bottom: 1px solid var(--borde); justify-content: flex-start; }
 .sg-kpis .kpi { text-align: left; font: inherit; color: inherit; }
 .sg-kpis .kpi.activo { background: var(--marca-suave); box-shadow: inset 0 0 0 2px var(--marca); }
 .sg-filtro { margin: 12px 0; }
