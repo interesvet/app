@@ -11264,10 +11264,12 @@ const App = (() => {
     let r; try { r = await pedir('plantillasMensajes', {}, true); } catch (e) { return toast(/desconocida/i.test(e.message) ? 'Se activa en cuanto se publique la actualización del servidor (222).' : e.message, true); }
     S.plt = r; const ed = r.puedeEditar;
     modal('✏️ Mensajes de WhatsApp', `<p class="muted peq">Redacta cada mensaje a tu gusto. Toca una <b>{palabra}</b> para insertarla: la app la cambia por el dato real de cada cliente. La firma se agrega al final de todos.${ed ? '' : '<br><b>Solo el dueño o el Administrador pueden cambiarlos.</b>'}</p>
-      ${Object.keys(PLT_T).map(k => `<div class="plt-caja"><div class="fila" style="justify-content:space-between;margin:0"><b>${PLT_T[k]}</b>${ed ? `<button class="btn chico" onclick="App.pltOriginal('${k}')">↺ Original</button>` : ''}</div>
+      ${Object.keys(PLT_T).map(k => `<div class="plt-caja"><div class="fila" style="justify-content:space-between;margin:0"><b>${PLT_T[k]}</b>${ed ? `<button class="btn chico" style="flex:0 0 auto;width:auto" onclick="App.pltOriginal('${k}')">↺ Original</button>` : ''}</div>
         <textarea id="plt_${k}" rows="${k === 'firma' ? 1 : k === 'vencida' || k === 'reunion' ? 5 : 3}" ${ed ? '' : 'readonly'} oninput="App.pltVista('${k}')">${esc(r.plantillas[k])}</textarea>
         <div class="plt-vars">${(r.variables[k] || []).map(v => `<button class="btn chico" ${ed ? '' : 'disabled'} onclick="App.pltInsertar('${k}','${v}')">{${v}}</button>`).join('')}</div>
-        <details><summary class="peq">Vista previa</summary><pre class="msj-pre" id="pltV_${k}"></pre></details></div>`).join('')}
+        <details><summary class="peq">Vista previa</summary><pre class="msj-pre" id="pltV_${k}"></pre></details>
+        ${k === 'compra' ? `<div class="peq" style="margin-top:6px"><b>Solo para clientes con lista de precios:</b> <span class="muted">(los ganaderos y asesores no compran por periodos fijos)</span>
+          <div class="plt-vars">${(r.listas || []).map(l => `<label class="chk" style="margin:0 10px 0 0"><input type="checkbox" class="pltLista" value="${esc(l)}" ${ed ? '' : 'disabled'} ${(r.plantillas.listasCompra || []).indexOf(l) >= 0 ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div></div>` : ''}</div>`).join('')}
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button>${ed ? '<button class="btn primario" onclick="App.guardarPlantillas()">Guardar mensajes</button>' : ''}</div>`);
     Object.keys(PLT_T).forEach(pltVista);
   }
@@ -11279,7 +11281,9 @@ const App = (() => {
     const pl = {}; Object.keys(PLT_T).forEach(k => pl[k] = $('#plt_' + k).value);
     const sinCli = Object.keys(PLT_T).filter(k => k !== 'firma' && pl[k].trim() && pl[k].indexOf('{cliente}') < 0);
     if (sinCli.length && !confirm('Estos mensajes no llevan {cliente} (el nombre del cliente):\n• ' + sinCli.map(k => PLT_T[k]).join('\n• ') + '\n\n¿Guardar así?')) return;
-    try { await pedir('guardarPlantillasMensajes', { plantillas: pl }); cerrarModal(); toast('✔ Mensajes guardados'); S.msj = null; if (S.vista === 'mensajes') cargarMensajes(true); } catch (e) {}
+    const listasCompra = [...document.querySelectorAll('.pltLista:checked')].map(x => x.value);
+    if (!listasCompra.length && !confirm('No marcaste ninguna lista de precios: ya no se sugerirá "Le toca comprar" a nadie. ¿Guardar así?')) return;
+    try { await pedir('guardarPlantillasMensajes', { plantillas: pl, listasCompra: listasCompra }); cerrarModal(); toast('✔ Mensajes guardados'); S.msj = null; if (S.vista === 'mensajes') cargarMensajes(true); } catch (e) {}
   }
   V.visitas = () => {
     const f = S.fVis = alDia(S.fVis || { desde: sumaDias(hoyISO(), -7), hasta: sumaDias(hoyISO(), 60), hastaHoy: '', vend: '', estado: '' });
