@@ -135,6 +135,15 @@ const App = (() => {
   /* ---------------- interfaz común ---------------- */
   /** Foto de la sucursal que emite el documento (se llena sola; sin foto no ocupa espacio). */
   const fotoSucDoc = id => { const x = (D().sucursales || []).find(o => o.id === id); if (!x || !x.foto || esMatriz(id)) return ''; setTimeout(llenarFotosSuc, 0); return `<img class="doc-suc" data-sucdoc="${esc(id)}" alt="">`; };
+  /** Logotipo del documento: la imagen de la sucursal si es una sucursal con imagen; si no (Matriz), el de la empresa. Nunca los dos. */
+  const logosDoc = id => fotoSucDoc(id) || logoHtml();
+  /** Sucursal con imagen propia (no Matriz): su id; si no, ''. */
+  const sucConFoto = id => { const x = (D().sucursales || []).find(o => o.id === id); return x && x.foto && !esMatriz(id) ? id : ''; };
+  /** Fuente de imagen para el logotipo en tickets e imágenes: la miniatura de la sucursal si existe, o el logotipo. */
+  const logoSrcSuc = id => { const sid = sucConFoto(id), m = sid ? (Object.assign({}, LS.get('minisSuc', {}), (S.minis || {}).sucFoto || {})[sid]) : ''; return m || window.LOGO || 'logo.png'; };
+  /** Logotipo de la pantalla principal (menú y bienvenida): personal de una sucursal con imagen → la de su sucursal. */
+  const logoPantalla = () => { const u = U() || {}, sid = !u.todasSucursales ? sucConFoto(u.sucursal) : ''; if (sid) { setTimeout(llenarFotosSuc, 0); return `<img data-sucdoc="${esc(sid)}" alt="${esc(sucNom(sid))}">`; }
+    return window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : ''; };
   async function llenarFotosSuc() {
     const ims = Array.from(document.querySelectorAll('img[data-sucdoc]:not([src])')); if (!ims.length) return;
     S.minis = S.minis || {}; const m = S.minis.sucFoto = Object.assign(LS.get('minisSuc', {}), S.minis.sucFoto || {});
@@ -144,7 +153,7 @@ const App = (() => {
     if (faltan.length && navigator.onLine !== false) {
       try { const r = await transparentarMinis(await pedir('minisArchivo', { tipo: 'sucFoto', ids: faltan }, true)); Object.keys(r).forEach(k => { if (r[k]) m[k] = r[k]; }); guardarMinisSuc(m); } catch (e) {}
     }
-    document.querySelectorAll('img[data-sucdoc]:not([src])').forEach(im => { if (m[im.dataset.sucdoc]) im.src = m[im.dataset.sucdoc]; });
+    document.querySelectorAll('img[data-sucdoc]:not([src])').forEach(im => { if (m[im.dataset.sucdoc]) im.src = m[im.dataset.sucdoc]; else if (window.LOGO) im.src = window.LOGO; });   // sin imagen de la sucursal: el logotipo
   }
   const guardarMinisSuc = m => { const o = {}; Object.keys(m || {}).forEach(k => { if (m[k]) o[k] = m[k]; }); LS.set('minisSuc', o); };
   /** Achica una imagen (dataURI) a "max" px del lado mayor, en JPEG. */
@@ -714,7 +723,7 @@ const App = (() => {
   ];
   function pintarMenu() {
     const u = U();
-    $('#menu').innerHTML = `<div class="cab">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : '<b>🐾 Interés Veterinario®</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
+    $('#menu').innerHTML = `<div class="cab">${logoPantalla() || '<b>🐾 Interés Veterinario®</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
       <nav>${MENU.filter(m => !m.oculto && puedeVer(m.id, m.p)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
         return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(m.id === 'autorizar' && !puede('dueno') ? 'Mis solicitudes' : e.t)}${m.id === 'anotaciones' && S.obsNuevas ? `<b class="menu-num">${S.obsNuevas}</b>` : ''}${m.id === 'autorizar' && S.autN ? `<b class="menu-num">${S.autN}</b>` : ''}</button>`; }).join('')}</nav>
       <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
@@ -818,7 +827,7 @@ const App = (() => {
       <div class="bienv-cont">
         <div class="bienv-top"><span class="bienv-pill"><i class="${S.online ? 'ok' : ''}"></i>${S.online ? 'En línea' : 'Sin conexión'}</span>
           <span class="bienv-pill">🏬 ${esc(sucNom(sucTrabajo()))}</span></div>
-        <div class="bienv-marca">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : '<b>Interés Veterinario®</b>'}</div>
+        <div class="bienv-marca">${logoPantalla() || '<b>Interés Veterinario®</b>'}</div>
         <div class="bienv-tit"><b>CRM &amp; Ventas</b><span>Inteligencia y Gestión Comercial</span></div>
         <div class="bienv-hola"><h2>${saludo()}${nombre ? ', ' + esc(nombre) : ''}</h2><p>${esc(fecha.charAt(0).toUpperCase() + fecha.slice(1))} · ${esc(u.rolNombre || u.rol || '')}</p></div>
         <div class="bienv-estado" id="bienvEstado"></div>
@@ -1653,7 +1662,7 @@ const App = (() => {
     const cv = document.createElement('canvas'), x = cv.getContext('2d'), M = 8, W = TK_W - M * 2;
     const font = r => (r.n ? 'bold ' : '') + (r.g ? 30 : r.p ? 20 : 23) + 'px Arial, Helvetica, sans-serif', alto = r => (r.g ? 30 : r.p ? 20 : 23) * 1.3;
     const partir = (t, ancho) => { const out = []; let lin = ''; String(t).split(/\s+/).forEach(p => { const prueba = lin ? lin + ' ' + p : p; if (x.measureText(prueba).width > ancho && lin) { out.push(lin); lin = p; } else lin = prueba; }); out.push(lin); return out; };
-    let logo = null; try { logo = await new Promise((ok, mal) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = mal; i.src = window.LOGO || 'logo.png'; }); } catch (e) {}
+    let logo = null; try { logo = await new Promise((ok, mal) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = mal; i.src = logoSrcSuc(((S.ultimaVenta || {}).sucursal || {}).id || sucTrabajo()); }); } catch (e) {}
     const lh = logo ? Math.min(150, logo.height * Math.min(1, (W * 0.55) / logo.width)) : 0, lw = logo ? logo.width * lh / logo.height : 0;
     const pasos = [];   // primero se mide
     F.forEach(r => {
@@ -1755,7 +1764,7 @@ const App = (() => {
     const pagada = pagadaNota(d), viva = d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto';
     const bloq = pagada || (!!d.facturada && viva);   // facturada o pagada: sin quitar productos, editar ni cancelar
     return `<div class="imprimible"><div class="nota">
-      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
+      <div class="enc"><div><div class="doc-logos">${logosDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>NOTA DE VENTA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div><div>${etqEstatus(d.estatus)}</div>${htmlFacturaNota(d)}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
         <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${d.rfc ? 'RFC ' + esc(d.rfc) : ''} ${esc(d.domicilio || '')}${fiscalHtml(d.fiscal)}</div>
@@ -1832,7 +1841,7 @@ const App = (() => {
   /* ---------- COMPROBANTE DE PAGO ---------- */
   function htmlComprobante(d) {
     return `<div class="imprimible"><div class="nota">
-      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
+      <div class="enc"><div><div class="doc-logos">${logosDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>COMPROBANTE DE PAGO</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div></div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px">
         <div><small style="color:#666">Recibimos de</small><br><b style="font-size:16px">${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}${d.rfc ? '<br>RFC ' + esc(d.rfc) : ''}${fiscalHtml(d.fiscal)}</div>
@@ -2199,7 +2208,7 @@ const App = (() => {
     try {
       const r = await pedir('cambiarLogo', n);
       window.LOGO = r.logo || n.logo;
-      document.querySelectorAll('#menu .cab img').forEach(i => i.src = window.LOGO);
+      document.querySelectorAll('#menu .cab img:not([data-sucdoc])').forEach(i => i.src = window.LOGO);
       S.logoNuevo = null; toast('✔ Logotipo actualizado'); V.config();
     } catch (e) {}
   }
@@ -2546,7 +2555,7 @@ const App = (() => {
     S.ultimaCot = d;
     const abierta = d.estado === 'Abierta' || d.estado === 'Vencida';
     modal('Cotización ' + d.folio, `<div class="imprimible"><div class="nota">
-      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
+      <div class="enc"><div><div class="doc-logos">${logosDoc(d.sucursal.id || d.suc)}</div><div>${esc(d.sucursal.nombre || '')}</div><small>${esc(d.sucursal.direccion || '')} ${d.sucursal.tel ? '· Tel. ' + esc(d.sucursal.tel) : ''}</small></div>
       <div style="text-align:right"><b>COTIZACIÓN</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div><div>${etqCot(d.estado)}</div><div class="fact-enc">Vigente hasta ${esc(d.vigencia)}</div>${d.venta ? `<div class="fact-enc"><b>Venta ${esc(d.venta.folio)}</b></div>` : ''}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
         <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${d.rfc ? 'RFC ' + esc(d.rfc) : ''} ${esc(d.domicilio || '')}${fiscalHtml(d.fiscal)}</div>
@@ -2799,7 +2808,7 @@ const App = (() => {
     S.ultimoEC = d; const R = d.resumen;
     const caja = (t, v, col, extra) => `<div class="ec-caja" style="border-top-color:${col}${extra || ''}"><small>${t}</small><b>${v}</b></div>`;
     modal('Estado de cuenta · ' + (d.cliente.razon || d.cliente.nombre), `<div class="imprimible"><div class="nota">
-      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.sucursal.id)}</div><div>${esc(d.sucursal.nombre || '')}</div></div>
+      <div class="enc"><div><div class="doc-logos">${logosDoc(d.sucursal.id)}</div><div>${esc(d.sucursal.nombre || '')}</div></div>
         <div style="text-align:right"><b>ESTADO DE CUENTA</b><div style="font-size:16px">${esc(d.folio)}</div><div>Corte al ${esc(d.corte)}</div>${d.periodo ? `<small class="muted">Notas del ${esc(d.periodo.desde || 'inicio')} al ${esc(d.periodo.hasta || d.corte)}</small>` : ''}</div></div>
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px">
         <div><small class="muted">Cliente</small><br><b style="font-size:16px">${esc(d.cliente.razon || d.cliente.nombre)}</b>${d.cliente.razon && d.cliente.nombre !== d.cliente.razon ? '<br>' + esc(d.cliente.nombre) : ''}${d.cliente.rfc ? '<br><small>RFC ' + esc(d.cliente.rfc) + '</small>' : ''}${d.cliente.domicilio ? '<br><small class="muted">' + esc(d.cliente.domicilio) + '</small>' : ''}${fiscalHtml(d.cliente.fiscal, true)}</div>
@@ -2931,6 +2940,7 @@ const App = (() => {
     const r = S.factNota, el = $('#notaFact'); if (!r || !el) return;
     const fila = f => f.estado === 'Cancelada' ? `<div class="fact-fila"><s>${esc(f.sf)}</s> <span class="etq mal">Cancelada</span> <small class="muted">ya no cuenta; ${f.monto === null ? '' : $$(f.monto) + ' · '}<a href="#" onclick="event.preventDefault();App.verFactura('${esc(f.id)}')">ver factura</a></small></div>` : `<div class="fact-fila"><b>${esc(f.sf)}</b> <span class="muted">${esc(f.fecha || '')}</span> · ${f.monto === null ? '<span class="etq av">monto por definir</span>' : $$(f.monto)}${f.total !== null ? ' <small class="muted">de ' + $$(f.total) + '</small>' : ''}
       ${f.urlPdf ? `<a href="${esc(f.urlPdf)}" target="_blank">PDF</a>` : ''} ${f.urlXml ? `<a href="${esc(f.urlXml)}" target="_blank">XML</a>` : ''}
+      ${f.urlPdf || f.urlXml ? `<button class="btn chico" onclick="App.enviarFactCli('${esc(f.id)}')">📤 Enviar al cliente</button>` : ''}
       <button class="icono" title="Cambiar monto" onclick="App.montoFactNota('${f.rel}', ${f.monto === null ? "''" : f.monto})">✏️</button><button class="icono" title="Quitar" onclick="App.quitarFactNota('${f.rel}', '${esc(f.sf)}')">✕</button></div>`;
     let h = `<h4>🧾 Facturación ${etqFact(r.estado)}</h4>
       <p class="muted">Total de la nota ${$$(r.total)}${r.nc ? ` · nota de crédito −${$$(r.nc)} → <b>a facturar ${$$(r.facturable)}</b>` : ''} · facturado ${$$(r.facturado)}${r.porFacturar ? ' · por facturar <b>' + $$(r.porFacturar) + '</b>' : ''}${!r.facturas.length && r.anotacion ? ' · anotación: ' + esc(r.anotacion) : ''}</p>
@@ -3068,6 +3078,32 @@ const App = (() => {
       entregarArchivo(blob, nom + '.xlsx', 'Excel de piezas');
     } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
   }
+  /** 📤 Mandar la factura (PDF y XML) al cliente: WhatsApp / correo con enlaces, o correo con los archivos adjuntos. */
+  async function enviarFactCli(id) {
+    let r; try { r = await pedir('compartirFactura', { id: id }); } catch (e) { return; }
+    S.envFact = r;
+    const tel = String(r.cel || '').replace(/\D/g, '').slice(-10);
+    const msg = 'Interés Veterinario® — Factura ' + r.sf + (r.total !== null ? ' por ' + $$(r.total) : '') + (r.uuid ? '\nFolio fiscal: ' + r.uuid : '') +
+      (r.pdf ? '\nPDF: ' + r.pdf.url : '') + (r.xml ? '\nXML: ' + r.xml.url : '') + '\n¡Gracias por su preferencia!';
+    S.envFact.msg = msg;
+    modal('📤 Enviar factura ' + r.sf, `<p><b>${esc(r.cliente)}</b>${r.total !== null ? ' · ' + $$(r.total) : ''}</p>
+      <div class="acciones" style="justify-content:flex-start">
+        <a class="btn primario" target="_blank" href="${WA_BASE}${tel ? '52' + tel : ''}?text=${encodeURIComponent(msg)}">💬 WhatsApp${tel ? ' al ' + esc(tel) : ''}</a>
+        ${navigator.share ? '<button class="btn" onclick="App.compartirFactCli()">📤 Compartir…</button>' : ''}
+        ${r.pdf ? `<a class="btn" target="_blank" href="${esc(r.pdf.url)}">📄 PDF</a>` : ''}${r.xml ? `<a class="btn" target="_blank" href="${esc(r.xml.descarga)}">🧾 XML</a>` : ''}</div>
+      <div class="tarjeta" style="margin-top:12px"><b>✉️ Correo con el PDF y el XML adjuntos</b>
+        <div class="fila" style="margin-top:8px"><label style="flex:2 1 240px">Correo del cliente<input id="efCorreo" type="email" value="${esc(r.correo)}" placeholder="cliente@correo.com"></label>
+        <button class="btn primario fijo" id="efBtn" onclick="App.correoFactCli('${esc(id)}')">Enviar correo</button></div>
+        <p class="muted peq" style="margin:6px 0 0">Si el cliente contesta, la respuesta te llega a ti. También puedes usar <a href="mailto:${encodeURIComponent(r.correo || '')}?subject=${encodeURIComponent('Factura ' + r.sf)}&body=${encodeURIComponent(msg)}">tu correo con los enlaces</a>.</p></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  function compartirFactCli() { const r = S.envFact; if (!r || !navigator.share) return; navigator.share({ title: 'Factura ' + r.sf, text: r.msg }).catch(() => {}); }
+  async function correoFactCli(id) {
+    const c = ($('#efCorreo').value || '').trim(); if (!/@/.test(c)) return toast('Escribe el correo del cliente', true);
+    const b = $('#efBtn'); b.disabled = true; b.textContent = 'Enviando…';
+    try { const r = await pedir('enviarFacturaCorreo', { id: id, correo: c }); toast('✔ Factura enviada a ' + r.para + ' (' + r.adjuntos + ' archivo' + (r.adjuntos > 1 ? 's' : '') + ')'); cerrarModal(); }
+    catch (e) { b.disabled = false; b.textContent = 'Enviar correo'; }
+  }
   async function verFactura(id) {
     S.facDet = id;
     let d; try { d = await pedir('detalleFactura', { id: id }); } catch (e) { return; }
@@ -3080,7 +3116,7 @@ const App = (() => {
         ${d.sustituidaPor ? `Sustituida por <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituidaPor)}')"><b>${esc(d.sustituidaPor)}</b></a>: sus notas pasaron a esa factura.` : `Sus notas quedaron <b>por facturar</b> hasta que subas la factura nueva.<div class="acciones" style="justify-content:flex-start;margin-top:6px"><button class="btn primario" onclick="App.formSustituir('${d.id}')">🔁 Subir la factura que la sustituye</button></div>`}</div>` : ''}
       ${d.sustituye ? `<p class="muted peq">🔁 Sustituye a <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituye)}')">${esc(d.sustituye)}</a> (cancelada).</p>` : ''}${d.avisoSust ? `<div class="aviso-cand">⚠️ ${esc(d.avisoSust)}</div>` : ''}
       <p>${esc(d.receptor || '')} ${d.rfc ? '· RFC ' + esc(d.rfc) : ''}${d.uuid ? '<br><small class="muted">UUID ' + esc(d.uuid) + '</small>' : ''}${d.comentarios ? '<br><small class="muted">' + esc(d.comentarios) + '</small>' : ''}</p>
-      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.ctCobrosFactura('${d.id}')">💵 Cobros y comprobantes</button>${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.ctCobrosFactura('${d.id}')">💵 Cobros y comprobantes</button>${d.estado !== 'Cancelada' && (d.urlPdf || d.urlXml) ? `<button class="btn" onclick="App.enviarFactCli('${esc(d.id)}')">📤 Enviar al cliente</button>` : ''}${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
       ${tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', h: x => esc(x.cliente) },
         { t: 'Total nota', num: 1, h: x => $$(x.totalNota) + (x.nc ? `<br><small class="muted">N/C −${$$(x.nc)} → a facturar ${$$(x.facturable)}</small>` : '') }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
         { t: 'Otras facturas', h: x => esc(x.otras.join(', ')) },
@@ -4460,7 +4496,7 @@ const App = (() => {
     S.ultimaCompra = d;
     const pend = d.lineas.filter(l => !l.registrado);
     modal('Orden ' + d.folio, `<div class="imprimible"><div class="nota">
-      <div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.suc)}</div><div>Destino: ${esc(sucNom(d.suc))}</div></div><div style="text-align:right"><b>ORDEN DE COMPRA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div>
+      <div class="enc"><div><div class="doc-logos">${logosDoc(d.suc)}</div><div>Destino: ${esc(sucNom(d.suc))}</div></div><div style="text-align:right"><b>ORDEN DE COMPRA</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}</div>
         <div style="margin-top:4px">Factura: <b>${d.factura ? esc(d.factura) : '<span style="color:var(--aviso)">sin capturar</span>'}</b></div>${d.nota ? `<div>Nota del proveedor: <b>${esc(d.nota)}</b></div>` : ''}${d.uuid ? `<div style="font-size:10px;color:#666">Folio fiscal: ${esc(d.uuid)}</div>` : ''}</div></div>
       ${htmlProvOC(d)}
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', h: x => x.registrado ? esc(x.lote) : x.lote && x.lote !== 'SIN LOTE' ? esc(x.lote) + ' <small class="muted">(por confirmar)</small>' : '<span class="muted">al recibir</span>' }, { t: 'Cad.', h: x => esc(x.cad || '') }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$((x.sub || x.cant * x.precio) - (x.desc || 0)) }, { t: 'IVA $', num: 1, h: x => $$(x.iva || 0) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], d.lineas)}
@@ -4968,7 +5004,7 @@ const App = (() => {
       const transito = d.estatus === 'En tránsito';
       const sd = (D().sucursales || []).find(x => x.id === d.origen) || {};
       modal('Traspaso ' + d.folio, `<div class="imprimible"><div class="tr-doc">${window.LOGO ? `<img class="tr-marca" src="${window.LOGO}" alt="">` : ''}
-        <div class="tr-enc"><div class="tr-emp">${logoHtml()}${fotoSucDoc(d.origen)}<div><b>Interés Veterinario®</b><small>${esc([sd.direccion, sd.tel ? 'Tel. ' + sd.tel : '', sd.email].filter(Boolean).join(' · '))}</small></div></div>
+        <div class="tr-enc"><div class="tr-emp">${logosDoc(d.origen)}<div><b>Interés Veterinario®</b><small>${esc([sd.direccion, sd.tel ? 'Tel. ' + sd.tel : '', sd.email].filter(Boolean).join(' · '))}</small></div></div>
           <div class="tr-folio"><small>TRASPASO ENTRE ALMACENES</small><b>${esc(d.folio)}</b><span>${esc(d.fecha)}${d.hora ? ' · ' + esc(d.hora) : ''}</span><span>${etqTr(d.estatus)}${d.fechaEntrega && !transito ? ' <small class="muted">' + esc(d.fechaEntrega) + '</small>' : ''}</span></div></div>
         <div class="tr-ruta"><div class="tr-linea"></div>
           <div class="tr-punto"><i class="o"></i><small>ALMACÉN ORIGEN</small><b>${esc(String(d.origenNombre || '').toUpperCase())}</b><span>Sale ${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</span></div>
@@ -5313,7 +5349,7 @@ const App = (() => {
     const d = S.lista[i]; if (!d) return;
     const vc = d.importe !== null && d.importe !== undefined;
     const titulo = d.clase === 'merma' ? 'MERMA' : d.clase === 'entrada' ? 'AJUSTE DE ENTRADA' : 'AJUSTE DE SALIDA';
-    modal(titulo + ' ' + d.folio, `<div class="imprimible"><div class="nota"><div class="enc"><div><div class="doc-logos">${logoHtml()}${fotoSucDoc(d.suc)}</div><div>${esc(sucNom(d.suc))}</div></div>
+    modal(titulo + ' ' + d.folio, `<div class="imprimible"><div class="nota"><div class="enc"><div><div class="doc-logos">${logosDoc(d.suc)}</div><div>${esc(sucNom(d.suc))}</div></div>
       <div style="text-align:right"><b>${titulo}</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</div></div></div>
       <p><b>Motivo:</b> ${esc(d.motivo || '—')}${d.usuario ? ` · <span class="muted">Registró: ${esc(d.usuario)}</span>` : ''}</p>
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Clave', k: 'prod' }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', k: 'lote' }, { t: 'Cad.', k: 'cad' }]
@@ -12563,7 +12599,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
