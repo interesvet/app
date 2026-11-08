@@ -5003,7 +5003,7 @@ const App = (() => {
       const absorbe = d.pagaFlete === 'NO', fleteCap = imp && d.flete !== null && d.flete !== undefined ? d.flete : 0, flete = absorbe ? 0 : fleteCap, total = Math.round((sub + iva + flete) * 100) / 100;
       const transito = d.estatus === 'En tránsito';
       const sd = (D().sucursales || []).find(x => x.id === d.origen) || {};
-      modal('Traspaso ' + d.folio, `<div class="imprimible"><div class="tr-doc">${window.LOGO ? `<img class="tr-marca" src="${window.LOGO}" alt="">` : ''}
+      modal('Traspaso ' + d.folio, `<div class="imprimible"><div class="tr-doc">${window.LOGO && !sucConFoto(d.origen) ? `<img class="tr-marca" src="${window.LOGO}" alt="">` : ''}
         <div class="tr-enc"><div class="tr-emp">${logosDoc(d.origen)}<div><b>Interés Veterinario®</b><small>${esc([sd.direccion, sd.tel ? 'Tel. ' + sd.tel : '', sd.email].filter(Boolean).join(' · '))}</small></div></div>
           <div class="tr-folio"><small>TRASPASO ENTRE ALMACENES</small><b>${esc(d.folio)}</b><span>${esc(d.fecha)}${d.hora ? ' · ' + esc(d.hora) : ''}</span><span>${etqTr(d.estatus)}${d.fechaEntrega && !transito ? ' <small class="muted">' + esc(d.fechaEntrega) + '</small>' : ''}</span></div></div>
         <div class="tr-ruta"><div class="tr-linea"></div>
@@ -5763,16 +5763,17 @@ const App = (() => {
   V.precios = () => {
     const ps = D().productos || [], cat = D().catalogos || {};
     const cats = [...new Set(ps.map(p => p.categoria).filter(Boolean))].sort(), labs = [...new Set(ps.map(p => p.lab).filter(Boolean))].sort();
-    const f = S.fPrecios || (S.fPrecios = { modo: 'lista', lista: 'Publico', cli: null, cat: '', lab: '', labs: [], txt: '', grupo: 'categoria', exist: false, iva: false, marc: {}, solo: false, selNom: '', titulo: '', subtitulo: '', sucDatos: '' });
+    const f = S.fPrecios || (S.fPrecios = { modo: U().todasSucursales ? 'lista' : 'todas', lista: 'Publico', cli: null, cat: '', lab: '', labs: [], txt: '', grupo: 'categoria', exist: false, iva: false, marc: {}, solo: false, selNom: '', titulo: '', subtitulo: '', sucDatos: '' });
     f.labs = f.labs || []; f.marc = f.marc || {}; f.sucDatos = f.sucDatos || sucTrabajo();
     const nMarc = Object.keys(f.marc).filter(k => f.marc[k]).length, sels = S.selsLP || [];
     f.sel = (f.sel || LS.get('listasSel', null) || cat.listas.slice()).filter(x => cat.listas.indexOf(x) >= 0);
+    if (!f.sel.length) f.sel = cat.listas.slice();
     const c = f.cli ? cliente(f.cli) : null;
     const b = (m, t) => `<button class="${f.modo === m ? 'activo' : ''}" data-modo="${m}">${t}</button>`;
     $('#vista').innerHTML = `<div class="tarjeta no-imprimir">
-      <div class="pestanas" style="margin-bottom:12px">${b('lista', 'Por perfil de cliente')}${b('cliente', 'Por cliente')}${b('todas', 'Comparar todas las listas')}</div>
+      <div class="pestanas" style="margin-bottom:12px">${b('lista', 'Por perfil de cliente')}${b('cliente', 'Por cliente')}${b('todas', '📊 Todas las listas a la vez')}</div>
       <div class="fila">
-        ${f.modo === 'lista' ? `<label>Perfil / lista de precios<select id="lpLista">${opts(cat.listas.map(x => [x, x]), f.lista)}</select></label>` : ''}
+        ${f.modo === 'lista' ? `<label>Perfil / lista de precios<select id="lpLista">${opts(cat.listas.map(x => [x, x]).concat([['__todas', '📊 Ver todas las listas a la vez']]), f.lista)}</select></label>` : ''}
         ${f.modo === 'cliente' ? `<label style="flex:2 1 260px">Cliente<div class="buscador"><input id="lpCli" placeholder="Buscar por nombre, razón social, RFC…" autocomplete="off" value="${c ? esc(c.razon || c.nombre) : ''}"></div></label>` : ''}
         <label>Categoría<select id="lpCat">${opts(cats.map(x => [x, x]), f.cat, 'Todas')}</select></label>
         <label>Laboratorio<select id="lpLab">${opts([['', 'Todos']].concat(labs.map(x => [x, x])).concat([['__varios', 'Varios laboratorios…']]), f.lab)}</select></label>
@@ -5803,7 +5804,8 @@ const App = (() => {
       </div></div><div class="espacio"></div><div id="lpRes" class="imprimible"></div>`;
     document.querySelectorAll('[data-modo]').forEach(x => x.onclick = () => { f.modo = x.dataset.modo; V.precios(); });
     const bind = (id, k, chk) => { const el = $(id); if (!el) return; el.oninput = el.onchange = () => { f[k] = chk ? el.checked : el.value; pintarPrecios(); }; };
-    bind('#lpLista', 'lista'); bind('#lpCat', 'cat'); bind('#lpTxt', 'txt'); bind('#lpGrupo', 'grupo'); bind('#lpIva', 'iva', 1); bind('#lpExist', 'exist', 1); bind('#lpSolo', 'solo', 1);
+    if ($('#lpLista')) $('#lpLista').onchange = () => { const v = $('#lpLista').value; if (v === '__todas') { f.modo = 'todas'; f.sel = cat.listas.slice(); LS.set('listasSel', f.sel); V.precios(); } else { f.lista = v; pintarPrecios(); } };
+    bind('#lpCat', 'cat'); bind('#lpTxt', 'txt'); bind('#lpGrupo', 'grupo'); bind('#lpIva', 'iva', 1); bind('#lpExist', 'exist', 1); bind('#lpSolo', 'solo', 1);
     $('#lpLab').onchange = () => { f.lab = $('#lpLab').value; V.precios(); };
     $('#lpTitulo').oninput = () => { f.titulo = $('#lpTitulo').value; document.querySelectorAll('#lpRes .lp-tit').forEach(t => t.textContent = f.titulo.trim() || lpTituloAuto()); };
     $('#lpSubtitulo').oninput = () => { f.subtitulo = $('#lpSubtitulo').value; document.querySelectorAll('#lpRes .lp-subtit').forEach(t => { t.textContent = f.subtitulo.trim(); t.style.display = f.subtitulo.trim() ? '' : 'none'; }); };
@@ -5837,7 +5839,7 @@ const App = (() => {
     const sd = (D().sucursales || []).find(x => x.id === f.sucDatos) || (D().sucursales || []).find(x => x.id === suc) || {};
     const contacto = [sd.direccion, sd.tel ? 'Tel. ' + sd.tel : '', sd.email].filter(Boolean);
     const enc = `<div class="lp-enc">
-        <div class="lp-enc-emp">${window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario" class="lp-logo">` : '<b class="lp-emp-nom">Interés Veterinario®</b>'}
+        <div class="lp-enc-emp">${sucConFoto(sd.id) ? `<img src="${esc(logoSrcSuc(sd.id))}" data-sucdoc="${esc(sd.id)}" alt="${esc(sd.nombre || '')}" class="lp-logo">` : window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario" class="lp-logo">` : '<b class="lp-emp-nom">Interés Veterinario®</b>'}
           <div class="lp-emp-datos"><b>Interés Veterinario®</b>${sd.nombre ? '<span>Sucursal ' + esc(sd.nombre) + '</span>' : ''}${contacto.map(x => '<span>' + esc(x) + '</span>').join('')}</div></div>
         <div class="lp-enc-tit"><div class="lp-tit">${esc(titulo)}</div><div class="lp-subtit" ${(f.subtitulo || '').trim() ? '' : 'style="display:none"'}>${esc((f.subtitulo || '').trim())}</div>
           <div class="lp-meta">${esc(sub)}</div><div class="lp-meta">Fecha de impresión: <span class="lp-fecha">${esc(fechaLarga())}</span></div></div>
@@ -7878,9 +7880,9 @@ const App = (() => {
     // --- encabezado
     let y = M, xLogo = M;
     const logo = await logoDoc(), fs = sp.suc && sp.suc.id ? await fotoSucDatos(sp.suc.id) : null;
-    if (logo) { const h = 50, w = Math.min(170, h * logo.w / logo.h); pdf.addImage(logo.data, 'PNG', M, y, w, h); xLogo = M + w + 10; }
-    if (fs) { const h = 46, w = Math.min(90, h * fs.w / fs.h); pdf.addImage(fs.data, 'PNG', xLogo, y + 2, w, h); }
-    if (!logo) { fuente('bold', 16); color(VERDE); pdf.text('Interés Veterinario®', M, y + 20); }
+    if (fs) { const h = 50, w = Math.min(120, h * fs.w / fs.h); pdf.addImage(fs.data, 'PNG', M, y, w, h); xLogo = M + w + 10; }   // un solo logotipo: el de la sucursal
+    else if (logo) { const h = 50, w = Math.min(170, h * logo.w / logo.h); pdf.addImage(logo.data, 'PNG', M, y, w, h); xLogo = M + w + 10; }
+    if (!logo && !fs) { fuente('bold', 16); color(VERDE); pdf.text('Interés Veterinario®', M, y + 20); }
     let yl = y + 60; fuente('normal', 8); color(GRIS);
     const sucTxt = [sp.suc && sp.suc.nombre, sp.suc && sp.suc.direccion].filter(Boolean).join(' · ');
     if (sucTxt) { pdf.splitTextToSize(txtPdf(sucTxt), 300).forEach(l => { pdf.text(l, M, yl); yl += 10; }); }
@@ -8068,7 +8070,7 @@ const App = (() => {
   async function excelLocal(archivo, hojas) {
     const ExcelJS = await libLocal('exceljs');
     const wb = new ExcelJS.Workbook(); wb.creator = 'Interés Veterinario®'; wb.created = new Date();
-    const logo = await logoDoc(); const idLogo = logo ? wb.addImage({ base64: logo.data, extension: 'png' }) : null;
+    const su = U() || {}, logo = (!su.todasSucursales && sucConFoto(su.sucursal) ? await fotoSucDatos(su.sucursal) : null) || await logoDoc(); const idLogo = logo ? wb.addImage({ base64: logo.data, extension: 'png' }) : null;
     const VERDE = 'FF1F6F4A', CLARO = 'FFEFF5F1', BORDE = { style: 'thin', color: { argb: 'FFD5DDD6' } };
     const TONO = { mal: { font: 'FFB3261E', fill: 'FFFCE8E6' }, av: { font: 'FF8A5A00', fill: 'FFFFF4D6' }, ok: { font: 'FF1F6F4A' }, gris: { font: 'FF8A918C' } };
     const FMT = { num: '#,##0.##;[Red]-#,##0.##', mon: '"$"#,##0.00;[Red]-"$"#,##0.00', fecha: 'dd/mm/yyyy' };
@@ -8589,16 +8591,20 @@ const App = (() => {
   V.clientes = () => {
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila"><label>Buscar<input id="clTxt" placeholder="Nombre, razón social, rancho, RFC, localidad, teléfono"></label>
       <label>Lista<select id="clLista">${opts(((D().catalogos || {}).listas || []).map(x => [x, x]), '', 'Todas')}</select></label>
+      ${U().todasSucursales ? `<label>Sucursal<select id="clSuc">${opts((D().sucursales || []).map(x => [x.id, x.nombre]).concat([['__sin', 'Sin sucursal asignada']]), LS.get('clSuc', ''), 'Todas')}</select></label>` : ''}
       <label>Estado<select id="clSt"><option value="Activo">Activos</option><option value="Inactivo">Inactivos</option><option value="">Todos</option></select></label>
       ${puede('clientes_editar') ? '<button class="btn primario fijo" onclick="App.formCliente(null)">+ Nuevo cliente</button>' : ''}</div></div><div class="espacio"></div><div id="clRes"></div>`;
-    const pintar = () => { const txt = $('#clTxt').value, li = $('#clLista').value, st = $('#clSt').value;
-      const l = (D().clientes || []).filter(c => (!txt || coincide(c.nombre + ' ' + c.razon + ' ' + (c.rancho || '') + ' ' + c.rfc + ' ' + c.localidad + ' ' + c.municipio + ' ' + c.cel, txt)) && (!li || c.lista === li) && (!st || (c.status || 'Activo') === st))
+    const conSuc = !!$('#clSuc');
+    const pintar = () => { const txt = $('#clTxt').value, li = $('#clLista').value, st = $('#clSt').value, su = conSuc ? $('#clSuc').value : '';
+      if (conSuc) LS.set('clSuc', su);
+      const l = (D().clientes || []).filter(c => (!txt || coincide(c.nombre + ' ' + c.razon + ' ' + (c.rancho || '') + ' ' + c.rfc + ' ' + c.localidad + ' ' + c.municipio + ' ' + c.cel, txt)) && (!li || c.lista === li) && (!st || (c.status || 'Activo') === st)
+        && (!su || (su === '__sin' ? !c.suc : c.suc === su)))
         .sort((a, b) => (a.razon || a.nombre).localeCompare(b.razon || b.nombre));
       S.lista = l;
       $('#clRes').innerHTML = `<p class="muted">${l.length} clientes</p>` + tabla([{ t: 'Cliente', h: c => `<div class="con-avatar">${avatar('cliFoto', c.id, c.foto, c.razon || c.nombre)}<div><b>${esc(c.razon || c.nombre)}</b>${c.razon && c.razon !== c.nombre ? '<br><small class="muted">' + esc(c.nombre) + '</small>' : ''}${c.rancho ? '<br><small class="muted">🐄 ' + esc(c.rancho) + '</small>' : ''}${c.csf ? ' <span title="Tiene constancia de situación fiscal">🧾</span>' : ''}</div></div>` },
-        { t: 'Lista', k: 'lista' }, { t: 'Crédito', num: 1, h: c => c.credito + ' d' }, { t: 'Localidad', cls: 'ocultar-movil', h: c => esc([c.localidad || c.municipio, c.estado].filter(Boolean).join(', ')) },
-        { t: 'Teléfono', cls: 'ocultar-movil', k: 'cel' }, { t: 'Clasif.', k: 'clasif', cls: 'ocultar-movil' }, { t: 'Estado', h: c => `<span class="etq ${c.status === 'Inactivo' ? 'mal' : 'ok'}">${esc(c.status || 'Activo')}</span>` }], l, { clic: 'App.abrirCliente' }); cargarAvatares($('#clRes')); };
-    ['#clTxt', '#clLista', '#clSt'].forEach(s => enlazarFiltro(s, pintar)); pintar();
+        { t: 'Lista', k: 'lista' }].concat(conSuc ? [{ t: 'Sucursal', h: c => c.suc ? esc(sucNom(c.suc)) : '<span class="muted">—</span>' }] : []).concat([{ t: 'Crédito', num: 1, h: c => c.credito + ' d' }, { t: 'Localidad', cls: 'ocultar-movil', h: c => esc([c.localidad || c.municipio, c.estado].filter(Boolean).join(', ')) },
+        { t: 'Teléfono', cls: 'ocultar-movil', k: 'cel' }, { t: 'Clasif.', k: 'clasif', cls: 'ocultar-movil' }, { t: 'Estado', h: c => `<span class="etq ${c.status === 'Inactivo' ? 'mal' : 'ok'}">${esc(c.status || 'Activo')}</span>` }]), l, { clic: 'App.abrirCliente' }); cargarAvatares($('#clRes')); };
+    ['#clTxt', '#clLista', '#clSt'].concat(conSuc ? ['#clSuc'] : []).forEach(s => enlazarFiltro(s, pintar)); pintar();
   };
   async function formCliente(i, desdeVenta, nombreIni) {
     const c = i === null ? null : S.lista[i];
