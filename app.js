@@ -11220,7 +11220,7 @@ const App = (() => {
   V.mensajes = () => {
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila" style="justify-content:space-between;align-items:center;margin:0">
         <p style="margin:0">Mensajes listos para enviar desde <b>tu WhatsApp</b>, sin costo. Toca <b>💬 Enviar</b>: se abre con el texto escrito y aún puedes corregirlo o no mandarlo.</p>
-        <button class="btn fijo" onclick="App.cargarMensajes(true)">⟳ Actualizar</button></div></div><div id="msjRes"><div class="vacio">Juntando los mensajes del día…</div></div>`;
+        <span class="fila" style="margin:0;gap:6px"><button class="btn fijo" onclick="App.formPlantillas()">✏️ Redactar mensajes</button><button class="btn fijo" onclick="App.cargarMensajes(true)">⟳ Actualizar</button></span></div></div><div id="msjRes"><div class="vacio">Juntando los mensajes del día…</div></div>`;
     cargarMensajes();
   };
   async function cargarMensajes(forzar) {
@@ -11253,6 +11253,34 @@ const App = (() => {
     catch (e) { x.hecho = antes; pintarMensajes(); }
   }
   function msjCopiar(i) { const x = S.msj && S.msj.items[i]; if (!x) return; try { navigator.clipboard.writeText(x.texto); toast('📋 Texto copiado'); } catch (e) { prompt('Copia el texto:', x.texto); } }
+  /* ---------- ✏️ Redactar los mensajes de WhatsApp (dueño / Administrador) ---------- */
+  const PLT_T = { reunion: '🤝 Recordatorio de reunión (un día antes)', visita: '📅 Aviso de visita (un día antes)', porVencer: '⏰ Nota por vencer', vencida: '💰 Cobranza vencida',
+    compra: '🛒 Le toca comprar', cumple: '🎂 Felicitación de cumpleaños', firma: '✍️ Firma (va al final de todos)' };
+  const PLT_EJ = { cliente: 'Juan Pérez', fecha: 'martes 10 de noviembre de 2026, 10:00 h', tema: 'Plan de vacunación', lugar: 'Lugar: Rancho El Sol', objetivo: 'Presentar productos nuevos',
+    folio: 'MAT-0627', saldo: '$1,250.00', vence: 'el 12/11/2026', notas: '• Nota MAT-0601 (venció 01/11/2026): $800.00\n• Nota MAT-0610 (venció 05/11/2026): $450.00', total: '$1,250.00',
+    productos: 'MEGACAL-M, DORACIDE', sucursal: '· Champotón' };
+  const pltLlenar = (t, v) => String(t || '').replace(/\{(\w+)\}/g, (m, k) => v[k] !== undefined ? v[k] : m).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  async function formPlantillas() {
+    let r; try { r = await pedir('plantillasMensajes', {}, true); } catch (e) { return toast(/desconocida/i.test(e.message) ? 'Se activa en cuanto se publique la actualización del servidor (222).' : e.message, true); }
+    S.plt = r; const ed = r.puedeEditar;
+    modal('✏️ Mensajes de WhatsApp', `<p class="muted peq">Redacta cada mensaje a tu gusto. Toca una <b>{palabra}</b> para insertarla: la app la cambia por el dato real de cada cliente. La firma se agrega al final de todos.${ed ? '' : '<br><b>Solo el dueño o el Administrador pueden cambiarlos.</b>'}</p>
+      ${Object.keys(PLT_T).map(k => `<div class="plt-caja"><div class="fila" style="justify-content:space-between;margin:0"><b>${PLT_T[k]}</b>${ed ? `<button class="btn chico" onclick="App.pltOriginal('${k}')">↺ Original</button>` : ''}</div>
+        <textarea id="plt_${k}" rows="${k === 'firma' ? 1 : k === 'vencida' || k === 'reunion' ? 5 : 3}" ${ed ? '' : 'readonly'} oninput="App.pltVista('${k}')">${esc(r.plantillas[k])}</textarea>
+        <div class="plt-vars">${(r.variables[k] || []).map(v => `<button class="btn chico" ${ed ? '' : 'disabled'} onclick="App.pltInsertar('${k}','${v}')">{${v}}</button>`).join('')}</div>
+        <details><summary class="peq">Vista previa</summary><pre class="msj-pre" id="pltV_${k}"></pre></details></div>`).join('')}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button>${ed ? '<button class="btn primario" onclick="App.guardarPlantillas()">Guardar mensajes</button>' : ''}</div>`);
+    Object.keys(PLT_T).forEach(pltVista);
+  }
+  function pltVista(k) { const el = $('#pltV_' + k), t = $('#plt_' + k); if (!el || !t) return; const firma = pltLlenar(($('#plt_firma') || {}).value || '', PLT_EJ);
+    el.textContent = k === 'firma' ? firma : pltLlenar(t.value, PLT_EJ) + (firma ? '\n\n' + firma : ''); if (k === 'firma') Object.keys(PLT_T).filter(x => x !== 'firma').forEach(pltVista); }
+  function pltInsertar(k, v) { const t = $('#plt_' + k); if (!t) return; const a = t.selectionStart || t.value.length, b = t.selectionEnd || a; t.value = t.value.slice(0, a) + '{' + v + '}' + t.value.slice(b); t.focus(); t.selectionStart = t.selectionEnd = a + v.length + 2; pltVista(k); }
+  function pltOriginal(k) { const t = $('#plt_' + k); if (t && S.plt) { t.value = S.plt.originales[k]; pltVista(k); } }
+  async function guardarPlantillas() {
+    const pl = {}; Object.keys(PLT_T).forEach(k => pl[k] = $('#plt_' + k).value);
+    const sinCli = Object.keys(PLT_T).filter(k => k !== 'firma' && pl[k].trim() && pl[k].indexOf('{cliente}') < 0);
+    if (sinCli.length && !confirm('Estos mensajes no llevan {cliente} (el nombre del cliente):\n• ' + sinCli.map(k => PLT_T[k]).join('\n• ') + '\n\n¿Guardar así?')) return;
+    try { await pedir('guardarPlantillasMensajes', { plantillas: pl }); cerrarModal(); toast('✔ Mensajes guardados'); S.msj = null; if (S.vista === 'mensajes') cargarMensajes(true); } catch (e) {}
+  }
   V.visitas = () => {
     const f = S.fVis = alDia(S.fVis || { desde: sumaDias(hoyISO(), -7), hasta: sumaDias(hoyISO(), 60), hastaHoy: '', vend: '', estado: '' });
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
@@ -12306,7 +12334,7 @@ const App = (() => {
     setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) { cargarSucsCfg(); cargarRespaldos(); } }, 0);
     $('#vista').innerHTML = `<div class="tarjeta"><h3>Mi sesión</h3><p>${esc(u.nombre)} · <b>${esc(u.rolNombre || u.rol)}</b> · ${esc(u.correo)}<br>Sucursal: ${esc(sucNom(u.sucursal))} · Acceso: ${u.todasSucursales ? 'todas las sucursales' : 'solo su sucursal'}</p>
       <p class="muted">Datos guardados en este dispositivo: ${(D().productos || []).length} productos, ${(D().clientes || []).length} clientes, ${(D().stock || []).length} lotes. Última actualización: ${D().servidor ? new Date(D().servidor).toLocaleString('es-MX') : '—'}</p>
-      <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
+      <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}${puede('seguimiento') ? '<button class="btn fijo" onclick="App.formPlantillas()">📲 Mensajes de WhatsApp</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
       ${puede('dueno') ? '<div class="tarjeta"><h3>🛟 Respaldos automáticos</h3><div id="cfResp"><span class="muted">Revisando…</span></div></div>' : ''}
       <div class="tarjeta"><h3>Operaciones pendientes de sincronizar (${S.cola.length})</h3>${tabla([{ t: 'Capturada', k: 'creado' }, { t: 'Operación', k: 'desc' }, { t: 'Error', h: o => o.error ? `<span class="error">${esc(o.error)}</span>` : 'En espera' },
         { t: '', h: o => `<button class="btn chico peligro" onclick="App.descartarOp('${o.opId}')">Descartar</button>` }], S.cola.slice().reverse(), { vacio: 'Todo sincronizado ✔' })}
@@ -13020,7 +13048,7 @@ const App = (() => {
   return {
     formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, rxSurtElegir, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
-    cargarMensajes, msjAccion, msjCopiar,
+    cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,

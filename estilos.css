@@ -123,6 +123,8 @@ textarea { min-height: 70px; resize: vertical; }
 /* Mensajes del día */
 .msj-fila { padding: 10px 0; border-top: 1px solid var(--borde); } .msj-fila:first-of-type { border-top: 0; }
 .msj-hecho { opacity: .6; }
+.plt-caja { padding: 12px 0; border-top: 1px solid var(--borde); } .plt-caja textarea { width: 100%; margin-top: 6px; font: inherit; font-size: 14px; }
+.plt-vars { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .msj-pre { white-space: pre-wrap; font: inherit; font-size: 13px; background: var(--fondo-2, rgba(0,0,0,.04)); padding: 8px 10px; border-radius: 8px; margin: 6px 0 0; }
 
 /* KPI */
