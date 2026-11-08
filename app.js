@@ -11069,8 +11069,16 @@ const App = (() => {
       '\n\nElija el horario que le quede mejor o proponga otro día, hora y lugar aquí:\n' + r.url;
   };
   const reuWaHref = r => { const tel = String(r.cel || '').replace(/\D/g, '').slice(-10); return WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(reuMsgWA(r)); };
-  function formReunion(idCli) {
-    const c = cliente(idCli) || {}, dir = [c.calle, c.colonia, c.localidad, c.municipio].filter(Boolean).join(', ');
+  function formReunionSuc() {
+    const l = (D().sucursales || []).filter(x => !esMatriz(x.id));
+    modal('🏬 Invitar a una sucursal', `<label>Sucursal<select id="reuSuc">${opts(l.map(x => [x.id, x.nombre]), '', '— Elige —')}</select></label>
+      <p class="muted peq">La invitación le llega al correo de la sucursal y de su gerente; el gerente elige el horario (o propone otro) y tú lo apruebas.</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="const v=document.getElementById('reuSuc').value; if(!v) return; App.formReunion('', v)">Continuar</button></div>`);
+  }
+  function formReunion(idCli, idSuc) {
+    const sc = idSuc ? (D().sucursales || []).find(x => x.id === idSuc) || {} : null;
+    const c = sc ? { razon: 'Sucursal ' + (sc.nombre || idSuc), cel: '', email: '', calle: sc.direccion || '' } : (cliente(idCli) || {}), dir = [c.calle, c.colonia, c.localidad, c.municipio].filter(Boolean).join(', ');
+    S.reuSuc = idSuc || '';
     const fila = i => `<div class="fila reu-op"><label>Opción ${i + 1} · día<input type="date" id="reuD${i}"></label><label>Hora<input type="time" id="reuH${i}" step="900"></label></div>`;
     modal('📅 Invitar a reunión', `<p><b>${esc(c.razon || c.nombre || idCli)}</b></p>
       <div class="rejilla"><label>Tipo<select id="reuTipo" onchange="App.reuTipo()"><option>Presencial</option><option>Virtual</option></select></label>
@@ -11081,8 +11089,8 @@ const App = (() => {
           <span class="fila" style="margin:0"><input id="reuLiga" placeholder="Pega aquí la liga de Meet, Zoom o Teams"><a class="btn fijo" target="_blank" href="${MEET_NUEVA}">➕ Crear Meet</a></span></label></div>
       <h4 style="margin:12px 0 4px">Horarios que propones <small class="muted">(hasta 3; el cliente también podrá proponer otro)</small></h4>
       ${[0, 1, 2].map(fila).join('')}
-      <div class="rejilla"><label>Celular del cliente<input id="reuCel" inputmode="tel" value="${esc(c.cel || '')}"></label><label>Correo del cliente<input id="reuCorreo" type="email" value="${esc(c.email || '')}"></label></div>
-      <label class="chk"><input type="checkbox" id="reuMail" ${c.email ? 'checked' : ''}> Enviar también por correo (con botones para elegir)</label>
+      <div class="rejilla"><label>Celular ${sc ? 'del gerente' : 'del cliente'}<input id="reuCel" inputmode="tel" value="${esc(c.cel || '')}" placeholder="${sc ? 'Vacío = el del gerente de la sucursal' : ''}"></label><label>Correo ${sc ? '(vacío = el de la sucursal y su gerente)' : 'del cliente'}<input id="reuCorreo" value="${esc(c.email || '')}"></label></div>
+      <label class="chk"><input type="checkbox" id="reuMail" ${c.email || sc ? 'checked' : ''}> Enviar también por correo (con botones para elegir)</label>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="reuBtn" onclick="App.crearReunion('${esc(idCli)}')">Crear invitación</button></div>`);
   }
   function reuTipo() { const v = $('#reuTipo').value === 'Virtual'; $('#reuLugarL').style.display = v ? 'none' : ''; $('#reuLigaL').style.display = v ? '' : 'none'; }
@@ -11091,9 +11099,9 @@ const App = (() => {
     const tema = $('#reuTema').value.trim(); if (!tema) return toast('Escribe el tema de la reunión', true);
     if (ops.some(o => new Date(o) <= new Date())) return toast('Un horario propuesto ya pasó', true);
     const correo = $('#reuCorreo').value.trim(), mail = $('#reuMail').checked;
-    if (mail && !/@/.test(correo)) return toast('Escribe el correo del cliente o quita "Enviar por correo"', true);
+    if (mail && !/@/.test(correo) && !S.reuSuc) return toast('Escribe el correo del cliente o quita "Enviar por correo"', true);
     const b = $('#reuBtn'); b.disabled = true; b.textContent = 'Creando…';
-    let r; try { r = await pedir('crearReunion', { idCliente: idCli, tipo: $('#reuTipo').value, tema: tema, duracion: +$('#reuDur').value, lugar: $('#reuLugar').value, liga: $('#reuLiga').value, opciones: ops, cel: $('#reuCel').value, correo: correo, enviarCorreo: mail }); }
+    let r; try { r = await pedir('crearReunion', { idCliente: idCli, idSucursal: S.reuSuc || '', tipo: $('#reuTipo').value, tema: tema, duracion: +$('#reuDur').value, lugar: $('#reuLugar').value, liga: $('#reuLiga').value, opciones: ops, cel: $('#reuCel').value, correo: correo, enviarCorreo: mail }); }
     catch (e) { b.disabled = false; b.textContent = 'Crear invitación'; return; }
     S.reu = null; reuEnviada(r, '✔ Invitación creada');
   }
@@ -11115,7 +11123,7 @@ const App = (() => {
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila"><label style="flex:2 1 220px">Buscar<input id="reuQ" value="${esc(S.fReu.q)}" placeholder="Cliente o tema"></label>
       <label>Estado<select id="reuEst">${opts([['', 'Todas'], ['activas', 'Pendientes y confirmadas']].concat(Object.keys(REU_TXT).map(k => [k, REU_TXT[k]])), S.fReu.est)}</select></label>
       <button class="btn fijo" onclick="App.cargarReuniones(true)">⟳ Actualizar</button></div>
-      <p class="muted peq" style="margin:4px 0 0">Para invitar a un cliente abre su ficha (Clientes) y toca <b>📅 Invitar a reunión</b>.</p></div><div id="reuRes"><div class="vacio">Cargando…</div></div>`;
+      <p class="muted peq" style="margin:4px 0 0">Para invitar a un cliente abre su ficha (Clientes) y toca <b>📅 Invitar a reunión</b>.${puede('dueno') || U().rol === 'Administrador' ? ' Para reunirte con una sucursal: <button class="btn chico" onclick="App.formReunionSuc()">🏬 Invitar a una sucursal</button>' : ''}</p></div><div id="reuRes"><div class="vacio">Cargando…</div></div>`;
     $('#reuQ').oninput = e => { S.fReu.q = e.target.value; pintarReuniones(); };
     $('#reuEst').onchange = e => { S.fReu.est = e.target.value; pintarReuniones(); };
     cargarReuniones();
@@ -11130,15 +11138,16 @@ const App = (() => {
     const btn = (t, fn, cl) => `<button class="btn chico ${cl || ''}" onclick="${fn}">${t}</button>`;
     el.innerHTML = l.map(r => { const id = esc(r.id);
       const acc = [];
-      if (r.estado === 'Por aprobar') acc.push(btn('✅ Aprobar', `App.reuAprobar('${id}')`, 'primario'), btn('🔁 Pedir otra fecha', `App.reuRechazar('${id}')`));
-      if (r.estado === 'Enviada' || r.estado === 'Reprogramar' || r.estado === 'Por aprobar') acc.push(`<a class="btn chico" target="_blank" href="${reuWaHref(r)}">💬 WhatsApp</a>`, btn('✉️ Reenviar correo', `App.reuReenviar('${id}')`), btn('🔗 Copiar enlace', `App.reuCopiar('${id}')`));
-      if (r.estado === 'Confirmada') acc.push(`<a class="btn chico" target="_blank" href="${reuWaHref(r)}">💬 Avisar por WhatsApp</a>`, btn('🏁 Marcar realizada', `App.reuRealizada('${id}')`, 'primario'));
-      if (['Enviada', 'Por aprobar', 'Reprogramar', 'Confirmada'].indexOf(r.estado) >= 0) acc.push(btn('❌ Cancelar', `App.reuCancelar('${id}')`, 'peligro'));
+      if (!r.gestiona) { if (['Enviada', 'Reprogramar', 'Por aprobar', 'Confirmada'].indexOf(r.estado) >= 0) acc.push(`<a class="btn chico primario" target="_blank" href="${esc(r.url)}">${r.estado === 'Enviada' || r.estado === 'Reprogramar' ? '📅 Elegir horario' : '📅 Ver detalle'}</a>`); }
+      else if (r.estado === 'Por aprobar') acc.push(btn('✅ Aprobar', `App.reuAprobar('${id}')`, 'primario'), btn('🔁 Pedir otra fecha', `App.reuRechazar('${id}')`));
+      if (r.gestiona && (r.estado === 'Enviada' || r.estado === 'Reprogramar' || r.estado === 'Por aprobar')) acc.push(`<a class="btn chico" target="_blank" href="${reuWaHref(r)}">💬 WhatsApp</a>`, btn('✉️ Reenviar correo', `App.reuReenviar('${id}')`), btn('🔗 Copiar enlace', `App.reuCopiar('${id}')`));
+      if (r.gestiona && r.estado === 'Confirmada') acc.push(`<a class="btn chico" target="_blank" href="${reuWaHref(r)}">💬 Avisar por WhatsApp</a>`, btn('🏁 Marcar realizada', `App.reuRealizada('${id}')`, 'primario'));
+      if (r.gestiona && ['Enviada', 'Por aprobar', 'Reprogramar', 'Confirmada'].indexOf(r.estado) >= 0) acc.push(btn('❌ Cancelar', `App.reuCancelar('${id}')`, 'peligro'));
       return `<div class="tarjeta reu-card ${r.estado === 'Por aprobar' ? 'aut-pend' : ''}"><div class="fila" style="justify-content:space-between;align-items:flex-start;margin:0">
-          <div><b style="font-size:1.05em">${esc(r.cliente)}</b> <span class="etq ${REU_ETQ[r.estado] || ''}">${esc(REU_TXT[r.estado] || r.estado)}</span><br>
+          <div>${r.invitado === 'Sucursal' ? (r.gestiona ? '🏬 ' : '<span class="etq">📩 Invitación de Matriz</span><br>') : ''}<b style="font-size:1.05em">${esc(r.cliente)}</b> <span class="etq ${REU_ETQ[r.estado] || ''}">${esc(!r.gestiona && r.estado === 'Por aprobar' ? '⏳ Matriz la está revisando' : !r.gestiona && r.estado === 'Enviada' ? '📩 Elige un horario' : REU_TXT[r.estado] || r.estado)}</span><br>
           <span>${r.tipo === 'Virtual' ? '💻' : '📍'} ${esc(r.tema)} · ${r.dur} min</span><br><small class="muted">${esc(r.creador)} · ${esc(r.sucNombre)} · creada ${esc(r.fecha)}</small></div>
-          ${r.elegida ? `<div style="text-align:right"><small class="muted">${r.estado === 'Por aprobar' ? 'El cliente eligió' : 'Fecha'}</small><br><b>${esc(r.elegidaTxt)}</b>${r.lugarFinal ? `<br><small>${r.tipo === 'Virtual' ? `<a target="_blank" href="${esc(r.lugarFinal)}">${esc(r.lugarFinal)}</a>` : esc(r.lugarFinal)}</small>` : ''}</div>` : ''}</div>
-        ${!r.elegida && r.opcionesTxt.length && ['Enviada', 'Reprogramar'].indexOf(r.estado) >= 0 ? `<p class="peq" style="margin:8px 0 0">Propusiste: ${r.opcionesTxt.map(esc).join(' · ')}</p>` : ''}
+          ${r.elegida ? `<div style="text-align:right"><small class="muted">${r.estado === 'Por aprobar' ? (r.gestiona ? 'Eligió' : 'Elegiste') : 'Fecha'}</small><br><b>${esc(r.elegidaTxt)}</b>${r.lugarFinal ? `<br><small>${r.tipo === 'Virtual' ? `<a target="_blank" href="${esc(r.lugarFinal)}">${esc(r.lugarFinal)}</a>` : esc(r.lugarFinal)}</small>` : ''}</div>` : ''}</div>
+        ${!r.elegida && r.opcionesTxt.length && ['Enviada', 'Reprogramar'].indexOf(r.estado) >= 0 ? `<p class="peq" style="margin:8px 0 0">${r.gestiona ? 'Propusiste' : 'Te proponen'}: ${r.opcionesTxt.map(esc).join(' · ')}</p>` : ''}
         ${r.comentario ? `<p class="peq" style="margin:6px 0 0">💬 <i>${esc(r.comentario)}</i></p>` : ''}
         ${r.choques && r.choques.length ? `<div class="aviso-mal peq" style="margin-top:8px">⚠️ Se empalma con: ${r.choques.map(c => esc(c.titulo + ' (' + c.hora + ')')).join(' · ')}</div>` : r.estado === 'Por aprobar' ? '<p class="ok-txt peq" style="margin:6px 0 0">✔ Sin empalmes en tu calendario</p>' : ''}
         ${r.motivo && ['Reprogramar', 'Cancelada'].indexOf(r.estado) >= 0 ? `<p class="muted peq" style="margin:6px 0 0">Motivo: ${esc(r.motivo)}</p>` : ''}
@@ -12961,7 +12970,7 @@ const App = (() => {
   return {
     formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, rxSurtElegir, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
-    formReunion, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
+    formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
