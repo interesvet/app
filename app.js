@@ -1483,25 +1483,50 @@ const App = (() => {
       else if (e.target.closest('[data-regalo]')) { const l = v.lineas[+row.dataset.i]; l.precio = 0.01; l.desc = 0; guardarBorrador(); pintarLineasVenta(); } };
     totalesVenta();
   }
+  /* ---------- 🎂 Regalo de cumpleaños: configuración (dueño / Administrador) ---------- */
+  async function formCumple() {
+    let r; try { r = await pedir('cumpleConfig', {}, true); } catch (e) { return toast(/desconocida/i.test(e.message) ? 'Se activa en cuanto se publique la actualización del servidor (224).' : e.message, true); }
+    const ed = r.puedeEditar, dis = ed ? '' : 'disabled';
+    modal('🎂 Regalo de cumpleaños', `<p class="muted peq">A partir del día de su cumpleaños, el cliente recibe automáticamente un descuento en todas las sucursales. No aplica a empresas (RFC de 12 caracteres), a clientes sin fecha de cumpleaños ni a clientes con notas vencidas (esas, si las liquidan completas dentro del periodo, reciben la bonificación al cobrarlas). Tampoco a productos en promoción, con margen menor al mínimo, con precio rebajado o con descuento propio.${ed ? '' : '<br><b>Solo el dueño o el Administrador pueden cambiarlo.</b>'}</p>
+      <label class="chk"><input type="checkbox" id="cuAct" ${r.activo ? 'checked' : ''} ${dis}> Regalo de cumpleaños activo</label>
+      <div class="rejilla"><label>Descuento %<input type="number" id="cuPct" step="0.5" value="${r.pct}" ${dis}></label><label>Días de vigencia (desde su cumpleaños)<input type="number" id="cuDias" value="${r.dias}" ${dis}></label>
+        <label>Margen mínimo del producto %<input type="number" id="cuMar" value="${r.margen}" ${dis}></label></div>
+      <p class="peq" style="margin:10px 0 4px"><b>No aplica a clientes con lista de precios:</b></p>
+      <div class="plt-vars">${(r.listas || []).map(l => `<label class="chk" style="margin:0 10px 0 0"><input type="checkbox" class="cuExc" value="${esc(l)}" ${dis} ${(r.excluir || []).indexOf(l) >= 0 ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div>
+      <p class="muted peq">Productos en promoción: márcalos en su ficha (Productos › editar › "En promoción"). El mensaje de felicitación con el regalo se redacta en Configuración › 📲 Mensajes de WhatsApp (palabra {regalo}).</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button>${ed ? '<button class="btn primario" onclick="App.guardarCumple()">Guardar</button>' : ''}</div>`);
+  }
+  async function guardarCumple() {
+    const o = { activo: $('#cuAct').checked, pct: Number($('#cuPct').value), dias: Number($('#cuDias').value), margen: Number($('#cuMar').value), excluir: [...document.querySelectorAll('.cuExc:checked')].map(x => x.value) };
+    if (!(o.pct > 0 && o.pct <= 50)) return toast('El descuento debe estar entre 0.5 y 50 %', true);
+    try { await pedir('guardarCumpleConfig', o); cerrarModal(); toast('✔ Regalo de cumpleaños guardado; se aplica al recargar los datos'); } catch (e) {}
+  }
+  /** ¿Este renglón lleva el regalo de cumpleaños? (mismas reglas que el servidor) */
+  function cumpleLinea(v, l, p) {
+    const c = v.cli ? cliente(v.cli) : null; if (!c || !c.cum || c.cum.venc || !p || !p.cm) return false;
+    return !(Number(l.desc) || 0) && Number(l.precio) >= (Number((p.precios || {})[v.lista]) || 0) - 0.005 && p.cm.indexOf(v.lista) >= 0;
+  }
   function calcVenta(v) {
     const pc = Math.min(100, Math.max(0, Number(v.descPC) || 0)) / 100;
-    let sub = 0, desc = 0, iva = 0;
-    const brutos = [], descs = [], ivas = [];
+    let sub = 0, desc = 0, iva = 0, cum = 0;
+    const brutos = [], descs = [], ivas = [], cums = [], cc = v.cli && v !== S.cot ? (cliente(v.cli) || {}).cum : null,   // cotizaciones: sin regalo (se aplica al vender)
+      cpct = cc && !cc.venc ? (Number(cc.pct) || 0) / 100 : 0;
     const imps = v.lineas.map(l => {
       const p = prod(l.id) || {};
-      const s = r2(l.cant * l.precio), d = r2(s * (Number(l.desc) || 0) / 100), i = r2((s - d) * (1 - pc) * (p.iva || 0));
-      brutos.push(s); descs.push(d); ivas.push(i);
-      sub += s; desc += d; iva += i; return r2(s - d + i);
+      const s = r2(l.cant * l.precio), dl = r2(s * (Number(l.desc) || 0) / 100), dc = cpct && cumpleLinea(v, l, p) ? r2((s - dl) * cpct) : 0, d = r2(dl + dc), i = r2((s - d) * (1 - pc) * (p.iva || 0));
+      brutos.push(s); descs.push(d); ivas.push(i); cums.push(dc);
+      sub += s; desc += dl; cum += dc; iva += i; return r2(s - d + i);
     });
-    const descPC = r2((sub - desc) * pc);
-    return { imps: imps, brutos: brutos, descs: descs, ivas: ivas, sub: r2(sub), desc: r2(desc), descPC: descPC, iva: r2(iva), flete: v.clientePaga === false ? 0 : r2(v.flete), total: r2(sub - desc - descPC + iva + (v.clientePaga === false ? 0 : Number(v.flete) || 0)) };
+    const descPC = r2((sub - desc - cum) * pc);
+    return { imps: imps, brutos: brutos, descs: descs, ivas: ivas, cums: cums, cum: r2(cum), cumInfo: cc || null, sub: r2(sub), desc: r2(desc), descPC: descPC, iva: r2(iva), flete: v.clientePaga === false ? 0 : r2(v.flete), total: r2(sub - desc - cum - descPC + iva + (v.clientePaga === false ? 0 : Number(v.flete) || 0)) };
   }
   function totalesVenta() {
     const v = S.venta, t = calcVenta(v);
     document.querySelectorAll('#vLineas .linea[data-i]').forEach(r => { const i = +r.dataset.i, sp = r.querySelector('[data-iva]');
-      r.querySelector('[data-imp]').textContent = $$(t.imps[i]); if (sp) sp.textContent = $$(t.ivas[i]); });
+      r.querySelector('[data-imp]').innerHTML = $$(t.imps[i]) + (t.cums[i] ? ' <small class="cum-lin" title="Regalo de cumpleaños">🎂 −' + $$(t.cums[i]) + '</small>' : ''); if (sp) sp.textContent = $$(t.ivas[i]); });
     $('#vTot').innerHTML = `<div><span>Subtotal</span><span>${$$(t.sub)}</span></div>
-      ${t.desc ? `<div><span>Descuentos</span><span>−${$$(t.desc)}</span></div>` : ''}${t.descPC ? `<div><span>Pronto pago</span><span>−${$$(t.descPC)}</span></div>` : ''}
+      ${t.desc ? `<div><span>Descuentos</span><span>−${$$(t.desc)}</span></div>` : ''}${t.cum ? `<div class="cum-tot"><span>🎂 Regalo de cumpleaños ${t.cumInfo.pct} % (al ${esc(t.cumInfo.hasta)})</span><span>−${$$(t.cum)}</span></div>` : ''}${t.descPC ? `<div><span>Pronto pago</span><span>−${$$(t.descPC)}</span></div>` : ''}
+      ${t.cumInfo && t.cumInfo.venc ? `<div class="aviso-mal peq" style="display:block">🎂 Cumpleaños vigente al ${esc(t.cumInfo.hasta)}, pero tiene ${t.cumInfo.venc} nota${t.cumInfo.venc > 1 ? 's' : ''} vencida${t.cumInfo.venc > 1 ? 's' : ''} (${$$(t.cumInfo.vencTot)}): el regalo no aplica hasta que las liquide. Si las paga completas dentro de su periodo, al cobrarlas se le bonifica el ${t.cumInfo.pct} %.</div>` : t.cumInfo && !t.cum && v.lineas.length ? `<div class="muted peq" style="display:block">🎂 Cumpleaños vigente al ${esc(t.cumInfo.hasta)}; ningún producto de esta nota aplica (promoción, margen bajo, precio rebajado o descuento propio).</div>` : ''}
       <div><span>IVA</span><span>${$$(t.iva)}</span></div>${t.flete ? `<div><span>Flete</span><span>${$$(t.flete)}</span></div>` : ''}
       <div class="gran"><span>Total</span><span>${$$(t.total)}</span></div>${v.clientePaga === false && v.fletePag ? `<div class="muted"><span>🚚 Flete que absorbes (no se le cobra)</span><span>${$$(v.fletePag)}</span></div>` : ''}
       <div class="muted"><span>Saldo a crédito</span><span>${$$(Math.max(0, t.total - (Number(v.cobro.monto) || 0)))}</span></div>`;
@@ -1607,7 +1632,7 @@ const App = (() => {
     const d = { folio: 'PENDIENTE', fecha: new Date().toLocaleDateString('es-MX'), cliente: c.nombre, razon: c.razon, rfc: c.rfc, cel: c.cel,
       fiscal: { cp: c.cp || '', regimen: conRfc ? c.regimen || '' : '', uso: conRfc ? c.uso || '' : '' },
       domicilio: [c.calle, c.colonia, c.municipio, c.estado].filter(Boolean).join(', '), lista: v.lista, dias: v.dias, metodo: v.metodo,
-      sub: t.sub, desc: t.desc, descPC: t.descPC, iva: t.iva, flete: t.flete, total: t.total, cobrado: params.pago ? params.pago.monto : 0,
+      sub: t.sub, desc: r2(t.desc + t.cum), descPC: t.descPC, iva: t.iva, flete: t.flete, total: t.total, cobrado: params.pago ? params.pago.monto : 0,
       saldo: t.total - (params.pago ? params.pago.monto : 0), estatus: params.Estatus, sucursal: { id: v.suc, nombre: sucNom(v.suc) }, vendedor: U().nombre,
       envio: ((D().catalogos.paqueterias || []).find(x => x.id === params.ID_Flete) || { nombre: 'Entrega física' }).nombre, guia: params.No_Guia,
       lineas: v.lineas.map((l, i) => ({ nombre: (prod(l.id) || {}).nombre, prod: l.id, cant: l.cant, precio: l.precio, sub: t.brutos[i], desc: t.descs[i], iva: t.ivas[i], total: t.imps[i], lote: l.lote ? 'Elegido' : 'Auto', cad: '' })),
@@ -4162,12 +4187,17 @@ const App = (() => {
       <label>Cuenta / caja<select id="cbBanco">${opts(cat.bancos, 'EFECTI10')}</select></label>
       ${camposPagoExtra('cb', sucV)}
       <label style="grid-column:1/-1">Nota<input id="cbNota"></label>
-      <label style="grid-column:1/-1">Comprobante (foto y/o PDF, opcional — puedes elegir ambos)<input type="file" id="cbArch" multiple accept="image/&#42;,application/pdf"></label></div>
+      <label style="grid-column:1/-1">Comprobante (foto y/o PDF, opcional — puedes elegir ambos)<input type="file" id="cbArch" multiple accept="image/&#42;,application/pdf"></label></div><div id="cbCumple"></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarCobro('${idVenta}')">Guardar cobro</button></div>`);
     refrescarSelTerminal('cb', sucV);
+    S.cbCum = null;
+    if (navigator.onLine !== false) pedir('cumpleCobro', { ID_Venta: idVenta }, true).then(x => { const el = $('#cbCumple'); if (!x || !x.aplica || !el) return; S.cbCum = x;
+      el.innerHTML = `<label class="chk cum-cobro"><input type="checkbox" id="cbCum" onchange="App.cbCumple()"> 🎂 <b>Bonificación de cumpleaños ${x.pct} %</b>: si liquida hoy esta nota vencida paga <b>${$$(x.aPagar)}</b> en vez de ${$$(x.saldo)} (se bonifican ${$$(x.bonif)}; vigente al ${esc(x.hasta)}).</label>`; }).catch(() => {});
   }
+  function cbCumple() { const x = S.cbCum; if (!x) return; $('#cbMonto').value = $('#cbCum').checked ? x.aPagar : x.saldo; $('#cbMonto').readOnly = $('#cbCum').checked; }
   async function guardarCobro(idVenta) {
     const p = { ID_Venta: idVenta, ID_Cobranza: uid(), monto: Number($('#cbMonto').value), fecha: $('#cbFecha').value, forma: $('#cbForma').value, banco: $('#cbBanco').value, nota: $('#cbNota').value };
+    if ($('#cbCum') && $('#cbCum').checked) p.bonifCumple = true;
     Object.assign(p, leerPagoExtra('cb')); if (!p.terminal) delete p.terminal; if (!p.referencia) delete p.referencia;
     if (!(p.monto > 0)) return toast('Captura el monto', true);
     let adjs;
@@ -4182,7 +4212,7 @@ const App = (() => {
     try { r = await pedir('guardarCobro', p); }
     catch (e) { if (e.red) { encolar('guardarCobro', p, 'Cobro ' + $$(p.monto)); const av = encolarAdj(); cerrarModal(); toast('📴 Cobro guardado en el dispositivo; se enviará al reconectar.' + av, !!av); } return; }
     if (S.cacheTot) S.cacheTot = {};
-    let msg = '✔ Cobro registrado. Saldo: ' + $$(r.saldo);
+    let msg = '✔ Cobro registrado. Saldo: ' + $$(r.saldo) + (r.bonif ? ' · 🎂 bonificación de cumpleaños ' + $$(r.bonif) : '');
     if (adj) {
       try { for (const u of adjs) await pedir('subirAdjuntoCobro', { ID_Cobranza: p.ID_Cobranza, dataUri: u }); msg += adjs.length > 1 ? ' · foto y PDF adjuntos' : ' · comprobante adjunto'; }
       catch (e) { if (e.red) { const av = encolarAdj(); msg += av || ' · el comprobante se enviará al reconectar'; } else msg += ' · el comprobante no se pudo subir, agrégalo desde el cobro'; }
@@ -8569,6 +8599,7 @@ const App = (() => {
       { k: 'Precio_Socio', t: 'Socio $', tipo: 'number' }, { k: 'Precio_Aliado', t: 'Aliado $', tipo: 'number' }, { k: 'AGL', t: 'AGL $', tipo: 'number' },
       { k: 'Precio_Farmacia', t: 'Farmacia $', tipo: 'number' }, { k: 'Precio_Ganadero', t: 'Ganadero $', tipo: 'number' }, { k: 'Comisionista', t: 'Comisionista $', tipo: 'number' },
       { k: 'Activo', t: 'Estado', tipo: 'select', ops: [['SI', 'Activo'], ['NO', 'Inactivo (baja)']] }, { k: 'Usa_Lote', t: 'Controla lote', tipo: 'check' }, { k: 'Usa_Caducidad', t: 'Controla caducidad', tipo: 'check' },
+      { k: 'En_Promocion', t: '🏷️ En promoción (sin regalo de cumpleaños)', tipo: 'check' },
       { k: 'Especies', t: 'Especies', ancho: 1 }, { k: 'Descripcion', t: 'Descripción / fórmula', tipo: 'textarea', ancho: 1 }, { k: 'Indicaciones', t: 'Indicaciones', tipo: 'textarea', ancho: 1 },
       { k: 'Dosis', t: 'Dosis', tipo: 'textarea', ancho: 1 }, { k: 'Tiempo_retiro', t: 'Tiempo de retiro' }, { k: 'Advertencias', t: 'Advertencias', tipo: 'textarea', ancho: 1 }];
     const ini = p ? full : { Activo: 'SI', Unidad_Venta: 'Pieza', Piezas_por_Unidad: 1, TASA_IVA: 'T_Ex', Usa_Lote: true, Usa_Caducidad: true };
@@ -8629,13 +8660,14 @@ const App = (() => {
       { k: 'Regimen_Fiscal', t: 'Régimen fiscal', tipo: 'select', ops: cat.regimen, vacio: '' }, { k: 'Uso_CFDI', t: 'Uso CFDI', tipo: 'select', ops: cat.usoCfdi, vacio: '' }, { k: 'C.P.', t: 'C.P.' },
       { k: 'Lista_de_Precios', t: 'Lista de precios', tipo: 'select', ops: cat.listas.map(x => [x, x]), dis: !comercial }, { k: 'D_Credito', t: 'Días de crédito', tipo: 'number', dis: !comercial }, { k: 'Limite_Credito', t: 'Límite de crédito $ (0 = sin límite)', tipo: 'number', dis: !(puede('dueno') || U().rol === 'Administrador') },
       { k: 'Clasificacion', t: 'Clasificación', tipo: 'select', ops: ['AAA', 'AA', 'A', 'B', 'C'].map(x => [x, x]), vacio: '' }, { k: 'Tipo', t: 'Tipo', tipo: 'select', ops: ['Productor', 'Farmacia', 'Clínica', 'MVZ', 'Distribuidor', 'Público'].map(x => [x, x]), vacio: '' },
-      { k: 'Nicho Mercado', t: 'Nicho de mercado (puedes elegir varios)', tipo: 'multi', ops: NICHOS, ancho: 1 }, { k: 'Celular', t: 'Celular', tipo: 'tel' }, { k: 'e-mail', t: 'Correo', tipo: 'email' }, { k: 'Tel_Fijo', t: 'Tel. fijo' },
+      { k: 'Nicho Mercado', t: 'Nicho de mercado (puedes elegir varios)', tipo: 'multi', ops: NICHOS, ancho: 1 }, { k: 'Celular', t: 'Celular', tipo: 'tel' }, { k: 'e-mail', t: 'Correo', tipo: 'email' }, { k: 'Tel_Fijo', t: 'Tel. fijo' }, { k: 'Fecha_cumpleaños', t: '🎂 Fecha de cumpleaños (personas, no empresas)', tipo: 'date' },
       { k: 'Calle', t: 'Calle' }, { k: 'Colonia', t: 'Colonia' }, { k: 'Municipio/Delegación', t: 'Municipio' }, { k: 'Localidad', t: 'Localidad' }, { k: 'Estado', t: 'Estado' }, { k: 'Ruta', t: 'Ruta' },
       { k: 'Ubicacion_trabajo/rancho', t: 'Ubicación rancho (lat, long)' }, { k: 'Enc_Compras', t: 'Encargado de compras' }, { k: 'Tel_Enc_Compras', t: 'Tel. compras' },
       { k: 'Enc_Pagos', t: 'Encargado de pagos' }, { k: 'Tel_Enc_Pagos', t: 'Tel. pagos' }, { k: 'Potencial', t: 'Potencial' }, { k: 'Origen', t: '¿Cómo nos conoció? (origen)', tipo: 'select', ops: CRM_ORIGENES.map(x => [x, x]), vacio: '' },
       { k: 'ID_Sucursal', t: 'Sucursal', tipo: 'select', ops: D().sucursales, dis: !U().todasSucursales }, { k: 'Vendedor', t: 'Vendedor', tipo: 'select', ops: D().vendedores, vacio: '', dis: !comercial },
       { k: 'Status', t: 'Estado', tipo: 'select', ops: [['Activo', 'Activo'], ['Inactivo', 'Inactivo (baja)'], ['Prospecto', 'Prospecto']] },
       { k: 'Comentarios', t: 'Comentarios', tipo: 'textarea', ancho: 1 }];
+    if (full && /^\d{2}\/\d{2}\/\d{4}$/.test(String(full['Fecha_cumpleaños'] || ''))) { const f = String(full['Fecha_cumpleaños']).split('/'); full['Fecha_cumpleaños'] = f[2] + '-' + f[1] + '-' + f[0]; }
     const ini = c ? full : { Lista_de_Precios: 'Publico', D_Credito: 0, Status: 'Activo', ID_Sucursal: sucTrabajo(), Vendedor: U().id };
     // alta desde el buscador de venta/cotización: el nombre que se escribió (o un RFC / teléfono) ya va capturado
     const formVals = Object.assign({}, ini); const nq = String(nombreIni || '').trim();
@@ -12338,7 +12370,7 @@ const App = (() => {
     setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) { cargarSucsCfg(); cargarRespaldos(); } }, 0);
     $('#vista').innerHTML = `<div class="tarjeta"><h3>Mi sesión</h3><p>${esc(u.nombre)} · <b>${esc(u.rolNombre || u.rol)}</b> · ${esc(u.correo)}<br>Sucursal: ${esc(sucNom(u.sucursal))} · Acceso: ${u.todasSucursales ? 'todas las sucursales' : 'solo su sucursal'}</p>
       <p class="muted">Datos guardados en este dispositivo: ${(D().productos || []).length} productos, ${(D().clientes || []).length} clientes, ${(D().stock || []).length} lotes. Última actualización: ${D().servidor ? new Date(D().servidor).toLocaleString('es-MX') : '—'}</p>
-      <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}${puede('seguimiento') ? '<button class="btn fijo" onclick="App.formPlantillas()">📲 Mensajes de WhatsApp</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
+      <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}${puede('seguimiento') ? '<button class="btn fijo" onclick="App.formPlantillas()">📲 Mensajes de WhatsApp</button>' : ''}${puede('ventas') || puede('dueno') ? '<button class="btn fijo" onclick="App.formCumple()">🎂 Regalo de cumpleaños</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
       ${puede('dueno') ? '<div class="tarjeta"><h3>🛟 Respaldos automáticos</h3><div id="cfResp"><span class="muted">Revisando…</span></div></div>' : ''}
       <div class="tarjeta"><h3>Operaciones pendientes de sincronizar (${S.cola.length})</h3>${tabla([{ t: 'Capturada', k: 'creado' }, { t: 'Operación', k: 'desc' }, { t: 'Error', h: o => o.error ? `<span class="error">${esc(o.error)}</span>` : 'En espera' },
         { t: '', h: o => `<button class="btn chico peligro" onclick="App.descartarOp('${o.opId}')">Descartar</button>` }], S.cola.slice().reverse(), { vacio: 'Todo sincronizado ✔' })}
@@ -13052,6 +13084,7 @@ const App = (() => {
   return {
     formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, rxSurtElegir, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
+    formCumple, guardarCumple, cbCumple, agregarLineaVenta,
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
