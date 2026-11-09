@@ -126,7 +126,8 @@ textarea { min-height: 70px; resize: vertical; }
 .cum-tot span { color: #b0457a; font-weight: 600; } .cum-lin { color: #b0457a; display: block; font-size: 11px; } .cum-cobro { background: #fdf0f6; border-radius: 10px; padding: 10px 12px; margin-top: 10px; display: block; }
 .mon-tarjeta { background: linear-gradient(135deg, #1f6f4a, #2f9a66 60%, #d4a531); color: #fff; border-radius: 20px; padding: 18px 20px; max-width: 460px; margin: 0 auto 12px; box-shadow: 0 8px 24px rgba(31,111,74,.25); }
 .mon-tarjeta.apagada { filter: grayscale(.85); opacity: .8; }
-.mon-tarjeta .mon-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; font-size: 13px; } .mon-tarjeta .mon-cab span { text-align: right; font-size: 11px; letter-spacing: 1px; }
+.mon-tarjeta .mon-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; font-size: 13px; } .mon-tarjeta .mon-marca { display: flex; align-items: center; gap: 8px; } .mon-tarjeta .mon-logo { background: #fff; border-radius: 8px; padding: 3px 5px; display: inline-flex; } .mon-tarjeta .mon-logo img { height: 28px; width: auto; display: block; }
+.mon-tarjeta .mon-cab span { text-align: right; font-size: 11px; letter-spacing: 1px; }
 .mon-tarjeta small { display: block; margin-top: 14px; opacity: .9; } .mon-tarjeta .mon-cli { font-size: 18px; font-weight: 700; }
 .mon-tarjeta .mon-imp { font-size: 40px; font-weight: 800; margin: 8px 0 2px; } .mon-tarjeta .mon-pie { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; margin-top: 10px; }
 .mon-tarjeta .mon-leg { border-top: 1px solid rgba(255,255,255,.5); margin-top: 10px; padding-top: 6px; font-size: 11px; }

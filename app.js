@@ -1545,7 +1545,7 @@ const App = (() => {
   function usarMonedero(on) { S.venta.usarMon = !!on; guardarBorrador(); totalesVenta(); }
   /* ---------- 🎁 Monedero de regalo (cumpleaños / aniversario) ---------- */
   function tarjetaMonHtml(m) {
-    return `<div class="mon-tarjeta${m.estado && m.estado !== 'Vigente' ? ' apagada' : ''}"><div class="mon-cab"><b>Interés Veterinario®</b><span>MONEDERO DE REGALO<br>${esc(m.folio)}</span></div>
+    return `<div class="mon-tarjeta${m.estado && m.estado !== 'Vigente' ? ' apagada' : ''}"><div class="mon-cab"><b class="mon-marca">${window.LOGO ? `<span class="mon-logo"><img src="${window.LOGO}" alt=""></span>` : ''}Interés Veterinario®</b><span>MONEDERO DE REGALO<br>${esc(m.folio)}</span></div>
       <small>🎁 Para</small><div class="mon-cli">${esc(m.cliente)}</div><div class="mon-imp">${$$(m.importe)}</div>
       ${m.estado === 'Vigente' && m.saldo !== m.importe ? `<div>Saldo disponible: <b>${$$(m.saldo)}</b></div>` : ''}
       <div class="mon-pie"><span>Emitido: <b>${esc(m.fecha)}</b></span><span>Válido hasta: <b>${esc(m.vence)}</b></span></div>
@@ -1558,13 +1558,16 @@ const App = (() => {
       <p class="muted peq">${esc(m.origen || '')}. Estado: <b>${esc(m.estado || 'Vigente')}</b>.${usos ? '' : ' Aún no se usa.'}</p>${usos ? `<ul class="peq">${usos}</ul>` : ''}
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button><button class="btn" onclick="App.monederoPdf('${esc(m.id)}')">📄 PDF</button><button class="btn primario" onclick="App.monederoWa()">📲 Enviar por WhatsApp</button></div>`);
   }
-  function monederoPng(m) {
+  async function monederoPng(m) {
+    let logo = null; if (window.LOGO) logo = await new Promise(ok => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => ok(im); im.onerror = () => ok(null); im.src = window.LOGO; });
     const W = 900, H = 560, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
     const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
     const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, '#1f6f4a'); gr.addColorStop(0.6, '#2f9a66'); gr.addColorStop(1, '#d4a531');
     rr(0, 0, W, H, 40); g.fillStyle = gr; g.fill();
     g.fillStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.arc(W - 90, 90, 170, 0, 7); g.fill(); g.beginPath(); g.arc(80, H - 40, 120, 0, 7); g.fill();
-    g.fillStyle = '#fff'; g.font = 'bold 34px Arial'; g.fillText('Interés Veterinario®', 50, 80);
+    let xt = 50;
+    if (logo && logo.width) { const lh = 52, lw = Math.min(170, lh * logo.width / logo.height); g.fillStyle = '#fff'; rr(42, 42, lw + 16, lh + 12, 12); g.fill(); try { g.drawImage(logo, 50, 48, lw, lh); } catch (e) {} xt = 42 + lw + 16 + 14; }
+    g.fillStyle = '#fff'; g.font = 'bold 34px Arial'; g.fillText('Interés Veterinario®', xt, 80);
     g.textAlign = 'right'; g.font = 'bold 22px Arial'; g.fillText('MONEDERO DE REGALO', W - 50, 66); g.font = '22px Arial'; g.fillText(m.folio, W - 50, 96); g.textAlign = 'left';
     g.font = '26px Arial'; g.fillText('🎁 Para', 50, 175);
     let nom = String(m.cliente || ''); g.font = 'bold 40px Arial'; while (g.measureText(nom).width > W - 100 && nom.length > 4) nom = nom.slice(0, -2); if (nom !== String(m.cliente || '')) nom += '…'; g.fillText(nom, 50, 225);
