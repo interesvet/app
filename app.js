@@ -1436,7 +1436,7 @@ const App = (() => {
   function elegirClienteVenta(id) {
     const v = S.venta, c = cliente(id);
     v.cli = id; v.lista = c.lista && D().catalogos.listas.indexOf(c.lista) >= 0 ? c.lista : (D().catalogos.listaBase || 'Publico');
-    v.dias = c.credito || 0; v.metodo = v.dias > 0 ? 'PPD' : 'PUE';
+    v.dias = c.credito || 0; v.metodo = v.dias > 0 ? 'PPD' : 'PUE'; v.usarMon = !!(c.mon && c.mon.saldo > 0);   // 🎁 monedero: se propone usarlo
     v.lineas.forEach(l => { const p = prod(l.id); if (p) l.precio = precioVta(p, v.lista); });
     guardarBorrador(); V.venta();
   }
@@ -1487,38 +1487,46 @@ const App = (() => {
   async function formCumple() {
     let r; try { r = await pedir('cumpleConfig', {}, true); } catch (e) { return toast(/desconocida/i.test(e.message) ? 'Se activa en cuanto se publique la actualización del servidor (224).' : e.message, true); }
     const ed = r.puedeEditar, dis = ed ? '' : 'disabled';
-    modal('🎂 Regalo de cumpleaños', `<p class="muted peq">A partir del día de su cumpleaños, el cliente recibe automáticamente un descuento en todas las sucursales. No aplica a empresas (RFC de 12 caracteres), a clientes sin fecha de cumpleaños ni a clientes con notas vencidas (esas, si las liquidan completas dentro del periodo, reciben la bonificación al cobrarlas). Tampoco a productos en promoción, con margen menor al mínimo, con precio rebajado o con descuento propio.${ed ? '' : '<br><b>Solo el dueño o el Administrador pueden cambiarlo.</b>'}</p>
+    modal('🎂 Regalo de cumpleaños / aniversario', `<p class="muted peq">Desde su cumpleaños (empresas: su aniversario) el cliente recibe el descuento en todas las sucursales, <b>si está al corriente</b>: su nota pendiente más antigua tiene menos días que su límite sano (el de abajo, o sus días de crédito si son más). Con notas entre el límite sano y el de moroso, sus compras no llevan regalo, pero al liquidar completa cada una de esas notas (de la más antigua a la más reciente) se le bonifica el % sobre los productos que califican; si la nota está facturada, paga completo y el % se abona a su siguiente nota no facturada o se le entrega en un 🎁 Monedero. Morosos: nada. Nunca a productos en promoción, con margen menor al mínimo, con precio rebajado o con descuento propio.${ed ? '' : '<br><b>Solo el dueño o el Administrador pueden cambiarlo.</b>'}</p>
       <label class="chk"><input type="checkbox" id="cuAct" ${r.activo ? 'checked' : ''} ${dis}> Regalo de cumpleaños activo</label>
       <div class="rejilla"><label>Descuento %<input type="number" id="cuPct" step="0.5" value="${r.pct}" ${dis}></label><label>Días de vigencia (desde su cumpleaños)<input type="number" id="cuDias" value="${r.dias}" ${dis}></label>
-        <label>Margen mínimo del producto %<input type="number" id="cuMar" value="${r.margen}" ${dis}></label></div>
+        <label>Margen mínimo del producto %<input type="number" id="cuMar" value="${r.margen}" ${dis}></label>
+        <label>Crédito sano: días desde la nota (o sus días de crédito si son más)<input type="number" id="cuSano" value="${r.sano || 30}" ${dis}></label>
+        <label>Días más para ser moroso (después del límite sano)<input type="number" id="cuFranja" value="${r.franja || 30}" ${dis}></label>
+        <label>Vigencia del monedero (días)<input type="number" id="cuMonD" value="${r.monederoDias || 60}" ${dis}></label></div>
       <p class="peq" style="margin:10px 0 4px"><b>No aplica a clientes con lista de precios:</b></p>
       <div class="plt-vars">${(r.listas || []).map(l => `<label class="chk" style="margin:0 10px 0 0"><input type="checkbox" class="cuExc" value="${esc(l)}" ${dis} ${(r.excluir || []).indexOf(l) >= 0 ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</div>
       <p class="muted peq">Productos en promoción: márcalos en su ficha (Productos › editar › "En promoción"). El mensaje de felicitación con el regalo se redacta en Configuración › 📲 Mensajes de WhatsApp (palabra {regalo}).</p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button>${ed ? '<button class="btn primario" onclick="App.guardarCumple()">Guardar</button>' : ''}</div>`);
   }
   async function guardarCumple() {
-    const o = { activo: $('#cuAct').checked, pct: Number($('#cuPct').value), dias: Number($('#cuDias').value), margen: Number($('#cuMar').value), excluir: [...document.querySelectorAll('.cuExc:checked')].map(x => x.value) };
+    const o = { activo: $('#cuAct').checked, pct: Number($('#cuPct').value), dias: Number($('#cuDias').value), margen: Number($('#cuMar').value), sano: Number($('#cuSano').value), franja: Number($('#cuFranja').value), monederoDias: Number($('#cuMonD').value), excluir: [...document.querySelectorAll('.cuExc:checked')].map(x => x.value) };
     if (!(o.pct > 0 && o.pct <= 50)) return toast('El descuento debe estar entre 0.5 y 50 %', true);
     try { await pedir('guardarCumpleConfig', o); cerrarModal(); toast('✔ Regalo de cumpleaños guardado; se aplica al recargar los datos'); } catch (e) {}
   }
   /** ¿Este renglón lleva el regalo de cumpleaños? (mismas reglas que el servidor) */
   function cumpleLinea(v, l, p) {
-    const c = v.cli ? cliente(v.cli) : null; if (!c || !c.cum || c.cum.venc || !p || !p.cm) return false;
+    const c = v.cli ? cliente(v.cli) : null; if (!c || !cumpleAlCorriente(c.cum) || !p || !p.cm) return false;
     return !(Number(l.desc) || 0) && Number(l.precio) >= (Number((p.precios || {})[v.lista]) || 0) - 0.005 && p.cm.indexOf(v.lista) >= 0;
   }
+  /** 🎂 El regalo va en la compra solo si el cliente no tiene notas más viejas que su límite de crédito sano. */
+  function cumpleAlCorriente(cc) { return !!cc && (cc.est ? cc.est === 'limpio' || cc.est === 'sano' : !cc.venc); }
   function calcVenta(v) {
     const pc = Math.min(100, Math.max(0, Number(v.descPC) || 0)) / 100;
     let sub = 0, desc = 0, iva = 0, cum = 0;
     const brutos = [], descs = [], ivas = [], cums = [], cc = v.cli && v !== S.cot ? (cliente(v.cli) || {}).cum : null,   // cotizaciones: sin regalo (se aplica al vender)
-      cpct = cc && !cc.venc ? (Number(cc.pct) || 0) / 100 : 0;
+      cpct = cumpleAlCorriente(cc) ? (Number(cc.pct) || 0) / 100 : 0;
     const imps = v.lineas.map(l => {
       const p = prod(l.id) || {};
       const s = r2(l.cant * l.precio), dl = r2(s * (Number(l.desc) || 0) / 100), dc = cpct && cumpleLinea(v, l, p) ? r2((s - dl) * cpct) : 0, d = r2(dl + dc), i = r2((s - d) * (1 - pc) * (p.iva || 0));
       brutos.push(s); descs.push(d); ivas.push(i); cums.push(dc);
       sub += s; desc += dl; cum += dc; iva += i; return r2(s - d + i);
     });
-    const descPC = r2((sub - desc - cum) * pc);
-    return { imps: imps, brutos: brutos, descs: descs, ivas: ivas, cums: cums, cum: r2(cum), cumInfo: cc || null, sub: r2(sub), desc: r2(desc), descPC: descPC, iva: r2(iva), flete: v.clientePaga === false ? 0 : r2(v.flete), total: r2(sub - desc - cum - descPC + iva + (v.clientePaga === false ? 0 : Number(v.flete) || 0)) };
+    const descPC = r2((sub - desc - cum) * pc), antesMon = r2(sub - desc - cum - descPC + iva);
+    // 🎁 monedero de cumpleaños (solo ventas nuevas con conexión): baja el total de los productos, no el flete
+    const mc = v.cli && v !== S.cot && !v.editId ? (cliente(v.cli) || {}).mon : null, monDisp = mc && mc.saldo > 0 && !(v.cli && (cliente(v.cli).cum || {}).est === 'moroso') ? mc : null;
+    const mon = monDisp && v.usarMon && navigator.onLine !== false ? r2(Math.min(monDisp.saldo, Math.max(0, antesMon))) : 0;
+    return { imps: imps, brutos: brutos, descs: descs, ivas: ivas, cums: cums, cum: r2(cum), cumInfo: cc || null, mon: mon, monInfo: monDisp, sub: r2(sub), desc: r2(desc), descPC: descPC, iva: r2(iva), flete: v.clientePaga === false ? 0 : r2(v.flete), total: r2(antesMon - mon + (v.clientePaga === false ? 0 : Number(v.flete) || 0)) };
   }
   function totalesVenta() {
     const v = S.venta, t = calcVenta(v);
@@ -1526,12 +1534,68 @@ const App = (() => {
       r.querySelector('[data-imp]').innerHTML = $$(t.imps[i]) + (t.cums[i] ? ' <small class="cum-lin" title="Regalo de cumpleaños">🎂 −' + $$(t.cums[i]) + '</small>' : ''); if (sp) sp.textContent = $$(t.ivas[i]); });
     $('#vTot').innerHTML = `<div><span>Subtotal</span><span>${$$(t.sub)}</span></div>
       ${t.desc ? `<div><span>Descuentos</span><span>−${$$(t.desc)}</span></div>` : ''}${t.cum ? `<div class="cum-tot"><span>🎂 Regalo de cumpleaños ${t.cumInfo.pct} % (al ${esc(t.cumInfo.hasta)})</span><span>−${$$(t.cum)}</span></div>` : ''}${t.descPC ? `<div><span>Pronto pago</span><span>−${$$(t.descPC)}</span></div>` : ''}
-      ${t.cumInfo && t.cumInfo.venc ? `<div class="aviso-mal peq" style="display:block">🎂 Cumpleaños vigente al ${esc(t.cumInfo.hasta)}, pero tiene ${t.cumInfo.venc} nota${t.cumInfo.venc > 1 ? 's' : ''} vencida${t.cumInfo.venc > 1 ? 's' : ''} (${$$(t.cumInfo.vencTot)}): el regalo no aplica hasta que las liquide. Si las paga completas dentro de su periodo, al cobrarlas se le bonifica el ${t.cumInfo.pct} %.</div>` : t.cumInfo && !t.cum && v.lineas.length ? `<div class="muted peq" style="display:block">🎂 Cumpleaños vigente al ${esc(t.cumInfo.hasta)}; ningún producto de esta nota aplica (promoción, margen bajo, precio rebajado o descuento propio).</div>` : ''}
-      <div><span>IVA</span><span>${$$(t.iva)}</span></div>${t.flete ? `<div><span>Flete</span><span>${$$(t.flete)}</span></div>` : ''}
+      ${t.cumInfo && t.cumInfo.est === 'franja' ? `<div class="aviso-mal peq" style="display:block">🎂 Cumpleaños vigente al ${esc(t.cumInfo.hasta)}, pero tiene notas con más de ${t.cumInfo.sano} días (${esc(t.cumInfo.notas)} · ${$$(t.cumInfo.tot)}): sus compras no llevan el regalo. Si liquida esas notas completas dentro de su periodo, al cobrarlas se le bonifica el ${t.cumInfo.pct} %.</div>`
+        : t.cumInfo && t.cumInfo.est === 'moroso' ? `<div class="aviso-mal peq" style="display:block">🎂 Cumpleaños vigente, pero tiene notas con más de ${t.cumInfo.moroso} días (${esc(t.cumInfo.notas)}): no aplica ningún regalo hasta que se ponga al corriente.</div>`
+        : t.cumInfo && t.cumInfo.venc ? `<div class="aviso-mal peq" style="display:block">🎂 Cumpleaños vigente al ${esc(t.cumInfo.hasta)}, pero tiene notas vencidas: el regalo no aplica hasta que las liquide.</div>` : t.cumInfo && !t.cum && v.lineas.length ? `<div class="muted peq" style="display:block">🎂 Cumpleaños vigente al ${esc(t.cumInfo.hasta)}; ningún producto de esta nota aplica (promoción, margen bajo, precio rebajado o descuento propio).</div>` : ''}
+      <div><span>IVA</span><span>${$$(t.iva)}</span></div>${t.monInfo ? `<div class="cum-tot"><label class="chk" style="margin:0"><input type="checkbox" ${v.usarMon ? 'checked' : ''} onchange="App.usarMonedero(this.checked)"> 🎁 Monedero ${esc(t.monInfo.folios)} (disponible ${$$(t.monInfo.saldo)}, vence ${esc(t.monInfo.vence)})</label><span>${t.mon ? '−' + $$(t.mon) : navigator.onLine === false && v.usarMon ? 'requiere señal' : ''}</span></div>` : ''}${t.flete ? `<div><span>Flete</span><span>${$$(t.flete)}</span></div>` : ''}
       <div class="gran"><span>Total</span><span>${$$(t.total)}</span></div>${v.clientePaga === false && v.fletePag ? `<div class="muted"><span>🚚 Flete que absorbes (no se le cobra)</span><span>${$$(v.fletePag)}</span></div>` : ''}
       <div class="muted"><span>Saldo a crédito</span><span>${$$(Math.max(0, t.total - (Number(v.cobro.monto) || 0)))}</span></div>`;
     pintarRxVenta();
   }
+  function usarMonedero(on) { S.venta.usarMon = !!on; guardarBorrador(); totalesVenta(); }
+  /* ---------- 🎁 Monedero de regalo (cumpleaños / aniversario) ---------- */
+  function tarjetaMonHtml(m) {
+    return `<div class="mon-tarjeta${m.estado && m.estado !== 'Vigente' ? ' apagada' : ''}"><div class="mon-cab"><b>Interés Veterinario®</b><span>MONEDERO DE REGALO<br>${esc(m.folio)}</span></div>
+      <small>🎁 Para</small><div class="mon-cli">${esc(m.cliente)}</div><div class="mon-imp">${$$(m.importe)}</div>
+      ${m.estado === 'Vigente' && m.saldo !== m.importe ? `<div>Saldo disponible: <b>${$$(m.saldo)}</b></div>` : ''}
+      <div class="mon-pie"><span>Emitido: <b>${esc(m.fecha)}</b></span><span>Válido hasta: <b>${esc(m.vence)}</b></span></div>
+      <div class="mon-leg">Aplícalo en tu próxima compra en cualquier sucursal. No canjeable por efectivo. Aplican restricciones.${m.estado && m.estado !== 'Vigente' ? ' <b>(' + esc(m.estado) + ')</b>' : ''}</div></div>`;
+  }
+  function verMonedero(m) {
+    S.monVer = m;
+    const usos = (m.usos || []).map(u => `<li>${esc(u.fecha)} · nota ${esc(u.folio)} · −${$$(u.monto)}${u.devuelto ? ' (devuelto)' : ''}</li>`).join('');
+    modal('🎁 Monedero ' + m.folio, `${tarjetaMonHtml(m)}
+      <p class="muted peq">${esc(m.origen || '')}. Estado: <b>${esc(m.estado || 'Vigente')}</b>.${usos ? '' : ' Aún no se usa.'}</p>${usos ? `<ul class="peq">${usos}</ul>` : ''}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button><button class="btn" onclick="App.monederoPdf('${esc(m.id)}')">📄 PDF</button><button class="btn primario" onclick="App.monederoWa()">📲 Enviar por WhatsApp</button></div>`);
+  }
+  function monederoPng(m) {
+    const W = 900, H = 560, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+    const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+    const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, '#1f6f4a'); gr.addColorStop(0.6, '#2f9a66'); gr.addColorStop(1, '#d4a531');
+    rr(0, 0, W, H, 40); g.fillStyle = gr; g.fill();
+    g.fillStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.arc(W - 90, 90, 170, 0, 7); g.fill(); g.beginPath(); g.arc(80, H - 40, 120, 0, 7); g.fill();
+    g.fillStyle = '#fff'; g.font = 'bold 34px Arial'; g.fillText('Interés Veterinario®', 50, 80);
+    g.textAlign = 'right'; g.font = 'bold 22px Arial'; g.fillText('MONEDERO DE REGALO', W - 50, 66); g.font = '22px Arial'; g.fillText(m.folio, W - 50, 96); g.textAlign = 'left';
+    g.font = '26px Arial'; g.fillText('🎁 Para', 50, 175);
+    let nom = String(m.cliente || ''); g.font = 'bold 40px Arial'; while (g.measureText(nom).width > W - 100 && nom.length > 4) nom = nom.slice(0, -2); if (nom !== String(m.cliente || '')) nom += '…'; g.fillText(nom, 50, 225);
+    g.font = 'bold 110px Arial'; g.fillText($$(m.estado === 'Vigente' ? m.saldo : m.importe), 50, 350);
+    g.font = '24px Arial'; g.fillText('Emitido: ' + m.fecha, 50, 425); g.textAlign = 'right'; g.font = 'bold 28px Arial'; g.fillText('Válido hasta: ' + m.vence, W - 50, 425); g.textAlign = 'left';
+    g.fillStyle = 'rgba(255,255,255,.6)'; g.fillRect(50, 455, W - 100, 2); g.fillStyle = '#fff'; g.font = '20px Arial';
+    g.fillText('Aplícalo en tu próxima compra en cualquier sucursal de Interés Veterinario®.', 50, 492); g.fillText('No canjeable por efectivo. Aplican restricciones.', 50, 522);
+    return new Promise(ok => cv.toBlob(ok, 'image/png'));
+  }
+  async function monederoWa() {
+    const m = S.monVer; if (!m) return;
+    const cm = cliente(m.cli) || {}, tel = String(cm.cel || '').replace(/\D/g, '').slice(-10);
+    const txt = '¡Hola! 🎁 Le compartimos su Monedero de regalo ' + m.folio + ' de Interés Veterinario por ' + $$(m.estado === 'Vigente' ? m.saldo : m.importe) + ', válido hasta el ' + m.vence + '. Aplíquelo en su próxima compra en cualquiera de nuestras sucursales. Aplican restricciones.';
+    const b = await monederoPng(m), f = new File([b], 'Monedero-' + m.folio + '.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [f] })) { try { await navigator.share({ files: [f], text: txt }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+    const w = window.open('', '_blank');
+    try {
+      const b64 = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.readAsDataURL(b); });
+      const r = await pedir('guardarTarjetaMonedero', { id: m.id, imagen: b64 });
+      const url = WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(txt + '\n' + r.url);
+      if (w && !w.closed) w.location.href = url; else window.open(url, '_blank');
+    } catch (e) { if (w) { try { w.close(); } catch (x) {} } }
+  }
+  function monederoPdf(id) { const m = S.monVer || {}, cm = cliente(m.cli) || {}; generarPdf('pdfMonedero', { id: id }, { cel: cm.cel, asunto: 'Monedero ' + (m.folio || ''), texto: 'Interés Veterinario® — Monedero de regalo ' + (m.folio || ''), volver: '' }); }
+  async function cargarMonederosFicha(id) {
+    const el = $('#fcMon'); if (!el) return;
+    let r; try { r = await pedir('monederos', { idCliente: id }, true); } catch (e) { el.closest('.fc-sec').style.display = 'none'; return; }
+    S.monFicha = r.monederos || []; if (!S.monFicha.length) { el.closest('.fc-sec').style.display = 'none'; return; }
+    el.innerHTML = S.monFicha.map((m, i) => `<button class="btn chico" onclick="App.verMonederoI(${i})">🎁 ${esc(m.folio)} · ${$$(m.estado === 'Vigente' ? m.saldo : m.importe)} · ${esc(m.estado)}${m.estado === 'Vigente' ? ' (vence ' + esc(m.vence) + ')' : ''}</button>`).join(' ');
+  }
+  function verMonederoI(i) { const m = (S.monFicha || [])[i]; if (m) verMonedero(m); }
   function limpiarVenta() {
     if (S.venta.editId) { if (!confirm('¿Salir de la edición sin guardar? La nota queda como estaba.')) return; }
     else if (S.venta.lineas.length && !confirm('¿Descartar la venta en captura?')) return;
@@ -1582,6 +1646,7 @@ const App = (() => {
       lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, lote: l.lote })),
       pago: cobro > 0 ? { monto: cobro, forma: v.cobro.forma, banco: v.cobro.banco } : null
     };
+    if (t.mon > 0) params.usarMonedero = t.mon;
     if (aut) Object.assign(params, aut);
     if (v.rxExt && (v.rxExt.mvz || v.rxExt.cedula) && !(v.ligar && v.ligar.receta)) params.rxExterna = v.rxExt;
     const rxUri = $('#vRxArch') && $('#vRxArch')._uri;
@@ -1603,12 +1668,14 @@ const App = (() => {
       const r = await pedir('guardarVenta', params, true);
       S.venta = ventaNueva(); guardarBorrador();
       (r.avisos || []).forEach(a => toast(a, true));
-      toast('✔ Venta ' + r.folio + (r.estatus === 'Pendiente' ? ' guardada como Pendiente de entrega (no descontó inventario)' : ' guardada') + (r.cotPendiente && r.cotPendiente.folio ? ' · lo que faltó de la cotización pasó a la ' + r.cotPendiente.folio : ''));
+      toast('✔ Venta ' + r.folio + (r.estatus === 'Pendiente' ? ' guardada como Pendiente de entrega (no descontó inventario)' : ' guardada') + (r.cotPendiente && r.cotPendiente.folio ? ' · lo que faltó de la cotización pasó a la ' + r.cotPendiente.folio : '') + (r.monedero ? ' · 🎁 monedero aplicado ' + $$(r.monedero) : ''));
+      if (r.monedero) { const cm = cliente(params.ID_Cliente); if (cm && cm.mon) { cm.mon.saldo = r2(cm.mon.saldo - r.monedero); if (cm.mon.saldo <= 0.009) delete cm.mon; LS.set('datos', S.datos); } }
       refrescarStock();
       if (rxUri) { try { await pedir('subirArchivo', { tipo: 'ventaRx', id: r.ID_Venta, dataUri: rxUri }, true); toast('✔ Receta adjunta a la nota'); } catch (e2) { toast('La receta no se pudo adjuntar: agrégala desde la nota', true); } }
       S.tabVen = 'notas'; ir('ventas', true); verVenta(r.ID_Venta, true);   // al guardar: a Ventas para corroborar; otra venta con "Nueva venta"
     } catch (e) {
       if (e.red) {
+        if (params.usarMonedero) { delete params.usarMonedero; v.usarMon = false; Object.assign(t, calcVenta(v)); params.pago && (params.pago.monto = Math.min(params.pago.monto, t.total)); toast('🎁 Sin conexión: el monedero no se aplicó en esta venta (se usa con señal).', true); }
         encolar('guardarVenta', params, 'Venta a ' + ((cliente(v.cli) || {}).razon || '') + ' por ' + $$(t.total));
         if (v.estatus === 'Entregado') descontarStockLocal(v);
         const nota = notaOffline(v, t, params);
@@ -1632,7 +1699,7 @@ const App = (() => {
     const d = { folio: 'PENDIENTE', fecha: new Date().toLocaleDateString('es-MX'), cliente: c.nombre, razon: c.razon, rfc: c.rfc, cel: c.cel,
       fiscal: { cp: c.cp || '', regimen: conRfc ? c.regimen || '' : '', uso: conRfc ? c.uso || '' : '' },
       domicilio: [c.calle, c.colonia, c.municipio, c.estado].filter(Boolean).join(', '), lista: v.lista, dias: v.dias, metodo: v.metodo,
-      sub: t.sub, desc: r2(t.desc + t.cum), descPC: t.descPC, iva: t.iva, flete: t.flete, total: t.total, cobrado: params.pago ? params.pago.monto : 0,
+      sub: t.sub, desc: r2(t.desc + t.cum + (t.mon || 0)), descPC: t.descPC, iva: t.iva, flete: t.flete, total: t.total, cobrado: params.pago ? params.pago.monto : 0,
       saldo: t.total - (params.pago ? params.pago.monto : 0), estatus: params.Estatus, sucursal: { id: v.suc, nombre: sucNom(v.suc) }, vendedor: U().nombre,
       envio: ((D().catalogos.paqueterias || []).find(x => x.id === params.ID_Flete) || { nombre: 'Entrega física' }).nombre, guia: params.No_Guia,
       lineas: v.lineas.map((l, i) => ({ nombre: (prod(l.id) || {}).nombre, prod: l.id, cant: l.cant, precio: l.precio, sub: t.brutos[i], desc: t.descs[i], iva: t.ivas[i], total: t.imps[i], lote: l.lote ? 'Elegido' : 'Auto', cad: '' })),
@@ -4191,8 +4258,11 @@ const App = (() => {
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarCobro('${idVenta}')">Guardar cobro</button></div>`);
     refrescarSelTerminal('cb', sucV);
     S.cbCum = null;
-    if (navigator.onLine !== false) pedir('cumpleCobro', { ID_Venta: idVenta }, true).then(x => { const el = $('#cbCumple'); if (!x || !x.aplica || !el) return; S.cbCum = x;
-      el.innerHTML = `<label class="chk cum-cobro"><input type="checkbox" id="cbCum" onchange="App.cbCumple()"> 🎂 <b>Bonificación de cumpleaños ${x.pct} %</b>: si liquida hoy esta nota vencida paga <b>${$$(x.aPagar)}</b> en vez de ${$$(x.saldo)} (se bonifican ${$$(x.bonif)}; vigente al ${esc(x.hasta)}).</label>`; }).catch(() => {});
+    if (navigator.onLine !== false) pedir('cumpleCobro', { ID_Venta: idVenta }, true).then(x => { const el = $('#cbCumple'); if (!x || !el) return; S.cbCum = null;
+      if (!x.aplica) { if (x.motivo) el.innerHTML = `<div class="muted peq cum-cobro">${esc(x.motivo)}</div>`; return; } S.cbCum = x;
+      const dest = x.destino === 'misma' ? `paga <b>${$$(x.aPagar)}</b> en vez de ${$$(x.saldo)} (se bonifican ${$$(x.bonif)})`
+        : `paga la nota completa (<b>${$$(x.aPagar)}</b>; está facturada y la factura no se toca) y los ${$$(x.bonif)} ` + (x.destino === 'nota' ? `se abonan a su nota ${esc(x.destinoFolio)}` : 'se le entregan en un 🎁 Monedero de regalo (60 días)');
+      el.innerHTML = `<label class="chk cum-cobro"><input type="checkbox" id="cbCum" onchange="App.cbCumple()"> 🎂 <b>Bonificación de cumpleaños ${x.pct} %</b> sobre ${$$(x.base)} que califican: si liquida hoy esta nota ${dest}. Vigente al ${esc(x.hasta)}.</label>`; }).catch(() => {});
   }
   function cbCumple() { const x = S.cbCum; if (!x) return; $('#cbMonto').value = $('#cbCum').checked ? x.aPagar : x.saldo; $('#cbMonto').readOnly = $('#cbCum').checked; }
   async function guardarCobro(idVenta) {
@@ -4212,7 +4282,9 @@ const App = (() => {
     try { r = await pedir('guardarCobro', p); }
     catch (e) { if (e.red) { encolar('guardarCobro', p, 'Cobro ' + $$(p.monto)); const av = encolarAdj(); cerrarModal(); toast('📴 Cobro guardado en el dispositivo; se enviará al reconectar.' + av, !!av); } return; }
     if (S.cacheTot) S.cacheTot = {};
-    let msg = '✔ Cobro registrado. Saldo: ' + $$(r.saldo) + (r.bonif ? ' · 🎂 bonificación de cumpleaños ' + $$(r.bonif) : '');
+    let msg = '✔ Cobro registrado. Saldo: ' + $$(r.saldo) + (r.bonif ? ' · 🎂 bonificación de cumpleaños ' + $$(r.bonif) + (r.abonoNota ? ' (abonada a la nota ' + r.abonoNota.folio + ')' : '') : '');
+    if (r.monedero) { const cm = cliente(r.monedero.cli); if (cm) { cm.mon = cm.mon || { saldo: 0, vence: r.monedero.vence, folios: '' }; cm.mon.saldo = r2(cm.mon.saldo + r.monedero.saldo); cm.mon.folios = [cm.mon.folios, r.monedero.folio].filter(Boolean).join(', '); LS.set('datos', S.datos); }
+      setTimeout(() => verMonedero(r.monedero), 400); }
     if (adj) {
       try { for (const u of adjs) await pedir('subirAdjuntoCobro', { ID_Cobranza: p.ID_Cobranza, dataUri: u }); msg += adjs.length > 1 ? ' · foto y PDF adjuntos' : ' · comprobante adjunto'; }
       catch (e) { if (e.red) { const av = encolarAdj(); msg += av || ' · el comprobante se enviará al reconectar'; } else msg += ' · el comprobante no se pudo subir, agrégalo desde el cobro'; }
@@ -8660,7 +8732,7 @@ const App = (() => {
       { k: 'Regimen_Fiscal', t: 'Régimen fiscal', tipo: 'select', ops: cat.regimen, vacio: '' }, { k: 'Uso_CFDI', t: 'Uso CFDI', tipo: 'select', ops: cat.usoCfdi, vacio: '' }, { k: 'C.P.', t: 'C.P.' },
       { k: 'Lista_de_Precios', t: 'Lista de precios', tipo: 'select', ops: cat.listas.map(x => [x, x]), dis: !comercial }, { k: 'D_Credito', t: 'Días de crédito', tipo: 'number', dis: !comercial }, { k: 'Limite_Credito', t: 'Límite de crédito $ (0 = sin límite)', tipo: 'number', dis: !(puede('dueno') || U().rol === 'Administrador') },
       { k: 'Clasificacion', t: 'Clasificación', tipo: 'select', ops: ['AAA', 'AA', 'A', 'B', 'C'].map(x => [x, x]), vacio: '' }, { k: 'Tipo', t: 'Tipo', tipo: 'select', ops: ['Productor', 'Farmacia', 'Clínica', 'MVZ', 'Distribuidor', 'Público'].map(x => [x, x]), vacio: '' },
-      { k: 'Nicho Mercado', t: 'Nicho de mercado (puedes elegir varios)', tipo: 'multi', ops: NICHOS, ancho: 1 }, { k: 'Celular', t: 'Celular', tipo: 'tel' }, { k: 'e-mail', t: 'Correo', tipo: 'email' }, { k: 'Tel_Fijo', t: 'Tel. fijo' }, { k: 'Fecha_cumpleaños', t: '🎂 Fecha de cumpleaños (personas, no empresas)', tipo: 'date' },
+      { k: 'Nicho Mercado', t: 'Nicho de mercado (puedes elegir varios)', tipo: 'multi', ops: NICHOS, ancho: 1 }, { k: 'Celular', t: 'Celular', tipo: 'tel' }, { k: 'e-mail', t: 'Correo', tipo: 'email' }, { k: 'Tel_Fijo', t: 'Tel. fijo' }, { k: 'Fecha_cumpleaños', t: '🎂 Cumpleaños (persona) / aniversario (empresa)', tipo: 'date' },
       { k: 'Calle', t: 'Calle' }, { k: 'Colonia', t: 'Colonia' }, { k: 'Municipio/Delegación', t: 'Municipio' }, { k: 'Localidad', t: 'Localidad' }, { k: 'Estado', t: 'Estado' }, { k: 'Ruta', t: 'Ruta' },
       { k: 'Ubicacion_trabajo/rancho', t: 'Ubicación rancho (lat, long)' }, { k: 'Enc_Compras', t: 'Encargado de compras' }, { k: 'Tel_Enc_Compras', t: 'Tel. compras' },
       { k: 'Enc_Pagos', t: 'Encargado de pagos' }, { k: 'Tel_Enc_Pagos', t: 'Tel. pagos' }, { k: 'Potencial', t: 'Potencial' }, { k: 'Origen', t: '¿Cómo nos conoció? (origen)', tipo: 'select', ops: CRM_ORIGENES.map(x => [x, x]), vacio: '' },
@@ -8711,6 +8783,7 @@ const App = (() => {
       ${seccion('🐂 Comercial', dato('Tipo', x.Tipo) + dato('¿Cómo nos conoció?', x.Origen) + dato('Potencial', x.Potencial) + dato('Sucursal', sucNom(x.ID_Sucursal)) + dato('Vendedor', vend ? vend.nombre : x.Vendedor) +
         (nichos.length ? `<div class="fc-dato ancho"><small>Nicho de mercado</small><span class="multi-sel">${nichos.map(n => `<span class="chip-op on">${esc(n)}</span>`).join('')}</span></div>` : ''))}
       ${x.Comentarios ? seccion('📝 Comentarios', dato('', x.Comentarios, 1)) : ''}
+      <div class="fc-sec"><h4>🎁 Monederos de regalo</h4><div id="fcMon"><span class="muted">Cargando…</span></div></div>
       ${puede('seguimiento') ? `<div class="fc-sec"><h4>🤝 Seguimiento</h4><div id="fcSeg" data-id="${esc(c.id)}"><span class="muted">Cargando…</span></div>
         <div class="acciones izq"><button class="btn chico" onclick="App.formVisita({idCliente:'${esc(c.id)}'})">📅 Programar visita</button><button class="btn chico" onclick="App.formVisita({idCliente:'${esc(c.id)}', realizada:1})">✅ Registrar visita</button><button class="btn chico" onclick="App.visitasDeCliente('${esc(c.id)}')">📋 Sus visitas</button>
         ${puede('recetas') ? `<button class="btn chico" onclick="App.recetasDeCliente('${esc(c.id)}')">💊 Sus recetas</button>` : ''}</div></div>` : puede('recetas') ? `<div class="acciones izq"><button class="btn chico" onclick="App.recetasDeCliente('${esc(c.id)}')">💊 Sus recetas</button></div>` : ''}
@@ -8728,7 +8801,7 @@ const App = (() => {
         ${admin ? `<button class="btn primario" onclick="App.formCliente(${i})">✏️ Editar</button>` : ''}
       </div></div>`);
     if (puede('seguimiento')) cargarSegFicha(c.id);
-    cargarPerfilCompras(c.id);
+    cargarPerfilCompras(c.id); cargarMonederosFicha(c.id);
   }
   async function eliminarCliente(id) {
     const c = (D().clientes || []).find(z => z.id === id) || {};
@@ -11248,7 +11321,7 @@ const App = (() => {
   }
   async function reuRealizadaOk(id) { try { await pedir('realizarReunion', { id: id, notas: $('#reuNotas').value }); cerrarModal(); toast('🏁 Reunión registrada'); S.reu = null; cargarReuniones(); } catch (e) {} }
   /* ---------------- 📲 MENSAJES DEL DÍA (WhatsApp con un toque, sin costo) ---------------- */
-  const MSJ_T = { reunion: ['🤝', 'Reuniones de mañana'], visita: ['📅', 'Visitas de mañana'], porVencer: ['⏰', 'Notas por vencer'], vencida: ['💰', 'Cobranza vencida'], compra: ['🛒', 'Les toca comprar'], cumple: ['🎂', 'Cumpleaños de hoy'] };
+  const MSJ_T = { reunion: ['🤝', 'Reuniones de mañana'], visita: ['📅', 'Visitas de mañana'], porVencer: ['⏰', 'Notas por vencer'], vencida: ['💰', 'Cobranza vencida'], compra: ['🛒', 'Les toca comprar'], cumple: ['🎂', 'Cumpleaños de hoy'], aniversario: ['🎉', 'Aniversarios de hoy'], monedero: ['🎁', 'Monederos por vencer'], monederoVencido: ['🎁', 'Monederos vencidos'] };
   V.mensajes = () => {
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila" style="justify-content:space-between;align-items:center;margin:0">
         <p style="margin:0">Mensajes listos para enviar desde <b>tu WhatsApp</b>, sin costo. Toca <b>💬 Enviar</b>: se abre con el texto escrito y aún puedes corregirlo o no mandarlo.</p>
@@ -11287,10 +11360,10 @@ const App = (() => {
   function msjCopiar(i) { const x = S.msj && S.msj.items[i]; if (!x) return; try { navigator.clipboard.writeText(x.texto); toast('📋 Texto copiado'); } catch (e) { prompt('Copia el texto:', x.texto); } }
   /* ---------- ✏️ Redactar los mensajes de WhatsApp (dueño / Administrador) ---------- */
   const PLT_T = { reunion: '🤝 Recordatorio de reunión (un día antes)', visita: '📅 Aviso de visita (un día antes)', porVencer: '⏰ Nota por vencer', vencida: '💰 Cobranza vencida',
-    compra: '🛒 Le toca comprar', cumple: '🎂 Felicitación de cumpleaños', firma: '✍️ Firma (va al final de todos)' };
+    compra: '🛒 Le toca comprar', cumple: '🎂 Felicitación de cumpleaños', aniversario: '🎉 Felicitación de aniversario (empresas)', monedero: '🎁 Monedero por vencer (7 días y 1 día antes)', monederoVencido: '🎁 Monedero vencido (al día siguiente)', firma: '✍️ Firma (va al final de todos)' };
   const PLT_EJ = { cliente: 'Juan Pérez', fecha: 'martes 10 de noviembre de 2026, 10:00 h', tema: 'Plan de vacunación', lugar: 'Lugar: Rancho El Sol', objetivo: 'Presentar productos nuevos',
     folio: 'MAT-0627', saldo: '$1,250.00', vence: 'el 12/11/2026', notas: '• Nota MAT-0601 (venció 01/11/2026): $800.00\n• Nota MAT-0610 (venció 05/11/2026): $450.00', total: '$1,250.00',
-    productos: 'MEGACAL-M, DORACIDE', sucursal: '· Champotón' };
+    productos: 'MEGACAL-M, DORACIDE', sucursal: '· Champotón', regalo: '🎁 Como regalo, tiene 5 % de descuento en sus compras en cualquiera de nuestras sucursales hasta el 24 de noviembre.\nAplican restricciones.', vigencia: '24 de noviembre', cuando: 'en 7 días, el 15/01/2027' };
   const pltLlenar = (t, v) => String(t || '').replace(/\{(\w+)\}/g, (m, k) => v[k] !== undefined ? v[k] : m).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   async function formPlantillas() {
     let r; try { r = await pedir('plantillasMensajes', {}, true); } catch (e) { return toast(/desconocida/i.test(e.message) ? 'Se activa en cuanto se publique la actualización del servidor (222).' : e.message, true); }
@@ -13084,7 +13157,7 @@ const App = (() => {
   return {
     formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, rxSurtElegir, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
-    formCumple, guardarCumple, cbCumple, agregarLineaVenta,
+    formCumple, guardarCumple, cbCumple, agregarLineaVenta, usarMonedero, verMonedero, verMonederoI, monederoWa, monederoPdf, monederoPng,
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
