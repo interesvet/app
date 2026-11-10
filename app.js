@@ -5704,13 +5704,21 @@ const App = (() => {
     ({ exist: invExist, cad: invCad, mov: invMov, kardex: invKardex, costos: invCostos })[tab]();
   };
   function invExist() {
+    if (S.invVal === undefined) { try { S.invVal = localStorage.getItem('invVal') || 'lista'; } catch (e) { S.invVal = 'lista'; } }
     const cats = [...new Set((D().productos || []).map(p => p.categoria).filter(Boolean))].sort();
     $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label class="f-clave">🏬 Sucursal<select id="ieSuc">${U().todasSucursales ? optsSuc(sucFiltro(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
       <label>Buscar<input id="ieTxt" placeholder="Producto, clave, laboratorio"></label><label>Categoría<select id="ieCat">${opts(cats.map(c => [c, c]), '', 'Todas')}</select></label>
+      ${puede('ver_costos') ? `<label>💲 Valorizar a<select id="ieVal" onchange="App.invCambiarVal(this.value)"><option value="lista">Precio de cada sucursal (Matriz: Subdistribuidor)</option><option value="costo" ${invModo() === 'costo' ? 'selected' : ''}>${U().costoLista ? 'Costo de lista' : 'Costo de compra'}</option></select></label>` : ''}
       <label class="check fijo"><input type="checkbox" id="ieMin"> Bajo mínimo</label><button class="btn fijo" onclick="App.actualizarStock()">⟳ Actualizar</button><button class="btn fijo" onclick="App.excelInventario()">📊 Exportar a Excel</button></div></div><div class="espacio"></div><div id="ieRes"></div>`;
     ['#ieSuc', '#ieTxt', '#ieCat', '#ieMin'].forEach(s => enlazarFiltro(s, pintarExist));
     pintarExist();
   }
+  /** Lista con la que se valoriza el inventario de cada sucursal: la que tiene asignada (lo que paga a Matriz); Matriz: Subdistribuidor. */
+  const listaValSuc = id => { if (esMatriz(id)) return 'Subdistribuidor'; const x = (D().sucursales || []).find(o => o.id === id); return (x && x.lista) || 'Subdistribuidor'; };
+  const invModo = () => S.invVal === 'costo' ? 'costo' : 'lista';
+  /** Precio unitario para valorizar una existencia de la sucursal `sid`, según el modo elegido (precio de la sucursal o costo). */
+  const invValU = (p, sid) => invModo() === 'costo' ? invCosto(p) : Number(((p || {}).precios || {})[listaValSuc(sid)]) || 0;
+  function invCambiarVal(v) { S.invVal = v; try { localStorage.setItem('invVal', v); } catch (e) {} pintarExist(); }
   /** Costo unitario para valorizar: costo real de compra (promedio) si se conoce; si no, el costo de lista. */
   const invCosto = p => { const c = S.costosReales && S.costosReales.productos && S.costosReales.productos[p.id]; return (c && c.costoReal) || p.costo || 0; };
   function invCargarCR() {
@@ -5721,52 +5729,55 @@ const App = (() => {
   function pintarExist() {
     const suc = $('#ieSuc').value, txt = $('#ieTxt').value, cat = $('#ieCat').value, min = $('#ieMin').checked, verC = puede('ver_costos');
     const pasa = p => (!txt || coincide((p.id || '') + ' ' + p.nombre + ' ' + (p.lab || ''), txt)) && (!cat || p.categoria === cat);
-    const g = {}, diasLim = (D().config || {}).diasCaducidad || 120, cad = { q: 0, v: 0, l: [] }, prox = { q: 0, v: 0, l: [] };
+    const g = {}, porSucV = {}, sinPrecio = {}, diasLim = (D().config || {}).diasCaducidad || 120, cad = { q: 0, v: 0, l: [] }, prox = { q: 0, v: 0, l: [] };
     (D().stock || []).forEach(s => {
       if (suc && s.s !== suc) return;
       const p = prod(s.p) || { id: s.p, nombre: s.p };
       if (!pasa(Object.assign({ id: s.p }, p))) return;
       const k = s.p + '|' + (suc ? s.s : '');
-      if (!g[k]) g[k] = { p: s.p, s: suc ? s.s : '', q: 0, lotes: 0, cad: null };
+      if (!g[k]) g[k] = { p: s.p, s: suc ? s.s : '', q: 0, lotes: 0, cad: null, v: 0 };
       g[k].q += s.q; if (s.q > 0) { g[k].lotes++; const f = fechaDe(s.c); if (f && (!g[k].cad || f < g[k].cad)) g[k].cad = f; }
-      if (s.q > 0) { const d = diasA(s.c); if (d !== null) { const b = d < 0 ? cad : d <= diasLim ? prox : null; if (b) { b.q += s.q; b.v += s.q * invCosto(p); b.l.push(s); } } }
+      if (s.q > 0) { const vu = s.q * invValU(p, s.s); g[k].v += vu; porSucV[s.s] = (porSucV[s.s] || 0) + vu; if (!(vu > 0)) sinPrecio[s.p + '|' + s.s] = 1;
+        const d = diasA(s.c); if (d !== null) { const b = d < 0 ? cad : d <= diasLim ? prox : null; if (b) { b.q += s.q; b.v += vu; b.l.push(s); } } }
     });
     let filas = Object.values(g).map(x => { const p = prod(x.p) || { nombre: x.p }; return Object.assign(x, { prod: p }); })
       .filter(x => (!min || x.q < (x.prod.min || 0)) && Math.abs(x.q) > 0.0001)
       .sort((a, b) => { const qa = a.q > 0.0001 ? a.q : 0, qb = b.q > 0.0001 ? b.q : 0; return (qa > 0 && qb > 0) ? (qb - qa || String(a.prod.nombre).localeCompare(b.prod.nombre)) : (qa > 0 || qb > 0) ? (qa > 0 ? -1 : 1) : String(a.prod.nombre).localeCompare(b.prod.nombre); });
     S.lista = filas;
-    const pos = filas.filter(x => x.q > 0), valor = verC ? pos.reduce((t, x) => t + x.q * invCosto(x.prod), 0) : 0, piezas = pos.reduce((t, x) => t + x.q, 0);
+    const pos = filas.filter(x => x.q > 0), valor = verC ? pos.reduce((t, x) => t + x.v, 0) : 0, piezas = pos.reduce((t, x) => t + x.q, 0);
     // por llegar: solo órdenes de compra no recibidas (lo requisitado sin orden no cuenta)
     const pl = { q: 0, v: 0, oc: {}, l: [] };
     (D().porLlegar || []).forEach(x => { if (suc && x.s !== suc) return; const p = prod(x.p) || { id: x.p, nombre: x.p }; if (!pasa(Object.assign({ id: x.p }, p))) return;
-      pl.q += x.q; pl.v += x.v !== undefined ? x.v : x.q * invCosto(p); (x.oc || []).forEach(f => pl.oc[f] = 1); pl.l.push(x); });
+      pl.q += x.q; pl.v += invModo() === 'lista' ? x.q * invValU(p, x.s) : x.v !== undefined ? x.v : x.q * invCosto(p); (x.oc || []).forEach(f => pl.oc[f] = 1); pl.l.push(x); });
     S.invPL = pl.l; S.invCad = cad.l; S.invProx = prox.l;
     const real = S.costosReales && S.costosReales.productos, neg = filas.filter(x => x.q < 0).length;
     const tarj = (ico, t, v, sub, fn, cls) => `<div class="kpi inv-k ${cls || ''}${fn ? ' kpi-clic' : ''}" ${fn ? `onclick="App.${fn}"` : ''}><small>${ico} ${t}</small><b>${v}</b><span>${sub}</span></div>`;
     $('#ieRes').innerHTML = `<div class="kpis">
-        ${tarj('📦', 'En existencia' + (suc ? ' · ' + esc(sucNom(suc)) : ''), verC ? $$(valor) : nf(piezas) + ' pzas', (verC ? nf(piezas) + ' piezas · ' : '') + nf(pos.length) + ' productos' + (verC ? (real ? ' · a costo real de compra' : ' · a costo de lista') : ''))}
+        ${tarj('📦', 'En existencia' + (suc ? ' · ' + esc(sucNom(suc)) : ''), verC ? $$(valor) : nf(piezas) + ' pzas', (verC ? nf(piezas) + ' piezas · ' : '') + nf(pos.length) + ' productos' + (verC ? (invModo() === 'lista' ? ' · al precio de ' + (suc ? 'la lista ' + esc(listaValSuc(suc)) : 'cada sucursal (Matriz: Subdistribuidor)') : real ? ' · a costo real de compra' : ' · a costo de lista') : ''))}
         ${tarj('🚚', 'Por llegar (pedidos sin recibir)', verC ? $$(pl.v) : nf(pl.q) + ' pzas', (verC ? nf(pl.q) + ' piezas · ' : '') + nf(Object.keys(pl.oc).length) + ' órdenes de compra', pl.l.length ? 'invVerPL()' : '', 'av')}
         ${tarj('⛔', 'Caducados con existencia', verC ? $$(cad.v) : nf(cad.q) + ' pzas', (verC ? nf(cad.q) + ' piezas · ' : '') + nf(cad.l.length) + ' lotes', cad.l.length ? "invVerCad('cad')" : '', 'mal')}
         ${tarj('⏳', 'Por caducar (≤ ' + diasLim + ' días)', verC ? $$(prox.v) : nf(prox.q) + ' pzas', (verC ? nf(prox.q) + ' piezas · ' : '') + nf(prox.l.length) + ' lotes', prox.l.length ? "invVerCad('prox')" : '', 'av')}
       </div>
+      ${verC && !suc && Object.keys(porSucV).length > 1 ? `<div class="tarjeta peq" style="margin-bottom:8px"><b>Valor por sucursal</b> ${invModo() === 'lista' ? '(cada una a su lista; Matriz a Subdistribuidor)' : ''}: ${Object.keys(porSucV).sort((a, b) => porSucV[b] - porSucV[a]).map(k => `<span class="etq suc">${esc(sucNom(k))}${invModo() === 'lista' ? ' · ' + esc(listaValSuc(k)) : ''}: <b>${$$(porSucV[k])}</b></span>`).join(' ')} · <b>Total empresa: ${$$(valor)}</b></div>` : ''}
+      ${verC && Object.keys(sinPrecio).length ? `<p class="aviso-mal peq" style="display:block">⚠️ ${nf(Object.keys(sinPrecio).length)} producto(s) con existencia no tienen ${invModo() === 'lista' ? 'precio en la lista de su sucursal' : 'costo'} y cuentan en $0: ${Object.keys(sinPrecio).slice(0, 8).map(k => esc(k.split('|')[0]) + (suc ? '' : ' (' + esc(sucNom(k.split('|')[1])) + ')')).join(', ')}${Object.keys(sinPrecio).length > 8 ? '…' : ''}.</p>` : ''}
       <p class="muted peq">El valor de existencias cuenta solo las piezas que hay físicamente (lo que está en negativo no suma). Lo que está por llegar va aparte y no se suma a la existencia; lo requisitado sin orden de compra no cuenta.${neg ? ` · ⚠️ ${nf(neg)} productos con existencia negativa (revisa su kardex).` : ''}</p>` +
       tabla([{ t: 'Clave', k: 'p' }, { t: 'Producto', h: x => esc(x.prod.nombre) }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => x.s ? `<span class="etq suc">${esc(sucNom(x.s))}</span>` : '<span class="muted">Todas</span>' },
         { t: 'Lotes', num: 1, k: 'lotes' }, { t: 'Próx. caducidad', h: x => x.cad ? x.cad.toLocaleDateString('es-MX') : '—' },
         { t: 'Existencia', num: 1, h: x => `<b class="${x.q < 0 ? 'error' : ''}">${nf(x.q)}</b> ${x.prod.min && x.q < x.prod.min ? '<span class="etq av">Bajo mín.</span>' : ''}` }]
-        .concat(verC ? [{ t: 'Costo u.', num: 1, cls: 'ocultar-movil', h: x => $$(invCosto(x.prod)) }, { t: 'Valor', num: 1, h: x => x.q > 0 ? $$(x.q * invCosto(x.prod)) : '—' }] : []), filas.slice(0, 1500), { clic: 'App.abrirExistencia' });
+        .concat(verC ? [{ t: invModo() === 'lista' ? 'Precio u.' : 'Costo u.', num: 1, cls: 'ocultar-movil', h: x => x.s ? $$(invValU(x.prod, x.s)) : '<span class="muted">varía</span>' }, { t: 'Valor', num: 1, h: x => x.q > 0 ? $$(x.v) : '—' }] : []), filas.slice(0, 1500), { clic: 'App.abrirExistencia' });
     invCargarCR();
   }
   function invVerPL() {
     const verC = puede('ver_costos'), l = (S.invPL || []).slice().sort((a, b) => (b.v || 0) - (a.v || 0) || b.q - a.q);
     modal('🚚 Por llegar (órdenes de compra sin recibir)', tabla([{ t: 'Producto', h: x => `<b>${esc((prod(x.p) || {}).nombre || x.p)}</b><br><small class="muted">${esc(x.p)}</small>` }, { t: 'Sucursal', h: x => esc(sucNom(x.s)) },
-      { t: 'Piezas', num: 1, h: x => nf(x.q) }].concat(verC ? [{ t: 'Valor', num: 1, h: x => $$(x.v !== undefined ? x.v : x.q * invCosto(prod(x.p) || {})) }] : []).concat([{ t: 'Órdenes', h: x => esc((x.oc || []).join(', ')) }]), l) +
-      `<p class="muted peq">Valor según el precio de la orden de compra (sin IVA, con descuento del renglón).</p>`);
+      { t: 'Piezas', num: 1, h: x => nf(x.q) }].concat(verC ? [{ t: 'Valor', num: 1, h: x => $$(invModo() === 'lista' ? x.q * invValU(prod(x.p) || {}, x.s) : x.v !== undefined ? x.v : x.q * invCosto(prod(x.p) || {})) }] : []).concat([{ t: 'Órdenes', h: x => esc((x.oc || []).join(', ')) }]), l) +
+      `<p class="muted peq">${invModo() === 'lista' ? 'Valor al precio de la lista de cada sucursal (Matriz: Subdistribuidor).' : 'Valor según el precio de la orden de compra (sin IVA, con descuento del renglón).'}</p>`);
   }
   function invVerCad(k) {
     const verC = puede('ver_costos'), l = (k === 'cad' ? S.invCad : S.invProx || []).slice().sort((a, b) => diasA(a.c) - diasA(b.c));
     modal(k === 'cad' ? '⛔ Caducados con existencia' : '⏳ Por caducar', tabla([{ t: 'Producto', h: s => esc((prod(s.p) || {}).nombre || s.p) }, { t: 'Sucursal', h: s => esc(sucNom(s.s)) }, { t: 'Lote', k: 'l' }, { t: 'Caducidad', k: 'c' },
       { t: 'Días', num: 1, h: s => `<span class="etq ${diasA(s.c) < 0 ? 'mal' : 'av'}">${diasA(s.c) < 0 ? 'Caducó hace ' + (-diasA(s.c)) : diasA(s.c)}</span>` }, { t: 'Existencia', num: 1, h: s => nf(s.q) }]
-      .concat(verC ? [{ t: 'Valor', num: 1, h: s => $$(s.q * invCosto(prod(s.p) || {})) }] : []), l));
+      .concat(verC ? [{ t: 'Valor', num: 1, h: s => $$(s.q * invValU(prod(s.p) || {}, s.s)) }] : []), l));
   }
   /* ---- 🔎 Revisión de costos (dueño): costo de lista contra costo real de compra ---- */
   async function invCostos() {
@@ -8284,10 +8295,11 @@ const App = (() => {
       const varias = !suc && new Set(ex.map(x => x.s)).size > 1;
       const colsE = [{ t: 'Clave', w: 13 }, { t: 'Producto', w: 42 }, { t: 'Laboratorio', w: 18 }, { t: 'Categoría', w: 16 }].concat(varias ? [{ t: 'Sucursal', w: 16 }] : [])
         .concat([{ t: 'Lotes', w: 8, fmt: 'num' }, { t: 'Próx. caducidad', w: 14, fmt: 'fecha' }, { t: 'Existencia', w: 12, fmt: 'num', suma: 1 }, { t: 'Mínimo', w: 10, fmt: 'num' }, { t: 'Estado', w: 16 }])
-        .concat(verC ? [{ t: U().costoLista ? 'Costo lista' : 'Costo', w: 13, fmt: 'mon' }, { t: 'Valor', w: 15, fmt: 'mon', suma: 1 }] : []);
+        .concat(verC ? [{ t: invModo() === 'lista' ? 'Precio sucursal' : U().costoLista ? 'Costo lista' : 'Costo', w: 13, fmt: 'mon' }].concat(invModo() === 'lista' ? [{ t: 'Lista', w: 15 }] : []).concat([{ t: 'Valor', w: 15, fmt: 'mon', suma: 1 }]) : []);
+      const vu = (p, sid) => invModo() === 'lista' ? invValU(p, sid) : (p.costo || 0);
       const filasE = ex.map(x => { const est = x.q <= 0 ? 'Sin existencia' : x.p.min && x.q < x.p.min ? 'Bajo mínimo' : 'OK';
         return { tono: x.q <= 0 ? 'mal' : est === 'Bajo mínimo' ? 'av' : '', v: [x.p.id, x.p.nombre, x.p.lab || '', x.p.categoria || ''].concat(varias ? [sucNom(x.s)] : [])
-          .concat([x.lotes, x.cad || '', r2c(x.q), x.p.min || 0, est]).concat(verC ? [x.p.costo || 0, r2c(x.q * (x.p.costo || 0))] : []) }; });
+          .concat([x.lotes, x.cad || '', r2c(x.q), x.p.min || 0, est]).concat(verC ? [vu(x.p, x.s)].concat(invModo() === 'lista' ? [listaValSuc(x.s)] : []).concat([x.q > 0 ? r2c(x.q * vu(x.p, x.s)) : 0]) : []) }; });
       const lt = lotes.filter(x => x.s.q > 0 && (!min || (g[x.s.p + '|' + x.s.s] && g[x.s.p + '|' + x.s.s].q < (x.p.min || 0))))
         .sort((a, b) => (a.f || 9e15) - (b.f || 9e15) || String(a.p.nombre).localeCompare(b.p.nombre));
       const colsL = (varias ? [{ t: 'Sucursal', w: 16 }] : []).concat([{ t: 'Clave', w: 13 }, { t: 'Producto', w: 42 }, { t: 'Lote', w: 14 }, { t: 'Caducidad', w: 13, fmt: 'fecha' }, { t: 'Días para caducar', w: 11, fmt: 'num' },
@@ -8295,11 +8307,13 @@ const App = (() => {
       const filasL = lt.map(x => { const dias = x.f ? Math.round((x.f - hoyD) / 86400000) : null;
         const est = dias === null ? 'Sin caducidad' : dias < 0 ? 'Caducado' : dias <= 90 ? 'Por caducar (90 días)' : dias <= 180 ? 'Vigilar (180 días)' : 'Vigente';
         return { tono: dias === null ? 'gris' : dias < 0 ? 'mal' : dias <= 90 ? 'av' : '', v: (varias ? [sucNom(x.s.s)] : []).concat([x.p.id, x.p.nombre, x.s.l || '', x.f || x.s.c || '', dias === null ? '' : dias, r2c(x.s.q), est])
-          .concat(verC ? [r2c(x.s.q * (x.p.costo || 0))] : []) }; });
+          .concat(verC ? [r2c(x.s.q * vu(x.p, x.s.s))] : []) }; });
       const donde = suc ? sucNom(suc) : 'Todas las sucursales', filtro = [txt ? 'Búsqueda: ' + txt : '', cat ? 'Categoría: ' + cat : '', min ? 'Solo bajo mínimo' : ''].filter(Boolean).join(' · ');
-      const pzs = ex.reduce((a, x) => a + x.q, 0), val = verC ? ex.reduce((a, x) => a + x.q * (x.p.costo || 0), 0) : null;
+      const pzs = ex.reduce((a, x) => a + x.q, 0), val = verC ? ex.reduce((a, x) => a + (x.q > 0 ? x.q * vu(x.p, x.s) : 0), 0) : null;
+      const vSuc = {}; if (verC) ex.forEach(x => { if (x.q > 0) vSuc[x.s] = (vSuc[x.s] || 0) + x.q * vu(x.p, x.s); });
       const resumen = [['Productos', ex.length, 'num'], ['Piezas en existencia', r2c(pzs), 'num'], ['Bajo mínimo', ex.filter(x => x.q > 0 && x.p.min && x.q < x.p.min).length, 'num'],
-        ['Lotes caducados', filasL.filter(f => f.tono === 'mal').length, 'num']].concat(verC ? [['Valor del inventario' + (U().costoLista ? ' (costo de lista)' : ''), r2c(val), 'mon']] : []);
+        ['Lotes caducados', filasL.filter(f => f.tono === 'mal').length, 'num']].concat(verC ? (varias ? Object.keys(vSuc).sort((a, b) => vSuc[b] - vSuc[a]).map(k => ['Valor ' + sucNom(k) + (invModo() === 'lista' ? ' (lista ' + listaValSuc(k) + ')' : ''), r2c(vSuc[k]), 'mon']) : [])
+          .concat([[(varias ? 'Valor total empresa' : 'Valor del inventario') + (invModo() === 'lista' ? (varias ? ' (cada sucursal a su lista; Matriz a Subdistribuidor)' : ' (lista ' + listaValSuc(ex[0] ? ex[0].s : suc) + ')') : U().costoLista ? ' (costo de lista)' : ' (costo)'), r2c(val), 'mon']]) : []);
       const blob = await excelLocal('', [
         { nombre: 'Existencias', titulo: 'Inventario · ' + donde, sub: ['Existencias al ' + hoyTxt(), filtro], resumen: resumen, cols: colsE, filas: filasE },
         { nombre: 'Lotes y caducidades', titulo: 'Lotes y caducidades · ' + donde, sub: ['Al ' + hoyTxt() + ' · ordenado por caducidad', filtro], cols: colsL, filas: filasL }]);
@@ -13160,7 +13174,7 @@ const App = (() => {
   return {
     formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, rxSurtElegir, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
-    formCumple, guardarCumple, cbCumple, agregarLineaVenta, usarMonedero, verMonedero, verMonederoI, monederoWa, monederoPdf, monederoPng,
+    invCambiarVal, formCumple, guardarCumple, cbCumple, agregarLineaVenta, usarMonedero, verMonedero, verMonederoI, monederoWa, monederoPdf, monederoPng,
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
