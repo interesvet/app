@@ -715,6 +715,7 @@ const App = (() => {
     { id: 'reclamaciones', t: 'Reclamaciones', i: '📣', p: ['ventas', 'compras', 'inventario'] },
     { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos', 'ver_gastos'] },
     { id: 'equipo', t: 'Equipo', i: '🧑‍💼', p: 'equipo' },
+    { id: 'sociedad', t: 'Mi sociedad', i: '🤝', oculto: 1 },
     { id: 'comisiones', t: 'Comisiones', i: '💼', p: 'dueno' },
     { id: 'caja', t: 'Corte de caja', i: '💰', p: 'cobranza' },
     { id: 'contable', t: 'Contabilidad del mes', i: '🧮', p: 'bancos' },
@@ -1193,6 +1194,7 @@ const App = (() => {
       ${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}
       ${r.resultados ? htmlResultados(r.resultados) : ''}<div id="miPlan"></div>`;
     if (!puede('dueno') && !esContador()) cargarMiPlan();
+    if (U().rol === 'Gerente') cargarSocAviso();
     const ds = [{ label: 'Ventas', data: r.meses.map(m => m.ventas), borderColor: css('--s1'), backgroundColor: css('--s1') }];
     if (k.compras !== null && k.compras !== undefined) ds.push({ label: 'Compras', data: r.meses.map(m => m.compras), borderColor: css('--s2'), backgroundColor: css('--s2') });
     if (c) ds.push({ label: 'Utilidad', data: r.meses.map(m => m.utilidad), borderColor: css('--s3'), backgroundColor: css('--s3') });
@@ -10041,6 +10043,76 @@ const App = (() => {
       (r.sinReceta.length ? `\nVentas sin receta: ${r.sinReceta.length}` : '') + (r.creditos.length ? `\nVentas sobre límite de crédito: ${r.creditos.length}` : '');
     window.open(WA_BASE + '?text=' + encodeURIComponent(t), '_blank');
   }
+  /* ---- 🤝 Sociedad por sucursal: estado del socio (él ve el suyo; el dueño lo ve desde afuera con lo que deja a la empresa) ---- */
+  async function cargarSocAviso() {
+    let r; try { r = await pedir('sociedad', {}, true); } catch (e) { return; }
+    const el = $('#miPlan'); if (!el || !r || !r.hay) return;
+    const ult = r.filas.filter(f => !f.actual).slice(-1)[0], act = r.filas.find(f => f.actual);
+    el.insertAdjacentHTML('afterbegin', `<div class="tarjeta"><div class="fila" style="align-items:center"><h3 style="margin:0;flex:1">🤝 Mi sociedad · ${esc(r.sucNombre)}</h3><button class="btn primario fijo" onclick="App.ir('sociedad')">Ver mi estado de resultados</button></div>
+      <div class="kpis"><div class="kpi"><small>Te queda este mes (va)</small><b class="${act && act.socio < 0 ? 'error' : 'ok-txt'}">${act ? $$(act.socio) : '—'}</b><span>después de gastos y sueldos</span></div>
+        ${ult ? `<div class="kpi"><small>Te quedó en ${esc(MESES_TXT[+ult.mes.slice(5, 7) - 1].toLowerCase())}</small><b class="${ult.socio < 0 ? 'error' : 'ok-txt'}">${$$(ult.socio)}</b><span>ventas ${$$(ult.venta)}</span></div>` : ''}</div></div>`);
+  }
+  V.sociedad = async () => {
+    $('#vista').innerHTML = '<div class="vacio">Cargando…</div>';
+    let r; try { r = S.soc = await pedir('sociedad', { suc: S.socSuc || '' }); } catch (e) { $('#vista').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    if (!r.hay) { $('#vista').innerHTML = '<div class="tarjeta"><div class="vacio">Esta sucursal no tiene una sociedad configurada.</div></div>'; return; }
+    const d = r.dueno, M = m => MESES_TXT[+m.slice(5, 7) - 1].slice(0, 3) + ' ' + m.slice(2, 4), cf = r.filas.filter(f => !f.actual), act = r.filas.find(f => f.actual) || {};
+    const prom = k => { const l = cf.slice(-6); return l.length ? l.reduce((t, f) => t + f[k], 0) / l.length : 0; };
+    S.socMes = S.socMes || hoyISO().slice(0, 7);
+    const kpi = (t, v, sub, cls) => `<div class="kpi"><small>${t}</small><b class="${cls || ''}">${v}</b><span>${sub || ''}</span></div>`;
+    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center"><div style="flex:1"><h3 style="margin:0">🤝 Sociedad · ${esc(r.sucNombre)}</h3>
+        <small class="muted">Socio: ${esc(r.socioNombre)}${r.inicio ? ' · desde ' + esc(r.inicio) : ''} · costo a la lista ${esc(r.lista)} · ${r.pctSocio}% de la utilidad para el socio · gastos compartidos al ${r.pctComp}%</small></div>
+        ${d ? `<button class="btn fijo" onclick="App.ir('equipo')">← Equipo</button>` : ''}</div>
+        <p class="muted peq" style="margin-top:6px">Ventas a público sin IVA. Lo que le corresponde a Matriz es el costo de lo vendido a la lista ${esc(r.lista)}. Las mermas y faltantes de inventario se descuentan a esa misma lista. ${r.pctComp < 100 ? 'Renta, luz, agua e internet se comparten: aquí va solo la parte del socio.' : ''} Los sueldos los registra el socio abajo; lo que queda es suyo.</p></div>
+      <div class="kpis">${kpi('Te queda este mes (va)', $$(act.socio || 0), 'ventas ' + $$(act.venta || 0), (act.socio || 0) < 0 ? 'error' : 'ok-txt')}
+        ${cf.length ? kpi('Mes pasado', $$(cf[cf.length - 1].socio), 'ventas ' + $$(cf[cf.length - 1].venta), cf[cf.length - 1].socio < 0 ? 'error' : 'ok-txt') : ''}
+        ${kpi('Promedio al mes', $$(prom('socio')), 'últimos ' + Math.min(6, cf.length) + ' meses cerrados')}
+        ${d ? kpi('Le deja a la empresa completa', $$(prom('empresa')), 'promedio · Matriz ' + $$(prom('matriz')) + ' − su parte de gastos', prom('empresa') < 0 ? 'error' : 'ok-txt') : ''}</div>
+      ${d ? '<div class="aviso-cand">👁️ Vista del dueño: las columnas "Matriz" y "Empresa completa" no las ve el socio.</div>' : ''}
+      <div class="tarjeta"><h3>📊 Estado de resultados por mes</h3>${tabla([{ t: 'Mes', h: f => esc(M(f.mes)) + (f.actual ? '<br><small class="muted">en curso</small>' : '') },
+        { t: 'Ventas', num: 1, h: f => $$(f.venta) + `<br><small class="muted">${nf(f.notas)} notas</small>` }, { t: '− Costo a lista', num: 1, cls: 'ocultar-movil', h: f => $$(f.costo) },
+        { t: '= Utilidad bruta', num: 1, h: f => $$(f.utilidad) }, { t: '− Mermas y faltantes', num: 1, cls: 'ocultar-movil', h: f => f.mermas || f.ajustes ? $$(f.mermas + f.ajustes) : '—' },
+        { t: '− Gastos', num: 1, cls: 'ocultar-movil', h: f => f.gComp || f.gOtros ? $$(f.gComp + f.gOtros) + (f.gComp ? `<br><small class="muted">compartidos ${$$(f.gComp)}</small>` : '') : '—' },
+        { t: '− Sueldos', num: 1, h: f => f.sueldos ? $$(f.sueldos) : '<small class="muted">sin capturar</small>' },
+        { t: r.pctSocio < 100 ? '= Utilidad · tu parte' : '= Te queda', num: 1, h: f => `<b class="${f.socio < 0 ? 'error' : 'ok-txt'}">${$$(f.socio)}</b>` + (r.pctSocio < 100 ? `<br><small class="muted">de ${$$(f.queda)}</small>` : '') }]
+        .concat(d ? [{ t: '+ Matriz', num: 1, cls: 'ocultar-movil', h: f => $$(f.matriz) }, { t: 'Empresa completa', num: 1, h: f => `<b class="${f.empresa < 0 ? 'error' : 'ok-txt'}">${$$(f.empresa)}</b>` }] : []), r.filas.slice().reverse())}</div>
+      <div class="tarjeta"><h3>👥 Sueldos del mes</h3><div class="fila" style="align-items:flex-end"><label>Mes<input type="month" id="snMes" value="${S.socMes}" onchange="App.socMes(this.value)"></label></div>
+        ${tabla([{ t: 'Persona', h: x => `<b>${esc(x.empleado)}</b><br><small class="muted">${esc(x.concepto)}${x.notas ? ' · ' + esc(x.notas) : ''}</small>` }, { t: 'Monto', num: 1, h: x => $$(x.monto) },
+          { t: '', h: x => r.puedeEditar ? `<button class="icono" title="Quitar" onclick="App.socQuitar('${esc(x.id)}')">✕</button>` : '' }], r.nomina.filter(x => x.mes === S.socMes), { vacio: 'Sin sueldos registrados en este mes' })}
+        ${r.puedeEditar ? `<div class="rejilla" style="margin-top:10px"><label>¿A quién?<select id="snEmp">${r.gente.map(g => `<option value="${esc(g.id)}">${esc(g.nombre)}</option>`).join('')}<option value="">Otra persona…</option></select></label>
+          <label>Nombre (si es otra persona)<input id="snOtro"></label><label>Concepto<select id="snCon">${opts(['Sueldo', 'Bono', 'Comisión', 'Aguinaldo', 'Otro'], 'Sueldo')}</select></label>
+          <label>Monto<input type="number" id="snMonto" min="0" step="50"></label><label>Notas<input id="snNotas" placeholder="p. ej. quincena 1"></label></div>
+          <div class="acciones"><button class="btn primario" onclick="App.socAgregar()">Agregar sueldo</button></div>` : ''}</div>
+      <div class="tarjeta"><details><summary>🧾 Gastos de la sucursal (${nf(r.gastos.length)})</summary>${tabla([{ t: 'Mes', h: g => esc(M(g.mes)) }, { t: 'Gasto', h: g => `<b>${esc(g.emisor)}</b><br><small class="muted">${esc(g.cat)}${g.compartido ? ' · compartido' : ''}</small>` }, { t: 'Total', num: 1, h: g => $$(g.monto) }, { t: 'Te toca', num: 1, h: g => $$(g.socio) }], r.gastos, { vacio: 'Sin gastos asignados a la sucursal' })}</details></div>`;
+    window.scrollTo(0, 0);
+  };
+  function socMes(m) { S.socMes = m; V.sociedad(); }
+  async function socAgregar() {
+    const r = S.soc; if (!r) return;
+    const p = { suc: r.suc, mes: $('#snMes').value, idVend: $('#snEmp').value, empleado: $('#snOtro').value, concepto: $('#snCon').value, monto: $('#snMonto').value, notas: $('#snNotas').value };
+    if (!(Number(p.monto) > 0)) return toast('Captura el monto', true);
+    try { await pedir('nominaSocio', p); toast('✔ Sueldo registrado'); S.socMes = p.mes; V.sociedad(); } catch (e) {}
+  }
+  async function socQuitar(id) { const r = S.soc; if (!r || !confirm('¿Quitar este sueldo?')) return; try { await pedir('nominaSocio', { suc: r.suc, quitar: id }); toast('✔ Quitado'); V.sociedad(); } catch (e) {} }
+  function socConfig(suc) {
+    const z = ((S.evl || {}).sucursales || []).find(x => x.suc === suc); if (!z) return; const c = (z.sociedad && z.sociedad.cfg) || {};
+    modal('🤝 Sociedad · ' + esc(z.nombre), `<p class="muted peq">Desde la fecha de inicio, las notas de esta sucursal se hacen a precio de público y el socio ve su estado de resultados (sin ver tu panel). <b>Ya no hagas la nota de consignación a su lista</b> a partir de esa fecha, para no contar dos veces.</p>
+      <div class="rejilla"><label>Socio<select id="scSocio">${z.gente.map(g => `<option value="${esc(g.id)}" ${String(c.socio) === String(g.id) || (!c.socio && g.gerente) ? 'selected' : ''}>${esc(g.nombre)}</option>`).join('')}</select></label>
+        <label>Inicio de la sociedad<input type="date" id="scIni" value="${c.inicio || hoyISO().slice(0, 8) + '01'}"></label>
+        <label>% de la utilidad para el socio<input type="number" id="scPct" min="0" max="100" step="1" value="${c.pctSocio === undefined ? 100 : c.pctSocio}"></label>
+        <label>% de los gastos compartidos que paga el socio<input type="number" id="scComp" min="0" max="100" step="1" value="${c.pctComp === undefined ? 50 : c.pctComp}"></label>
+        <label>% de los demás gastos de la sucursal que paga el socio<input type="number" id="scOtros" min="0" max="100" step="1" value="${c.pctOtros === undefined ? 0 : c.pctOtros}"></label></div>
+      <label>Gastos compartidos (palabras de la categoría o del proveedor, separadas por coma)<input id="scLista" value="${esc((c.compartidos && c.compartidos.length ? c.compartidos : ['Renta', 'Arrendamiento', 'Luz', 'Energía', 'CFE', 'Agua', 'Internet', 'Teléfono']).join(', '))}"></label>
+      <div class="acciones">${z.sociedad ? '<button class="btn peligro" onclick="App.socGuardarCfg(true)">Quitar sociedad</button>' : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.socGuardarCfg()">Guardar</button></div>`);
+    S.socCfgSuc = suc;
+  }
+  async function socGuardarCfg(quitar) {
+    const suc = S.socCfgSuc; if (!suc) return;
+    if (quitar && !confirm('¿Quitar la sociedad de esta sucursal? (Los sueldos registrados se conservan)')) return;
+    const p = quitar ? { suc: suc, quitar: true } : { suc: suc, socio: $('#scSocio').value, inicio: $('#scIni').value, pctSocio: $('#scPct').value, pctComp: $('#scComp').value, pctOtros: $('#scOtros').value, compartidos: $('#scLista').value.split(',') };
+    try { await pedir('guardarSociedad', p); cerrarModal(); toast('✔ Guardado'); eqEval(); } catch (e) {}
+  }
+  function socVer(suc) { S.socSuc = suc; ir('sociedad'); }
   V.equipo = () => {
     const h = hoyISO(), f = alDia(S.feq || (S.feq = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, suc: '', orden: 'venta' })), ger = U().rol === 'Gerente';
     $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
@@ -10319,7 +10391,8 @@ const App = (() => {
           ${kpi('+ Lo que gana Matriz al surtirle', $$(z.matrizProm), 'promedio al mes · su lista menos el costo real')}
           ${kpi('Le deja a la empresa completa', $$(z.empresaProm), 'promedio 6 meses · último mes ' + $$(z.empresaUlt), z.empresaProm < 0 ? 'error' : 'ok-txt')}</div>
         <p class="peq" style="margin:4px 0 8px">${z.metaMin ? (z.objetivo ? `Para dejarte <b>${$$(z.objetivo)}</b> necesita vender <b>${$$(z.metaCom)}</b> al mes; en promedio vende <b>${$$(z.ventaProm)}</b>.` : `Vendiendo su meta comercial de <b>${$$(z.metaCom)}</b> le dejaría a la sucursal <b>${$$(z.metaCom * (z.margen || 0) / 100 - z.personal - z.gastos)}</b> al mes; en promedio vende <b>${$$(z.ventaProm)}</b>.`) : ''}
-          ${r.dueno ? ` <button class="btn chico" onclick="App.eqObjSuc('${esc(z.suc)}', ${z.objetivo || 0})">✏️ Utilidad objetivo</button>` : ''}</p>
+          ${r.dueno ? ` <button class="btn chico" onclick="App.eqObjSuc('${esc(z.suc)}', ${z.objetivo || 0})">✏️ Utilidad objetivo</button> <button class="btn chico" onclick="App.socConfig('${esc(z.suc)}')">🤝 ${z.sociedad ? 'Sociedad' : 'Configurar sociedad'}</button>` : ''}</p>
+        ${z.sociedad && !z.sociedad.error ? `<div class="aviso-cand">🤝 Sociedad con <b>${esc(z.sociedad.socio)}</b>${z.sociedad.inicio ? ' desde ' + esc(z.sociedad.inicio) : ''}: al socio le queda en promedio <b>${$$(z.sociedad.socioProm)}</b> al mes y a la empresa completa <b>${$$(z.sociedad.empresaProm)}</b> (Matriz ${$$(z.sociedad.matrizProm)} − su parte de gastos). <button class="btn chico" onclick="App.socVer('${esc(z.suc)}')">Ver su estado de resultados</button></div>` : ''}
         <p class="muted peq" style="margin:0 0 6px">"Empresa completa" = lo que le deja la sucursal + lo que gana Matriz al surtirle lo que vendió (antes de los gastos de Matriz).</p>
         <details><summary>Ver mes por mes, su personal y el reparto de la meta</summary>
           ${tabla([{ t: 'Mes', h: f => esc(MESES_TXT[+f.mes.slice(5, 7) - 1].slice(0, 3) + ' ' + f.mes.slice(2, 4)) + (f.actual ? ' <small class="muted">(en curso)</small>' : '') }, { t: 'Venta', num: 1, h: f => $$(f.venta) },
@@ -13471,7 +13544,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
