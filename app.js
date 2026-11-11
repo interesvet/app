@@ -1236,9 +1236,9 @@ const App = (() => {
   function pintarComparativo() {
     const r = S.comp, el = $('#dashComp'); if (!r || !el) return;
     const yA = r.periodo.actual.hasta.slice(-4), yB = r.periodo.anterior.hasta.slice(-4);
-    const fila = (x, i, cmpA, cmpB, nom) => `<tr><td class="num muted">${i + 1}</td><td>${esc(nom)}</td><td class="num"><b>${$$(cmpA)}</b></td><td class="num muted">${cmpB ? $$(cmpB) : '—'}</td><td class="num">${chipDelta(cmpA, cmpB)}</td>
-      <td class="num muted">${x.rB ? '#' + x.rB : '<span class="cmp-d sube">nuevo</span>'}</td></tr>`;
-    const tablaTop = (l, f, g, nom, titulo) => `<div class="tabla-cont"><table class="cmp-tabla"><thead><tr><th class="num">#</th><th>${titulo}</th><th class="num">${yA}</th><th class="num">${yB}</th><th class="num">Cambio</th><th class="num">Lugar en ${yB}</th></tr></thead>
+    const fila = (x, i, cmpA, cmpB, nom) => `<tr><td class="num muted">${i + 1}</td><td>${esc(nom)}</td><td class="num"><b>${$$(cmpA)}</b><small class="muted solo-movil"><br>${yB}: ${cmpB ? $$(cmpB) : '—'}${x.rB ? ' · #' + x.rB : ''}</small></td><td class="num muted cmp-c4">${cmpB ? $$(cmpB) : '—'}</td><td class="num">${chipDelta(cmpA, cmpB)}</td>
+      <td class="num muted cmp-c6">${x.rB ? '#' + x.rB : '<span class="cmp-d sube">nuevo</span>'}</td></tr>`;
+    const tablaTop = (l, f, g, nom, titulo) => `<div class="tabla-cont"><table class="cmp-tabla"><thead><tr><th class="num">#</th><th>${titulo}</th><th class="num">${yA}</th><th class="num cmp-c4">${yB}</th><th class="num">Cambio</th><th class="num cmp-c6">Lugar en ${yB}</th></tr></thead>
       <tbody>${l.length ? l.map((x, i) => fila(x, i, f(x), g(x), nom(x))).join('') : '<tr><td colspan="6" class="vacio">Sin ventas en el periodo</td></tr>'}</tbody></table></div>`;
     const salieron = (top, ant, key) => ant.filter(x => !top.some(y => key(y) === key(x)));
     const fuera = (l, key, nom, f) => l.length ? `<p class="muted peq" style="margin:6px 0 0">Salieron del top 10 de ${yB}: ${l.map(x => `<b>${esc(nom(x))}</b> (#${x.rB} → ${x.rA ? '#' + x.rA : 'sin venta'})`).join(' · ')}</p>` : '';
