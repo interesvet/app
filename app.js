@@ -5591,7 +5591,8 @@ const App = (() => {
       (f === 'todos' || (f === 'pend' && vacio(l.fisico)) || (f === 'cont' && !vacio(l.fisico)) || (f === 'sin' && vacio(l.fisico)) || (f === 'dif' && dif(l) !== null && Math.abs(dif(l)) > 1e-9)));
     if (!abierto) {
       $('#ctLineas').innerHTML = tabla([{ t: 'Producto', h: l => `<b>${esc(l.nombre)}</b><br><small class="muted">${esc(l.prod)}${l.agregado ? ' · agregado' : ''}</small>` }, { t: 'Lote', k: 'lote' }, { t: 'Cad.', k: 'cad' },
-        { t: 'Sistema', num: 1, h: l => nf(l.cierre !== null ? l.cierre : l.ini) }, { t: 'Contado', num: 1, h: l => vacio(l.fisico) ? '<span class="muted">sin contar</span>' : nf(l.fisico) },
+        { t: 'Sistema al contar', num: 1, h: l => nf(l.cierre !== null ? r2c(l.cierre - (l.mov || 0)) : l.ini) }, { t: 'Contado', num: 1, h: l => vacio(l.fisico) ? '<span class="muted">sin contar</span>' : nf(l.fisico) },
+        { t: 'Movs. después', num: 1, cls: 'ocultar-movil', h: l => l.mov ? `<span class="etq av" title="Traspasos, ventas o compras después de contarlo: se respetan">${l.mov > 0 ? '+' : ''}${nf(l.mov)}</span>` : '' },
         { t: 'Diferencia', num: 1, h: l => l.dif === null ? '' : `<b class="${l.dif < 0 ? 'error' : ''}">${l.dif > 0 ? '+' : ''}${nf(l.dif)}</b>` }]
         .concat(verC ? [{ t: 'Valor', num: 1, h: l => l.valor === null ? '' : $$(l.valor) }] : []).concat([{ t: 'Nota', k: 'nota', cls: 'ocultar-movil' }]), ls, { vacio: f === 'dif' ? 'Sin diferencias ✔' : 'Sin renglones' });
       return;
