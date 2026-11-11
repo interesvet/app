@@ -7336,8 +7336,8 @@ const App = (() => {
         { t: 'Estado', h: o => `<span class="etq ${o.estado === 'Hecha' ? 'ok' : o.estado === 'Nueva' ? 'av' : ''}">${esc(o.estado)}</span>` + (due ? `<br><button class="btn chico" onclick="App.responderObs('${o.id}')">Responder</button>` : '') }], r.lista, { vacio: 'Sin observaciones' });
   }
   const TIPOS_ANOT = ['Observación', 'Cálculo', 'Ajuste requerido', 'Pregunta', 'Sugerencia'];
-  function formObservacion(tipo) {
-    const vista = (MENU.find(m => m.id === S.vista) || {}).t + (S.vista === 'bancos' ? ' › ' + S.tabBan : S.vista === 'ventas' ? ' › ' + S.tabVen : S.vista === 'contable' ? ' › ' + (S.tabCont || 'resumen') : '');
+  function formObservacion(tipo, extra) {
+    const vista = (MENU.find(m => m.id === S.vista) || {}).t + (S.vista === 'bancos' ? ' › ' + S.tabBan : S.vista === 'ventas' ? ' › ' + S.tabVen : S.vista === 'contable' ? ' › ' + (S.tabCont || 'resumen') : '') + (extra ? ' › ' + extra : '');
     const mes = S.vista === 'contable' && S.fcont ? S.fcont.desde.slice(0, 7) : hoyISO().slice(0, 7);
     modal('📝 Anotación para el dueño', `<p class="muted peq">Pantalla: <b>${esc(vista)}</b>. Deja cálculos, ajustes que hagan falta, preguntas o cambios para analizar mejor los números; el dueño la revisa y te responde aquí.</p>
       <div class="rejilla"><label>Tipo<select id="obsTipo">${opts(TIPOS_ANOT.map(t => [t, t]), tipo || 'Cálculo')}</select></label>
@@ -10027,7 +10027,7 @@ const App = (() => {
         <label>Desde<input type="date" id="eqDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="eqHasta" value="${f.hasta}"></label>
         ${ger ? '' : `<label>Sucursal<select id="eqSuc">${opts(D().sucursales || [], f.suc || '', 'Todas')}</select></label>`}
         <label>Ordenar por<select id="eqOrd">${opts(EQ_ORD, f.orden)}</select></label>
-        <button class="btn primario fijo" onclick="App.cargarEquipo()">Ver</button>${esContador() ? '' : '<button class="btn fijo" onclick="App.eqAlta()">➕ Alta de empleado</button>'}${ger ? '' : '<button class="btn fijo" onclick="App.eqAsignarGastos()">⛽ Asignar gastos a empleados</button>'}</div>
+        <button class="btn primario fijo" onclick="App.cargarEquipo()">Ver</button>${esContador() ? '' : '<button class="btn fijo" onclick="App.eqAlta()">➕ Alta de empleado</button>'}${ger || esContador() ? '' : '<button class="btn fijo" onclick="App.eqAsignarGastos()">⛽ Asignar gastos a empleados</button>'}${puede('dueno') || esContador() ? '<button class="btn fijo" onclick="App.eqExpedientes()">📁 Expedientes</button><button class="btn fijo" onclick="App.eqParam()">⚖️ Parámetros laborales</button>' : ''}</div>
         ${ger ? `<p class="muted peq" style="margin-top:6px">🧑‍💼 Tu equipo de <b>${esc(sucNom(U().sucursal))}</b>. La utilidad toma como costo la lista de precios de tu sucursal. Altas, sueldos y metas: tú los propones y el dueño los autoriza (Por autorizar).</p>` : ''}
         <p class="muted peq" style="margin-top:6px">🔒 Solo lo ven el dueño, el Administrador, el contador y el gerente (solo su sucursal). Venta y utilidad sin IVA; cobranza y cartera con IVA. <b>Le deja a la empresa</b> = utilidad bruta de lo que vendió − sus gastos − su comisión − su sueldo. A los gerentes y encargados (🏬) se les cuenta toda la venta de su sucursal; los totales no cuentan dos veces la misma nota.</p></div>
       <div id="eqRes"><div class="vacio">Cargando…</div></div>`;
@@ -10078,7 +10078,8 @@ const App = (() => {
     $('#eqRes').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center">
         <button class="btn fijo" onclick="App.pintarEquipo()">← Equipo</button>
         <div class="con-avatar" style="flex:1">${avatar('vendFoto', e.id, e.foto, e.nombre)}<div><h3 style="margin:0">${esc(e.nombre)}${e.activo ? '' : ' <small class="etq">baja</small>'}</h3>
-          <small class="muted">${esc(e.puesto || e.rol)} · ${esc(sucNom(e.suc))}${e.ingreso ? ' · desde ' + esc(e.ingreso) : ''} · ${esc(e.periodo.desde)} al ${esc(e.periodo.hasta)}</small></div></div>
+          <small class="muted">${esc(e.puesto || e.rol)} · ${esc(sucNom(e.suc))}${e.ingreso ? ' · desde ' + esc(e.ingreso) : ''}${e.antiguedad ? ' · ' + e.antiguedad.anios + ' año(s) · le tocan ' + e.antiguedad.vacDias + ' días de vacaciones' : ''} · ${esc(e.periodo.desde)} al ${esc(e.periodo.hasta)}</small></div></div>
+        ${e.verExpediente ? `<button class="btn fijo" onclick="App.eqExpediente('${esc(e.id)}')">📁 Expediente</button>` : ''}
         ${e.gerente ? (e.pendiente ? '<span class="etq av">⏳ cambio por autorizar</span>' : e.yo ? '' : '<button class="btn fijo" onclick="App.eqProponer()">✏️ Proponer sueldo y meta</button>')
           : `<button class="btn fijo" onclick="App.eqDatos()">✏️ Sueldo y datos</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.eqProponer()">🎯 Sueldo y meta</button>' : ''}<button class="btn fijo" onclick="App.eqAsignarGastos('${esc(e.id)}')">⛽ Asignarle gastos</button>`}</div></div>
       <div class="kpis">
@@ -10172,6 +10173,108 @@ const App = (() => {
     const e = S.eqF; if (!e) return;
     const p = { id: e.id, sueldo: $('#epSueldo').value, ingreso: $('#epIng').value, meta: eqMetaLeer('ep'), motivo: $('#epMot') ? $('#epMot').value : '' };
     try { const r = await pedir('proponerEmpleado', p); cerrarModal(); toast(r.pendiente ? '✔ Enviado al dueño para su autorización' : '✔ Guardado'); eqFicha(e.id); } catch (er) {}
+  }
+  /* ---- 📁 Expediente laboral y ⚖️ parámetros (dueño y contador) ---- */
+  const LAB_TIPOS_CONTRATO = ['Tiempo indeterminado', 'Tiempo determinado', 'Periodo de prueba', 'Capacitación inicial', 'Por obra determinada'];
+  async function eqExpedientes(todos) {
+    $('#eqRes').innerHTML = '<div class="vacio">Cargando expedientes…</div>';
+    let r; try { r = S.labL = await pedir('expedientes', { todos: !!todos }); } catch (e) { $('#eqRes').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    S.labLista = r.lista;
+    const al = r.lista.reduce((t, x) => t + x.alertas.filter(a => a.n !== 'info').length, 0);
+    $('#eqRes').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center"><button class="btn fijo" onclick="App.pintarEquipo()">← Equipo</button><h3 style="margin:0;flex:1">📁 Expedientes del personal</h3>
+        <label class="check"><input type="checkbox" ${todos ? 'checked' : ''} onchange="App.eqExpedientes(this.checked)"> incluir bajas</label>
+        <button class="btn fijo" onclick="App.eqParam()">⚖️ Parámetros</button><button class="btn fijo" onclick="App.formObservacion('Observación', 'Expedientes del personal')">📝 Anotar</button></div>
+        <p class="muted peq">Datos fiscales, de seguridad social, contrato y prestaciones de cada persona (opcional). Solo los ven el dueño y el contador. El costo mensual es una <b>estimación de lo que le costaría a la empresa con todas las prestaciones de ley</b> (sueldo, aguinaldo, prima vacacional, IMSS, retiro, Infonavit e impuesto estatal), con los ⚖️ parámetros vigentes. No incluye PTU ni la retención de ISR.</p></div>
+      <div class="kpis"><div class="kpi"><small>Personas</small><b>${nf(r.lista.length)}</b><span>${nf(r.lista.filter(x => x.completo === 100).length)} con expediente completo</span></div>
+        <div class="kpi"><small>Costo mensual estimado (con ley)</small><b>${$$(r.totalCosto)}</b><span>de quienes tienen salario</span></div>
+        <div class="kpi"><small>Pendientes</small><b class="${al ? 'error' : 'ok-txt'}">${nf(al)}</b><span>datos faltantes o contratos por vencer</span></div></div>
+      <div class="tarjeta">${tabla([{ t: 'Persona', h: x => `<div class="con-avatar">${avatar('vendFoto', x.id, x.foto, x.nombre)}<div><b>${esc(x.nombre)}</b>${x.activo ? '' : ' <small class="etq">baja</small>'}<br><small class="muted">${esc(x.puesto || x.rol)} · ${esc(sucNom(x.suc))}</small></div></div>` },
+        { t: 'Contrato', h: x => esc(x.contrato || '—') + (x.ingreso ? `<br><small class="muted">desde ${esc(x.ingreso)}</small>` : '') },
+        { t: 'Vacaciones', num: 1, cls: 'ocultar-movil', h: x => x.vacDias ? x.vacDias + ' días' : '—' },
+        { t: 'Salario diario', num: 1, cls: 'ocultar-movil', h: x => x.sd ? $$(x.sd) : '—' },
+        { t: 'Costo mensual', num: 1, h: x => x.costo ? `<b>${$$(x.costo)}</b><br><small class="muted">+${x.cargaPct}% sobre el sueldo</small>` : '<small class="muted">sin salario</small>' },
+        { t: 'Expediente', h: x => `<span class="etq ${x.completo === 100 ? 'ok' : x.completo ? 'av' : 'mal'}">${x.completo}%</span>` + x.alertas.map(a => `<br><small class="${a.n === 'mal' ? 'error' : a.n === 'av' ? 'txt-av' : 'muted'}">${esc(a.t)}</small>`).join('') }],
+        r.lista, { clic: 'App.eqExpedienteIdx', vacio: 'Sin personal' })}</div>`;
+    window.scrollTo(0, 0);
+  }
+  function eqExpedienteIdx(i) { const x = (S.labLista || [])[i]; if (x) eqExpediente(x.id); }
+  async function eqExpediente(id) {
+    $('#eqRes').innerHTML = '<div class="vacio">Cargando expediente…</div>';
+    let e, dc; try { [e, dc] = await Promise.all([pedir('expediente', { id: id }), pedir('docsEmpleado', { id: id })]); } catch (er) { $('#eqRes').innerHTML = `<div class="vacio">${esc(er.message || 'Requiere conexión')}</div>`; return; }
+    S.labE = e; const d = e.datos, c = e.costo;
+    const f = (k, t, o) => { o = o || {}; const v = d[k] === undefined ? '' : String(d[k]).replace(/^'/, '');
+      if (o.sel) return `<label>${t}<select data-lab="${k}"><option value="">—</option>${o.sel.map(x => `<option ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>`;
+      return `<label>${t}${e.requeridos.indexOf(k) >= 0 ? ' <small class="muted">*</small>' : ''}<input data-lab="${k}" type="${o.tipo || 'text'}" value="${esc(v)}" ${o.ph ? `placeholder="${esc(o.ph)}"` : ''} ${o.tipo === 'number' ? 'step="0.01" min="0"' : ''} ${o.up ? 'style="text-transform:uppercase"' : ''}></label>`; };
+    const sec = (t, h) => `<div class="tarjeta"><h3>${t}</h3><div class="rejilla">${h}</div></div>`;
+    $('#eqRes').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center"><button class="btn fijo" onclick="App.eqExpedientes()">← Expedientes</button>
+        <div style="flex:1"><h3 style="margin:0">📁 ${esc(e.nombre)}</h3><small class="muted">${esc(e.puesto || e.rol)} · ${esc(sucNom(e.suc))}${e.ingreso ? ' · ingreso ' + esc(e.ingreso) : ''}${e.sueldoMensual ? ' · sueldo en Equipo ' + $$(e.sueldoMensual) + ' al mes' : ''}</small></div>
+        <button class="btn fijo" onclick="App.formObservacion('Observación', 'Expediente de ${esc(String(e.nombre).replace(/['"\\]/g, ''))}')">📝 Anotar</button><button class="btn primario fijo" onclick="App.eqGuardarExpediente()">Guardar</button></div>
+        ${e.alertas.length ? e.alertas.map(a => `<p class="${a.n === 'mal' ? 'error' : 'muted'} peq" style="margin:6px 0 0">⚠️ ${esc(a.t)}</p>`).join('') : ''}</div>
+      ${sec('🪪 Datos fiscales', f('RFC', 'RFC', { up: 1, ph: '13 caracteres' }) + f('CURP', 'CURP', { up: 1 }) + f('Regimen_Fiscal', 'Régimen fiscal', { ph: '605 Sueldos y salarios' }) + f('CP_Fiscal', 'C.P. fiscal') + f('Fecha_Nacimiento', 'Fecha de nacimiento', { tipo: 'date' }) + f('Domicilio', 'Domicilio'))}
+      ${sec('🏥 Seguridad social', f('NSS', 'Número de seguro social (NSS)', { ph: '11 dígitos' }) + f('Fecha_Alta_IMSS', 'Fecha de alta en el IMSS', { tipo: 'date' }) + f('Credito_Infonavit', 'Crédito Infonavit (número)'))}
+      ${sec('📄 Contrato', f('Tipo_Contrato', 'Tipo de contrato', { sel: LAB_TIPOS_CONTRATO }) + f('Fin_Contrato', 'Fin del contrato (si es determinado)', { tipo: 'date' }) + f('Jornada', 'Jornada', { sel: ['Diurna (8 h)', 'Nocturna (7 h)', 'Mixta (7.5 h)', 'Reducida'] }) + f('Horario', 'Horario', { ph: 'L-V 9 a 18, S 9 a 14' }) + f('Periodicidad_Pago', 'Pago', { sel: ['Semanal', 'Quincenal', 'Mensual'] }))}
+      ${sec('💵 Salario y prestaciones', f('Salario_Diario', 'Salario diario', { tipo: 'number', ph: e.sueldoMensual ? (e.sueldoMensual / 30.4).toFixed(2) + ' (sueldo de Equipo ÷ 30.4)' : 'mínimo ' + e.param.salarioMinimo }) + f('SBC_Manual', 'Salario base de cotización (si ya lo tiene el IMSS)', { tipo: 'number', ph: 'se calcula solo' }) +
+        f('Aguinaldo_Dias', 'Aguinaldo (días)', { tipo: 'number', ph: 'ley: ' + e.param.aguinaldoDias }) + f('Prima_Vac_Pct', 'Prima vacacional (%)', { tipo: 'number', ph: 'ley: ' + e.param.primaVacPct }) +
+        f('Despensa_Mensual', 'Vales de despensa al mes', { tipo: 'number' }) + f('Fondo_Ahorro_Pct', 'Fondo de ahorro (% que aporta la empresa)', { tipo: 'number' }) + f('Otras_Prestaciones_Mensual', 'Otras prestaciones al mes ($)', { tipo: 'number' }) + f('Otras_Prestaciones_Desc', '¿Cuáles?') + f('Cuenta_Nomina', 'Cuenta o CLABE para pago'))}
+      ${sec('📞 Otros', f('Contacto_Emergencia', 'Contacto de emergencia', { ph: 'nombre y teléfono' }) + f('Notas', 'Notas'))}
+      <div class="tarjeta"><h3>🧮 Costo mensual estimado con prestaciones de ley</h3>${c ? `<p class="muted peq">Salario diario ${$$(c.sd)} · factor de integración ${c.fi} · salario base de cotización ${$$(c.sbc)} · ${c.anios} años de antigüedad → ${c.vacDias} días de vacaciones${c.sinEstado ? ' · <b class="error">la sucursal no tiene estado para el impuesto sobre nómina (⚖️ Parámetros)</b>' : ''}</p>
+        ${tabla([{ t: 'Concepto', h: x => `<b>${esc(x.concepto)}</b><br><small class="muted">${esc(x.grupo)}</small>` }, { t: 'Cálculo', cls: 'ocultar-movil', h: x => `<small class="muted">${esc(x.formula)}</small>` }, { t: 'Al mes', num: 1, h: x => $$(x.monto) }], c.renglones)}
+        <p style="text-align:right;margin-top:8px"><b>Total al mes ${$$(c.total)}</b> · ${c.cargaPct}% más que el sueldo${c.obreroMes && !c.salarioMinimo ? ` · al trabajador se le retendrían ${$$(c.obreroMes)} de IMSS (más ISR)` : ''}</p>
+        <p class="muted peq">Estimación con los ⚖️ parámetros vigentes; no incluye PTU ni ISR. Si algo no cuadra, déjalo en 📝 Anotar.</p>` : '<div class="vacio">Captura el salario diario (o el sueldo en Equipo) para estimar el costo.</div>'}</div>
+      <div class="tarjeta"><h3>📎 Documentos</h3><div class="fila" style="align-items:flex-end"><label>Tipo<select id="labDocT">${opts(e.docsTipos, 'Contrato')}</select></label><label>Archivo (PDF o foto)<input type="file" id="labDocF" accept="application/pdf,image/*"></label><button class="btn fijo" onclick="App.eqSubirDoc()">Subir</button></div>
+        ${tabla([{ t: 'Documento', h: x => `<b>${esc(x.tipo)}</b><br><small class="muted">${esc(x.fecha)} · ${nf(x.kb)} KB</small>` }, { t: '', h: x => `<button class="btn chico" onclick="App.eqVerDoc('${esc(x.id)}')">Ver</button>` }], dc.docs || [], { vacio: 'Sin documentos todavía' })}</div>`;
+    window.scrollTo(0, 0);
+  }
+  async function eqGuardarExpediente() {
+    const e = S.labE; if (!e) return; const datos = {};
+    document.querySelectorAll('[data-lab]').forEach(el => datos[el.dataset.lab] = el.value);
+    try { await pedir('guardarExpediente', { id: e.id, datos: datos }); toast('✔ Expediente guardado'); eqExpediente(e.id); } catch (er) {}
+  }
+  async function eqSubirDoc() {
+    const e = S.labE, fl = $('#labDocF').files[0]; if (!e) return; if (!fl) return toast('Elige el archivo', true);
+    if (fl.size > 8 * 1024 * 1024) return toast('El archivo pesa más de 8 MB', true);
+    toast('Subiendo…');
+    try { await pedir('subirDocEmpleado', { id: e.id, tipo: $('#labDocT').value, archivo: await leerArchivo(fl) }); toast('✔ Documento guardado'); eqExpediente(e.id); } catch (er) {}
+  }
+  async function eqVerDoc(archivo) {
+    const e = S.labE; toast('Abriendo…');
+    try { const r = await pedir('verDocEmpleado', { id: e.id, archivo: archivo });
+      if (/pdf/.test(r.mime)) verPdf(b64aBytes(r.b64), r.nombre, {});
+      else modal(r.nombre, `<div style="text-align:center"><img src="data:${esc(r.mime)};base64,${r.b64}" style="max-width:100%;max-height:70vh;background:#fff;border-radius:8px"></div><div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+    } catch (er) {}
+  }
+  async function eqParam() {
+    $('#eqRes').innerHTML = '<div class="vacio">Cargando parámetros…</div>';
+    let r; try { r = S.labP = await pedir('paramLaboral', {}); } catch (e) { $('#eqRes').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    const P = r.param, E = r.etiquetas;
+    const num = k => `<label>${esc(E[k])}<input data-lp="${k}" type="number" step="any" min="0" value="${P[k]}"></label>`;
+    const tab = (k, ta, tb) => `<div><b>${esc(E[k])}</b><table class="lineas" data-lpt="${k}"><tr><th>${ta}</th><th>${tb}</th></tr>${P[k].map(x => `<tr><td><input type="number" step="any" value="${x[0]}"></td><td><input type="number" step="any" value="${x[1]}"></td></tr>`).join('')}</table>
+      <button class="btn chico" onclick="App.eqParamFila('${k}')">+ fila</button> <small class="muted">deja una fila vacía para quitarla</small></div>`;
+    const estados = Object.keys(P.isn);
+    $('#eqRes').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center"><button class="btn fijo" onclick="App.pintarEquipo()">← Equipo</button><h3 style="margin:0;flex:1">⚖️ Parámetros laborales</h3>
+        <button class="btn fijo" onclick="App.eqExpedientes()">📁 Expedientes</button><button class="btn fijo" onclick="App.formObservacion('Cálculo', 'Parámetros laborales')">📝 Anotar</button></div>
+        <p class="muted peq">Con estos valores se estima el costo de cada persona en 📁 Expedientes. Los pueden cambiar el dueño y el contador; cada cambio queda en el historial (quién, cuándo, antes y después)${puede('dueno') ? '' : ' y se le avisa al dueño'}. ${esc(P.notas || '')}</p></div>
+      <div class="tarjeta"><h3>📏 Referencias</h3><div class="rejilla">${['uma', 'salarioMinimo', 'salarioMinimoFrontera', 'diasMes', 'topeSbcUma'].map(num).join('')}<label>${esc(E.umaVigencia)}<input data-lp="umaVigencia" value="${esc(P.umaVigencia)}"></label></div></div>
+      <div class="tarjeta"><h3>🎁 Prestaciones de ley</h3><div class="rejilla">${['aguinaldoDias', 'primaVacPct'].map(num).join('')}</div>${tab('vacaciones', 'Hasta años de servicio', 'Días')}</div>
+      <div class="tarjeta"><h3>🏥 IMSS, retiro e Infonavit</h3><div class="rejilla">${['riesgoTrabajoPct', 'emFijaPct', 'emExcPat', 'emExcObr', 'dineroPat', 'dineroObr', 'gmpPat', 'gmpObr', 'ivPat', 'ivObr', 'guarderiasPct', 'retiroPct', 'ceavObr', 'infonavitPct'].map(num).join('')}</div>
+        ${tab('ceavPat', 'Hasta veces UMA (1.00 = salario mínimo)', '% patrón')}</div>
+      <div class="tarjeta"><h3>🏛️ Impuesto sobre nómina</h3><div class="rejilla">${estados.map(x => `<label>${esc(x)} (%)<input data-lpisn="${esc(x)}" type="number" step="any" min="0" value="${P.isn[x]}"></label>`).join('')}</div>
+        <p class="muted peq" style="margin-top:8px"><b>Estado de cada sucursal</b></p><div class="rejilla">${r.sucursales.map(x => `<label>${esc(x.nombre)}<select data-lpsuc="${esc(x.id)}"><option value="">—</option>${estados.map(y => `<option ${P.sucEstado[x.id] === y ? 'selected' : ''}>${esc(y)}</option>`).join('')}</select></label>`).join('')}</div></div>
+      <div class="tarjeta"><label>Motivo o fuente del cambio<input id="lpNota" placeholder="p. ej. UMA publicada por INEGI en el DOF del 9 de enero"></label><label>Notas generales<input data-lp="notas" value="${esc(P.notas || '')}"></label>
+        <div class="acciones"><button class="btn primario" onclick="App.eqGuardarParam()">Guardar cambios</button></div></div>
+      <div class="tarjeta"><h3>🕘 Historial de cambios</h3>${tabla([{ t: 'Fecha', h: x => esc(x.fecha) + `<br><small class="muted">${esc(x.usuario)}</small>` }, { t: 'Parámetro', k: 'etiqueta' }, { t: 'Antes → después', h: x => `<small>${esc(x.antes)} → <b>${esc(x.despues)}</b></small>` }, { t: 'Motivo', k: 'nota' }], r.historial, { vacio: 'Sin cambios: se usan los valores de referencia' })}</div>`;
+    window.scrollTo(0, 0);
+  }
+  function eqParamFila(k) { const t = document.querySelector(`[data-lpt="${k}"]`); if (t) t.insertAdjacentHTML('beforeend', '<tr><td><input type="number" step="any"></td><td><input type="number" step="any"></td></tr>'); }
+  async function eqGuardarParam() {
+    const P = (S.labP || {}).param; if (!P) return; const c = {};
+    document.querySelectorAll('[data-lp]').forEach(el => { const k = el.dataset.lp, v = typeof P[k] === 'number' ? Number(el.value) : el.value; if (String(v) !== String(P[k])) c[k] = v; });
+    document.querySelectorAll('[data-lpt]').forEach(t => { const k = t.dataset.lpt, filas = [...t.querySelectorAll('tr')].slice(1).map(tr => [...tr.querySelectorAll('input')].map(i => i.value)).filter(x => x[0] !== '' && x[1] !== '').map(x => [Number(x[0]), Number(x[1])]).sort((a, b) => a[0] - b[0]);
+      if (JSON.stringify(filas) !== JSON.stringify(P[k])) c[k] = filas; });
+    const isn = Object.assign({}, P.isn); document.querySelectorAll('[data-lpisn]').forEach(el => isn[el.dataset.lpisn] = Number(el.value)); if (JSON.stringify(isn) !== JSON.stringify(P.isn)) c.isn = isn;
+    const se = Object.assign({}, P.sucEstado); document.querySelectorAll('[data-lpsuc]').forEach(el => se[el.dataset.lpsuc] = el.value); if (JSON.stringify(se) !== JSON.stringify(P.sucEstado)) c.sucEstado = se;
+    if (!Object.keys(c).length) return toast('No cambiaste nada');
+    try { const r = await pedir('guardarParamLaboral', { cambios: c, nota: $('#lpNota').value }); toast('✔ ' + r.cambios + ' parámetro(s) actualizados'); eqParam(); } catch (e) {}
   }
   async function eqQuitarGasto(uuid) {
     if (!confirm('¿Quitar este gasto de la persona? (Si venía por la regla del proveedor, la regla se queda; quítala desde ⛽ Asignar gastos)')) return;
@@ -13258,7 +13361,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
