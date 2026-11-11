@@ -1156,6 +1156,7 @@ const App = (() => {
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
         'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (r.resultados.comisiones ? ' · comisiones aparte ' + $$(r.resultados.comisiones) : '') + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
       </div>
+      <div class="tarjeta cmp" id="dashComp"><div class="vacio">📅 Comparando con el mismo periodo del año anterior…</div></div>
       ${r.caducados.length ? `<div class="tarjeta"><h3>⚠️ Caducados con existencia</h3>${tablaCaducidad(r.caducados)}</div>` : ''}
       <div class="tarjeta"><h3>⏳ Por caducar (≤ ${(D().config || {}).diasCaducidad || 120} días)</h3>${tablaCaducidad(r.porCaducar)}</div>
       ${htmlCompras}
@@ -1170,7 +1171,6 @@ const App = (() => {
         <div class="tarjeta"><h3>Ventas por categoría</h3><div class="grafica"><canvas id="gCat"></canvas></div></div>
       </div>
       <div class="espacio"></div>
-      <div class="tarjeta cmp" id="dashComp"><div class="vacio">📅 Comparando con el mismo periodo del año anterior…</div></div>
       ${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}
       ${r.resultados ? htmlResultados(r.resultados) : ''}`;
     const ds = [{ label: 'Ventas', data: r.meses.map(m => m.ventas), borderColor: css('--s1'), backgroundColor: css('--s1') }];
