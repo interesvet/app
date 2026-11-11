@@ -96,6 +96,9 @@ const App = (() => {
   const alDia = f => { if (!f) return f; const h = hoyISO(); if (f.hasta && f.hastaHoy === f.hasta && f.hasta < h) { f.hasta = h; f.hastaHoy = h; } return f; };
   const marcarHoy = f => { if (f) f.hastaHoy = f.hasta === hoyISO() ? f.hasta : ''; return f; };
   const U = () => (S.datos && S.datos.user) || {};
+  // Gerente: ve valores de inventario, mermas y diferencias de conteo al precio de la lista de su sucursal (es el responsable)
+  const valGer = () => U().rol === 'Gerente' && (!(U().permisos || {}).ver_costos || !!U().costoLista);
+  const verValInv = () => puede('ver_costos') || valGer();
   const puede = p => { const per = U().permisos || {}; if (p === 'reuniones') { const u = U() || {}; return !!per.dueno || u.rol === 'Administrador' || u.rol === 'Gerente'; } return Array.isArray(p) ? p.some(x => per[x]) : !p || !!per[p]; };
   const prod = id => (D().productos || []).find(p => p.id === id);
   const cliente = id => (D().clientes || []).find(c => c.id === id);
@@ -1134,9 +1137,9 @@ const App = (() => {
       ${kpi('Cobrado en el periodo', $$(k.cobrado), 'Ventas con IVA ' + $$(k.ventasConIva))}
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
         'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (r.resultados.comisiones ? ' · comisiones aparte ' + $$(r.resultados.comisiones) : '') + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
-      ${kpi('Mermas', $$(k.mermas), c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
+      ${kpi('Mermas', $$(k.mermas), k.valLista ? k.mermaPct + '% de las ventas · a precio ' + esc(k.valLista) : c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
       ${kpi('Por cobrar', $$(k.cxc), 'Vencido ' + $$(k.cxcVencida))}
-      ${c ? kpi('Inventario valorizado', $$(k.valorInventario), nf(k.piezas) + ' piezas') : kpi('Piezas en inventario', nf(k.piezas), '')}
+      ${c || k.valLista ? kpi('Inventario valorizado', $$(k.valorInventario), nf(k.piezas) + ' piezas' + (k.valLista ? ' · a precio ' + esc(k.valLista) : '')) : kpi('Piezas en inventario', nf(k.piezas), '')}
       ${kpi('Lotes por caducar', k.porCaducar, k.caducados + ' lotes ya caducados con existencia')}
       </div>
       ${r.resultados ? htmlResultados(r.resultados) : ''}
@@ -5451,10 +5454,11 @@ const App = (() => {
     try {
       const r = await pedir('historialAjustes', { desde: $('#ahDesde').value, hasta: $('#ahHasta').value, sucursal: $('#ahSuc') ? $('#ahSuc').value : '', tipo: $('#ahTipo').value, texto: $('#ahTxt').value });
       if (!$('#lAj')) return;
-      const R = r.resumen, vc = r.verCosto; S.lista = r.docs;
+      const R = r.resumen, vc = r.verCosto; S.lista = r.docs; S.ajValLista = r.valLista || '';
       const k = (t, x, extra) => `<div class="kpi"><small>${t}</small><b>${vc && x.importe !== null ? $$(x.importe) : nf(x.piezas) + ' pzs'}</b><span>${x.docs} ${x.docs === 1 ? 'registro' : 'registros'}${vc ? ' · ' + nf(x.piezas) + ' pzs' : ''}${extra || ''}</span></div>`;
       $('#lAj').innerHTML = `<div class="kpis">${r.verMermas ? k('🗑️ Mermas', R.merma) : ''}${r.verAjustes ? k('➖ Ajustes de salida', R.salida) + k('➕ Ajustes de entrada', R.entrada) : ''}
         ${r.motivosMerma.length ? `<div class="kpi"><small>Principal motivo de merma</small><b style="font-size:17px">${esc(r.motivosMerma[0].motivo)}</b><span>${vc ? $$(r.motivosMerma[0].valor) : nf(r.motivosMerma[0].valor) + ' pzs'}${r.motivosMerma[1] ? ' · luego ' + esc(r.motivosMerma[1].motivo) : ''}</span></div>` : ''}</div>
+        ${vc && r.valLista ? `<p class="muted peq">💲 Importes al precio de la lista <b>${esc(r.valLista)}</b> de tu sucursal (eres el responsable del inventario).</p>` : ''}
         ${r.total > r.docs.length ? `<p class="muted">Se muestran los ${r.docs.length} más recientes de ${r.total}. Acota las fechas para ver el resto.</p>` : ''}` + tabla([
         { t: 'Fecha', h: x => esc(x.fecha) + (x.hora ? `<br><small class="muted">${esc(x.hora)}</small>` : '') }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Tipo', h: x => ETQ_AJ[x.clase] },
         { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) },
@@ -5471,8 +5475,8 @@ const App = (() => {
       <div style="text-align:right"><b>${titulo}</b><div style="font-size:18px">${esc(d.folio)}</div><div>${esc(d.fecha)}${d.hora ? ' ' + esc(d.hora) : ''}</div></div></div>
       <p><b>Motivo:</b> ${esc(d.motivo || '—')}${d.usuario ? ` · <span class="muted">Registró: ${esc(d.usuario)}</span>` : ''}</p>
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Clave', k: 'prod' }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', k: 'lote' }, { t: 'Cad.', k: 'cad' }]
-        .concat(vc ? [{ t: 'Costo', num: 1, h: x => $$(x.costo) }, { t: 'Importe', num: 1, h: x => $$(x.total) }] : []), d.lineas, { vacio: 'Este folio no tiene renglones de detalle' })}
-      <p style="text-align:right;margin-top:8px"><b>${nf(d.piezas)} piezas</b>${vc ? ` · <b>Total ${$$(d.importe)}</b>` : ''}</p>
+        .concat(vc ? [{ t: S.ajValLista ? 'Precio ' + S.ajValLista : 'Costo', num: 1, h: x => $$(x.costo) }, { t: 'Importe', num: 1, h: x => $$(x.total) }] : []), d.lineas, { vacio: 'Este folio no tiene renglones de detalle' })}
+      <p style="text-align:right;margin-top:8px"><b>${nf(d.piezas)} piezas</b>${vc ? ` · <b>Total ${$$(d.importe)}</b>` : ''}</p>${vc && S.ajValLista ? `<p class="muted peq" style="text-align:right">Valorizado al precio de la lista ${esc(S.ajValLista)} de la sucursal.</p>` : ''}
       <div style="display:flex;justify-content:space-around;margin-top:40px;text-align:center"><div>_____________________<br><small>Registró</small></div><div>_____________________<br><small>Autorizó</small></div></div></div></div>
       <div class="acciones no-imprimir"><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button></div>`);
   }
@@ -5524,7 +5528,7 @@ const App = (() => {
       <div class="tarjeta"><h3>Conteos</h3><div id="cnLista"><div class="vacio">Cargando…</div></div></div>`;
     try {
       const l = await pedir('listarConteos', {}, true); S.lista = l;
-      const verC = puede('ver_costos');
+      const verC = verValInv();
       $('#cnLista').innerHTML = tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Sucursal', h: x => esc(sucNom(x.suc)) },
         { t: 'Alcance', k: 'alcance', cls: 'ocultar-movil' }, { t: 'Estatus', h: x => `<span class="etq ${x.estatus === 'Abierto' ? 'av' : x.estatus === 'Cancelado' ? 'mal' : 'ok'}">${esc(x.estatus)}</span>` },
         { t: 'Contados', num: 1, h: x => x.estatus === 'Abierto' ? '—' : nf(x.contados) + ' / ' + nf(x.renglones) },
@@ -5551,7 +5555,7 @@ const App = (() => {
     pintarConteo();
   }
   function pintarConteo() {
-    const d = S.cto, abierto = d.estatus === 'Abierto', verC = puede('ver_costos');
+    const d = S.cto, abierto = d.estatus === 'Abierto', verC = verValInv();
     const contados = d.lineas.filter(l => l.fisico !== null && l.fisico !== '').length, pend = d.lineas.filter(l => l.pend).length;
     const r = d.resumen;
     $('#vista').innerHTML = `<div class="tarjeta"><div class="folio-fila"><div class="folio">${esc(d.folio)}</div>
@@ -5560,8 +5564,8 @@ const App = (() => {
       ${abierto && d.movsDesde ? `<p class="error">⚠️ Ha habido ${d.movsDesde} movimiento(s) de estos productos en la sucursal desde que inició el conteo. Al cerrar se compara contra la existencia de ese momento.</p>` : ''}
       ${abierto ? `<div class="progreso"><div id="ctBarra" style="width:${d.lineas.length ? contados / d.lineas.length * 100 : 0}%"></div></div><p class="muted" id="ctAvance">${avanceConteo()}</p>` :
         `<div class="kpis"><div class="kpi"><small>Contados</small><b>${nf(r.contados)} / ${nf(r.renglones)}</b><span>${nf(r.coinciden)} coinciden · exactitud ${r.contados ? (r.coinciden / r.contados * 100).toFixed(1) : 0}%</span></div>
-         <div class="kpi"><small>Faltante</small><b class="error">${nf(r.faltPzs)} pzs</b><span>${verC && r.faltVal !== null ? $$(r.faltVal) + (U().costoLista ? ' a costo de lista' : ' a costo real') : ''}</span></div>
-         <div class="kpi"><small>Sobrante</small><b>${nf(r.sobPzs)} pzs</b><span>${verC && r.sobVal !== null ? $$(r.sobVal) + (U().costoLista ? ' a costo de lista' : ' a costo real') : ''}</span></div>
+         <div class="kpi"><small>Faltante</small><b class="error">${nf(r.faltPzs)} pzs</b><span>${verC && r.faltVal !== null ? $$(r.faltVal) + (d.valLista ? ' a precio ' + esc(d.valLista) : U().costoLista ? ' a costo de lista' : ' a costo real') : ''}</span></div>
+         <div class="kpi"><small>Sobrante</small><b>${nf(r.sobPzs)} pzs</b><span>${verC && r.sobVal !== null ? $$(r.sobVal) + (d.valLista ? ' a precio ' + esc(d.valLista) : U().costoLista ? ' a costo de lista' : ' a costo real') : ''}</span></div>
          ${verC ? `<div class="kpi"><small>Diferencia neta</small><b>${$$(r.sobVal - r.faltVal)}</b><span></span></div>` : ''}</div>`}
       <div class="acciones">
         <button class="btn" onclick="App.salirConteo()">← Conteos</button><button class="btn" onclick="App.excelConteo()">📊 Exportar a Excel</button>
@@ -5584,7 +5588,7 @@ const App = (() => {
     pintarLineasConteo();
   }
   function pintarLineasConteo() {
-    const d = S.cto, abierto = d.estatus === 'Abierto', ciegas = abierto && S.ctoCiegas, txt = S.ctoTxt || '', f = S.ctoFiltro, verC = puede('ver_costos');
+    const d = S.cto, abierto = d.estatus === 'Abierto', ciegas = abierto && S.ctoCiegas, txt = S.ctoTxt || '', f = S.ctoFiltro, verC = verValInv();
     const vacio = v => v === null || v === '' || v === undefined;
     const dif = l => abierto ? (vacio(l.fisico) ? null : l.fisico - l.ini) : l.dif;
     const ls = d.lineas.map((l, i) => Object.assign({ i: i }, l)).filter(l => (!txt || coincide(l.prod + ' ' + l.nombre + ' ' + l.lote, txt)) &&
@@ -5709,14 +5713,14 @@ const App = (() => {
     const cats = [...new Set((D().productos || []).map(p => p.categoria).filter(Boolean))].sort();
     $('#iCont').innerHTML = `<div class="tarjeta"><div class="fila"><label class="f-clave">🏬 Sucursal<select id="ieSuc">${U().todasSucursales ? optsSuc(sucFiltro(), false, 'Todas') : optsSuc(sucTrabajo())}</select></label>
       <label>Buscar<input id="ieTxt" placeholder="Producto, clave, laboratorio"></label><label>Categoría<select id="ieCat">${opts(cats.map(c => [c, c]), '', 'Todas')}</select></label>
-      ${puede('ver_costos') ? `<label>💲 Valorizar a<select id="ieVal" onchange="App.invCambiarVal(this.value)"><option value="lista">Precio de cada sucursal (Matriz: Subdistribuidor)</option><option value="costo" ${invModo() === 'costo' ? 'selected' : ''}>${U().costoLista ? 'Costo de lista' : 'Costo de compra'}</option></select></label>` : ''}
+      ${puede('ver_costos') && !valGer() ? `<label>💲 Valorizar a<select id="ieVal" onchange="App.invCambiarVal(this.value)"><option value="lista">Precio de cada sucursal (Matriz: Subdistribuidor)</option><option value="costo" ${invModo() === 'costo' ? 'selected' : ''}>${U().costoLista ? 'Costo de lista' : 'Costo de compra'}</option></select></label>` : ''}
       <label class="check fijo"><input type="checkbox" id="ieMin"> Bajo mínimo</label><button class="btn fijo" onclick="App.actualizarStock()">⟳ Actualizar</button><button class="btn fijo" onclick="App.excelInventario()">📊 Exportar a Excel</button></div></div><div class="espacio"></div><div id="ieRes"></div>`;
     ['#ieSuc', '#ieTxt', '#ieCat', '#ieMin'].forEach(s => enlazarFiltro(s, pintarExist));
     pintarExist();
   }
   /** Lista con la que se valoriza el inventario de cada sucursal: la que tiene asignada (lo que paga a Matriz); Matriz: Subdistribuidor. */
   const listaValSuc = id => { if (esMatriz(id)) return 'Subdistribuidor'; const x = (D().sucursales || []).find(o => o.id === id); return (x && x.lista) || 'Subdistribuidor'; };
-  const invModo = () => S.invVal === 'costo' ? 'costo' : 'lista';
+  const invModo = () => !valGer() && S.invVal === 'costo' ? 'costo' : 'lista';
   /** Precio unitario para valorizar una existencia de la sucursal `sid`, según el modo elegido (precio de la sucursal o costo). */
   const invValU = (p, sid) => invModo() === 'costo' ? invCosto(p) : Number(((p || {}).precios || {})[listaValSuc(sid)]) || 0;
   function invCambiarVal(v) { S.invVal = v; try { localStorage.setItem('invVal', v); } catch (e) {} pintarExist(); }
@@ -5728,7 +5732,7 @@ const App = (() => {
     pedir('costosReales', {}, true).then(cr => { S.costosReales = cr; if ($('#ieRes')) pintarExist(); }).catch(() => {}).then(() => { S.invCRpend = 0; });
   }
   function pintarExist() {
-    const suc = $('#ieSuc').value, txt = $('#ieTxt').value, cat = $('#ieCat').value, min = $('#ieMin').checked, verC = puede('ver_costos');
+    const suc = $('#ieSuc').value, txt = $('#ieTxt').value, cat = $('#ieCat').value, min = $('#ieMin').checked, verC = verValInv();
     const pasa = p => (!txt || coincide((p.id || '') + ' ' + p.nombre + ' ' + (p.lab || ''), txt)) && (!cat || p.categoria === cat);
     const g = {}, porSucV = {}, sinPrecio = {}, diasLim = (D().config || {}).diasCaducidad || 120, cad = { q: 0, v: 0, l: [] }, prox = { q: 0, v: 0, l: [] };
     (D().stock || []).forEach(s => {
@@ -5769,13 +5773,13 @@ const App = (() => {
     invCargarCR();
   }
   function invVerPL() {
-    const verC = puede('ver_costos'), l = (S.invPL || []).slice().sort((a, b) => (b.v || 0) - (a.v || 0) || b.q - a.q);
+    const verC = verValInv(), l = (S.invPL || []).slice().sort((a, b) => (b.v || 0) - (a.v || 0) || b.q - a.q);
     modal('🚚 Por llegar (órdenes de compra sin recibir)', tabla([{ t: 'Producto', h: x => `<b>${esc((prod(x.p) || {}).nombre || x.p)}</b><br><small class="muted">${esc(x.p)}</small>` }, { t: 'Sucursal', h: x => esc(sucNom(x.s)) },
       { t: 'Piezas', num: 1, h: x => nf(x.q) }].concat(verC ? [{ t: 'Valor', num: 1, h: x => $$(invModo() === 'lista' ? x.q * invValU(prod(x.p) || {}, x.s) : x.v !== undefined ? x.v : x.q * invCosto(prod(x.p) || {})) }] : []).concat([{ t: 'Órdenes', h: x => esc((x.oc || []).join(', ')) }]), l) +
       `<p class="muted peq">${invModo() === 'lista' ? 'Valor al precio de la lista de cada sucursal (Matriz: Subdistribuidor).' : 'Valor según el precio de la orden de compra (sin IVA, con descuento del renglón).'}</p>`);
   }
   function invVerCad(k) {
-    const verC = puede('ver_costos'), l = (k === 'cad' ? S.invCad : S.invProx || []).slice().sort((a, b) => diasA(a.c) - diasA(b.c));
+    const verC = verValInv(), l = (k === 'cad' ? S.invCad : S.invProx || []).slice().sort((a, b) => diasA(a.c) - diasA(b.c));
     modal(k === 'cad' ? '⛔ Caducados con existencia' : '⏳ Por caducar', tabla([{ t: 'Producto', h: s => esc((prod(s.p) || {}).nombre || s.p) }, { t: 'Sucursal', h: s => esc(sucNom(s.s)) }, { t: 'Lote', k: 'l' }, { t: 'Caducidad', k: 'c' },
       { t: 'Días', num: 1, h: s => `<span class="etq ${diasA(s.c) < 0 ? 'mal' : 'av'}">${diasA(s.c) < 0 ? 'Caducó hace ' + (-diasA(s.c)) : diasA(s.c)}</span>` }, { t: 'Existencia', num: 1, h: s => nf(s.q) }]
       .concat(verC ? [{ t: 'Valor', num: 1, h: s => $$(s.q * invValU(prod(s.p) || {}, s.s)) }] : []), l));
@@ -8283,7 +8287,7 @@ const App = (() => {
     cargando(true);
     try {
       const suc = $('#ieSuc') ? $('#ieSuc').value : '', txt = $('#ieTxt') ? $('#ieTxt').value : '', cat = $('#ieCat') ? $('#ieCat').value : '', min = $('#ieMin') && $('#ieMin').checked;
-      const verC = puede('ver_costos'), hoyD = new Date(); hoyD.setHours(0, 0, 0, 0);
+      const verC = verValInv(), hoyD = new Date(); hoyD.setHours(0, 0, 0, 0);
       const ok = p => (!txt || coincide(p.id + ' ' + p.nombre + ' ' + p.lab, txt)) && (!cat || p.categoria === cat);
       const g = {}, lotes = [];
       (D().stock || []).forEach(s => {
