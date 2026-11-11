@@ -7390,9 +7390,9 @@ const App = (() => {
     const f = S.fAut = S.fAut || { est: 'Pendiente', tipo: '' }, d = puede('dueno');
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
         <label>Estado<select id="auEst">${opts([['Pendiente', '⏳ Pendientes'], ['Resueltas', '✔ Resueltas'], ['', 'Todas']], f.est)}</select></label>
-        <label>Tipo<select id="auTipo">${opts([['', 'Todos'], ['FACTURA', '🧾 Factura'], ['AJUSTE', '⚖️ Ajuste'], ['MERMA', '🗑️ Merma'], ['CONTEO', '📋 Conteo físico']], f.tipo)}</select></label>
+        <label>Tipo<select id="auTipo">${opts([['', 'Todos'], ['FACTURA', '🧾 Factura'], ['AJUSTE', '⚖️ Ajuste'], ['MERMA', '🗑️ Merma'], ['CONTEO', '📋 Conteo físico'], ['EMPLEADO', '🧑‍💼 Personal']], f.tipo)}</select></label>
         <button class="btn fijo" onclick="App.cargarAut()">⟳ Actualizar</button></div>
-        <p class="muted peq" style="margin:8px 0 0">${d ? 'Aquí llegan las solicitudes de las sucursales: facturas a sus clientes, ajustes y mermas (no mueven el inventario hasta que los apruebes) y conteos físicos cerrados por aplicar.' : 'Tus solicitudes al dueño y su estado: facturas, ajustes, mermas y conteos físicos.'}</p></div>
+        <p class="muted peq" style="margin:8px 0 0">${d ? 'Aquí llegan las solicitudes de las sucursales: facturas a sus clientes, ajustes y mermas (no mueven el inventario hasta que los apruebes), conteos físicos cerrados por aplicar y altas de personal con su sueldo y meta (puedes ajustarlos antes de autorizar).' : 'Tus solicitudes al dueño y su estado: facturas, ajustes, mermas, conteos físicos y personal.'}</p></div>
       <div id="auRes"><div class="vacio">Cargando…</div></div>`;
     $('#auEst').onchange = e => { f.est = e.target.value; cargarAut(); };
     $('#auTipo').onchange = e => { f.tipo = e.target.value; cargarAut(); };
@@ -7426,10 +7426,17 @@ const App = (() => {
         det = `<div class="aut-det"><div>${nf(R.contados || 0)} de ${nf(R.renglones || 0)} renglones contados · coinciden ${nf(R.coinciden || 0)}</div>
           <div><span class="error">Faltan ${nf(R.faltPzs || 0)} pzs</span> · <span class="ok-txt">sobran ${nf(R.sobPzs || 0)} pzs</span>${puede('ver_costos') ? ` · valor ${$$(-(R.faltVal || 0) + (R.sobVal || 0))}` : ''}</div>
           <div><button class="btn chico" onclick="App.abrirConteoAut('${esc(x.ref)}')">📋 Ver el conteo</button></div></div>`; }
+      else if (x.tipo === 'EMPLEADO') { const m = D2.meta || {}, ma = D2.metaAnterior, editar = r.dueno && pend, pre = 'au' + x.id;
+        const mtTxt = o => o && (o.venta || o.clientes) ? (o.venta ? $$(o.venta) + ' al mes' : '') + (o.clientes ? (o.venta ? ' · ' : '') + nf(o.clientes) + ' clientes' : '') + (o.comision ? ' · comisión ' + o.comision + '% de lo ' + (o.base === 'Cobrado' ? 'cobrado' : 'vendido') : '') + (o.bono ? ' · bono ' + o.bono + '%' : '') : 'sin meta';
+        det = `<div class="aut-det"><div><b>${esc(D2.nombre || '')}</b> · ${esc(D2.rol || '')} · ${esc(sucNom(D2.suc))}${D2.correo ? ` · usuario <b>${esc(D2.correo)}</b>` : ''}${D2.puesto ? ' · ' + esc(D2.puesto) : ''}${D2.ingreso ? ' · ingreso ' + esc(fechaCorta(D2.ingreso)) : ''}</div>
+          ${D2.accion === 'cambio' ? `<div><small class="muted">Hoy</small> ${D2.sueldoAnterior ? $$(D2.sueldoAnterior) + ' al mes' : 'sin sueldo'} · meta ${mtTxt(ma)}</div>` : ''}
+          <div><small class="muted">${D2.accion === 'cambio' ? 'Propone' : 'Propuesta'}</small> ${D2.sueldo !== null && D2.sueldo !== undefined ? $$(D2.sueldo) + ' al mes' : 'sin cambio de sueldo'} · meta ${mtTxt(D2.meta)}</div>
+          ${D2.motivo ? `<div class="muted">💬 ${esc(D2.motivo)}</div>` : ''}
+          ${editar ? `<details><summary>✏️ Ajustar antes de autorizar</summary><div class="rejilla"><label>Sueldo mensual<input type="number" id="${pre}Sueldo" min="0" step="100" value="${D2.sueldo !== null && D2.sueldo !== undefined ? D2.sueldo : ''}"></label></div>${eqMetaCampos(m, pre)}</details>` : ''}</div>`; }
       const arch = x.archivo ? `<button class="btn chico fijo" onclick="App.verArchAut('${esc(x.id)}')">${x.tipo === 'CONTEO' ? '✍️ Ver firma' : '📄 Constancia fiscal'}</button>` : '';
       const acc = r.dueno && pend ? (x.tipo === 'FACTURA'
         ? `<button class="btn primario" onclick="App.resolverAut('${esc(x.id)}','atendida')">✔ Ya la facturé</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`
-        : `<button class="btn primario" onclick="App.resolverAut('${esc(x.id)}','aprobar')">✔ Aprobar${x.tipo === 'CONTEO' ? ' y aplicar ajustes' : ' y mover inventario'}</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`) : '';
+        : `<button class="btn primario" onclick="App.resolverAut('${esc(x.id)}','aprobar')">✔ ${x.tipo === 'EMPLEADO' ? (D2.accion === 'alta' ? 'Autorizar alta' : 'Autorizar cambio') : 'Aprobar' + (x.tipo === 'CONTEO' ? ' y aplicar ajustes' : ' y mover inventario')}</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`) : '';
       return `<div class="tarjeta aut-card ${pend ? 'aut-pend' : ''}"><div class="fila" style="justify-content:space-between;align-items:flex-start">
           <div><b>${esc(x.tipoTxt)}</b> <span class="etq ${AUT_EST[x.estado] || ''}">${esc(x.estado)}</span><br><small class="muted">${esc(x.sucNombre)} · ${esc(x.usuario)} · ${esc(x.fecha)}</small></div>
           <div class="fila" style="gap:6px">${arch}</div></div>
@@ -7440,16 +7447,19 @@ const App = (() => {
   }
   async function resolverAut(id, accion) {
     const x = (S.aut.solicitudes || []).find(s => s.id === id); if (!x) return;
-    let comentario = '', resultado = '';
+    let comentario = '', resultado = '', ajuste;
     if (accion === 'rechazar') { comentario = prompt('Motivo del rechazo (lo verá la sucursal):', ''); if (comentario === null) return; }
     else if (accion === 'atendida') { resultado = prompt('Serie y folio de la factura que hiciste (opcional):', ''); if (resultado === null) return; }
+    else if (x.tipo === 'EMPLEADO') { const pre = 'au' + x.id;
+      if ($('#' + pre + 'Sueldo')) ajuste = { sueldo: $('#' + pre + 'Sueldo').value, meta: eqMetaLeer(pre) };
+      if (!confirm((x.datos.accion === 'alta' ? 'Se activará el usuario de ' + x.datos.nombre + ' para que entre a la app' : 'Se aplicará el cambio a ' + x.datos.nombre) + ' con el sueldo y la meta que se ven. ¿Autorizar?')) return; }
     else if (!confirm(x.tipo === 'CONTEO' ? 'Se registrarán los ajustes de entrada y salida para que el inventario quede igual a lo contado. ¿Continuar?' : 'Se registrará el movimiento y el inventario cambiará. ¿Aprobar?')) return;
     try {
       let r;
-      try { r = await pedir('resolverSolicitud', { id: id, accion: accion, comentario: comentario, resultado: resultado }); }
+      try { r = await pedir('resolverSolicitud', { id: id, accion: accion, comentario: comentario, resultado: resultado, ajuste: ajuste }); }
       catch (e) { if (e.red || x.tipo !== 'CONTEO' || !/movimientos después del cierre/.test(e.message) || !confirm(e.message + '\n\n¿Aplicar de todos modos?')) throw e;
         r = await pedir('resolverSolicitud', { id: id, accion: accion, forzar: true }); }
-      toast('✔ ' + r.estado + (r.resultado ? ' · ' + r.resultado : '')); if (x.tipo !== 'FACTURA' && accion !== 'rechazar') refrescarStock(); cargarAut();
+      toast('✔ ' + r.estado + (r.resultado ? ' · ' + r.resultado : '')); if (x.tipo !== 'FACTURA' && x.tipo !== 'EMPLEADO' && accion !== 'rechazar') refrescarStock(); cargarAut();
     } catch (e) {}
   }
   async function verArchAut(id) {
@@ -10012,20 +10022,21 @@ const App = (() => {
     window.open(WA_BASE + '?text=' + encodeURIComponent(t), '_blank');
   }
   V.equipo = () => {
-    const h = hoyISO(), f = alDia(S.feq || (S.feq = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, suc: '', orden: 'venta' }));
+    const h = hoyISO(), f = alDia(S.feq || (S.feq = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, suc: '', orden: 'venta' })), ger = U().rol === 'Gerente';
     $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila">
         <label>Desde<input type="date" id="eqDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="eqHasta" value="${f.hasta}"></label>
-        <label>Sucursal<select id="eqSuc">${opts(D().sucursales || [], f.suc || '', 'Todas')}</select></label>
+        ${ger ? '' : `<label>Sucursal<select id="eqSuc">${opts(D().sucursales || [], f.suc || '', 'Todas')}</select></label>`}
         <label>Ordenar por<select id="eqOrd">${opts(EQ_ORD, f.orden)}</select></label>
-        <button class="btn primario fijo" onclick="App.cargarEquipo()">Ver</button><button class="btn fijo" onclick="App.eqAsignarGastos()">⛽ Asignar gastos a empleados</button></div>
-        <p class="muted peq" style="margin-top:6px">🔒 Solo lo ven el dueño, el Administrador y el contador. Venta y utilidad sin IVA; cobranza y cartera con IVA. <b>Le deja a la empresa</b> = utilidad bruta de lo que vendió − sus gastos − su comisión − su sueldo. A los gerentes y encargados (🏬) se les cuenta toda la venta de su sucursal; los totales no cuentan dos veces la misma nota.</p></div>
+        <button class="btn primario fijo" onclick="App.cargarEquipo()">Ver</button>${esContador() ? '' : '<button class="btn fijo" onclick="App.eqAlta()">➕ Alta de empleado</button>'}${ger ? '' : '<button class="btn fijo" onclick="App.eqAsignarGastos()">⛽ Asignar gastos a empleados</button>'}</div>
+        ${ger ? `<p class="muted peq" style="margin-top:6px">🧑‍💼 Tu equipo de <b>${esc(sucNom(U().sucursal))}</b>. La utilidad toma como costo la lista de precios de tu sucursal. Altas, sueldos y metas: tú los propones y el dueño los autoriza (Por autorizar).</p>` : ''}
+        <p class="muted peq" style="margin-top:6px">🔒 Solo lo ven el dueño, el Administrador, el contador y el gerente (solo su sucursal). Venta y utilidad sin IVA; cobranza y cartera con IVA. <b>Le deja a la empresa</b> = utilidad bruta de lo que vendió − sus gastos − su comisión − su sueldo. A los gerentes y encargados (🏬) se les cuenta toda la venta de su sucursal; los totales no cuentan dos veces la misma nota.</p></div>
       <div id="eqRes"><div class="vacio">Cargando…</div></div>`;
     agregarMesAnio('eqDesde', 'eqHasta', cargarEquipo);
-    $('#eqSuc').onchange = cargarEquipo; $('#eqOrd').onchange = () => { S.feq.orden = $('#eqOrd').value; pintarEquipo(); };
+    if ($('#eqSuc')) $('#eqSuc').onchange = cargarEquipo; $('#eqOrd').onchange = () => { S.feq.orden = $('#eqOrd').value; pintarEquipo(); };
     cargarEquipo();
   };
   async function cargarEquipo() {
-    const f = S.feq = marcarHoy(Object.assign(S.feq || {}, { desde: $('#eqDesde').value, hasta: $('#eqHasta').value, suc: $('#eqSuc').value, orden: $('#eqOrd').value }));
+    const f = S.feq = marcarHoy(Object.assign(S.feq || {}, { desde: $('#eqDesde').value, hasta: $('#eqHasta').value, suc: $('#eqSuc') ? $('#eqSuc').value : '', orden: $('#eqOrd').value }));
     $('#eqRes').innerHTML = '<div class="vacio">Calculando…</div>';
     try { S.eq = await pedir('equipo', { desde: f.desde, hasta: f.hasta, suc: f.suc }); } catch (e) { $('#eqRes').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
     pintarEquipo();
@@ -10037,11 +10048,12 @@ const App = (() => {
     const kpi = (ti, v, sub, cls) => `<div class="kpi"><small>${ti}</small><b class="${cls || ''}">${v}</b><span>${sub || ''}</span></div>`;
     $('#eqRes').innerHTML = `<div class="kpis">
         ${kpi('Venta del equipo', $$(t.venta), nf(t.notas) + ' notas' + (t.avance !== null ? ' · ' + t.avance + '% de la meta' : ''))}
-        ${kpi('Utilidad bruta', $$(t.utilidad), 'margen ' + t.margen + '%')}
+        ${kpi('Utilidad bruta', $$(t.utilidad), 'margen ' + t.margen + '%' + (r.valLista ? ' · costo a precio ' + esc(r.valLista) : ''))}
         ${kpi('Cobrado', $$(t.cobrado), 'con IVA')}
         ${kpi('Cartera vencida', $$(t.vencida), 'de ' + $$(t.cxc) + ' por cobrar', t.vencida ? 'error' : '')}
         ${kpi('Gastos + comisiones + sueldos', $$(t.gastos + t.comision + t.sueldo), 'gastos ' + $$(t.gastos) + ' · comisiones ' + $$(t.comision) + ' · sueldos ' + $$(t.sueldo))}
         ${kpi('Le deja a la empresa', $$(t.deja), t.venta ? (t.deja / t.venta * 100).toFixed(1) + '% de la venta' : '', t.deja < 0 ? 'error' : 'ok-txt')}</div>
+      ${(r.pendientes || []).length ? `<div class="aviso-cand">⏳ Por autorizar del dueño: ${r.pendientes.map(x => `<b>${esc(x.nombre)}</b> (${x.accion === 'alta' ? 'alta' : 'cambio de sueldo / meta'}, ${esc(x.fecha)})`).join(' · ')}. <button class="btn chico" onclick="App.ir('autorizar')">Ver</button></div>` : ''}
       ${r.sinAsignar.n ? `<div class="aviso-cand">⛽ Hay <b>${nf(r.sinAsignar.n)}</b> facturas de gastos de operación (${$$(r.sinAsignar.monto)} sin IVA) sin empleado en este periodo. <button class="btn chico" onclick="App.eqAsignarGastos()">Asignarlas</button></div>` : ''}
       <div class="tarjeta"><h3>Equipo · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3><p class="muted peq">Toca a una persona para ver su ficha completa.</p>` +
       tabla([{ t: 'Empleado', h: x => `<div class="con-avatar">${avatar('vendFoto', x.id, x.foto, x.nombre)}<div><b>${esc(x.nombre)}</b>${x.activo ? '' : ' <small class="etq">baja</small>'}<br><small class="muted">${esc(x.puesto || x.rol)} · ${esc(sucNom(x.suc))}</small>${x.modo === 'sucursal' ? '<br><small class="etq">🏬 toda su sucursal</small>' : ''}</div></div>` },
@@ -10067,7 +10079,8 @@ const App = (() => {
         <button class="btn fijo" onclick="App.pintarEquipo()">← Equipo</button>
         <div class="con-avatar" style="flex:1">${avatar('vendFoto', e.id, e.foto, e.nombre)}<div><h3 style="margin:0">${esc(e.nombre)}${e.activo ? '' : ' <small class="etq">baja</small>'}</h3>
           <small class="muted">${esc(e.puesto || e.rol)} · ${esc(sucNom(e.suc))}${e.ingreso ? ' · desde ' + esc(e.ingreso) : ''} · ${esc(e.periodo.desde)} al ${esc(e.periodo.hasta)}</small></div></div>
-        <button class="btn fijo" onclick="App.eqDatos()">✏️ Sueldo y datos</button><button class="btn fijo" onclick="App.eqAsignarGastos('${esc(e.id)}')">⛽ Asignarle gastos</button></div></div>
+        ${e.gerente ? (e.pendiente ? '<span class="etq av">⏳ cambio por autorizar</span>' : e.yo ? '' : '<button class="btn fijo" onclick="App.eqProponer()">✏️ Proponer sueldo y meta</button>')
+          : `<button class="btn fijo" onclick="App.eqDatos()">✏️ Sueldo y datos</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.eqProponer()">🎯 Sueldo y meta</button>' : ''}<button class="btn fijo" onclick="App.eqAsignarGastos('${esc(e.id)}')">⛽ Asignarle gastos</button>`}</div></div>
       <div class="kpis">
         ${kpi(e.modo === 'sucursal' ? 'Venta de su sucursal' : 'Venta', $$(e.venta), e.modo === 'sucursal' ? 'vendió él/ella ' + $$(e.ventaPropia) + ' · ' + nf(e.notas) + ' notas' : nf(e.notas) + ' notas · ticket ' + $$(e.ticket))}
         ${kpi('Meta', e.avance === null ? '—' : e.avance + '%', e.meta ? 'meta del periodo ' + $$(e.meta) + (S.eq && S.eq.lista ? '' : '') : 'sin meta (Seguimiento › Metas)', eqSem(e.avance, 100, 79))}
@@ -10086,7 +10099,7 @@ const App = (() => {
           <tr><td>Concentración (3 clientes principales)</td><td class="num"><span class="${eqSem(e.concentracion, 50, 70, true)}">${e.concentracion}%</span></td></tr></table>`)}
         ${sec('💰 Resultado para la empresa', `<table class="lineas"><tr><td>Utilidad bruta de lo que vendió</td><td class="num">${$$(e.utilidad)}</td></tr>
           <tr><td>− Gastos asignados</td><td class="num">${$$(e.gastos)}${e.gastosPct !== null ? ` <small class="muted">(${e.gastosPct}% de su venta)</small>` : ''}</td></tr>
-          <tr><td>− Comisión <small class="muted">${e.comFuente === 'Comisiones' ? '(devengada · Comisiones › ' + esc(e.comNombre) + ')' : '(según Metas)'}</small>${e.comFuente === 'Comisiones' ? `<br><small class="muted">pagada en el periodo ${$$(e.comPagada)} · por pagar ${$$(e.comPorPagar)}</small>` : ''}</td><td class="num">${$$(e.comision)}</td></tr><tr><td>− Sueldo del periodo${e.sueldoMensual ? ` <small class="muted">(${$$(e.sueldoMensual)} al mes)</small>` : ' <small class="muted">(captúralo en ✏️)</small>'}</td><td class="num">${$$(e.sueldo)}</td></tr>
+          <tr><td>− Comisión <small class="muted">${e.comFuente === 'Comisiones' ? '(devengada · Comisiones › ' + esc(e.comNombre) + ')' : '(según Metas)'}</small>${e.comFuente === 'Comisiones' ? `<br><small class="muted">pagada en el periodo ${$$(e.comPagada)} · por pagar ${$$(e.comPorPagar)}</small>` : ''}</td><td class="num">${$$(e.comision)}</td></tr><tr><td>− Sueldo del periodo${e.sueldoMensual ? ` <small class="muted">(${$$(e.sueldoMensual)} al mes)</small>` : ` <small class="muted">(${e.gerente ? 'propónlo en ✏️' : 'captúralo en ✏️'})</small>`}</td><td class="num">${$$(e.sueldo)}</td></tr>
           <tr class="res-total"><td><b>Le deja a la empresa</b></td><td class="num"><b class="${e.deja < 0 ? 'error' : 'ok-txt'}">${$$(e.deja)}</b></td></tr></table>${e.notasEmp ? `<p class="muted peq">📝 ${esc(e.notasEmp)}</p>` : ''}`)}
         ${sec('⛽ Gastos por categoría', e.gastosPorCat.length ? tabla([{ t: 'Categoría', k: 'cat' }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }], e.gastosPorCat) : '<div class="vacio">Sin gastos asignados en el periodo. Usa ⛽ Asignarle gastos.</div>')}</div>
       ${sec('📈 Últimos 12 meses', '<div class="grafica"><canvas id="eqGraf"></canvas></div>')}
@@ -10096,7 +10109,7 @@ const App = (() => {
         ${sec('⏰ Notas vencidas de su cartera', tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Saldo', num: 1, h: x => $$(x.saldo) }, { t: 'Vencida', num: 1, h: x => `<span class="error">${x.dias} días</span>` }], e.vencidas, { vacio: 'Sin notas vencidas 👍' }))}
         ${sec('😴 Clientes de su cartera sin comprar (90+ días)', tabla([{ t: 'Cliente', k: 'nombre' }, { t: 'Última compra', k: 'ultima' }, { t: 'Días', num: 1, k: 'dias' }], e.sinComprarLista, { vacio: 'Todos sus clientes han comprado en los últimos 90 días 👍' }))}</div>
       ${sec('⛽ Gastos asignados', tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.cat)}${x.regla ? ' · por regla del proveedor' : ''}</small>` }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) },
-        { t: '', h: x => `<button class="icono" title="Quitar de esta persona" onclick="App.eqQuitarGasto('${esc(x.uuid)}')">✕</button>` }], e.gastosLista, { vacio: 'Sin gastos asignados en el periodo' }))}`;
+        { t: '', h: x => e.gerente ? '' : `<button class="icono" title="Quitar de esta persona" onclick="App.eqQuitarGasto('${esc(x.uuid)}')">✕</button>` }], e.gastosLista, { vacio: 'Sin gastos asignados en el periodo' }))}`;
     const tn = e.tendencia, lb = tn.map(x => MESES_TXT[+x.mes.slice(5, 7) - 1].slice(0, 3) + ' ' + x.mes.slice(2, 4));
     grafica('eqGraf', { type: 'bar', data: { labels: lb, datasets: [
       { type: 'line', label: 'Meta', data: tn.map(x => x.meta), borderColor: css('--aviso'), borderDash: [5, 4], pointRadius: 0, spanGaps: true },
@@ -10118,6 +10131,47 @@ const App = (() => {
   }
   async function eqGuardarDatos() {
     try { await pedir('guardarEmpleado', { id: S.eqId, sueldo: Number($('#edSueldo').value) || 0, ingreso: $('#edIng').value, notas: $('#edNotas').value, ventas: $('#edVentas').value, comisionista: $('#edComi') ? $('#edComi').value : '' }); cerrarModal(); toast('✔ Datos guardados'); eqFicha(S.eqId); } catch (e) {}
+  }
+  /* ---- ➕ Alta de personal y propuesta de sueldo / meta (el gerente propone; el dueño autoriza en Por autorizar) ---- */
+  const eqMetaCampos = (m, pre) => { m = m || {}; return `<div class="rejilla"><label>Meta de venta al mes (sin IVA)<input type="number" id="${pre}Venta" min="0" step="500" value="${m.venta || ''}"></label>
+      <label>Meta de clientes que le compran<input type="number" id="${pre}Cli" min="0" step="1" value="${m.clientes || ''}"></label>
+      <label>Comisión %<input type="number" id="${pre}Com" min="0" max="50" step="0.1" value="${m.comision || ''}" placeholder="Ej. 3"></label>
+      <label>Se calcula sobre<select id="${pre}Base"><option value="Vendido">Lo vendido en el mes</option><option value="Cobrado" ${m.base === 'Cobrado' ? 'selected' : ''}>Lo cobrado en el mes (sin IVA)</option></select></label>
+      <label>Bono al llegar a su meta (%)<input type="number" id="${pre}Bono" min="0" max="50" step="0.1" value="${m.bono || ''}" placeholder="Ej. 1"></label></div>`; };
+  const eqMetaLeer = pre => ({ venta: $('#' + pre + 'Venta').value, clientes: $('#' + pre + 'Cli').value, comision: $('#' + pre + 'Com').value || 0, base: $('#' + pre + 'Base').value, bono: $('#' + pre + 'Bono').value || 0 });
+  function eqAlta() {
+    const ger = U().rol === 'Gerente', d = puede('dueno'), roles = ger ? ['Vendedor', 'Almacenista'] : ['Vendedor', 'Almacenista', 'Gerente Sucursal'];
+    modal('➕ Alta de empleado', `<p class="muted peq">${d ? 'Queda activo de inmediato con su sueldo y meta.' : 'Queda <b>pendiente</b>: podrá entrar a la app cuando el dueño autorice su alta, su sueldo y su meta (puede ajustarlos antes de aprobar).'}</p>
+      <div class="rejilla"><label>Nombre completo<input id="eaNom"></label><label>Usuario o correo para entrar<input id="eaCorreo" autocapitalize="none" autocomplete="off" spellcheck="false"></label>
+        <label>Contraseña inicial (mínimo 6)<input id="eaClave" type="password" autocomplete="new-password"></label><label>Celular<input id="eaCel" type="tel"></label>
+        <label>Perfil en la app<select id="eaRol">${opts(roles, 'Vendedor')}</select></label><label>Puesto<input id="eaPuesto" placeholder="p. ej. Vendedor de mostrador"></label>
+        ${ger ? '' : `<label>Sucursal<select id="eaSuc">${optsSuc(sucTrabajo(), true)}</select></label>`}
+        <label>Fecha de ingreso<input type="date" id="eaIng" value="${hoyISO()}"></label>
+        <label>Sueldo mensual${d ? '' : ' propuesto'} (lo que le cuesta a la empresa)<input type="number" id="eaSueldo" min="0" step="100"></label></div>
+      <h4 style="margin:14px 0 4px">🎯 Meta${d ? '' : ' propuesta'} (opcional)</h4>${eqMetaCampos(null, 'ea')}
+      <p class="muted peq">Perfil: Vendedor vende y cobra; Almacenista maneja inventario sin ver dinero. La persona puede cambiar su contraseña en Mi cuenta.</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.eqGuardarAlta()">${d ? 'Dar de alta' : 'Enviar a autorización'}</button></div>`);
+  }
+  async function eqGuardarAlta() {
+    const p = { nombre: $('#eaNom').value, correo: $('#eaCorreo').value, clave: $('#eaClave').value, celular: $('#eaCel').value, rol: $('#eaRol').value, puesto: $('#eaPuesto').value,
+      suc: $('#eaSuc') ? $('#eaSuc').value : '', ingreso: $('#eaIng').value, sueldo: $('#eaSueldo').value, meta: eqMetaLeer('ea') };
+    if (String(p.nombre).trim().length < 3) return toast('Escribe el nombre completo', true);
+    if (String(p.clave).length < 6) return toast('La contraseña inicial debe tener al menos 6 caracteres', true);
+    try { const r = await pedir('altaEmpleado', p); cerrarModal(); toast(r.pendiente ? '✔ Enviado al dueño para su autorización' : '✔ Alta lista'); cargarEquipo(); } catch (e) {}
+  }
+  function eqProponer() {
+    const e = S.eqF; if (!e) return; const d = puede('dueno'), m = e.metaMes || {};
+    modal((d ? '🎯 ' : '✏️ Proponer · ') + esc(e.nombre), `<p class="muted peq">${d ? 'Se guarda de inmediato.' : 'Se envía al dueño; mientras no lo autorice se queda lo actual.'} Hoy: <b>${e.sueldoMensual ? $$(e.sueldoMensual) + ' al mes' : 'sin sueldo capturado'}</b>${m.venta ? ' · meta ' + $$(m.venta) + ' al mes' : ''}.</p>
+      <div class="rejilla"><label>Sueldo mensual${d ? '' : ' propuesto'}<input type="number" id="epSueldo" min="0" step="100" value="${e.sueldoMensual || ''}"></label>
+        <label>Fecha de ingreso<input type="date" id="epIng" value="${e.ingreso ? e.ingreso.split('/').reverse().join('-') : ''}"></label></div>
+      <h4 style="margin:14px 0 4px">🎯 Meta mensual</h4>${eqMetaCampos(m, 'ep')}
+      ${d ? '' : '<label>Motivo (lo verá el dueño)<input id="epMot" placeholder="p. ej. ya cumplió 6 meses y superó su meta"></label>'}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.eqGuardarPropuesta()">${d ? 'Guardar' : 'Enviar a autorización'}</button></div>`);
+  }
+  async function eqGuardarPropuesta() {
+    const e = S.eqF; if (!e) return;
+    const p = { id: e.id, sueldo: $('#epSueldo').value, ingreso: $('#epIng').value, meta: eqMetaLeer('ep'), motivo: $('#epMot') ? $('#epMot').value : '' };
+    try { const r = await pedir('proponerEmpleado', p); cerrarModal(); toast(r.pendiente ? '✔ Enviado al dueño para su autorización' : '✔ Guardado'); eqFicha(e.id); } catch (er) {}
   }
   async function eqQuitarGasto(uuid) {
     if (!confirm('¿Quitar este gasto de la persona? (Si venía por la regla del proveedor, la regla se queda; quítala desde ⛽ Asignar gastos)')) return;
@@ -13204,7 +13258,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
