@@ -10102,7 +10102,8 @@ const App = (() => {
         <label>% de la utilidad para el socio<input type="number" id="scPct" min="0" max="100" step="1" value="${c.pctSocio === undefined ? 100 : c.pctSocio}"></label>
         <label>% de los gastos compartidos que paga el socio<input type="number" id="scComp" min="0" max="100" step="1" value="${c.pctComp === undefined ? 50 : c.pctComp}"></label>
         <label>% de los demás gastos de la sucursal que paga el socio<input type="number" id="scOtros" min="0" max="100" step="1" value="${c.pctOtros === undefined ? 0 : c.pctOtros}"></label></div>
-      <p class="peq" style="margin:10px 0 4px"><b>Listas de precios que puede dar a sus clientes</b></p><div class="fila">${['Subdistribuidor', 'Socio', 'Aliado', 'AGL', 'Comisionista', 'Farmacia', 'Ganadero', 'Publico'].map(l => `<label class="check"><input type="checkbox" class="scLis" value="${l}" ${(c.listasClientes || ['AGL', 'Farmacia', 'Ganadero', 'Publico']).indexOf(l) >= 0 ? 'checked' : ''}> ${l === 'Publico' ? 'Público' : l}</label>`).join('')}</div>
+      <p class="peq" style="margin:10px 0 4px"><b>Listas para sus clientes:</b> todas las más caras que la de la sucursal (${esc(((D().sucursales || []).find(o => o.id === suc) || {}).lista || '—')}), excepto las que marques:</p><div class="fila">${['Socio', 'Aliado', 'AGL', 'Comisionista', 'Farmacia', 'Ganadero'].map(l => `<label class="check"><input type="checkbox" class="scExc" value="${l}" ${(c.excluirClientes || ['Comisionista']).indexOf(l) >= 0 ? 'checked' : ''}> no dar ${l}</label>`).join('')}</div>
+      <p class="muted peq">Si le mejoras su lista (p. ej. de Aliado a Socio), la anterior se le abre sola para sus clientes. Su propia lista nunca, porque es su costo.</p>
       <label>Gastos compartidos (palabras de la categoría o del proveedor, separadas por coma)<input id="scLista" value="${esc((c.compartidos && c.compartidos.length ? c.compartidos : ['Renta', 'Arrendamiento', 'Luz', 'Energía', 'CFE', 'Agua', 'Internet', 'Teléfono']).join(', '))}"></label>
       <div class="acciones">${z.sociedad ? '<button class="btn peligro" onclick="App.socGuardarCfg(true)">Quitar sociedad</button>' : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.socGuardarCfg()">Guardar</button></div>`);
     S.socCfgSuc = suc;
@@ -10110,7 +10111,7 @@ const App = (() => {
   async function socGuardarCfg(quitar) {
     const suc = S.socCfgSuc; if (!suc) return;
     if (quitar && !confirm('¿Quitar la sociedad de esta sucursal? (Los sueldos registrados se conservan)')) return;
-    const p = quitar ? { suc: suc, quitar: true } : { suc: suc, socio: $('#scSocio').value, inicio: $('#scIni').value, pctSocio: $('#scPct').value, pctComp: $('#scComp').value, pctOtros: $('#scOtros').value, compartidos: $('#scLista').value.split(','), listasClientes: [...document.querySelectorAll('.scLis:checked')].map(x => x.value) };
+    const p = quitar ? { suc: suc, quitar: true } : { suc: suc, socio: $('#scSocio').value, inicio: $('#scIni').value, pctSocio: $('#scPct').value, pctComp: $('#scComp').value, pctOtros: $('#scOtros').value, compartidos: $('#scLista').value.split(','), excluirClientes: [...document.querySelectorAll('.scExc:checked')].map(x => x.value) };
     try { await pedir('guardarSociedad', p); cerrarModal(); toast('✔ Guardado'); eqEval(); } catch (e) {}
   }
   function socVer(suc) { S.socSuc = suc; ir('sociedad'); }
