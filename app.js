@@ -1151,7 +1151,7 @@ const App = (() => {
       ${kpi('Lotes por caducar', k.porCaducar, k.caducados + ' lotes ya caducados con existencia')}
       ${c || k.valLista ? kpi('Inventario valorizado', $$(k.valorInventario), nf(k.piezas) + ' piezas' + (k.valLista ? ' · a precio ' + esc(k.valLista) : '')) : kpi('Piezas en inventario', nf(k.piezas), '')}
       ${kpi('Mermas', $$(k.mermas), k.valLista ? k.mermaPct + '% de las ventas · a precio ' + esc(k.valLista) : c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
-      ${c ? kpi(U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)') : ''}
+      ${c ? kpi(k.valLista ? 'Utilidad bruta (a precio ' + esc(k.valLista) + ')' : U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)') : ''}
       ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%') : ''}
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
         'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (r.resultados.comisiones ? ' · comisiones aparte ' + $$(r.resultados.comisiones) : '') + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
@@ -2789,7 +2789,7 @@ const App = (() => {
   /* ---------- HISTORIAL DE VENTAS ---------- */
   V.ventas = (tab) => {
     const tabs = (puede('ventas') || esContador() ? [['notas', 'Notas de venta']] : []).concat(puede('cobranza') ? [['cobranza', '💵 Cobranza'], ['edocta', '📑 Estados de cuenta']] : [])
-      .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('devoluciones') ? [['dev', '↩️ Devoluciones']] : []).concat(puede('dueno') || esContador() ? [['util', '🔒 Utilidad por nota']] : []);
+      .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('devoluciones') ? [['dev', '↩️ Devoluciones']] : []).concat(puede('dueno') || esContador() || valGer() ? [['util', '🔒 Utilidad por nota']] : []);
     tab = tab || S.tabVen || 'notas'; if (!tabs.some(x => x[0] === tab)) tab = tabs[0][0]; S.tabVen = tab;
     const h = hoyISO(), ini = h.slice(0, 5) + String(Math.floor((+h.slice(5, 7) - 1) / 3) * 3 + 1).padStart(2, '0') + '-01';   // trimestre en curso: del día 1 del trimestre a hoy
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaVentas('${id}')">${n}</button>`;
@@ -3360,27 +3360,28 @@ const App = (() => {
     try { r = await pedir('utilidadVentas', { desde: $('#fDesde').value, hasta: $('#fHasta').value, sucursal: $('#fSuc') ? $('#fSuc').value : '', texto: $('#fTxt').value }); }
     catch (e) { $('#lUtil').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     S.lista = r.notas;
-    const t = r.totales;
-    $('#lUtil').innerHTML = `<div class="kpis"><div class="kpi"><small>Venta neta</small><b>${$$(t.venta)}</b><span>${nf(t.notas)} notas</span></div>
-      <div class="kpi"><small>Costo real</small><b>${$$(t.costo)}</b><span></span></div>
+    const t = r.totales, etC = r.valLista ? 'Costo (precio ' + esc(r.valLista) + ')' : 'Costo real';
+    $('#lUtil').innerHTML = `${r.valLista ? `<p class="muted peq">💲 El costo de cada producto es su precio de la lista <b>${esc(r.valLista)}</b> (lo que tu sucursal paga a Matriz).</p>` : ''}<div class="kpis"><div class="kpi"><small>Venta neta</small><b>${$$(t.venta)}</b><span>${nf(t.notas)} notas</span></div>
+      <div class="kpi"><small>${etC}</small><b>${$$(t.costo)}</b><span></span></div>
       <div class="kpi"><small>Utilidad</small><b>${$$(t.utilidad)}</b><span>Margen ${t.margen}%</span></div></div>` +
       tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) },
-        { t: 'Venta neta', num: 1, h: x => $$(x.venta) }, { t: 'Costo real', num: 1, cls: 'ocultar-movil', h: x => $$(x.costo) },
+        { t: 'Venta neta', num: 1, h: x => $$(x.venta) }, { t: r.valLista ? 'Costo' : 'Costo real', num: 1, cls: 'ocultar-movil', h: x => $$(x.costo) },
         { t: 'Utilidad $', num: 1, h: x => `<b>${$$(x.utilidad)}</b>` }, { t: 'Utilidad %', num: 1, h: x => `<span class="etq ${claseMg(x.margen)}">${x.margen.toFixed(1)}%</span>` }],
         r.notas, { clic: 'App.abrirUtilidad', vacio: 'Sin notas en el periodo' });
   }
   async function verUtilidad(id) {
     let d; try { d = await pedir('utilidadNota', { ID_Venta: id }); } catch (e) { return; }
-    const fuente = { lote: '', promedio: '<small class="muted"> (prom.)</small>', lista: '<small style="color:var(--aviso)"> (lista)</small>' };
+    const fuente = { lote: '', suc: '', promedio: '<small class="muted"> (prom.)</small>', lista: '<small style="color:var(--aviso)"> (lista)</small>' };
+    const vl = d.valLista, etC = vl ? 'Costo (precio ' + esc(vl) + ')' : 'Costo real';
     modal('Utilidad · ' + d.folio, `<p><b>${esc(d.cliente)}</b> · ${esc(d.fecha)} · ${esc(sucNom(d.suc))} · ${etqEstatus(d.estatus)}${d.lista ? ' · lista ' + esc(d.lista) : ''}</p>
-      <div class="kpis"><div class="kpi"><small>Venta neta</small><b>${$$(d.venta)}</b><span>sin IVA</span></div><div class="kpi"><small>Costo real</small><b>${$$(d.costo)}</b><span></span></div>
+      <div class="kpis"><div class="kpi"><small>Venta neta</small><b>${$$(d.venta)}</b><span>sin IVA</span></div><div class="kpi"><small>${etC}</small><b>${$$(d.costo)}</b><span></span></div>
       <div class="kpi"><small>Utilidad</small><b>${$$(d.utilidad)}</b><span><span class="etq ${claseMg(d.margen)}">${d.margen.toFixed(1)}%</span></span></div></div>
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.prod)} · Lote ${esc(x.lote || '—')}</small>` },
-        { t: 'Precio neto', num: 1, h: x => $$(x.precioNeto) }, { t: 'Costo real u.', num: 1, h: x => $$(x.costoU) + fuente[x.fuente] },
+        { t: 'Precio neto', num: 1, h: x => $$(x.precioNeto) }, { t: vl ? 'Costo u. (' + esc(vl) + ')' : 'Costo real u.', num: 1, h: x => $$(x.costoU) + (fuente[x.fuente] || '') },
         { t: 'Venta', num: 1, h: x => $$(x.venta) }, { t: 'Costo', num: 1, h: x => $$(x.costo) },
         { t: 'Utilidad $', num: 1, h: x => `<b class="${x.utilidad < 0 ? 'error' : ''}">${$$(x.utilidad)}</b>` }, { t: 'Utilidad %', num: 1, h: x => `<span class="etq ${claseMg(x.margen)}">${x.margen.toFixed(1)}%</span>` }], d.lineas)}
       ${d.fleteCobrado || d.fletePagado ? `<p style="margin-top:8px">🚚 <b>Flete:</b> cobrado al cliente ${$$(d.fleteCobrado || 0)} − pagado a la fletera ${$$(d.fletePagado || 0)} = <b class="${d.fleteNeto < 0 ? 'error' : ''}">${$$(d.fleteNeto || 0)}</b> (ya incluido en la utilidad).</p>` : ''}
-      <p class="muted" style="margin-top:8px">Costo real u. = costo de compra del lote vendido, con bonificaciones y el flete que pagaste al comprar. <i>(prom.)</i> = promedio real del producto (lote sin compra registrada o nota pendiente de entrega); <i>(lista)</i> = sin compras, se usó el costo de lista. Utilidad = venta − costo + flete cobrado − flete pagado.</p>
+      ${vl ? `<p class="muted" style="margin-top:8px">Costo u. = precio de la lista ${esc(vl)} de tu sucursal (lo que pagas a Matriz). Utilidad = venta sin IVA − ese costo.</p>` : `<p class="muted" style="margin-top:8px">Costo real u. = costo de compra del lote vendido, con bonificaciones y el flete que pagaste al comprar. <i>(prom.)</i> = promedio real del producto (lote sin compra registrada o nota pendiente de entrega); <i>(lista)</i> = sin compras, se usó el costo de lista. Utilidad = venta − costo + flete cobrado − flete pagado.</p>`}
       <div class="acciones"><button class="btn" onclick="App.verVentaId('${d.id}')">Ver nota de venta</button></div>`);
   }
 
