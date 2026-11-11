@@ -1144,32 +1144,35 @@ const App = (() => {
       <div class="kpi"><small>Por pagar del periodo</small><b>${$$(k.comprasSaldo || 0)}</b><span>${k.comprasConSaldo || 0} ${k.comprasConSaldo === 1 ? 'orden' : 'órdenes'} con saldo</span></div>
       <div class="kpi kpi-clic" onclick="App.ir('compras')"><small>Cuentas por pagar (total)</small><b>${$$(k.cxp)}</b><span>${k.cxpOrdenes || 0} ${k.cxpOrdenes === 1 ? 'orden' : 'órdenes'}${k.cxpVencido > 0.009 ? ` · <b class="txt-mal">vencido ${$$(k.cxpVencido)}</b>` : ' · nada vencido'}</span></div>
       </div></div>`;
-    $('#dash').innerHTML = `<div class="tarjeta cmp" id="dashComp"><div class="vacio">📅 Comparando con el mismo periodo del año anterior…</div></div>${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}${htmlCompras}<div class="kpis">
+    $('#dash').innerHTML = `<div class="kpis">
       ${kpi('Ventas netas (sin IVA)', $$(k.ventas), k.notas + ' notas · ticket ' + $$(k.ticket))}
+      ${kpi('Cobrado en el periodo', $$(k.cobrado), 'Ventas con IVA ' + $$(k.ventasConIva))}
+      ${kpi('Por cobrar', $$(k.cxc), 'Vencido ' + $$(k.cxcVencida))}
+      ${kpi('Lotes por caducar', k.porCaducar, k.caducados + ' lotes ya caducados con existencia')}
+      ${c || k.valLista ? kpi('Inventario valorizado', $$(k.valorInventario), nf(k.piezas) + ' piezas' + (k.valLista ? ' · a precio ' + esc(k.valLista) : '')) : kpi('Piezas en inventario', nf(k.piezas), '')}
+      ${kpi('Mermas', $$(k.mermas), k.valLista ? k.mermaPct + '% de las ventas · a precio ' + esc(k.valLista) : c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
       ${c ? kpi(U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)') : ''}
       ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%') : ''}
-      ${kpi('Cobrado en el periodo', $$(k.cobrado), 'Ventas con IVA ' + $$(k.ventasConIva))}
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
         'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (r.resultados.comisiones ? ' · comisiones aparte ' + $$(r.resultados.comisiones) : '') + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
-      ${kpi('Mermas', $$(k.mermas), k.valLista ? k.mermaPct + '% de las ventas · a precio ' + esc(k.valLista) : c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
-      ${kpi('Por cobrar', $$(k.cxc), 'Vencido ' + $$(k.cxcVencida))}
-      ${c || k.valLista ? kpi('Inventario valorizado', $$(k.valorInventario), nf(k.piezas) + ' piezas' + (k.valLista ? ' · a precio ' + esc(k.valLista) : '')) : kpi('Piezas en inventario', nf(k.piezas), '')}
-      ${kpi('Lotes por caducar', k.porCaducar, k.caducados + ' lotes ya caducados con existencia')}
       </div>
-      ${r.resultados ? htmlResultados(r.resultados) : ''}
-      <div class="tarjeta"><h3>Últimos 12 meses</h3><div class="grafica"><canvas id="gMeses"></canvas></div></div>
+      ${r.caducados.length ? `<div class="tarjeta"><h3>⚠️ Caducados con existencia</h3>${tablaCaducidad(r.caducados)}</div>` : ''}
+      <div class="tarjeta"><h3>⏳ Por caducar (≤ ${(D().config || {}).diasCaducidad || 120} días)</h3>${tablaCaducidad(r.porCaducar)}</div>
+      ${htmlCompras}
+      <div class="tarjeta"><h3>🔥 Productos más vendidos</h3>${tabla([{ t: 'Producto', k: 'nombre' }, { t: 'Cantidad', num: 1, h: x => nf(x.cant) },
+        { t: 'Venta neta', num: 1, h: x => $$(x.importe) }].concat(c ? [{ t: 'Utilidad', num: 1, h: x => $$(x.utilidad) }, { t: 'Margen', num: 1, h: x => x.importe ? (x.utilidad / x.importe * 100).toFixed(1) + '%' : '—' }] : []), r.topProductos)}</div>
+      <div class="tarjeta"><h3>📈 Últimos 12 meses</h3><div class="grafica"><canvas id="gMeses"></canvas></div></div>
       <div class="espacio"></div>
       <div class="rejilla-2">
-        <div class="tarjeta"><h3>Ventas por sucursal</h3><div class="grafica"><canvas id="gSuc"></canvas></div></div>
-        <div class="tarjeta"><h3>Ventas por categoría</h3><div class="grafica"><canvas id="gCat"></canvas></div></div>
         <div class="tarjeta"><h3>Ventas por vendedor</h3><div class="grafica"><canvas id="gVend"></canvas></div></div>
         <div class="tarjeta"><h3>Mejores clientes</h3>${tabla([{ t: 'Cliente', k: 'nombre' }, { t: 'Venta neta', num: 1, h: x => $$(x.valor) }], r.topClientes)}</div>
+        <div class="tarjeta"><h3>Ventas por sucursal</h3><div class="grafica"><canvas id="gSuc"></canvas></div></div>
+        <div class="tarjeta"><h3>Ventas por categoría</h3><div class="grafica"><canvas id="gCat"></canvas></div></div>
       </div>
       <div class="espacio"></div>
-      <div class="tarjeta"><h3>Productos más vendidos</h3>${tabla([{ t: 'Producto', k: 'nombre' }, { t: 'Cantidad', num: 1, h: x => nf(x.cant) },
-        { t: 'Venta neta', num: 1, h: x => $$(x.importe) }].concat(c ? [{ t: 'Utilidad', num: 1, h: x => $$(x.utilidad) }, { t: 'Margen', num: 1, h: x => x.importe ? (x.utilidad / x.importe * 100).toFixed(1) + '%' : '—' }] : []), r.topProductos)}</div>
-      <div class="tarjeta"><h3>Por caducar (≤ ${(D().config || {}).diasCaducidad || 120} días)</h3>${tablaCaducidad(r.porCaducar)}</div>
-      ${r.caducados.length ? `<div class="tarjeta"><h3>Caducados con existencia</h3>${tablaCaducidad(r.caducados)}</div>` : ''}`;
+      <div class="tarjeta cmp" id="dashComp"><div class="vacio">📅 Comparando con el mismo periodo del año anterior…</div></div>
+      ${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}
+      ${r.resultados ? htmlResultados(r.resultados) : ''}`;
     const ds = [{ label: 'Ventas', data: r.meses.map(m => m.ventas), borderColor: css('--s1'), backgroundColor: css('--s1') }];
     if (k.compras !== null && k.compras !== undefined) ds.push({ label: 'Compras', data: r.meses.map(m => m.compras), borderColor: css('--s2'), backgroundColor: css('--s2') });
     if (c) ds.push({ label: 'Utilidad', data: r.meses.map(m => m.utilidad), borderColor: css('--s3'), backgroundColor: css('--s3') });
