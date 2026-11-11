@@ -8802,7 +8802,7 @@ const App = (() => {
     const campos = [
       { k: 'Nombre_cliente', t: 'Nombre del cliente', req: 1 }, { k: 'Razon_social', t: 'Razón social' }, { k: 'Nombre_Rancho', t: 'Nombre del rancho o negocio' }, { k: 'RFC', t: 'RFC' },
       { k: 'Regimen_Fiscal', t: 'Régimen fiscal', tipo: 'select', ops: cat.regimen, vacio: '' }, { k: 'Uso_CFDI', t: 'Uso CFDI', tipo: 'select', ops: cat.usoCfdi, vacio: '' }, { k: 'C.P.', t: 'C.P.' },
-      { k: 'Lista_de_Precios', t: 'Lista de precios', tipo: 'select', ops: cat.listas.map(x => [x, x]), dis: !comercial }, { k: 'D_Credito', t: 'Días de crédito', tipo: 'number', dis: !comercial }, { k: 'Limite_Credito', t: 'Límite de crédito $ (0 = sin límite)', tipo: 'number', dis: !(puede('dueno') || U().rol === 'Administrador') },
+      { k: 'Lista_de_Precios', t: 'Lista de precios', tipo: 'select', ops: (cat.listasCliente || cat.listas).map(x => [x, x]), dis: !comercial }, { k: 'D_Credito', t: 'Días de crédito', tipo: 'number', dis: !comercial }, { k: 'Limite_Credito', t: 'Límite de crédito $ (0 = sin límite)', tipo: 'number', dis: !(puede('dueno') || U().rol === 'Administrador') },
       { k: 'Clasificacion', t: 'Clasificación', tipo: 'select', ops: ['AAA', 'AA', 'A', 'B', 'C'].map(x => [x, x]), vacio: '' }, { k: 'Tipo', t: 'Tipo', tipo: 'select', ops: ['Productor', 'Farmacia', 'Clínica', 'MVZ', 'Distribuidor', 'Público'].map(x => [x, x]), vacio: '' },
       { k: 'Nicho Mercado', t: 'Nicho de mercado (puedes elegir varios)', tipo: 'multi', ops: NICHOS, ancho: 1 }, { k: 'Celular', t: 'Celular', tipo: 'tel' }, { k: 'e-mail', t: 'Correo', tipo: 'email' }, { k: 'Tel_Fijo', t: 'Tel. fijo' }, { k: 'Fecha_cumpleaños', t: '🎂 Cumpleaños (persona) / aniversario (empresa)', tipo: 'date' },
       { k: 'Calle', t: 'Calle' }, { k: 'Colonia', t: 'Colonia' }, { k: 'Municipio/Delegación', t: 'Municipio' }, { k: 'Localidad', t: 'Localidad' }, { k: 'Estado', t: 'Estado' }, { k: 'Ruta', t: 'Ruta' },
@@ -10102,6 +10102,7 @@ const App = (() => {
         <label>% de la utilidad para el socio<input type="number" id="scPct" min="0" max="100" step="1" value="${c.pctSocio === undefined ? 100 : c.pctSocio}"></label>
         <label>% de los gastos compartidos que paga el socio<input type="number" id="scComp" min="0" max="100" step="1" value="${c.pctComp === undefined ? 50 : c.pctComp}"></label>
         <label>% de los demás gastos de la sucursal que paga el socio<input type="number" id="scOtros" min="0" max="100" step="1" value="${c.pctOtros === undefined ? 0 : c.pctOtros}"></label></div>
+      <p class="peq" style="margin:10px 0 4px"><b>Listas de precios que puede dar a sus clientes</b></p><div class="fila">${['Subdistribuidor', 'Socio', 'Aliado', 'AGL', 'Comisionista', 'Farmacia', 'Ganadero', 'Publico'].map(l => `<label class="check"><input type="checkbox" class="scLis" value="${l}" ${(c.listasClientes || ['AGL', 'Farmacia', 'Ganadero', 'Publico']).indexOf(l) >= 0 ? 'checked' : ''}> ${l === 'Publico' ? 'Público' : l}</label>`).join('')}</div>
       <label>Gastos compartidos (palabras de la categoría o del proveedor, separadas por coma)<input id="scLista" value="${esc((c.compartidos && c.compartidos.length ? c.compartidos : ['Renta', 'Arrendamiento', 'Luz', 'Energía', 'CFE', 'Agua', 'Internet', 'Teléfono']).join(', '))}"></label>
       <div class="acciones">${z.sociedad ? '<button class="btn peligro" onclick="App.socGuardarCfg(true)">Quitar sociedad</button>' : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.socGuardarCfg()">Guardar</button></div>`);
     S.socCfgSuc = suc;
@@ -10109,7 +10110,7 @@ const App = (() => {
   async function socGuardarCfg(quitar) {
     const suc = S.socCfgSuc; if (!suc) return;
     if (quitar && !confirm('¿Quitar la sociedad de esta sucursal? (Los sueldos registrados se conservan)')) return;
-    const p = quitar ? { suc: suc, quitar: true } : { suc: suc, socio: $('#scSocio').value, inicio: $('#scIni').value, pctSocio: $('#scPct').value, pctComp: $('#scComp').value, pctOtros: $('#scOtros').value, compartidos: $('#scLista').value.split(',') };
+    const p = quitar ? { suc: suc, quitar: true } : { suc: suc, socio: $('#scSocio').value, inicio: $('#scIni').value, pctSocio: $('#scPct').value, pctComp: $('#scComp').value, pctOtros: $('#scOtros').value, compartidos: $('#scLista').value.split(','), listasClientes: [...document.querySelectorAll('.scLis:checked')].map(x => x.value) };
     try { await pedir('guardarSociedad', p); cerrarModal(); toast('✔ Guardado'); eqEval(); } catch (e) {}
   }
   function socVer(suc) { S.socSuc = suc; ir('sociedad'); }
