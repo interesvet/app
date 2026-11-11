@@ -737,10 +737,24 @@ const App = (() => {
     { id: 'proveedores', t: 'Proveedores', i: '🏭', p: 'proveedores' },
     { id: 'config', t: 'Configuración', i: '⚙️', oculto: 1 }   // engrane arriba a la derecha (dueño); los demás: “Mi cuenta” al pie del menú
   ];
+  // Orden del menú lateral por bloques (de lo más operativo a lo administrativo); lo que no esté aquí va al final
+  const MENU_BLOQUES = [
+    ['Venta y cobro', ['inicio', 'venta', 'pos', 'ventas', 'caja', 'autorizar']],
+    ['Clientes', ['clientes', 'cotizaciones', 'seguimiento']],
+    ['Inventario y abasto', ['sucursales', 'productos', 'compras', 'proveedores', 'reclamaciones']],
+    ['Revisión y análisis', ['resumen', 'tablero', 'mapa']],
+    ['Administración', ['gastos', 'bancos', 'contable', 'anotaciones', 'comisiones', 'equipo']]
+  ];
+  function menuOrdenado() {
+    const vis = MENU.filter(m => !m.oculto && puedeVer(m.id, m.p)), usados = {}, out = [];
+    MENU_BLOQUES.forEach(([t, ids]) => { const l = ids.map(id => vis.find(m => m.id === id)).filter(Boolean); if (!l.length) return; l.forEach(m => usados[m.id] = 1); out.push({ tit: t }); out.push(...l); });
+    const resto = vis.filter(m => !usados[m.id]); if (resto.length) out.push({ tit: 'Otros' }, ...resto);
+    return out;
+  }
   function pintarMenu() {
     const u = U();
     $('#menu').innerHTML = `<div class="cab">${logoPantalla() || '<b>🐾 Interés Veterinario®</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
-      <nav>${MENU.filter(m => !m.oculto && puedeVer(m.id, m.p)).map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
+      <nav>${menuOrdenado().map(m => { if (m.tit) return `<div class="menu-tit">${esc(m.tit)}</div>`; const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
         return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(m.id === 'autorizar' && !puede('dueno') ? 'Mis solicitudes' : e.t)}${m.id === 'anotaciones' && S.obsNuevas ? `<b class="menu-num">${S.obsNuevas}</b>` : ''}${m.id === 'autorizar' && S.autN ? `<b class="menu-num">${S.autN}</b>` : ''}</button>`; }).join('')}</nav>
       <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
       <div class="fila" style="gap:6px"><button class="btn chico" onclick="App.ir('config')">${puede('dueno') ? '⚙️ Configuración' : '👤 Mi cuenta y sincronización'}</button><button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div><div class="ver-app"></div></div>`;
