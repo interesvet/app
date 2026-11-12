@@ -1965,7 +1965,7 @@ const App = (() => {
       <div class="acciones no-imprimir">
         <button class="btn" onclick="App.ticketNota(${offline ? 'true' : 'false'})">🧾 Ticket 80 mm</button>
         ${!offline && d.id ? `<button class="btn primario" onclick="App.pdfNota('${d.id}')">📄 PDF para enviar / imprimir</button>` : '<button class="btn primario" onclick="App.pdfNotaOffline()">📄 PDF para enviar</button><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button>'}
-        ${d.cel ? `<a class="btn" target="_blank" href="${WA_BASE}52${String(d.cel).replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent('Interés Veterinario® — Nota ' + d.folio + '\nTotal: ' + $$(d.total) + '\nSaldo: ' + $$(d.saldo) + '\n¡Gracias por su compra!')}">💬 WhatsApp</a>` : ''}
+        ${!offline && d.id ? `<button class="btn" onclick="App.pdfNota('${d.id}')">💬 WhatsApp con PDF</button>` : d.cel ? `<a class="btn" target="_blank" href="${WA_BASE}52${String(d.cel).replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent('Interés Veterinario® — Nota ' + d.folio + '\nTotal: ' + $$(d.total) + '\nSaldo: ' + $$(d.saldo) + '\n¡Gracias por su compra!')}">💬 WhatsApp</a>` : ''}
         ${!offline && d.id && viva && !bloq && d.saldo > 0.009 && puede('ventas_editar') ? `<button class="btn" onclick="App.editarNota('${d.id}')">✏️ Editar nota</button>` : ''}
         ${!offline && d.id && d.estatus === 'Pendiente' && puede('ventas') ? `<button class="btn primario" onclick="App.entregarVenta('${d.id}')">📦 Marcar como entregado</button>` : ''}
         ${!offline && d.id && d.estatus !== 'Cancelado' && puede('ventas') ? `<button class="btn" onclick="App.formEnvio('${d.id}')">🚚 Envío / guía${d.fletePagadoReal || d.fletePagado ? ' · flete ' + $$(d.fletePagadoReal || d.fletePagado) + (d.clientePaga === false ? ' (lo absorbes)' : '') : ''}</button>` : ''}
@@ -1990,21 +1990,33 @@ const App = (() => {
       const r = await pedir(accion, params);
       if (w && !w.closed) { try { w.location.href = r.url; } catch (e) {} }
       const msg = info.texto + '\n' + r.url;
-      S.pdfListo = { titulo: r.nombre, texto: info.texto, url: r.url };
+      S.pdfListo = { titulo: r.nombre, texto: info.texto, url: r.url, b64: r.b64 || '' };
+      const conArch = !!pdfArchivo();   // 📎 el dispositivo puede adjuntar el PDF (iPhone, iPad, Mac, Android)
       const tel = String(info.cel || '').replace(/\D/g, '').slice(-10);
       modal('PDF listo', `<p>📄 <b>${esc(r.nombre)}</b></p>
-        <p class="muted">Quedó guardado en tu Drive, carpeta “Interés Veterinario - PDF”. Ábrelo y usa el botón <b>Compartir</b> de tu iPhone, iPad o Mac para mandar el archivo por WhatsApp o correo, o envía directamente el enlace:</p>
+        <p class="muted">Quedó guardado en tu Drive, carpeta “Interés Veterinario - PDF”. ${conArch ? 'Con <b>💬 WhatsApp con PDF</b> se abre la hoja de compartir: elige WhatsApp y luego el contacto; el archivo va adjunto.' : 'Ábrelo y usa el botón <b>Compartir</b> de tu iPhone, iPad o Mac para mandar el archivo por WhatsApp o correo, o envía directamente el enlace:'}</p>
         <div class="acciones" style="justify-content:flex-start">
           <a class="btn primario" href="${esc(r.url)}" target="_blank" rel="noopener">📄 Abrir PDF</a>
           <a class="btn" href="${esc(r.descarga)}" target="_blank">⬇️ Descargar</a>
-          ${navigator.share ? `<button class="btn" onclick="App.compartirPdf()">📤 Compartir</button>` : ''}
-          <a class="btn" target="_blank" href="${WA_BASE}${tel ? '52' + tel : ''}?text=${encodeURIComponent(msg)}">💬 WhatsApp</a>
+          ${conArch ? `<button class="btn primario" onclick="App.compartirPdf(true)">💬 WhatsApp con PDF</button>` : ''}
+          ${navigator.share ? `<button class="btn" onclick="App.compartirPdf()">📤 Compartir${conArch ? ' (archivo)' : ''}</button>` : ''}
+          <a class="btn" target="_blank" href="${WA_BASE}${tel ? '52' + tel : ''}?text=${encodeURIComponent(msg)}">💬 WhatsApp${conArch ? ' (enlace)' : ''}</a>
           <a class="btn" target="_blank" href="mailto:${encodeURIComponent(info.correo || '')}?subject=${encodeURIComponent(info.asunto)}&body=${encodeURIComponent(msg)}">✉️ Correo${info.correo ? ' a ' + esc(info.correo) : ''}</a>
           <button class="btn" onclick="${info.volver}">Volver</button></div>`);
     } catch (e) { if (w) { try { w.close(); } catch (x) {} } if (e.red && DOC_LOCAL[accion]) pdfSinConexion(accion, params, info); }
   }
   /** Hoja de compartir del iPhone / iPad / Mac con el enlace del PDF (WhatsApp, Mensajes, correo…). */
-  function compartirPdf() { const p = S.pdfListo; if (!p || !navigator.share) return; navigator.share({ title: p.titulo, text: p.texto, url: p.url }).catch(() => {}); }
+  function pdfArchivo() {
+    const p = S.pdfListo; if (!p || !p.b64 || !navigator.canShare || !window.File) return null;
+    try { const bin = atob(p.b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      const f = new File([u], p.titulo || 'documento.pdf', { type: 'application/pdf' }); return navigator.canShare({ files: [f] }) ? f : null; } catch (e) { return null; }
+  }
+  function compartirPdf(conTexto) {
+    const p = S.pdfListo; if (!p || !navigator.share) return;
+    const f = pdfArchivo();
+    if (f) { navigator.share(Object.assign({ files: [f], title: p.titulo }, conTexto ? { text: p.texto } : {})).catch(e => { if (e && e.name !== 'AbortError') toast('No se pudo adjuntar; usa 💬 WhatsApp (enlace)', true); }); return; }
+    navigator.share({ title: p.titulo, text: p.texto, url: p.url }).catch(() => {});
+  }
   function pdfNota(id) {
     const d = S.ultimaVenta || {};
     generarPdf('pdfNota', { ID_Venta: id }, { cel: d.cel, asunto: 'Nota de venta ' + (d.folio || ''),
