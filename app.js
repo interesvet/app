@@ -2988,7 +2988,7 @@ const App = (() => {
       <label>Estatus<select id="fEst">${opts([['Entregado', 'Entregado'], ['Pendiente', 'Pendiente de entrega'], ['Cancelado', 'Cancelado'], ['Devuelto', 'Devuelto']], '', 'Todos')}</select></label>
       <label>Factura<select id="fFact">${opts([['SI', 'Facturadas'], ['Parcial', 'Facturadas en parte'], ['NO', 'Sin facturar']], '', 'Todas')}</select></label>
       <label class="check fijo"><input type="checkbox" id="fSaldo"> Solo con saldo</label>
-      <button class="btn primario fijo" onclick="App.buscarVentas()">Buscar</button></div></div><div class="espacio"></div><div id="lVentas"></div>`;
+      <button class="btn primario fijo" onclick="App.buscarVentas()">Buscar</button><button class="btn fijo" onclick="App.excelVentas()">📊 Exportar a Excel</button></div></div><div class="espacio"></div><div id="lVentas"></div>`;
     $('#fFact').onchange = buscarVentas;
     S.filtroVentas = '';
     agregarMesAnio('fDesde', 'fHasta', buscarVentas, 'ventas');
@@ -3023,6 +3023,42 @@ const App = (() => {
       ], l, { clic: 'App.abrirVenta' });
       if (puede('cobranza')) totalCxC();
     } catch (e) { if (nq === S.qVentas && $('#lVentas')) $('#lVentas').innerHTML = `<div class="vacio">${e.red ? 'Consultar ventas requiere conexión.' : 'No se pudo consultar: ' + esc(e.message || '')}</div>`; }
+  }
+  /** 📊 Notas de venta a Excel (lo que está en pantalla, con sus filtros) + resumen por sucursal y por mes. */
+  async function excelVentas() {
+    const l = S.lista || []; if (!l.length || !('saldo' in l[0])) return toast('Primero busca las notas', true);
+    const d1 = $('#fDesde').value, d2 = $('#fHasta').value, suc = $('#fSuc') ? $('#fSuc').value : '';
+    const donde = suc ? sucNom(suc) : (U().todasSucursales ? 'Todas las sucursales' : sucNom(U().sucursal));
+    const per = (d1 || d2 ? 'Del ' + (d1 ? fechaTxt(d1) : 'inicio') + ' al ' + (d2 ? fechaTxt(d2) : 'hoy') : 'Todas las fechas') + ' · ' + donde;
+    const filtros = [$('#fTxt').value ? 'Búsqueda: ' + $('#fTxt').value : '', $('#fEst').value ? 'Estatus: ' + $('#fEst').value : '', $('#fFact') && $('#fFact').value ? 'Factura: ' + $('#fFact').selectedOptions[0].text : '',
+      $('#fSaldo').checked ? 'Solo con saldo' : '', S.ventasCli ? 'Cliente: ' + S.ventasCli.nombre : ''].filter(Boolean).join(' · ');
+    const viv = l.filter(x => x.estatus !== 'Cancelado'), T = k => viv.reduce((a, x) => a + Math.max(k === 'saldo' ? 0 : -Infinity, x[k] || 0), 0);
+    const factTxt = x => { const t = String(x.facturado || '').trim().toUpperCase(); return x.estatus === 'Cancelado' ? '' : t === 'SI' ? 'Facturada' : t === 'PARCIAL' ? 'Parcial' : 'Sin facturar'; };
+    const pago = x => x.estatus === 'Cancelado' || x.estatus === 'Devuelto' ? '' : x.saldo > 0.009 ? 'Con saldo' : x.saldo < -0.009 ? 'Saldo a favor' : 'Pagada';
+    const vend = x => { const v = (D().vendedores || []).find(z => String(z.id) === String(x.vendedor)); return v ? v.nombre : (x.vendedor || ''); };
+    const hojas = [{ nombre: 'Notas de venta', titulo: 'Notas de venta', sub: [per, filtros],
+      resumen: [['Ventas', T('total'), 'mon', 'marino'], ['Cobrado', T('cobrado'), 'mon', 'verde'], ['Por cobrar', T('saldo'), 'mon', 'ambar'], ['Notas', viv.length, 'num', 'azul']],
+      cols: [{ t: 'Fecha', w: 12 }, { t: 'Folio', w: 14 }, { t: 'Cliente', w: 36 }].concat(U().todasSucursales ? [{ t: 'Sucursal', w: 15 }] : []).concat([{ t: 'Vendedor', w: 28 }, { t: 'Método', w: 9 },
+        { t: 'Total', w: 14, fmt: 'mon', suma: 1 }, { t: 'Cobrado', w: 14, fmt: 'mon', suma: 1 }, { t: 'Saldo', w: 14, fmt: 'mon', suma: 1 }, { t: 'Vence', w: 12 }, { t: 'Estatus', w: 13 }, { t: 'Pago', w: 13 }, { t: 'Factura', w: 13 }, { t: 'Factura(s)', w: 22 }]),
+      filas: l.map(x => { const canc = x.estatus === 'Cancelado';
+        return { tono: canc ? 'gris' : x.saldo > 0.009 && x.venc && isoDe(x.venc) && isoDe(x.venc) < hoyISO() ? 'mal' : x.saldo > 0.009 ? 'av' : '',
+          v: [x.fecha, x.folio, x.cliente].concat(U().todasSucursales ? [sucNom(x.suc)] : []).concat([vend(x), x.metodo || '', canc ? 0 : x.total, canc ? 0 : x.cobrado, canc ? 0 : Math.max(0, x.saldo), x.venc || '', x.estatus, pago(x), factTxt(x), x.factura || '']) }; }) }];
+    // por mes (si hay más de uno) y por sucursal (si son varias)
+    const porMes = {}; viv.forEach(x => { const f = isoDe(x.fecha) || ''; const k = f.slice(0, 7); if (!k) return; const o = porMes[k] = porMes[k] || { n: 0, t: 0, c: 0, s: 0 }; o.n++; o.t += x.total; o.c += x.cobrado; o.s += Math.max(0, x.saldo); });
+    const meses = Object.keys(porMes).sort(), MES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'], etM = k => MES[+k.slice(5) - 1] + ' ' + k.slice(2, 4);
+    if (meses.length > 1) hojas.push({ nombre: 'Por mes', titulo: 'Ventas por mes', sub: [per],
+      cols: [{ t: 'Mes', w: 12 }, { t: 'Notas', w: 10, fmt: 'num', suma: 1 }, { t: 'Ventas', w: 16, fmt: 'mon', suma: 1 }, { t: 'Cobrado', w: 16, fmt: 'mon', suma: 1 }, { t: 'Por cobrar', w: 16, fmt: 'mon', suma: 1 }],
+      filas: meses.map(k => ({ v: [etM(k), porMes[k].n, porMes[k].t, porMes[k].c, porMes[k].s] })),
+      graficas: [{ tipo: 'tiempo', titulo: 'Ventas y cobranza por mes', fmt: 'mon', etiquetas: meses.map(etM), series: [{ nombre: 'Ventas', datos: meses.map(k => porMes[k].t) }, { nombre: 'Cobrado', datos: meses.map(k => porMes[k].c) }] }] });
+    const porSuc = {}; viv.forEach(x => { const o = porSuc[x.suc] = porSuc[x.suc] || { n: 0, t: 0, c: 0, s: 0 }; o.n++; o.t += x.total; o.c += x.cobrado; o.s += Math.max(0, x.saldo); });
+    const sucs = Object.keys(porSuc).sort((a, b) => porSuc[b].t - porSuc[a].t);
+    if (sucs.length > 1) hojas.push({ nombre: 'Por sucursal', titulo: 'Ventas por sucursal', sub: [per],
+      cols: [{ t: 'Sucursal', w: 20 }, { t: 'Notas', w: 10, fmt: 'num', suma: 1 }, { t: 'Ventas', w: 16, fmt: 'mon', suma: 1 }, { t: 'Cobrado', w: 16, fmt: 'mon', suma: 1 }, { t: 'Por cobrar', w: 16, fmt: 'mon', suma: 1 }],
+      filas: sucs.map(k => ({ v: [sucNom(k), porSuc[k].n, porSuc[k].t, porSuc[k].c, porSuc[k].s] })),
+      graficas: [{ tipo: 'categorias', titulo: 'Ventas por sucursal', fmt: 'mon', etiquetas: sucs.map(sucNom), series: [{ nombre: 'Ventas', datos: sucs.map(k => porSuc[k].t) }] }] });
+    const nom = 'Notas de venta ' + (d1 || 'inicio') + ' a ' + (d2 || hoyISO()) + ' ' + donde.replace(/[\\/:*?"<>|]+/g, '-');
+    try { toast('Armando el Excel…'); entregarArchivo(await excelLocal(nom, hojas), nom + '.xlsx', 'Excel de notas de venta'); }
+    catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
   }
   /** Cuentas por cobrar de TODAS las fechas (no depende del periodo elegido). */
   async function totalCxC() {
@@ -13984,7 +14020,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
