@@ -19,7 +19,7 @@ open(os.path.join(RAIZ, 'estilos.css'), 'w', encoding='utf-8').write(css + '\n' 
 open(os.path.join(RAIZ, 'app.js'), 'w', encoding='utf-8').write(js + '\n')
 
 cabeza_pwa = """  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1f6f4a">
+  <meta name="theme-color" content="#0f1f3d">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -37,7 +37,7 @@ assert '<?' not in h, 'Quedó una etiqueta de plantilla de Apps Script en Index.
 open(os.path.join(RAIZ, 'index.html'), 'w', encoding='utf-8').write(h)
 
 # versión = huella de todos los archivos que se guardan en el teléfono
-ARCH = ['index.html', 'estilos.css', 'app.js', 'config.js', 'shim.js', 'pwa.js', 'manifest.webmanifest', 'logo.png',
+ARCH = ['index.html', 'estilos.css', 'app.js', 'config.js', 'shim.js', 'pwa.js', 'manifest.webmanifest', 'logo.png', 'logo-hd.webp',
         'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png']
 hsh = hashlib.sha1()
 for a in ARCH: hsh.update(open(os.path.join(RAIZ, a), 'rb').read())

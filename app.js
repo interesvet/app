@@ -151,7 +151,9 @@ const App = (() => {
   const logoSrcSuc = id => { const sid = sucConFoto(id), m = sid ? (Object.assign({}, LS.get('minisSuc', {}), (S.minis || {}).sucFoto || {})[sid]) : ''; return m || window.LOGO || 'logo.png'; };
   /** Logotipo de la pantalla principal (menú y bienvenida): personal de una sucursal con imagen → la de su sucursal. */
   const logoPantalla = () => { const u = U() || {}, sid = !u.todasSucursales ? sucConFoto(u.sucursal) : ''; if (sid) { setTimeout(llenarFotosSuc, 0); return `<img data-sucdoc="${esc(sid)}" alt="${esc(sucNom(sid))}">`; }
-    return window.LOGO ? `<img src="${window.LOGO}" alt="Interés Veterinario">` : ''; };
+    return logoHD() ? `<img src="${logoHD()}" alt="Interés Veterinario">` : ''; };
+  /** Logotipo sin fondo en alta calidad (app instalable); en la versión web de Google, el logotipo configurado. */
+  function logoHD() { return window.IV_API ? 'logo-hd.webp' : window.LOGO; }
   async function llenarFotosSuc() {
     const ims = Array.from(document.querySelectorAll('img[data-sucdoc]:not([src])')); if (!ims.length) return;
     S.minis = S.minis || {}; const m = S.minis.sucFoto = Object.assign(LS.get('minisSuc', {}), S.minis.sucFoto || {});
@@ -13151,7 +13153,7 @@ const App = (() => {
   /* ---------------- arranque ---------------- */
   async function iniciar() {
     await cargarLocal(); await cargarFotosLocal();
-    if (window.LOGO) { const l = $('#lgLogo'); if (l) l.innerHTML = `<img src="${window.LOGO}" alt="Interés Veterinario">`; const n = $('#lgNombre'); if (n) n.style.display = 'none'; }
+    if (logoHD()) { const l = $('#lgLogo'); if (l) l.innerHTML = `<img src="${logoHD()}" alt="Interés Veterinario">`; const n = $('#lgNombre'); if (n) n.style.display = 'none'; }
     window.addEventListener('online', () => { marcarRed(true); RED.fuerte = null; setTimeout(() => sincronizar(), 2500); });
     try { if (navigator.connection) navigator.connection.addEventListener('change', () => { RED.fuerte = null; if (S.cola.length) sincronizar(); }); } catch (e) {}
     document.addEventListener('visibilitychange', () => {
