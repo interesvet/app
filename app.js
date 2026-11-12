@@ -1290,7 +1290,7 @@ const App = (() => {
         <label style="flex:2 1 200px">Buscar<input id="cpQ" value="${esc(S.fComp.q)}" placeholder="Nombre o clave"></label>
         <label>Mostrar<select id="cpF">${opts([['todos', 'Todos'], ['crecen', '▲ Crecen'], ['caen', '▼ Caen'], ['nuevos', '✨ Nuevos (no se vendían)'], ['perdidos', '⚠️ Ya no se venden']], S.fComp.filtro)}</select></label>
         <label>Ordenar por<select id="cpO">${opts([['actual', 'Venta ' + yA], ['anterior', 'Venta ' + yB], ['sube', 'Mayor crecimiento $'], ['baja', 'Mayor caída $'], ['pct', 'Cambio %']], S.fComp.orden)}</select></label>
-        <button class="btn fijo" onclick="App.compCsv()">⬇️ Excel (CSV)</button></div><div id="cpRes"></div>`);
+        <button class="btn fijo" onclick="App.compCsv()">📊 Exportar a Excel</button></div><div id="cpRes"></div>`);
     const pinta = () => {
       const f = S.fComp; let l = r.productos.slice();
       if (f.q) l = l.filter(x => coincide(x.id + ' ' + x.nombre, f.q));
@@ -1310,14 +1310,20 @@ const App = (() => {
     $('#cpO').onchange = e => { S.fComp.orden = e.target.value; pinta(); };
     pinta();
   }
-  function compCsv() {
+  async function compCsv() {   // 📊 Excel con el diseño corporativo (antes CSV)
     const r = S.comp; if (!r) return;
-    const yA = r.periodo.actual.hasta.slice(-4), yB = r.periodo.anterior.hasta.slice(-4), q = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
-    const cab = ['Clave', 'Producto', 'Piezas ' + yA, 'Piezas ' + yB, 'Venta ' + yA, 'Venta ' + yB, 'Diferencia', 'Cambio %'].concat(r.verUtil ? ['Utilidad ' + yA, 'Utilidad ' + yB] : []);
-    const filas = r.productos.map(x => [x.id, x.nombre, x.cantA, x.cantB, x.impA, x.impB, Math.round((x.impA - x.impB) * 100) / 100, delta(x.impA, x.impB) === null ? 'nuevo' : delta(x.impA, x.impB)].concat(r.verUtil ? [x.utilA, x.utilB] : []));
-    const csv = '﻿' + [cab].concat(filas).map(f => f.map(q).join(',')).join('\r\n');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'Comparativo productos ' + r.periodo.actual.desde.replace(/\//g, '-') + ' al ' + r.periodo.actual.hasta.replace(/\//g, '-') + ' vs ' + yB + '.csv'; a.click();
+    const yA = r.periodo.actual.hasta.slice(-4), yB = r.periodo.anterior.hasta.slice(-4);
+    const tA = r.productos.reduce((t, x) => t + x.impA, 0), tB = r.productos.reduce((t, x) => t + x.impB, 0);
+    const cols = [{ t: 'Clave', w: 12 }, { t: 'Producto', w: 42 }, { t: 'Piezas ' + yA, w: 11, fmt: 'num', suma: 1 }, { t: 'Piezas ' + yB, w: 11, fmt: 'num', suma: 1 }, { t: 'Venta ' + yA, w: 14, fmt: 'mon', suma: 1 },
+      { t: 'Venta ' + yB, w: 14, fmt: 'mon', suma: 1 }, { t: 'Diferencia', w: 14, fmt: 'mon', suma: 1 }, { t: 'Cambio %', w: 10 }].concat(r.verUtil ? [{ t: 'Utilidad ' + yA, w: 14, fmt: 'mon', suma: 1 }, { t: 'Utilidad ' + yB, w: 14, fmt: 'mon', suma: 1 }] : []);
+    const filas = r.productos.map(x => { const d = delta(x.impA, x.impB);
+      return { tono: x.impA - x.impB < 0 ? 'mal' : '', v: [x.id, x.nombre, x.cantA, x.cantB, x.impA, x.impB, Math.round((x.impA - x.impB) * 100) / 100, d === null ? 'nuevo' : d + ' %'].concat(r.verUtil ? [x.utilA || 0, x.utilB || 0] : []) }; });
+    const nom = 'Comparativo productos ' + r.periodo.actual.desde.replace(/\//g, '-') + ' al ' + r.periodo.actual.hasta.replace(/\//g, '-') + ' vs ' + yB;
+    try { toast('Armando el Excel…');
+      const blob = await excelLocal(nom, [{ nombre: 'Comparativo', titulo: 'Comparativo de productos ' + yA + ' vs ' + yB, sub: ['Del ' + r.periodo.actual.desde + ' al ' + r.periodo.actual.hasta + ' contra el mismo periodo de ' + yB],
+        resumen: [['Productos', r.productos.length, 'num'], ['Venta ' + yA, tA, 'mon'], ['Venta ' + yB, tB, 'mon'], ['Diferencia', tA - tB, 'mon']], cols: cols, filas: filas }]);
+      entregarArchivo(blob, nom + '.xlsx', 'Excel del comparativo');
+    } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
   }
 
   /* ---------- Estado de resultados (solo el dueño) ---------- */
