@@ -8310,6 +8310,14 @@ const App = (() => {
     });
   }
   async function logoDoc() { return S.logoDoc || (S.logoDoc = await imgDatos(window.LOGO)); }
+  /** Logotipo corporativo sin fondo para los Excel (PNG de 420 px de ancho). En la versión web de Google, el logotipo configurado. */
+  async function logoXlsx() {
+    if (S.logoXlsx) return S.logoXlsx;
+    if (!window.IV_API) return (S.logoXlsx = await logoDoc());
+    const x = await new Promise(res => { const im = new Image(); im.onload = () => { try { const w = Math.min(420, im.naturalWidth), h = Math.round(im.naturalHeight * w / im.naturalWidth), c = document.createElement('canvas');
+      c.width = w; c.height = h; const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(im, 0, 0, w, h); res({ data: c.toDataURL('image/png'), w: w, h: h }); } catch (e) { res(null); } }; im.onerror = () => res(null); im.src = 'logo-hd.webp'; });
+    return (S.logoXlsx = x || await logoDoc());
+  }
   function fotoSucDatos(id) {
     const x = (D().sucursales || []).find(o => o.id === id); if (!x || !x.foto || esMatriz(id)) return Promise.resolve(null);
     const u = (LS.get('minisSucPng', {}) || {})[id] || (LS.get('minisSuc', {}) || {})[id] || ((S.minis || {}).sucFoto || {})[id];
@@ -8521,32 +8529,48 @@ const App = (() => {
   async function excelLocal(archivo, hojas) {
     const ExcelJS = await libLocal('exceljs');
     const wb = new ExcelJS.Workbook(); wb.creator = 'Interés Veterinario®'; wb.created = new Date();
-    const su = U() || {}, logo = (!su.todasSucursales && sucConFoto(su.sucursal) ? await fotoSucDatos(su.sucursal) : null) || await logoDoc(); const idLogo = logo ? wb.addImage({ base64: logo.data, extension: 'png' }) : null;
-    const VERDE = 'FF1F6F4A', CLARO = 'FFEFF5F1', BORDE = { style: 'thin', color: { argb: 'FFD5DDD6' } };
+    const logo = await logoXlsx(); const idLogo = logo ? wb.addImage({ base64: logo.data, extension: 'png' }) : null;
+    // 🎨 Diseño corporativo "tarjetas": logotipo + título, totales clave en tarjetas de color, tabla con encabezado azul noche
+    const VERDE = 'FF0F1F3D', CLARO = 'FFEFF5F1', BORDE = { style: 'thin', color: { argb: 'FFD9DEE6' } };
+    const TARJ = [{ f: 'FF0F1F3D', t: 'FFFFFFFF' }, { f: 'FF2A5FB8', t: 'FFFFFFFF' }, { f: 'FF2F9E4A', t: 'FFFFFFFF' }, { f: 'FFFFF4D6', t: 'FF8A5A00' }];
     const TONO = { mal: { font: 'FFB3261E', fill: 'FFFCE8E6' }, av: { font: 'FF8A5A00', fill: 'FFFFF4D6' }, ok: { font: 'FF1F6F4A' }, gris: { font: 'FF8A918C' } };
     const FMT = { num: '#,##0.##;[Red]-#,##0.##', mon: '"$"#,##0.00;[Red]-"$"#,##0.00', fecha: 'dd/mm/yyyy' };
     hojas.forEach(h => {
       const ws = wb.addWorksheet(h.nombre.slice(0, 31), { views: [{ showGridLines: false }], properties: { tabColor: { argb: VERDE } } });
       const nc = h.cols.length, ultCol = ws.getColumn(nc).letter;
       h.cols.forEach((c, i) => { ws.getColumn(i + 1).width = c.w || 14; });
-      // encabezado con logo
-      ws.getRow(1).height = 30; ws.getRow(2).height = 18; ws.getRow(3).height = 16;
-      if (idLogo !== null) ws.addImage(idLogo, { tl: { col: 0.1, row: 0.15 }, ext: { width: Math.round(46 * logo.w / logo.h), height: 46 } });
-      const c0 = nc >= 4 ? 3 : 1;
-      ws.mergeCells(1, c0, 1, nc); const t = ws.getCell(1, c0); t.value = h.titulo; t.font = { name: 'Calibri', size: 16, bold: true, color: { argb: VERDE } }; t.alignment = { vertical: 'middle' };
-      ws.mergeCells(2, c0, 2, nc); const s = ws.getCell(2, c0); s.value = (h.sub || [])[0] || ''; s.font = { size: 10, color: { argb: 'FF5C6258' } };
-      ws.mergeCells(3, c0, 3, nc); const s2 = ws.getCell(3, c0); s2.value = (h.sub || []).slice(1).join('  ·  '); s2.font = { size: 9, italic: true, color: { argb: 'FF8A918C' } };
-      let r = 5;
-      // resumen: dos datos por renglón, cada uno en una celda combinada "Etiqueta  valor"
+      // encabezado: logotipo a la izquierda (renglones 1-4) y título grande
+      [24, 26, 18, 14].forEach((alto, i) => { ws.getRow(i + 1).height = alto; });
+      const altoLogo = 78, anchoLogo = logo ? Math.round(altoLogo * logo.w / logo.h) : 0;
+      if (idLogo !== null) ws.addImage(idLogo, { tl: { col: 0.08, row: 0.1 }, ext: { width: anchoLogo, height: altoLogo } });
+      // la primera columna se ensancha lo necesario para el logotipo; el título empieza en la segunda
+      if (idLogo !== null && nc > 1) ws.getColumn(1).width = Math.max(ws.getColumn(1).width || 10, Math.ceil((anchoLogo + 16) / 7));
+      const c0 = nc > 1 ? 2 : 1;
+      const une = (fila, c1, c2) => { if (c2 > c1) ws.mergeCells(fila, c1, fila, c2); return ws.getCell(fila, c1); };
+      const t = une(1, c0, nc); t.value = h.titulo; t.font = { name: 'Calibri', size: 20, bold: true, color: { argb: 'FF0F1F3D' } }; t.alignment = { vertical: 'bottom' };
+      const s = une(2, c0, nc); s.value = 'Interés Veterinario®' + ((h.sub || [])[0] ? '  ·  ' + h.sub[0] : ''); s.font = { name: 'Calibri', size: 11, color: { argb: 'FF61728A' } }; s.alignment = { vertical: 'top' };
+      const s2 = une(3, c0, nc); s2.value = (h.sub || []).slice(1).join('  ·  '); s2.font = { size: 9, italic: true, color: { argb: 'FF8E9DB9' } };
+      let r = 6;
+      // totales clave en tarjetas de color (hasta 4 por renglón): etiqueta arriba, valor grande abajo
       if (h.resumen && h.resumen.length) {
-        const mitad = Math.max(1, Math.floor(nc / 2));
-        for (let i = 0; i < h.resumen.length; i += 2) {
-          [h.resumen[i], h.resumen[i + 1]].forEach((x, j) => { if (!x) return;
-            const c1 = j ? mitad + 1 : 1, c2 = j ? nc : mitad; if (c2 > c1) ws.mergeCells(r, c1, r, c2);
-            const cell = ws.getCell(r, c1), val = x[2] === 'mon' ? $$(x[1]) : x[2] === 'num' ? nf(x[1]) : String(x[1] === null || x[1] === undefined ? '' : x[1]);
-            cell.value = { richText: [{ text: x[0] + ':  ', font: { size: 10, color: { argb: 'FF5C6258' } } }, { text: val, font: { size: 10, bold: true, color: { argb: 'FF1B1D18' } } }] };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: CLARO } }; cell.border = { top: BORDE, bottom: BORDE, left: BORDE, right: BORDE }; cell.alignment = { vertical: 'middle', indent: 1 }; });
-          ws.getRow(r).height = 18; r++;
+        const porFila = Math.min(4, h.resumen.length, nc);
+        // tarjetas de ancho parecido: se reparten las columnas según su ancho real
+        const anchos = h.cols.map((c, i) => ws.getColumn(i + 1).width || 10), totA = anchos.reduce((a, b) => a + b, 0), cortes = [0];
+        for (let q = 1; q < porFila; q++) { let acc = 0, mejor = cortes[q - 1] + 1, dif = 1e9;
+          for (let c = 0; c < nc; c++) { acc += anchos[c]; const d = Math.abs(acc - totA * q / porFila); if (c + 1 > cortes[q - 1] && c + 1 <= nc - (porFila - q) && d < dif) { dif = d; mejor = c + 1; } }
+          cortes.push(mejor); }
+        cortes.push(nc);
+        for (let i = 0; i < h.resumen.length; i += porFila) {
+          h.resumen.slice(i, i + porFila).forEach((x, j) => {
+            const c1 = cortes[j] + 1, c2 = Math.max(c1, cortes[j + 1]), k = TARJ[(i + j) % TARJ.length];
+            const val = x[2] === 'mon' ? $$(x[1]) : x[2] === 'num' ? nf(x[1]) : String(x[1] === null || x[1] === undefined ? '' : x[1]);
+            const a = une(r, c1, c2), b = une(r + 1, c1, c2);
+            a.value = x[0]; a.font = { name: 'Calibri', size: 9, color: { argb: k.t } }; b.value = val; b.font = { name: 'Calibri', size: 15, bold: true, color: { argb: k.t } };
+            [a, b].forEach(cel => { cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: k.f } }; cel.alignment = { vertical: cel === a ? 'bottom' : 'top', indent: 1 }; });
+            const lado = { style: 'thick', color: { argb: 'FFFFFFFF' } };   // separación blanca entre tarjetas
+            for (let c = c1; c <= c2; c++) { ws.getCell(r, c).border = { left: c === c1 ? lado : undefined, right: c === c2 ? lado : undefined }; ws.getCell(r + 1, c).border = { left: c === c1 ? lado : undefined, right: c === c2 ? lado : undefined, bottom: lado }; }
+          });
+          ws.getRow(r).height = 18; ws.getRow(r + 1).height = 26; r += 2;
         }
         r++;
       }
@@ -8561,7 +8585,7 @@ const App = (() => {
         row.eachCell({ includeEmpty: true }, (c, j) => { const col = h.cols[j - 1]; if (!col) return;
           c.border = { top: BORDE, bottom: BORDE, left: BORDE, right: BORDE }; c.font = { size: 10, color: f.tono && TONO[f.tono] ? { argb: TONO[f.tono].font } : undefined, italic: f.tono === 'gris' };
           if (f.tono && TONO[f.tono] && TONO[f.tono].fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TONO[f.tono].fill } };
-          else if (i % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7FAF8' } };
+          else if (i % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F7FB' } };
           if (FMT[col.fmt]) c.numFmt = FMT[col.fmt];
           c.alignment = { vertical: 'top', horizontal: col.fmt === 'num' || col.fmt === 'mon' ? 'right' : col.fmt === 'fecha' ? 'center' : 'left', wrapText: col.fmt === 'txt' || !col.fmt }; });
         r++;
@@ -8571,7 +8595,7 @@ const App = (() => {
         const row = ws.getRow(r);
         h.cols.forEach((c, i) => { const cell = row.getCell(i + 1);
           if (c.suma) { const L = ws.getColumn(i + 1).letter; cell.value = { formula: `SUBTOTAL(9,${L}${ini}:${L}${fin})`, result: h.filas.reduce((a, f) => a + (Number(f.v[i]) || 0), 0) }; cell.numFmt = FMT[c.fmt] || FMT.num; cell.alignment = { horizontal: 'right' }; }
-          cell.font = { bold: true, size: 10 }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCEBE2' } }; cell.border = { top: { style: 'medium', color: { argb: VERDE } }, bottom: BORDE }; });
+          cell.font = { bold: true, size: 10 }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EDF6' } }; cell.border = { top: { style: 'medium', color: { argb: 'FF2A5FB8' } }, bottom: BORDE }; });
         row.getCell(1).value = 'Totales'; r++;
       }
       ws.autoFilter = { from: { row: filaEnc, column: 1 }, to: { row: Math.max(filaEnc, fin), column: nc } };
