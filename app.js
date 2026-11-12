@@ -99,8 +99,13 @@ const App = (() => {
   // Gerente: ve valores de inventario, mermas y diferencias de conteo al precio de la lista de su sucursal (es el responsable)
   const valGer = () => U().rol === 'Gerente' && (!(U().permisos || {}).ver_costos || !!U().costoLista);
   const verValInv = () => puede('ver_costos') || valGer();
-  const puede = p => { const per = U().permisos || {}; if (p === 'reuniones') { const u = U() || {}; return !!per.dueno || u.rol === 'Administrador' || u.rol === 'Gerente'; } return Array.isArray(p) ? p.some(x => per[x]) : !p || !!per[p]; };
+  const puede = p => { const per = U().permisos || {}; if (p === 'asociacion') { const a = Object.keys(asocCfgs()); return a.length > 0 && (!!per.dueno || U().rol === 'Administrador' || (!!per.ventas && a.indexOf(U().sucursal) >= 0)); } if (p === 'reuniones') { const u = U() || {}; return !!per.dueno || u.rol === 'Administrador' || u.rol === 'Gerente'; } return Array.isArray(p) ? p.some(x => per[x]) : !p || !!per[p]; };
   const prod = id => (D().productos || []).find(p => p.id === id);
+  /* 🤝 productos de la asociación (terceros, no facturables) */
+  const asocCfgs = () => (D().config || {}).asoc || {};
+  const asocNom = suc => (asocCfgs()[suc] || {}).nombre || 'la asociación';
+  const esAsocL = l => !!(l && (l.asoc || (prod(l.prod || l.id) || {}).asoc));
+  const ordenAsoc = ls => ls.slice().sort((a, b) => esAsocL(a) - esAsocL(b));
   const cliente = id => (D().clientes || []).find(c => c.id === id);
   const sucNom = id => { const s = (D().sucursales || []).find(x => x.id === id); return s ? s.nombre : id || ''; };
   const sucsPermitidas = () => (D().sucursales || []).filter(s => (D().permitidas || []).indexOf(s.id) >= 0);
@@ -721,6 +726,7 @@ const App = (() => {
     { id: 'contable', t: 'Contabilidad del mes', i: '🧮', p: 'bancos' },
     { id: 'anotaciones', t: 'Anotaciones de la contadora', i: '📝', p: 'bancos' },
     { id: 'bancos', t: 'Bancos', i: '🏦', p: 'bancos' },
+    { id: 'asociacion', t: 'Asociación', i: '🤝', p: 'asociacion' },
     { id: 'sucursales', t: 'Sucursales', i: '🏬', p: ['dueno', 'inventario', 'traspasos', 'requisiciones', 'ajustes', 'mermas', 'inventario_fisico'] },
     { id: 'traspasos', t: 'Traspasos', i: '🚚', p: 'traspasos', oculto: 1 },
     { id: 'requisiciones', t: 'Requisiciones de traspaso', i: '📑', p: 'requisiciones', oculto: 1 },
@@ -742,7 +748,7 @@ const App = (() => {
   const MENU_BLOQUES = [
     ['Venta y cobro', ['inicio', 'venta', 'pos', 'ventas', 'caja', 'autorizar']],
     ['Clientes', ['clientes', 'cotizaciones', 'seguimiento']],
-    ['Inventario y abasto', ['sucursales', 'productos', 'compras', 'proveedores', 'reclamaciones']],
+    ['Inventario y abasto', ['sucursales', 'asociacion', 'productos', 'compras', 'proveedores', 'reclamaciones']],
     ['Revisión y análisis', ['resumen', 'tablero', 'mapa']],
     ['Administración', ['gastos', 'bancos', 'contable', 'anotaciones', 'comisiones', 'equipo']]
   ];
@@ -1505,7 +1511,7 @@ const App = (() => {
         const ls = lotes(l.id, v.suc);
         if (l.lote && !ls.some(x => x.k === l.lote)) ls.unshift({ k: l.lote, l: 'Lote actual ' + l.lote.replace(l.id + '-' + sucNom(v.suc) + '-', '').replace(/-([^-]*)$/, ' · $1'), c: 'de esta nota', q: '' });
         return `<div class="linea" data-i="${i}">
-          <div class="nom"><b>${esc(p.nombre)}</b><small>${esc(l.id)} · Exist. ${nf(existencia(l.id, v.suc))}${p.iva ? ' · IVA <span data-iva></span>' : ''}</small></div>
+          <div class="nom"><b>${esc(p.nombre)}</b><small>${p.asoc ? '<span class="etq av">🤝 ' + esc(asocNom(p.asoc)) + '</span> ' : ''}${esc(l.id)} · Exist. ${nf(existencia(l.id, v.suc))}${p.iva ? ' · IVA <span data-iva></span>' : ''}</small></div>
           <div>${p.usaLote === false && !ls.length ? '<small class="muted">Sin lote</small>' : `<select data-f="lote"><option value="">Auto (caduca primero)</option>${ls.map(x => `<option value="${esc(x.k)}" ${x.k === l.lote ? 'selected' : ''}>${esc(x.l)} · ${esc(x.c)}${x.q !== '' ? ' · ' + nf(x.q) : ''}</option>`).join('')}</select>`}</div>
           <div><input type="number" data-f="cant" min="0" step="any" value="${l.cant}" inputmode="decimal"></div>
           <div><input type="number" data-f="precio" step="0.01" value="${l.precio}" ${editarPrecio ? '' : 'readonly'} inputmode="decimal"><span data-ref>${refPrecio(p.precios[v.lista], l.precio)}</span>${p.pmin ? `<small class="muted" title="Tu sucursal no vende abajo de su lista + 10 %">mín ${$$(p.pmin)}</small>` : ''}</div>
@@ -1558,17 +1564,19 @@ const App = (() => {
     let sub = 0, desc = 0, iva = 0, cum = 0;
     const brutos = [], descs = [], ivas = [], cums = [], cc = v.cli && v !== S.cot ? (cliente(v.cli) || {}).cum : null,   // cotizaciones: sin regalo (se aplica al vender)
       cpct = cumpleAlCorriente(cc) ? (Number(cc.pct) || 0) / 100 : 0;
+    let asocT = 0;
     const imps = v.lineas.map(l => {
       const p = prod(l.id) || {};
       const s = r2(l.cant * l.precio), dl = r2(s * (Number(l.desc) || 0) / 100), dc = cpct && cumpleLinea(v, l, p) ? r2((s - dl) * cpct) : 0, d = r2(dl + dc), i = r2((s - d) * (1 - pc) * (p.iva || 0));
       brutos.push(s); descs.push(d); ivas.push(i); cums.push(dc);
-      sub += s; desc += dl; cum += dc; iva += i; return r2(s - d + i);
+      sub += s; desc += dl; cum += dc; iva += i; if (p.asoc) asocT += (s - d) * (1 - pc) + i; return r2(s - d + i);
     });
+    asocT = r2(asocT);
     const descPC = r2((sub - desc - cum) * pc), antesMon = r2(sub - desc - cum - descPC + iva);
     // 🎁 monedero de cumpleaños (solo ventas nuevas con conexión): baja el total de los productos, no el flete
     const mc = v.cli && v !== S.cot && !v.editId ? (cliente(v.cli) || {}).mon : null, monDisp = mc && mc.saldo > 0 && !(v.cli && (cliente(v.cli).cum || {}).est === 'moroso') ? mc : null;
-    const mon = monDisp && v.usarMon && navigator.onLine !== false ? r2(Math.min(monDisp.saldo, Math.max(0, antesMon))) : 0;
-    return { imps: imps, brutos: brutos, descs: descs, ivas: ivas, cums: cums, cum: r2(cum), cumInfo: cc || null, mon: mon, monInfo: monDisp, sub: r2(sub), desc: r2(desc), descPC: descPC, iva: r2(iva), flete: v.clientePaga === false ? 0 : r2(v.flete), total: r2(antesMon - mon + (v.clientePaga === false ? 0 : Number(v.flete) || 0)) };
+    const mon = monDisp && v.usarMon && navigator.onLine !== false ? r2(Math.min(monDisp.saldo, Math.max(0, antesMon - asocT))) : 0;   // el monedero no paga productos de la asociación
+    return { asoc: asocT, imps: imps, brutos: brutos, descs: descs, ivas: ivas, cums: cums, cum: r2(cum), cumInfo: cc || null, mon: mon, monInfo: monDisp, sub: r2(sub), desc: r2(desc), descPC: descPC, iva: r2(iva), flete: v.clientePaga === false ? 0 : r2(v.flete), total: r2(antesMon - mon + (v.clientePaga === false ? 0 : Number(v.flete) || 0)) };
   }
   function totalesVenta() {
     const v = S.venta, t = calcVenta(v);
@@ -1580,7 +1588,7 @@ const App = (() => {
         : t.cumInfo && t.cumInfo.est === 'moroso' ? `<div class="aviso-mal peq" style="display:block">🎂 Cumpleaños vigente, pero tiene notas con más de ${t.cumInfo.moroso} días (${esc(t.cumInfo.notas)}): no aplica ningún regalo hasta que se ponga al corriente.</div>`
         : t.cumInfo && t.cumInfo.venc ? `<div class="aviso-mal peq" style="display:block">🎂 Cumpleaños vigente al ${esc(t.cumInfo.hasta)}, pero tiene notas vencidas: el regalo no aplica hasta que las liquide.</div>` : t.cumInfo && !t.cum && v.lineas.length ? `<div class="muted peq" style="display:block">🎂 Cumpleaños vigente al ${esc(t.cumInfo.hasta)}; ningún producto de esta nota aplica (promoción, margen bajo, precio rebajado o descuento propio).</div>` : ''}
       <div><span>IVA</span><span>${$$(t.iva)}</span></div>${t.monInfo ? `<div class="cum-tot"><label class="chk" style="margin:0"><input type="checkbox" ${v.usarMon ? 'checked' : ''} onchange="App.usarMonedero(this.checked)"> 🎁 Monedero ${esc(t.monInfo.folios)} (disponible ${$$(t.monInfo.saldo)}, vence ${esc(t.monInfo.vence)})</label><span>${t.mon ? '−' + $$(t.mon) : navigator.onLine === false && v.usarMon ? 'requiere señal' : ''}</span></div>` : ''}${t.flete ? `<div><span>Flete</span><span>${$$(t.flete)}</span></div>` : ''}
-      <div class="gran"><span>Total</span><span>${$$(t.total)}</span></div>${v.clientePaga === false && v.fletePag ? `<div class="muted"><span>🚚 Flete que absorbes (no se le cobra)</span><span>${$$(v.fletePag)}</span></div>` : ''}
+      <div class="gran"><span>Total</span><span>${$$(t.total)}</span></div>${t.asoc ? `<div class="muted"><span>🤝 Incluye de ${esc(asocNom(v.suc))} (no facturable)</span><span>${$$(t.asoc)}</span></div>` : ''}${v.clientePaga === false && v.fletePag ? `<div class="muted"><span>🚚 Flete que absorbes (no se le cobra)</span><span>${$$(v.fletePag)}</span></div>` : ''}
       <div class="muted"><span>Saldo a crédito</span><span>${$$(Math.max(0, t.total - (Number(v.cobro.monto) || 0)))}</span></div>`;
     pintarRxVenta();
   }
@@ -1791,7 +1799,13 @@ const App = (() => {
     L('Crédito: ' + (d.dias || 0) + ' días' + (d.venc ? ' · Vence ' + d.venc : ''), { p: 1 });
     if (d.vendedor) L('Vendedor: ' + d.vendedor, { p: 1 });
     S_();
-    (d.lineas || []).filter(l => l.cant > 0).forEach(l => { L(l.nombre || l.prod || '', { n: 1 }); D2(nf(l.cant) + ' × ' + $$(l.precio) + (l.desc ? ' − desc. ' + $$(l.desc) : ''), $$((l.sub || l.cant * l.precio) - (l.desc || 0))); });
+    const tkL = l => { L(l.nombre || l.prod || '', { n: 1 }); D2(nf(l.cant) + ' × ' + $$(l.precio) + (l.desc ? ' − desc. ' + $$(l.desc) : ''), $$((l.sub || l.cant * l.precio) - (l.desc || 0))); };
+    const tkLs = (d.lineas || []).filter(l => l.cant > 0), tkA = tkLs.filter(esAsocL);
+    tkLs.filter(l => !esAsocL(l)).forEach(tkL);
+    if (tkA.length) {   // 🤝 productos de la asociación en su propio bloque
+      const nA = d.asoc ? d.asoc.nombre : asocNom((d.sucursal || {}).id), tA = d.asoc ? d.asoc.total : r2(tkA.reduce((t, l) => t + ((l.sub || l.cant * l.precio) - (l.desc || 0) + (l.iva || 0)), 0) * (1 - (Number(d.descPCPct) || 0) / 100));
+      S_(); L('PRODUCTOS DE ' + String(nA).toUpperCase(), { n: 1 }); L('(no facturables)', { p: 1 }); tkA.forEach(tkL); D2('Subtotal ' + nA, $$(tA), { n: 1 });
+    }
     S_();
     D2('Subtotal', $$(d.sub)); if (d.desc) D2('Descuento', '−' + $$(d.desc)); if (d.descPC) D2('Pronto pago', '−' + $$(d.descPC));
     D2('IVA', $$(d.iva)); if (d.flete) D2('Flete', $$(d.flete));
@@ -1933,11 +1947,13 @@ const App = (() => {
         <div style="text-align:right">Crédito: ${d.dias} días ${d.venc ? '· Vence ' + esc(d.venc) : ''}<br>Vendedor: ${esc(d.vendedor || '')}<br>Envío: ${esc(d.envio || 'Entrega física')}${d.guia ? ' · Guía ' + esc(d.guia) : ''}</div></div>
       ${(() => { const canc = !offline && d.id && !bloq && viva && puede('ventas_cancelar'); return `
       <div class="tabla-cont"><table><thead><tr><th class="num">Cant.</th><th>Producto</th><th>Lote</th><th>Cad.</th><th class="num">Precio</th><th class="num">Importe</th><th class="num">IVA $</th><th class="num">Total</th>${canc ? '<th class="no-imprimir"></th>' : ''}</tr></thead><tbody>
-      ${d.lineas.filter(l => l.cant > 0 || !d.id || d.estatus === 'Cancelado').map(l => `<tr><td class="num">${l.cant > 0 ? nf(l.cant) : '<small class="error">cancelado</small>'}</td><td>${esc(l.nombre)}</td><td>${esc(l.lote || (d.estatus === 'Pendiente' ? 'Se asigna al entregar' : ''))}</td><td>${esc(l.cad || '')}</td><td class="num">${$$(l.precio)}</td>${(() => { const im = Math.round(((l.sub !== undefined && l.sub !== null ? l.sub : l.cant * l.precio) - (l.desc || 0)) * 100) / 100, iv = l.iva !== undefined && l.iva !== null ? l.iva : Math.max(0, Math.round(((l.total || 0) - im) * 100) / 100); return `<td class="num">${$$(im)}</td><td class="num">${$$(iv)}</td><td class="num"><b>${$$(l.total !== undefined ? l.total : im + iv)}</b></td>`; })()}${canc ? `<td class="no-imprimir">${l.cant > 0 ? `<button class="btn chico peligro" onclick="App.formCancelarLinea('${d.id}','${esc(l.idDet)}')">Cancelar</button>` : ''}</td>` : ''}</tr>`).join('')}`; })()}
+      ${ordenAsoc(d.lineas.filter(l => l.cant > 0 || !d.id || d.estatus === 'Cancelado')).map(l => `<tr><td class="num">${l.cant > 0 ? nf(l.cant) : '<small class="error">cancelado</small>'}</td><td>${esc(l.nombre)}${esAsocL(l) ? ` <span class="etq av">🤝 ${esc(d.asoc ? d.asoc.nombre : asocNom(d.sucursal.id || d.suc))}</span>` : ''}</td><td>${esc(l.lote || (d.estatus === 'Pendiente' ? 'Se asigna al entregar' : ''))}</td><td>${esc(l.cad || '')}</td><td class="num">${$$(l.precio)}</td>${(() => { const im = Math.round(((l.sub !== undefined && l.sub !== null ? l.sub : l.cant * l.precio) - (l.desc || 0)) * 100) / 100, iv = l.iva !== undefined && l.iva !== null ? l.iva : Math.max(0, Math.round(((l.total || 0) - im) * 100) / 100); return `<td class="num">${$$(im)}</td><td class="num">${$$(iv)}</td><td class="num"><b>${$$(l.total !== undefined ? l.total : im + iv)}</b></td>`; })()}${canc ? `<td class="no-imprimir">${l.cant > 0 ? `<button class="btn chico peligro" onclick="App.formCancelarLinea('${d.id}','${esc(l.idDet)}')">Cancelar</button>` : ''}</td>` : ''}</tr>`).join('')}`; })()}
       </tbody></table></div>
       <div class="sellos-zona">${pagada || (d.facturadaTotal && d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto') ? `<div class="sellos">${pagada ? '<span class="sello pagado">PAGADO</span>' : ''}${d.facturadaTotal && d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto' ? '<span class="sello facturado">FACTURADO</span>' : ''}</div>` : ''}
       <div class="totales" style="margin-top:10px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div>${d.desc ? `<div><span>Descuento</span><span>−${$$(d.desc)}</span></div>` : ''}${d.descPC ? `<div><span>Pronto pago</span><span>−${$$(d.descPC)}</span></div>` : ''}
       <div><span>IVA</span><span>${$$(d.iva)}</span></div>${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}<div class="gran"><span>Total</span><span>${$$(d.total)}</span></div>
+      ${(() => { const la = d.lineas.filter(l => l.cant > 0 && esAsocL(l)); if (!la.length) return ''; const tA = d.asoc ? d.asoc.total : r2(la.reduce((t, l) => t + (l.total || 0), 0) * (1 - (Number(d.descPCPct) || 0) / 100));
+        return `<div class="muted"><span>🤝 Incluye de ${esc(d.asoc ? d.asoc.nombre : asocNom(d.sucursal.id || d.suc))} (no facturable)</span><span>${$$(tA)}</span></div>`; })()}
       <div><span>Pagado</span><span>${$$(d.cobrado)}</span></div><div><b>Saldo</b><b>${$$(d.saldo)}</b></div></div></div>
       ${d.letras ? `<p><small>(${esc(d.letras)})</small></p>` : ''}${d.comentarios ? `<p><small>${esc(d.comentarios)}</small></p>` : ''}${d.motivo ? `<p><small><b>Cancelaciones:</b> ${esc(d.motivo)}</small></p>` : ''}
       ${d.cobros && d.cobros.length ? `<div style="margin-top:14px;break-inside:avoid"><b>Pagos realizados</b>
@@ -4026,6 +4042,11 @@ const App = (() => {
           <label>Productos protegidos<select id="slTodos" onchange="App.limTodos()"><option value="1">Todos</option><option value="0" ${L.todos ? '' : 'selected'}>Solo los que elija</option></select></label></div>
         <div id="slProdBox" style="${L.todos ? 'display:none' : ''}"><div class="buscador"><input id="slProd" placeholder="Agrega un producto…" autocomplete="off"></div><div id="slChips" class="fila" style="flex-wrap:wrap;gap:6px;margin-top:6px"></div></div>
         <p class="muted peq">Público en general: el límite aplica en cada nota. Al rebasarlo, el vendedor puede continuar escribiendo el motivo; todo queda en 🛡️ Compras por volumen.</p></div>
+      <div class="tarjeta" style="margin-top:12px"><h4 style="margin:0 0 6px">🤝 Productos de la asociación (de terceros, no facturables)</h4>
+        <label class="check"><input type="checkbox" id="saAct" ${(r.asoc || {}).activo ? 'checked' : ''}> Activar en esta sucursal</label>
+        <div class="rejilla"><label>Nombre de la asociación<input id="saNom" value="${esc((r.asoc || {}).nombre || '')}" placeholder="p. ej. Asociación Ganadera Local"></label>
+          <label>Tu comisión por venderlos (%)<input type="number" id="saCom" min="0" max="100" step="0.5" value="${(r.asoc || {}).comision || 0}"></label></div>
+        <p class="muted peq">El vendedor de la sucursal da de alta sus productos y existencias en 🤝 Asociación. Van en la misma nota en su propio bloque, nunca se facturan y no cuentan en tus ventas, utilidad ni inventario. Si cambias la comisión, aplica a lo que se venda de ahí en adelante.</p></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.sucGuardar('${esc(id || '')}')">${id ? 'Guardar' : 'Dar de alta'}</button></div>`;
     limChips(); buscador($('#slProd'), { fuente: q => fuenteProductos('', '', true)(q), limpiar: true, alElegir: x => { if (S.limProd.indexOf(x.id) < 0) S.limProd.push(x.id); limChips(); } });
   }
@@ -4035,6 +4056,7 @@ const App = (() => {
   async function sucGuardar(id) {
     const p = { id: id, nombre: $('#sfNom').value, clave: $('#sfClave') ? $('#sfClave').value : '', corto: $('#sfCorto') ? $('#sfCorto').value : '', tipo: $('#sfTipo').value, lista: $('#sfLista').value,
       estado: $('#sfEdo').value, responsable: $('#sfResp').value, pagos: $('#sfPag').value, tel: $('#sfTel').value, email: $('#sfMail').value, direccion: $('#sfDir').value, obs: $('#sfObs').value,
+      asoc: { activo: $('#saAct').checked, nombre: $('#saNom').value, comision: $('#saCom').value },
       limites: { activo: $('#slAct').checked, todos: $('#slTodos').value === '1', productos: S.limProd || [], piezasNoSocio: $('#slNo').value, tolerancia: $('#slTol').value, socioInicial: $('#slIni').value } };
     try { const r = await pedir('guardarSucursal', p); cerrarModal(); toast(id ? '✔ Sucursal actualizada' : '✔ Sucursal ' + r.id + ' dada de alta'); if (typeof refrescarDatos === 'function') refrescarDatos(true); } catch (e) {}
   }
@@ -4065,6 +4087,78 @@ const App = (() => {
         { t: 'Resultado', h: x => `<span class="etq ${RS[x.resultado] || ''}">${esc(x.resultado)}</span>` + (x.motivo ? `<br><small class="muted">${esc(x.usuario)}: ${esc(x.motivo)}</small>` : `<br><small class="muted">${esc(x.usuario)}</small>`) }], r.lista, { vacio: 'Sin intentos en el periodo' })}</div>`;
   }
   function limVer() { S.flim = { suc: $('#lmS').value, desde: $('#lmD').value, hasta: $('#lmH').value }; limitesReporte(); }
+  /* ---------- 🤝 ASOCIACIÓN: productos de terceros (catálogo, entradas, regresos y liquidación) ---------- */
+  V.asociacion = () => {
+    const A = asocCfgs(), l = Object.keys(A);
+    if (!l.length) { $('#vista').innerHTML = '<div class="vacio">Ninguna sucursal tiene activados los productos de la asociación. Se activan en Sucursales › ⚙️ Configurar sucursal.</div>'; return; }
+    if (l.indexOf(S.asocSuc) < 0) S.asocSuc = l.indexOf(sucTrabajo()) >= 0 ? sucTrabajo() : l.indexOf(U().sucursal) >= 0 ? U().sucursal : l[0];
+    $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila" style="align-items:flex-end">
+        ${l.length > 1 ? `<label>Sucursal<select id="asSuc" onchange="App.asocSucursal(this.value)">${l.map(k => `<option value="${esc(k)}" ${k === S.asocSuc ? 'selected' : ''}>${esc(sucNom(k))} · ${esc(A[k].nombre)}</option>`).join('')}</select></label>` : ''}
+        <button class="btn primario fijo" onclick="App.asocProd()">➕ Producto</button><button class="btn fijo" onclick="App.asocMov('entrada')">📥 Entrada</button>
+        <button class="btn fijo" onclick="App.asocMov('salida')">📤 Regreso</button><button class="btn fijo" onclick="App.asocLiq()">🧾 Liquidación</button></div>
+        <p class="muted peq">Productos de <b>${esc(A[S.asocSuc].nombre)}</b> en ${esc(sucNom(S.asocSuc))}: se venden en la misma nota en su propio bloque, nunca se facturan y no cuentan en tus ventas, utilidad ni inventario.</p></div>
+      <div class="espacio"></div><div id="asRes"><div class="vacio">Cargando…</div></div>`;
+    asocCargar();
+  };
+  function asocSucursal(v) { S.asocSuc = v; V.asociacion(); }
+  async function asocCargar() {
+    let r; try { r = S.asoc = await pedir('asociacion', { suc: S.asocSuc }); } catch (e) { if ($('#asRes')) $('#asRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message || '') ? 'Se activa con el servidor 232.' : esc(e.message || 'Requiere conexión')}</div>`; return; }
+    if (!$('#asRes')) return;
+    const act = r.productos.filter(x => x.activo), pz = act.reduce((t, x) => t + Math.max(0, x.exist), 0), val = act.reduce((t, x) => t + Math.max(0, x.exist) * x.precio, 0);
+    $('#asRes').innerHTML = `<div class="kpis"><div class="kpi"><small>Productos</small><b>${nf(act.length)}</b><span>activos</span></div><div class="kpi"><small>Existencia</small><b>${nf(pz)}</b><span>piezas</span></div>
+        <div class="kpi"><small>Valor a precio de venta</small><b>${$$(val)}</b><span>comisión vigente ${nf(r.cfg.comision)} %</span></div></div>
+      <div class="tarjeta"><h3>🤝 Catálogo de ${esc(r.cfg.nombre)}</h3>${tabla([{ t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.id)} · ${esc(x.unidad)}${x.activo ? '' : ' · <span class="error">inactivo</span>'}</small>` },
+        { t: 'Precio', num: 1, h: x => $$(x.precio) }, { t: 'Existencia', num: 1, h: x => `<b>${nf(x.exist)}</b>` }], r.productos, { clic: 'App.asocProdIdx', vacio: 'Aún no hay productos: agrégalos con ➕ Producto' })}</div>`;
+  }
+  function asocProdIdx(i) { asocProd(S.asoc.productos[i]); }
+  function asocProd(x) {
+    x = x || {};
+    modal(x.id ? '✏️ ' + x.nombre : '➕ Producto de ' + asocNom(S.asocSuc), `<div class="rejilla"><label>Nombre<input id="apNom" value="${esc(x.nombre || '')}"></label>
+        <label>Unidad<input id="apUni" value="${esc(x.unidad || 'PIEZA')}"></label><label>Precio de venta (todos los clientes)<input type="number" id="apPre" step="0.01" min="0" value="${x.precio || ''}" inputmode="decimal"></label>
+        <label>Categoría<input id="apCat" value="${esc(x.categoria || '')}" placeholder="Asociación"></label><label>Código de barras<input id="apCb" value="${esc(x.cb || '')}"></label></div>
+      <label class="check"><input type="checkbox" id="apLote" ${x.usaLote ? 'checked' : ''}> Maneja lote y caducidad</label>
+      ${x.id ? `<label class="check"><input type="checkbox" id="apAct" ${x.activo !== false ? 'checked' : ''}> Activo (se puede vender)</label>` : ''}
+      <p class="muted peq">Sin IVA y fuera de facturación. Las existencias se meten con 📥 Entrada.</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.asocGuardarProd('${esc(x.id || '')}')">Guardar</button></div>`);
+  }
+  async function asocGuardarProd(id) {
+    const p = { suc: S.asocSuc, id: id, nombre: $('#apNom').value, unidad: $('#apUni').value, precio: $('#apPre').value, categoria: $('#apCat').value, cb: $('#apCb').value, usaLote: $('#apLote').checked, activo: $('#apAct') ? $('#apAct').checked : true };
+    try { const r = await pedir('guardarProdAsoc', p); cerrarModal(); toast('✔ Producto ' + r.id + ' guardado'); if (typeof refrescarDatos === 'function') refrescarDatos(true); asocCargar(); } catch (e) {}
+  }
+  function asocMov(tipo) {
+    const ls = ((S.asoc || {}).productos || []).filter(x => x.activo && (tipo === 'entrada' || x.exist > 0)), sal = tipo === 'salida';
+    if (!ls.length) return toast(sal ? 'No hay existencias para regresar' : 'Primero da de alta los productos con ➕ Producto', true);
+    modal(sal ? '📤 Regreso a ' + asocNom(S.asocSuc) : '📥 Entrada de ' + asocNom(S.asocSuc), `<p class="muted peq">${sal ? 'Escribe cuántas piezas se regresan; salen primero las que caducan antes.' : 'Escribe cuántas piezas llegaron de cada producto.'}</p>
+      <div class="tabla-cont"><table><thead><tr><th>Producto</th><th class="num">Exist.</th><th class="num">Piezas</th>${sal ? '' : '<th>Lote</th><th>Caducidad</th>'}</tr></thead><tbody>
+      ${ls.map((x, i) => `<tr><td>${esc(x.nombre)}</td><td class="num">${nf(x.exist)}</td><td><input type="number" class="amQ" data-i="${i}" min="0" step="any" inputmode="decimal" style="width:80px"></td>${sal ? '' : x.usaLote ? `<td><input class="amL" data-i="${i}" style="width:100px"></td><td><input type="date" class="amC" data-i="${i}"></td>` : '<td colspan="2"><small class="muted">Sin lote</small></td>'}</tr>`).join('')}
+      </tbody></table></div><label>Observaciones<input id="amObs" placeholder="${sal ? 'Motivo del regreso' : 'p. ej. remisión de la asociación'}"></label>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.asocGuardarMov('${tipo}')">Guardar</button></div>`);
+    S.asocMovLs = ls;
+  }
+  async function asocGuardarMov(tipo) {
+    const v = (c, i) => { const el = document.querySelector('.' + c + '[data-i="' + i + '"]'); return el ? el.value : ''; };
+    const lineas = S.asocMovLs.map((x, i) => ({ ID_Producto: x.id, cantidad: Number(v('amQ', i)) || 0, lote: v('amL', i), cad: v('amC', i) })).filter(l => l.cantidad > 0);
+    if (!lineas.length) return toast('Escribe al menos una cantidad', true);
+    try { await pedir('movAsoc', { suc: S.asocSuc, tipo: tipo, obs: $('#amObs').value, lineas: lineas }); cerrarModal(); toast(tipo === 'salida' ? '✔ Regreso registrado' : '✔ Entrada registrada'); if (typeof refrescarDatos === 'function') refrescarDatos(true); asocCargar(); } catch (e) {}
+  }
+  async function asocLiq() {
+    const h = hoyISO(), f = S.fasl = S.fasl || { desde: h.slice(0, 8) + '01', hasta: h }; f.suc = S.asocSuc;
+    $('#asRes').innerHTML = '<div class="vacio">Calculando…</div>';
+    let r; try { r = await pedir('liquidacionAsoc', f); } catch (e) { $('#asRes').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    const t = r.totales;
+    $('#asRes').innerHTML = `<div class="tarjeta"><h3 style="margin:0 0 8px">🧾 Liquidación a ${esc(r.asoc)} · ${esc(r.nombre)}</h3><div class="fila no-imprimir" style="align-items:flex-end">
+        <label>Desde<input type="date" id="alD" value="${f.desde}"></label><label>Hasta<input type="date" id="alH" value="${f.hasta}"></label><button class="btn primario fijo" onclick="App.asocLiqVer()">Ver</button><button class="btn fijo" onclick="window.print()">🖨️ Imprimir</button><button class="btn fijo" onclick="App.asocCargar()">← Catálogo</button></div>
+        <p class="muted peq">Notas del ${esc(r.desde)} al ${esc(r.hasta)}. Se entrega lo <b>cobrado</b> menos tu comisión (el % vigente cuando se vendió); lo que falta por cobrar se entrega cuando el cliente pague.</p></div>
+      <div class="kpis"><div class="kpi"><small>Vendido</small><b>${$$(t.importe)}</b><span>${nf(t.piezas)} piezas · ${nf(t.notas)} notas</span></div>
+        <div class="kpi"><small>Cobrado</small><b>${$$(t.cobrado)}</b><span>por cobrar ${$$(t.porCobrar)}</span></div>
+        <div class="kpi"><small>Tu comisión</small><b>${$$(t.comision)}</b><span>vigente ${nf(r.comisionVigente)} %</span></div>
+        <div class="kpi"><small>A entregar a la asociación</small><b class="ok-txt">${$$(t.entregar)}</b><span>de lo cobrado</span></div></div>
+      <div class="tarjeta"><h3>🧾 Notas</h3>${tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', cls: 'ocultar-movil', k: 'cliente' },
+        { t: 'Vendido', num: 1, h: x => $$(x.importe) }, { t: 'Cobrado', num: 1, h: x => $$(x.cobrado) + (x.pagada ? '' : `<br><small class="muted">falta ${$$(x.porCobrar)}</small>`) }, { t: 'Entregar', num: 1, h: x => `<b>${$$(x.entregar)}</b>` + (x.comision ? `<br><small class="muted">com. ${$$(x.comision)}</small>` : '') }], r.notas, { vacio: 'Sin ventas en el periodo' })}</div>
+      <div class="tarjeta"><h3>💊 Por producto</h3>${tabla([{ t: 'Producto', k: 'nombre' }, { t: 'Piezas', num: 1, h: x => nf(x.cant) }, { t: 'Vendido', num: 1, h: x => $$(x.importe) }], r.productos, { vacio: 'Sin ventas' })}</div>
+      <div class="tarjeta"><h3>📦 Existencia hoy</h3>${tabla([{ t: 'Producto', k: 'nombre' }, { t: 'Piezas', num: 1, h: x => nf(x.cant) }, { t: 'Valor', num: 1, h: x => $$(x.valor) }], r.inventario, { vacio: 'Sin existencias' })}</div>`;
+  }
+  function asocLiqVer() { S.fasl = { desde: $('#alD').value, hasta: $('#alH').value }; asocLiq(); }
   /* ---------- CAMBIO DE ENCARGADO / REAPERTURA (solo el dueño): la sucursal y su histórico siguen; cambia la gestión ---------- */
   async function verGestiones(suc) {
     modal('👥 Cambio de encargado', '<div class="vacio">Cargando…</div>');
@@ -13645,7 +13739,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
