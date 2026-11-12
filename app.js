@@ -2343,7 +2343,7 @@ const App = (() => {
     const fotoBloque = bloqueFotoSuc(x.id);
     modal('🏬 ' + x.nombre, `<div class="arch-par">${fotoBloque}</div>
       <div class="tarjeta" style="margin-top:10px">${dato('Tipo', x.tipo)}${dato('Dirección', x.direccion)}${dato('Teléfono', x.tel)}${dato('Correo', x.email)}${dato('Serie de notas', x.serie)}${dato('Lista de precios', x.lista)}</div>
-      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button>${puede('dueno') ? `<button class="btn primario" onclick="App.sucForm('${esc(x.id)}')">⚙️ Configurar sucursal</button>` : ''}</div>`);
   }
   /** Imagen de la sucursal: Matriz usa el logotipo general; las demás su foto (con Cambiar / Quitar). */
   function bloqueFotoSuc(id) {
@@ -4014,7 +4014,6 @@ const App = (() => {
     alDia(S.fsuc);
     $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila"><label>Desde<input type="date" id="sDesde" value="${S.fsuc.desde}"></label><label>Hasta<input type="date" id="sHasta" value="${S.fsuc.hasta}"></label>
       <button class="btn primario fijo" onclick="App.cargarSucursales()">Actualizar</button><button class="btn fijo" onclick="App.verGestiones()">👥 Cambio de encargado</button>
-      <button class="btn fijo" onclick="App.sucForm()">➕ Nueva sucursal</button><button class="btn fijo" onclick="App.sucElegir('config')">⚙️ Configurar sucursal</button>
       <button class="btn fijo" onclick="App.sucElegir('liq')">📦 Liquidación de consignación</button><button class="btn fijo" onclick="App.limitesReporte()">🛡️ Compras por volumen</button></div></div><div class="espacio"></div><div id="sRes"><div class="vacio">Cargando…</div></div>`;
     agregarMesAnio('sDesde', 'sHasta', cargarSucursales);
     cargarSucursales();
@@ -4070,7 +4069,7 @@ const App = (() => {
       estado: $('#sfEdo').value, responsable: $('#sfResp').value, pagos: $('#sfPag').value, tel: $('#sfTel').value, email: $('#sfMail').value, direccion: $('#sfDir').value, obs: $('#sfObs').value,
       asoc: { activo: $('#saAct').checked, nombre: $('#saNom').value, comision: $('#saCom').value },
       limites: { activo: $('#slAct').checked, todos: $('#slTodos').value === '1', productos: S.limProd || [], piezasNoSocio: $('#slNo').value, tolerancia: $('#slTol').value, socioInicial: $('#slIni').value } };
-    try { const r = await pedir('guardarSucursal', p); cerrarModal(); toast(id ? '✔ Sucursal actualizada' : '✔ Sucursal ' + r.id + ' dada de alta'); if (typeof refrescarDatos === 'function') refrescarDatos(true); } catch (e) {}
+    try { const r = await pedir('guardarSucursal', p); cerrarModal(); toast(id ? '✔ Sucursal actualizada' : '✔ Sucursal ' + r.id + ' dada de alta'); if (typeof refrescarDatos === 'function') { await refrescarDatos(true); if (S.vista === 'config') V.config(); } } catch (e) {}
   }
   async function liquidacion(suc) {
     const h = hoyISO(), f = S.fliq = S.fliq || { desde: h.slice(0, 8) + '01', hasta: h }; if (suc) f.suc = suc;
@@ -4102,7 +4101,7 @@ const App = (() => {
   /* ---------- 🤝 ASOCIACIÓN: productos de terceros (catálogo, entradas, regresos y liquidación) ---------- */
   V.asociacion = () => {
     const A = asocCfgs(), l = Object.keys(A);
-    if (!l.length) { $('#vista').innerHTML = '<div class="vacio">Ninguna sucursal tiene activados los productos de la asociación. Se activan en Sucursales › ⚙️ Configurar sucursal.</div>'; return; }
+    if (!l.length) { $('#vista').innerHTML = '<div class="vacio">Ninguna sucursal tiene activados los productos de la asociación. Se activan en ⚙️ Configuración › 🏬 Sucursales (toca la sucursal › Configurar sucursal).</div>'; return; }
     if (l.indexOf(S.asocSuc) < 0) S.asocSuc = l.indexOf(sucTrabajo()) >= 0 ? sucTrabajo() : l.indexOf(U().sucursal) >= 0 ? U().sucursal : l[0];
     $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila" style="align-items:flex-end">
         ${l.length > 1 ? `<label>Sucursal<select id="asSuc" onchange="App.asocSucursal(this.value)">${l.map(k => `<option value="${esc(k)}" ${k === S.asocSuc ? 'selected' : ''}>${esc(sucNom(k))} · ${esc(A[k].nombre)}</option>`).join('')}</select></label>` : ''}
@@ -13045,7 +13044,7 @@ const App = (() => {
         <div class="logo-prev"><div><small class="muted">Actual</small><div class="logo-caja">${window.LOGO ? `<img src="${window.LOGO}" alt="">` : '<span class="muted">Sin logotipo</span>'}</div></div><div id="lgNuevo" class="logo-prev"></div></div>
         <div class="acciones"><label class="btn">📁 Elegir nuevo logotipo<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="App.prepararLogo(this)"></label><span id="lgAcc" style="display:contents"></span></div></div>` : ''}
       ${u.rol === 'Administrador' && puede('recetas') ? `<div class="tarjeta"><h3>💊 Datos para las recetas</h3><p class="muted">Aparecen al pie de cada receta en PDF, junto a la firma.</p><div id="cfRx"><span class="muted">Cargando…</span></div></div>` : ''}
-      <div class="tarjeta"><h3>🏬 Sucursales</h3><p class="muted">${u.rol === 'Administrador' ? 'Toca una sucursal para poner o cambiar su foto (carpeta Sucursal_Images). Los demás datos se editan en la hoja Catalogo_Sucursal.' : 'Datos de tu sucursal.'}</p><div id="cfSucs"></div></div>
+      <div class="tarjeta"><h3>🏬 Sucursales</h3>${puede('dueno') ? '<div class="acciones" style="justify-content:flex-start;margin:0 0 6px"><button class="btn primario" onclick="App.sucForm()">➕ Nueva sucursal</button></div>' : ''}<p class="muted">${puede('dueno') ? 'Toca una sucursal para configurarla: sus datos, tipo de operación, lista de precios, foto, 🛡️ límites de compra por volumen y 🤝 productos de terceros.' : u.rol === 'Administrador' ? 'Toca una sucursal para poner o cambiar su foto (carpeta Sucursal_Images).' : 'Datos de tu sucursal.'}</p><div id="cfSucs"></div></div>
       ${u.rol === 'Administrador' ? `<div class="tarjeta"><h3>👥 Vendedores y usuarios</h3><p class="muted">Foto de cada vendedor (carpeta Vendedor_Images). Los demás datos se editan en la hoja Catalogo_Vendedor.</p><div id="cfVend"><span class="muted">Cargando…</span></div></div>` : ''}
       ${puede('configuracion') ? `<div class="tarjeta"><h3>Pagos y saldos de las notas</h3><p class="muted">La app calcula lo pagado y el saldo de cada nota sumando sus cobros de la hoja Cobranza (relacionados por ID_Venta). Aquí puedes ver qué notas tienen guardado en Nota_Venta un pagado o saldo distinto y corregirlas.</p>
         <div class="fila"><button class="btn fijo" onclick="App.revisarSaldos(false)">Revisar notas y órdenes de compra</button></div><div id="cfSaldos" style="margin-top:12px"></div></div>` : ''}
