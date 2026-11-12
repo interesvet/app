@@ -1165,7 +1165,7 @@ const App = (() => {
     $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
       <label>Desde<input type="date" id="dDesde" value="${ini}"></label><label>Hasta<input type="date" id="dHasta" value="${h}"></label>
       ${u.todasSucursales ? `<label>Sucursal<select id="dSuc">${optsSuc('', false, 'Todas')}</select></label>` : ''}
-      <button class="btn primario fijo" onclick="App.cargarDashboard()">Actualizar</button></div></div><div class="espacio"></div><div id="dash"></div>`;
+      <button class="btn primario fijo" onclick="App.cargarDashboard()">Actualizar</button><button class="btn fijo" onclick="App.excelDashboard()">📊 Exportar a Excel</button></div></div><div class="espacio"></div><div id="dash"></div>`;
     agregarMesAnio('dDesde', 'dHasta', cargarDashboard);
     cargarDashboard();
   };
@@ -1174,6 +1174,7 @@ const App = (() => {
     const p = { desde: $('#dDesde').value, hasta: $('#dHasta').value, sucursal: $('#dSuc') ? $('#dSuc').value : '' };
     let r;
     try { r = await pedir('dashboard', p); } catch (e) { $('#dash').innerHTML = '<div class="vacio">El tablero requiere conexión.</div>'; return; }
+    S.dash = { r: r, p: p };
     const k = r.kpi, c = k.utilidad !== undefined;
     const kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
     // Resumen de compras (igual que en Compras › Órdenes de compra): solo órdenes con factura o nota del proveedor
@@ -1235,6 +1236,60 @@ const App = (() => {
       const op = r.resultados.porCategoria.filter(x => x.grupo === 'Operación');
       barras('gGastos', op.map(x => ({ nombre: x.cat, valor: x.monto })), css('--aviso'), true);
     }
+  }
+  /** 📊 Inicio / Dashboard a Excel: lo mismo que se ve en pantalla, una hoja por sección, con el diseño corporativo. */
+  async function excelDashboard() {
+    const D0 = S.dash; if (!D0) return toast('Espera a que cargue el tablero', true);
+    const r = D0.r, p = D0.p, k = r.kpi, c = k.utilidad !== undefined, cmp = S.comp;
+    const donde = p.sucursal ? sucNom(p.sucursal) : (U().todasSucursales ? 'Todas las sucursales' : sucNom(U().sucursal));
+    const per = 'Del ' + fechaTxt(p.desde) + ' al ' + fechaTxt(p.hasta) + ' · ' + donde;
+    const hojas = [];
+    // 1) Resumen: indicadores
+    const ind = [['Ventas netas (sin IVA)', k.ventas, 'mon', k.notas + ' notas · ticket promedio ' + $$(k.ticket)], ['Ventas con IVA', k.ventasConIva, 'mon', ''], ['Cobrado en el periodo', k.cobrado, 'mon', ''],
+      ['Por cobrar', k.cxc, 'mon', 'Vencido ' + $$(k.cxcVencida)], ['Lotes por caducar', k.porCaducar, 'num', k.caducados + ' lotes ya caducados con existencia'],
+      [c || k.valLista ? 'Inventario valorizado' : 'Piezas en inventario', c || k.valLista ? k.valorInventario : k.piezas, c || k.valLista ? 'mon' : 'num', c || k.valLista ? nf(k.piezas) + ' piezas' + (k.valLista ? ' · a precio ' + k.valLista : '') : ''],
+      ['Mermas', k.mermas, 'mon', k.mermaPct !== undefined ? k.mermaPct + '% de las ventas' : '']];
+    if (c) { ind.push(['Utilidad bruta', k.utilidad, 'mon', 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas)]); ind.push(['Utilidad después de mermas', k.utilidadNeta, 'mon', 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%']); }
+    if (k.compras !== null && k.compras !== undefined) { ind.push(['Compras del periodo', k.compras, 'mon', k.ordenes + ' órdenes con factura']); ind.push(['Por pagar del periodo', k.comprasSaldo || 0, 'mon', '']); ind.push(['Cuentas por pagar (total)', k.cxp, 'mon', k.cxpVencido > 0.009 ? 'Vencido ' + $$(k.cxpVencido) : '']); }
+    const R0 = r.resultados && !r.resultados.error ? r.resultados : null;
+    if (R0) { ind.push(['Gastos de operación', R0.gastosOperacion, 'mon', '']); ind.push(['Gastos financieros', R0.financieros, 'mon', '']); if (R0.utilidadNeta !== undefined) ind.push(['Utilidad neta', R0.utilidadNeta, 'mon', '']); }
+    hojas.push({ nombre: 'Resumen', titulo: 'Resumen del negocio', sub: [per],
+      resumen: [['Ventas netas', k.ventas, 'mon'], ['Cobrado', k.cobrado, 'mon']].concat(c ? [['Utilidad bruta', k.utilidad, 'mon']] : [['Por cobrar', k.cxc, 'mon']]).concat([['Notas', k.notas, 'num']]),
+      cols: [{ t: 'Indicador', w: 34 }, { t: 'Valor', w: 18, fmt: 'der' }, { t: 'Detalle', w: 60 }],
+      filas: ind.map(x => ({ v: [x[0], x[2] === 'mon' ? $$(x[1] || 0) : nf(x[1] || 0), x[3] || ''] })) });
+    // 2) Comparativo contra el año anterior
+    if (cmp && cmp.kpi) {
+      const yA = cmp.periodo.actual.hasta.slice(-4), yB = cmp.periodo.anterior.hasta.slice(-4), fv = (v, t) => t === 'n' ? nf(v) : t === '%' ? v + '%' : $$(v);
+      hojas.push({ nombre: 'Comparativo', titulo: 'Comparativo ' + yA + ' vs ' + yB, sub: [donde, 'Del ' + cmp.periodo.actual.desde + ' al ' + cmp.periodo.actual.hasta + ' contra el ' + cmp.periodo.anterior.desde + ' al ' + cmp.periodo.anterior.hasta],
+        cols: [{ t: 'Indicador', w: 34 }, { t: yA, w: 20, fmt: 'der' }, { t: yB, w: 20, fmt: 'der' }, { t: 'Cambio', w: 14, fmt: 'der' }],
+        filas: cmp.kpi.map(x => { const d = x.tipo === '%' ? Math.round((x.a - x.b) * 10) / 10 : delta(x.a, x.b), malo = d !== null && d !== 0 && (x.malSiSube ? d > 0 : d < 0);
+          return { tono: malo ? 'mal' : d ? 'ok' : '', v: [x.t, fv(x.a, x.tipo), fv(x.b, x.tipo), d === null ? 'nuevo' : (d > 0 ? '+' : '') + d + (x.tipo === '%' ? ' pts' : ' %')] }; }) });
+    }
+    // 3) Productos más vendidos
+    hojas.push({ nombre: 'Más vendidos', titulo: 'Productos más vendidos', sub: [per],
+      cols: [{ t: '#', w: 6, fmt: 'num' }, { t: 'Producto', w: 44 }, { t: 'Cantidad', w: 12, fmt: 'num', suma: 1 }, { t: 'Venta neta', w: 15, fmt: 'mon', suma: 1 }].concat(c ? [{ t: 'Utilidad', w: 15, fmt: 'mon', suma: 1 }, { t: 'Margen', w: 10 }] : []),
+      filas: (r.topProductos || []).map((x, i) => ({ v: [i + 1, x.nombre, x.cant, x.importe].concat(c ? [x.utilidad, x.importe ? (x.utilidad / x.importe * 100).toFixed(1) + '%' : ''] : []) })) });
+    // 4) Últimos 12 meses
+    const m12 = r.meses || [], conC = k.compras !== null && k.compras !== undefined;
+    hojas.push({ nombre: '12 meses', titulo: 'Últimos 12 meses', sub: [donde],
+      cols: [{ t: 'Mes', w: 14 }, { t: 'Ventas', w: 15, fmt: 'mon', suma: 1 }].concat(conC ? [{ t: 'Compras', w: 15, fmt: 'mon', suma: 1 }] : []).concat(c ? [{ t: 'Utilidad', w: 15, fmt: 'mon', suma: 1 }] : [])
+        .concat(R0 ? [{ t: 'Gastos de operación', w: 16, fmt: 'mon', suma: 1 }, { t: 'Utilidad neta', w: 15, fmt: 'mon', suma: 1 }] : []),
+      filas: m12.map(x => ({ v: [x.etiqueta, x.ventas].concat(conC ? [x.compras] : []).concat(c ? [x.utilidad] : []).concat(R0 ? [x.gastosOp, x.utilidadNeta] : []) })) });
+    // 5) Caducidad
+    const cad = l => l.map(x => ({ tono: x.dias < 0 ? 'mal' : x.dias <= 60 ? 'av' : '', v: [x.nombre, sucNom(x.suc), x.lote, x.cad, x.dias, x.cant] }));
+    const colsCad = [{ t: 'Producto', w: 42 }, { t: 'Sucursal', w: 16 }, { t: 'Lote', w: 14 }, { t: 'Caducidad', w: 13 }, { t: 'Días', w: 8, fmt: 'num' }, { t: 'Existencia', w: 11, fmt: 'num', suma: 1 }];
+    hojas.push({ nombre: 'Caducidad', titulo: 'Caducados y por caducar', sub: [donde + ' · por caducar = ' + ((D().config || {}).diasCaducidad || 120) + ' días o menos'],
+      resumen: [['Lotes caducados', (r.caducados || []).length, 'num'], ['Lotes por caducar', (r.porCaducar || []).length, 'num']], cols: colsCad, filas: cad((r.caducados || []).concat(r.porCaducar || [])) });
+    // 6) Clientes, vendedores, sucursales y categorías
+    const lista = (nom, tit, col, l, f) => hojas.push({ nombre: nom, titulo: tit, sub: [per], cols: [{ t: '#', w: 6, fmt: 'num' }, { t: col, w: 44 }, { t: 'Venta neta', w: 16, fmt: 'mon', suma: 1 }],
+      filas: (l || []).map((x, i) => ({ v: [i + 1, f ? f(x.nombre) : x.nombre, x.valor] })) });
+    lista('Clientes', 'Mejores clientes', 'Cliente', r.topClientes);
+    lista('Vendedores', 'Ventas por vendedor', 'Vendedor', r.porVendedor);
+    if ((r.porSucursal || []).length > 1) lista('Sucursales', 'Ventas por sucursal', 'Sucursal', r.porSucursal, sucNom);
+    lista('Categorías', 'Ventas por categoría', 'Categoría', r.porCategoria);
+    const nom = 'Resumen del negocio ' + p.desde + ' a ' + p.hasta + ' ' + donde.replace(/[\\/:*?"<>|]+/g, '-');
+    try { toast('Armando el Excel…'); entregarArchivo(await excelLocal(nom, hojas), nom + '.xlsx', 'Excel del tablero'); }
+    catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e), true); }
   }
   /* ---------- 📅 Comparativo contra el año anterior (Inicio) ---------- */
   const delta = (a, b) => b ? Math.round((a - b) / Math.abs(b) * 1000) / 10 : (a ? null : 0);
@@ -8593,7 +8648,7 @@ const App = (() => {
           if (f.tono && TONO[f.tono] && TONO[f.tono].fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TONO[f.tono].fill } };
           else if (i % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F7FB' } };
           if (FMT[col.fmt]) c.numFmt = FMT[col.fmt];
-          c.alignment = { vertical: 'top', horizontal: col.fmt === 'num' || col.fmt === 'mon' ? 'right' : col.fmt === 'fecha' ? 'center' : 'left', wrapText: col.fmt === 'txt' || !col.fmt }; });
+          c.alignment = { vertical: 'top', horizontal: col.fmt === 'num' || col.fmt === 'mon' || col.fmt === 'der' ? 'right' : col.fmt === 'fecha' ? 'center' : 'left', wrapText: col.fmt === 'txt' || !col.fmt }; });
         r++;
       });
       const fin = r - 1;
@@ -13863,7 +13918,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
