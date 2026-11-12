@@ -114,7 +114,8 @@ const App = (() => {
   const sucTrabajo = () => (S.suc && (D().permitidas || []).indexOf(S.suc) >= 0) ? S.suc : U().sucursal;
   const opts = (lista, sel, vacio) => (vacio !== undefined ? `<option value="">${esc(vacio)}</option>` : '') +
     lista.map(o => { const obj = o && typeof o === 'object', v = Array.isArray(o) ? o[0] : obj ? o.id : o, t = Array.isArray(o) ? o[1] : obj ? (o.nombre || o.id) : o; return `<option value="${esc(v)}" ${String(v) === String(sel) ? 'selected' : ''}>${esc(t)}</option>`; }).join('');
-  const optsSuc = (sel, todas, vacio) => opts((todas ? (D().sucursales || []) : sucsPermitidas()), sel, vacio);
+  const optsSuc = (sel, todas, vacio) => opts((todas ? (D().sucursales || []) : sucsPermitidas()).slice().sort((a, b) => (a.cerrada ? 1 : 0) - (b.cerrada ? 1 : 0))
+    .map(x => x.cerrada ? Object.assign({}, x, { nombre: x.nombre + ' (cerrada)' }) : x), sel, vacio);   // 🔚 las cerradas al final
 
   function lotes(idProd, suc) {
     return (D().stock || []).filter(s => s.p === idProd && s.s === suc && s.q > 0)
@@ -727,6 +728,7 @@ const App = (() => {
     { id: 'reuniones', t: 'Reuniones con clientes', i: '🤝', p: 'reuniones', oculto: 1 },
     { id: 'mensajes', t: 'Mensajes del día', i: '📲', p: 'seguimiento', oculto: 1 },
     { id: 'revacunas', t: 'Revacunaciones', i: '💉', p: 'seguimiento', oculto: 1 },
+    { id: 'cierresuc', t: 'Cierre de sucursal', i: '🔚', p: 'dueno', oculto: 1 },
     { id: 'radar', t: 'Radar comercial', i: '🎯', p: 'seguimiento', oculto: 1 },
     { id: 'metas', t: 'Metas y comisiones', i: '🏆', p: 'seguimiento', oculto: 1 },
     { id: 'recetas', t: 'Recetas', i: '💊', p: 'recetas', oculto: 1 },
@@ -2402,7 +2404,7 @@ const App = (() => {
     const el = $('#cfSucs'); if (!el) return;
     const l = U().rol === 'Administrador' ? (D().sucursales || []) : sucsPermitidas();
     S.sucsCfg = l;
-    el.innerHTML = tabla([{ t: 'Sucursal', h: x => `<div class="con-avatar">${avatarSuc(x.id)}<div><b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo || '')}</small></div></div>` },
+    el.innerHTML = tabla([{ t: 'Sucursal', h: x => `<div class="con-avatar">${avatarSuc(x.id)}<div><b>${esc(x.nombre)}</b>${x.cerrada ? ' <span class="etq mal">🔚 Cerrada</span>' : ''}<br><small class="muted">${esc(x.tipo || '')}</small></div></div>` },
       { t: 'Dirección', cls: 'ocultar-movil', h: x => esc(x.direccion) }, { t: 'Teléfono', h: x => esc(x.tel) }], l, { clic: 'App.verSucCfg', vacio: 'Sin sucursales' });
     cargarAvatares(el).then(() => { if (U().rol === 'Administrador') repararMinisSuc(l); });
   }
@@ -2448,7 +2450,7 @@ const App = (() => {
     const fotoBloque = bloqueFotoSuc(x.id);
     modal('🏬 ' + x.nombre, `<div class="arch-par">${fotoBloque}</div>
       <div class="tarjeta" style="margin-top:10px">${dato('Tipo', x.tipo)}${dato('Dirección', x.direccion)}${dato('Teléfono', x.tel)}${dato('Correo', x.email)}${dato('Serie de notas', x.serie)}${dato('Lista de precios', x.lista)}</div>
-      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button>${puede('dueno') ? `<button class="btn primario" onclick="App.sucForm('${esc(x.id)}')">⚙️ Configurar sucursal</button>` : ''}</div>`);
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button>${puede('dueno') && !esMatriz(x.id) ? `<button class="btn" onclick="App.cierreSuc('${esc(x.id)}')">${x.cerrada ? '🔚 Ver cierre' : '🔚 Cerrar sucursal'}</button>` : ''}${puede('dueno') ? `<button class="btn primario" onclick="App.sucForm('${esc(x.id)}')">⚙️ Configurar sucursal</button>` : ''}</div>`);
   }
   /** Imagen de la sucursal: Matriz usa el logotipo general; las demás su foto (con Cambiar / Quitar). */
   function bloqueFotoSuc(id) {
@@ -4239,6 +4241,71 @@ const App = (() => {
         { t: 'Resultado', h: x => `<span class="etq ${RS[x.resultado] || ''}">${esc(x.resultado)}</span>` + (x.motivo ? `<br><small class="muted">${esc(x.usuario)}: ${esc(x.motivo)}</small>` : `<br><small class="muted">${esc(x.usuario)}</small>`) }], r.lista, { vacio: 'Sin intentos en el periodo' })}</div>`;
   }
   function limVer() { S.flim = { suc: $('#lmS').value, desde: $('#lmD').value, hasta: $('#lmH').value }; limitesReporte(); }
+  /* ---------- 🔚 CIERRE DE SUCURSAL (solo el dueño): lista de revisión, guía paso a paso, acta y reapertura ---------- */
+  const CIERRE_GUIA = {
+    existencia: { como: 'Primero haz un 📋 Conteo físico en la sucursal para que el sistema cuadre con lo que hay de verdad. Después, en 🚚 Traspasos, crea un traspaso con <b>origen</b> esta sucursal y <b>destino</b> Matriz (u otra sucursal) con todas las piezas. Cuando se reciba, la existencia queda en cero.', ir: 'traspasos', boton: '🚚 Ir a Traspasos' },
+    transito: { como: 'En 🚚 Traspasos márcalos como entregados cuando lleguen, o cancélalos si no salieron. Un traspaso en tránsito todavía no mueve el inventario.', ir: 'traspasos', boton: '🚚 Ir a Traspasos' },
+    saldos: { como: 'En Ventas › Notas de venta elige esta sucursal y marca <b>Solo con saldo</b>. Decide quién los va a cobrar y anótalo abajo en "¿Quién cobra los saldos?". Los cobros de sus notas se pueden seguir registrando después del cierre.', ir: 'saldos', boton: '💵 Ver notas con saldo' },
+    cotizaciones: { como: 'En Cotizaciones conviértelas en venta antes de cerrar, o márcalas como perdidas o canceladas.', ir: 'cotizaciones', boton: '📝 Ir a Cotizaciones' },
+    requisiciones: { como: 'En Requisiciones surte lo pendiente o ciérralas si ya no se van a surtir.', ir: 'requisiciones', boton: '📋 Ir a Requisiciones' },
+    compras: { como: 'En Compras cambia el destino de esas órdenes a otra sucursal o cancélalas, para que la mercancía no llegue a una sucursal cerrada.', ir: 'compras', boton: '📦 Ir a Compras' },
+    consignacion: { como: 'En Sucursales › 📦 Liquidación de consignación saca el último periodo, imprímelo y cóbralo: es lo que vendió de tu mercancía y aún no te paga.', ir: 'liq', boton: '📦 Liquidación de consignación' },
+    sociedad: { como: 'En 👥 Equipo › Sociedad revisa el último reparto, los sueldos que anotó el socio y los gastos compartidos del último mes, y liquídenlos antes de cerrar.', ir: 'equipo', boton: '👥 Ir a Equipo' },
+    asociacion: { como: 'En 🤝 Asociación registra el 📤 Regreso de lo que quede y saca la 🧾 Liquidación final para entregarle lo cobrado (menos tu comisión).', ir: 'asociacion', boton: '🤝 Ir a Asociación' },
+    usuarios: { como: 'No tienes que hacer nada: al cerrar se desactivan solos y ya no podrán entrar a la app. Sus ventas y movimientos se conservan.' }
+  };
+  function cierreSuc(id) { S.cierreSuc = id; cerrarModal(); ir('cierresuc'); }
+  V.cierresuc = async () => {
+    const id = S.cierreSuc; if (!id) return ir('config');
+    $('#vista').innerHTML = '<div class="vacio">Revisando la sucursal…</div>';
+    let r; try { r = S.cierreRes = await pedir('cierreSucursal', { suc: id }); } catch (e) { $('#vista').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message || '') ? 'Se activa con el servidor 234.' : esc(e.message || 'Requiere conexión')}</div>`; return; }
+    const cerrada = r.cierre && r.cierre.estado === 'Cerrada', ic = x => x.ok === true ? '✅' : x.ok === false ? '⚠️' : 'ℹ️';
+    const guia = `<details class="tarjeta cierre-guia" ${cerrada ? '' : 'open'}><summary><b>📖 Guía del cierre: cómo cerrar una relación comercial con una sucursal</b></summary>
+      <ol>
+        <li><b>Cuadra el inventario:</b> haz un 📋 conteo físico final en la sucursal.</li>
+        <li><b>Recoge la mercancía:</b> traspasa todo a Matriz u otra sucursal. Si era a consignación, antes saca su 📦 liquidación final y cóbrala.</li>
+        <li><b>Saldos de sus clientes:</b> revisa las notas con saldo y decide quién las cobra.</li>
+        <li><b>Socios y terceros:</b> si era sociedad, hagan el último reparto; si tenía productos de la asociación, regrésalos y saca su liquidación.</li>
+        <li><b>Pendientes:</b> cierra cotizaciones, requisiciones, órdenes de compra y traspasos en tránsito.</li>
+        <li><b>Cierra la sucursal</b> (abajo): escribe el motivo, quién cobra los saldos y los acuerdos.</li>
+        <li><b>Firma el acta:</b> descarga el 📄 Acta de cierre en PDF y fírmenla las dos partes.</li>
+      </ol>
+      <p class="muted peq"><b>Al cerrarla:</b> ya no se pueden registrar ventas, compras ni traspasos hacia ella (sí sacar mercancía y cobrar sus notas); deja de usarse en las operaciones; sus usuarios se desactivan; se apagan los límites por volumen y los productos de la asociación. Toda su historia (notas, cobros, inventario y reportes) se conserva. Si algún día vuelve a operar, se puede <b>reabrir</b> con sus mismas series.</p></details>`;
+    const lista = r.items.map((x, i) => { const g = CIERRE_GUIA[x.clave] || {};
+      return `<div class="cierre-item ${x.ok === false ? 'pend' : ''}"><div class="cierre-cab"><span class="cierre-ic">${ic(x)}</span><div class="cierre-txt"><b>${esc(x.titulo)}</b><br><small class="muted">${esc(x.detalle)}</small></div>
+        ${g.ir && !cerrada && x.ok !== true ? `<button class="btn chico" onclick="App.cierreIr('${g.ir}')">${g.boton}</button>` : ''}</div>
+        ${g.como ? `<details class="cierre-como"><summary>¿Cómo lo hago?</summary><p>${g.como}</p></details>` : ''}</div>`; }).join('');
+    const c = r.cierre || {};
+    const pie = cerrada ? `<div class="tarjeta"><h3>🔚 Sucursal cerrada el ${esc(c.fecha)}</h3><p><b>Motivo:</b> ${esc(c.motivo)}</p>${c.cobra ? `<p><b>Cobra los saldos:</b> ${esc(c.cobra)}</p>` : ''}${c.notas ? `<p><b>Acuerdos:</b> ${esc(c.notas)}</p>` : ''}
+        <p class="muted peq">Registró ${esc(c.por)}${c.usuarios && c.usuarios.length ? ' · usuarios desactivados: ' + esc(c.usuarios.join(', ')) : ''}</p>
+        <div class="acciones" style="justify-content:flex-start"><button class="btn primario" onclick="App.actaCierre()">📄 Acta de cierre (PDF)</button><button class="btn" onclick="App.reabrirSuc()">↩️ Reabrir sucursal</button></div></div>`
+      : `<div class="tarjeta"><h3>🔚 Cerrar la sucursal</h3>${r.pendientes ? `<p class="error">⚠️ Quedan ${r.pendientes} pendiente${r.pendientes === 1 ? '' : 's'} arriba. Puedes cerrar de todos modos; quedarán anotados en el acta.</p>` : '<p class="ok-txt">✅ No hay pendientes: la sucursal está lista para cerrarse.</p>'}
+        <label>Motivo del cierre<input id="csMot" placeholder="p. ej. terminó el contrato de consignación"></label>
+        <label>¿Quién cobra los saldos pendientes de sus clientes?<input id="csCob" placeholder="p. ej. Matriz, el exencargado…"></label>
+        <label>Acuerdos y observaciones (salen en el acta)<textarea id="csNot" rows="3" placeholder="Fechas de pago, mercancía entregada, compromisos…"></textarea></label>
+        ${(r.items.find(x => x.clave === 'existencia') || {}).ok === false ? '<label class="check"><input type="checkbox" id="csFor"> Cerrar aunque quede existencia en la sucursal</label>' : ''}
+        <div class="acciones" style="justify-content:flex-start"><button class="btn peligro" onclick="App.cerrarSucursal()">🔚 Cerrar sucursal</button></div></div>`;
+    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center"><h2 style="margin:0;flex:1">🔚 Cierre de ${esc(r.nombre)}</h2><button class="btn fijo" onclick="App.ir('config')">← Configuración</button></div>
+        <p class="muted" style="margin:6px 0 0">${esc(r.tipo || 'Sucursal')}${cerrada ? ' · <b class="error">Cerrada</b>' : r.pendientes ? ' · ' + r.pendientes + ' pendiente' + (r.pendientes === 1 ? '' : 's') : ' · lista para cerrar'}</p></div>
+      ${guia}<div class="tarjeta"><h3>✅ Lista de revisión</h3>${lista}${cerrada ? '<p class="muted peq">Así estaban los pendientes hoy; el acta guarda cómo quedaron al momento del cierre.</p>' : '<p class="muted peq">Cuando resuelvas algo, vuelve a esta pantalla y se actualiza sola.</p>'}</div>${pie}`;
+  };
+  function cierreIr(a) {
+    const id = S.cierreSuc;
+    if (a === 'saldos') { S.ventasSuc = id; S.tabVen = 'notas'; ir('ventas'); setTimeout(() => { const c = $('#fSaldo'); if (c) { c.checked = true; buscarVentas(); } }, 600); return; }
+    if (a === 'liq') { ir('sucursales'); setTimeout(() => { try { sucElegir('liq'); } catch (e) {} }, 500); return; }
+    ir(a);
+  }
+  async function cerrarSucursal() {
+    const mot = $('#csMot').value.trim(); if (mot.length < 5) return toast('Escribe el motivo del cierre', true);
+    if (!confirm('¿Cerrar ' + (S.cierreRes || {}).nombre + '? Se desactivarán sus usuarios y ya no se podrán hacer ventas, compras ni traspasos hacia ella.')) return;
+    try { await pedir('cerrarSucursal', { suc: S.cierreSuc, motivo: mot, cobra: $('#csCob').value, notas: $('#csNot').value, forzar: !!($('#csFor') && $('#csFor').checked) });
+      toast('✔ Sucursal cerrada'); if (typeof refrescarDatos === 'function') await refrescarDatos(true); V.cierresuc(); } catch (e) {}
+  }
+  async function reabrirSuc() {
+    const mot = prompt('Motivo de la reapertura'); if (mot === null) return;
+    try { await pedir('reabrirSucursal', { suc: S.cierreSuc, motivo: mot }); toast('✔ Sucursal reabierta. Da de alta o reactiva a su personal en 👥 Equipo.'); if (typeof refrescarDatos === 'function') await refrescarDatos(true); V.cierresuc(); } catch (e) {}
+  }
+  async function actaCierre() { generarPdf('actaCierre', { suc: S.cierreSuc }, { titulo: 'Acta de cierre', texto: 'Acta de cierre de la sucursal ' + ((S.cierreRes || {}).nombre || '') }); }
   /* ---------- 💉 REVACUNACIONES: avisos a ganaderos (30 y 15 días antes, refuerzo de 21 días y crías cada 2 meses) ---------- */
   const VAC_TIPO = { ref: '💉 Refuerzo (21 días)', r30: '🗓️ Revacunar en 30 días', r15: '⏰ Revacunar en 15 días', venc: '⚠️ Revacunación vencida' };
   const vacTipo = x => /^crias/.test(x.tipo) ? '🐄 Crías nacidas desde la última vacuna' : (VAC_TIPO[x.tipo] || x.tipo);
@@ -14017,7 +14084,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
