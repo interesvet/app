@@ -608,7 +608,18 @@ const App = (() => {
     el.innerHTML = `<span>📦 Información en este equipo: <b>${haceTxt(d._t)}</b> · ${(d.clientes || []).length} clientes · ${(d.productos || []).length} productos</span>
       ${rt ? `<span>🧭 Preparado para ruta <b>${haceTxt(rt.t)}</b> · ${nf((rt.listas || 0) + (rt.detalles || 0))} consultas guardadas</span>` : ''}
       ${n ? `<span>⟳ <b>${n}</b> por sincronizar${S.sincronizando ? ' (enviando…)' : ' · se envían solas con buena señal'}</span>` : '<span>✔ Todo sincronizado</span>'}
-      <button onclick="App.prepararRuta()">📥 Actualizar para ruta</button>`;
+      <button onclick="App.prepararRuta()">📥 Actualizar para ruta</button>
+      ${S.vacRes && S.vacRes.semana ? `<button class="bienv-vac" onclick="App.bienvIr('revacunas')">💉 Revacunaciones: <b>${S.vacRes.semana}</b> ganadero${S.vacRes.semana === 1 ? '' : 's'} por avisar esta semana ›</button>` : ''}`;
+    resumenVacunas();
+  }
+  /** 💉 Aviso semanal de revacunaciones (dueño, Administrador y gerentes): se consulta una vez al día. */
+  async function resumenVacunas() {
+    const u = U() || {}, per = u.permisos || {};
+    if (!(per.dueno || u.rol === 'Administrador' || u.rol === 'Gerente') || navigator.onLine === false || S.vacPidiendo) return;
+    const k = 'vacres_' + (u.id || ''), c = LS.get(k, null), hoy = hoyISO();
+    if (c && c.d === hoy) { if (!S.vacRes || S.vacRes.semana !== c.r.semana) { S.vacRes = c.r; pintarBienvEstado(); } return; }
+    S.vacPidiendo = true;
+    try { const r = await pedir('resumenVacunas', {}, true); S.vacRes = r; LS.set(k, { d: hoy, r: r }); pintarBienvEstado(); } catch (e) {} finally { S.vacPidiendo = false; }
   }
 
 
@@ -715,6 +726,7 @@ const App = (() => {
     { id: 'visitas', t: 'Visitas', i: '📅', p: 'seguimiento', oculto: 1 },
     { id: 'reuniones', t: 'Reuniones con clientes', i: '🤝', p: 'reuniones', oculto: 1 },
     { id: 'mensajes', t: 'Mensajes del día', i: '📲', p: 'seguimiento', oculto: 1 },
+    { id: 'revacunas', t: 'Revacunaciones', i: '💉', p: 'seguimiento', oculto: 1 },
     { id: 'radar', t: 'Radar comercial', i: '🎯', p: 'seguimiento', oculto: 1 },
     { id: 'metas', t: 'Metas y comisiones', i: '🏆', p: 'seguimiento', oculto: 1 },
     { id: 'recetas', t: 'Recetas', i: '💊', p: 'recetas', oculto: 1 },
@@ -785,7 +797,7 @@ const App = (() => {
       { v: 'traspasos', t: '🚚 Traspasos', p: 'traspasos' }, { v: 'requisiciones', t: '📑 Requisición de traspaso', p: 'requisiciones' }, { v: 'ajustes', t: '⚖️ Ajustes y mermas', p: ['ajustes', 'mermas'] },
       { v: 'conteo', t: '📋 Conteo físico', p: 'inventario_fisico' }] },
     seguimiento: { t: 'Seguimiento de clientes', tabs: [
-      { v: 'radar', t: '🎯 Radar', p: 'seguimiento' }, { v: 'prospectos', t: '🧲 Prospectos y embudo', p: 'seguimiento' }, { v: 'metas', t: '🏆 Metas', p: 'seguimiento' }, { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'reuniones', t: '🤝 Reuniones', p: 'reuniones' }, { v: 'mensajes', t: '📲 Mensajes del día', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
+      { v: 'radar', t: '🎯 Radar', p: 'seguimiento' }, { v: 'prospectos', t: '🧲 Prospectos y embudo', p: 'seguimiento' }, { v: 'metas', t: '🏆 Metas', p: 'seguimiento' }, { v: 'seguimiento', t: '🔔 Por atender', p: 'seguimiento' }, { v: 'revacunas', t: '💉 Revacunaciones', p: 'seguimiento' }, { v: 'visitas', t: '📅 Visitas', p: 'seguimiento' }, { v: 'reuniones', t: '🤝 Reuniones', p: 'reuniones' }, { v: 'mensajes', t: '📲 Mensajes del día', p: 'seguimiento' }, { v: 'recetas', t: '💊 Recetas', p: 'recetas' }] },
     compras: { t: 'Compras', tabs: [
       { v: 'compras', t: '📦 Órdenes de compra', p: 'compras' }, { v: 'pedido', t: '🛒 Pedido sugerido', p: 'dueno' }, { v: 'anCompras', t: '📊 Análisis de compras', p: 'compras' }] },
     productos: { t: 'Productos', tabs: [
@@ -4100,6 +4112,72 @@ const App = (() => {
         { t: 'Resultado', h: x => `<span class="etq ${RS[x.resultado] || ''}">${esc(x.resultado)}</span>` + (x.motivo ? `<br><small class="muted">${esc(x.usuario)}: ${esc(x.motivo)}</small>` : `<br><small class="muted">${esc(x.usuario)}</small>`) }], r.lista, { vacio: 'Sin intentos en el periodo' })}</div>`;
   }
   function limVer() { S.flim = { suc: $('#lmS').value, desde: $('#lmD').value, hasta: $('#lmH').value }; limitesReporte(); }
+  /* ---------- 💉 REVACUNACIONES: avisos a ganaderos (30 y 15 días antes, refuerzo de 21 días y crías cada 2 meses) ---------- */
+  const VAC_TIPO = { ref: '💉 Refuerzo (21 días)', r30: '🗓️ Revacunar en 30 días', r15: '⏰ Revacunar en 15 días', venc: '⚠️ Revacunación vencida' };
+  const vacTipo = x => /^crias/.test(x.tipo) ? '🐄 Crías nacidas desde la última vacuna' : (VAC_TIPO[x.tipo] || x.tipo);
+  function vacMensaje(x) {
+    const nom = String(x.nombre).split(' ').slice(0, 3).join(' '), suc = sucNom(x.suc);
+    const ini = `Hola ${nom}, le saluda Interés Veterinario® ${suc}. `;
+    if (x.tipo === 'ref') return ini + `Le recordamos que el ${x.sig} le toca el refuerzo de ${x.vacuna} (21 días después de la primera dosis del ${x.base}). ¿Le apartamos sus dosis?`;
+    if (x.tipo === 'venc') return ini + `Su revacunación con ${x.vacuna} tocaba el ${x.sig} (última aplicación: ${x.base}). Para que su ganado no quede desprotegido, ¿le apartamos sus dosis?`;
+    if (/^crias/.test(x.tipo)) return ini + `¿Le han nacido animales desde su última vacunación con ${x.vacuna} (${x.base})? Es importante vacunarlos para que no queden desprotegidos. ¿Le apartamos sus dosis?`;
+    return ini + `Le recordamos que el ${x.sig} le toca revacunar con ${x.vacuna} (última aplicación: ${x.base}). ¿Le apartamos sus dosis?`;
+  }
+  V.revacunas = async () => {
+    const f = S.fvac = S.fvac || { suc: U().todasSucursales ? '' : U().sucursal, ver: 'semana' };
+    $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila" style="align-items:flex-end">
+        ${U().todasSucursales ? `<label>Sucursal<select id="vcSuc" onchange="App.vacFiltro()"><option value="">Todas</option>${optsSuc(f.suc)}</select></label>` : ''}
+        <label>Mostrar<select id="vcVer" onchange="App.vacFiltro()"><option value="semana" ${f.ver === 'semana' ? 'selected' : ''}>Esta semana (por avisar)</option><option value="proximos" ${f.ver === 'proximos' ? 'selected' : ''}>Próximas 4 semanas</option><option value="avisados" ${f.ver === 'avisados' ? 'selected' : ''}>Ya avisados</option></select></label>
+        ${puede('dueno') ? '<button class="btn fijo" onclick="App.vacReglas()">⚙️ Esquemas de vacunas</button>' : ''}</div>
+        <p class="muted peq">Cada venta de una vacuna genera sola sus avisos: <b>30 y 15 días</b> antes de la revacunación (el refuerzo de 21 días, 7 días antes) y <b>cada 2 meses</b> para vacunar a las crías nacidas. Si el cliente vuelve a comprar la vacuna, el ciclo empieza de nuevo.</p></div>
+      <div class="espacio"></div><div id="vcRes"><div class="vacio">Calculando…</div></div>`;
+    let r; try { r = S.vac = await pedir('revacunaciones', { sucursal: f.suc }); } catch (e) { $('#vcRes').innerHTML = `<div class="vacio">${/desconocida/i.test(e.message || '') ? 'Se activa con el servidor 233.' : esc(e.message || 'Requiere conexión')}</div>`; return; }
+    vacPintar();
+  };
+  function vacFiltro() { S.fvac = { suc: $('#vcSuc') ? $('#vcSuc').value : S.fvac.suc, ver: $('#vcVer').value }; V.revacunas(); }
+  function vacPintar() {
+    const r = S.vac, t = r.totales, l = r[S.fvac.ver] || [];
+    S.vacLista = l;
+    $('#vcRes').innerHTML = `<div class="kpis"><div class="kpi"><small>Por avisar esta semana</small><b>${nf(t.semana)}</b><span>ganaderos</span></div>
+        <div class="kpi"><small>Próximas 4 semanas</small><b>${nf(t.proximos)}</b><span>avisos</span></div>
+        <div class="kpi"><small>Ganado protegido</small><b>${nf(t.protegidos)}</b><span>clientes × vacuna al día</span></div>
+        <div class="kpi"><small>Vencidos</small><b class="${t.vencidos ? 'error' : ''}">${nf(t.vencidos)}</b><span>sin revacunar (90 días)</span></div></div>
+      <div class="tarjeta">${l.length ? l.map((x, i) => `<div class="vac-fila">
+          <div class="vac-inf"><b>${esc(x.nombre)}</b>${x.rancho ? ` <small class="muted">· ${esc(x.rancho)}</small>` : ''}<br>
+            <span class="etq">${esc(vacTipo(x))}</span> <b>${esc(x.vacuna)}</b><br>
+            <small class="muted">Última compra ${esc(x.base)} (${nf(x.cant)} pzas · ${esc(x.folio)})${/^crias/.test(x.tipo) ? '' : ' · le toca el <b>' + esc(x.sig) + '</b>'} · avisar ${esc(x.aviso)}${U().todasSucursales ? ' · ' + esc(sucNom(x.suc)) : ''}</small>
+            ${x.avisado ? `<br><small class="ok-txt">✔ Avisado el ${esc(x.avisado.fecha)} por ${esc(x.avisado.usuario)}</small>` : ''}</div>
+          ${x.avisado ? '' : `<div class="vac-acc">${x.cel ? `<button class="btn primario" onclick="App.vacWhats(${i})">💬 WhatsApp</button>` : '<small class="muted">Sin celular</small>'}<button class="btn" onclick="App.vacMarcar(${i})">✔ Ya avisé</button></div>`}
+        </div>`).join('') : '<div class="vacio">' + (S.fvac.ver === 'avisados' ? 'Aún no hay avisos registrados' : 'Nada por avisar 🎉') + '</div>'}</div>`;
+  }
+  async function vacMarcar(i, medio) {
+    const x = S.vacLista[i]; if (!x) return;
+    try { await pedir('avisoVacuna', { claves: [x.clave], medio: medio || 'Otro' }); x.avisado = { fecha: fechaCorta(hoyISO()), usuario: U().nombre };
+      const r = S.vac; r.semana = r.semana.filter(y => y.clave !== x.clave); r.proximos = r.proximos.filter(y => y.clave !== x.clave); r.avisados.unshift(x);
+      r.totales.semana = r.semana.length; r.totales.proximos = r.proximos.length; if (S.vacRes) { S.vacRes.semana = r.totales.semana; LS.set('vacres_' + (U().id || ''), { d: hoyISO(), r: S.vacRes }); }
+      vacPintar(); toast('✔ Aviso registrado'); } catch (e) {}
+  }
+  function vacWhats(i) {
+    const x = S.vacLista[i]; if (!x) return;
+    window.open(WA_BASE + '52' + x.cel + '?text=' + encodeURIComponent(vacMensaje(x)), '_blank');
+    vacMarcar(i, 'WhatsApp');
+  }
+  async function vacReglas() {
+    let c; try { c = await pedir('vacunasCfg', {}); } catch (e) { return; }
+    const fila = (r, i) => `<tr><td><input class="vrP" value="${esc(r.prefijo || '')}" placeholder="(nueva vacuna)"></td><td><input type="number" class="vrR" value="${r.refuerzo || 0}" min="0" style="width:80px"></td><td><input type="number" class="vrC" value="${r.ciclo || 365}" min="1" style="width:90px"></td></tr>`;
+    const reglas = c.reglas.concat([{ prefijo: '', refuerzo: 0, ciclo: 365 }, { prefijo: '', refuerzo: 0, ciclo: 365 }]);
+    modal('⚙️ Esquemas de vacunas', `<p class="muted peq">Se reconoce la vacuna por cómo <b>empieza</b> el nombre del producto (p. ej. "NOVA" toma NOVA 11 VIAS, NOVA TRIPLE…). Refuerzo = días después de la primera dosis (0 si no lleva); Ciclo = cada cuántos días se revacuna.</p>
+      <div class="tabla-cont"><table><thead><tr><th>El nombre empieza con</th><th>Refuerzo (días)</th><th>Ciclo (días)</th></tr></thead><tbody>${reglas.map(fila).join('')}</tbody></table></div>
+      <div class="rejilla"><label>Avisos antes de revacunar (días)<input id="vrAv" value="${(c.avisos || [30, 15]).join(', ')}"></label><label>Aviso del refuerzo (días antes)<input type="number" id="vrAr" value="${c.aviso_refuerzo || 7}"></label>
+        <label>Recordatorio de crías cada (días, 0 = no)<input type="number" id="vrCr" value="${c.crias}"></label></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.vacGuardarReglas()">Guardar</button></div>`);
+  }
+  async function vacGuardarReglas() {
+    const P = [...document.querySelectorAll('.vrP')], Rf = [...document.querySelectorAll('.vrR')], C = [...document.querySelectorAll('.vrC')];
+    const reglas = P.map((p, i) => ({ prefijo: p.value.trim(), refuerzo: Rf[i].value, ciclo: C[i].value })).filter(r => r.prefijo);
+    try { await pedir('guardarVacunasCfg', { reglas: reglas, avisos: $('#vrAv').value.split(/[,\s]+/).filter(Boolean), aviso_refuerzo: $('#vrAr').value, crias: $('#vrCr').value });
+      cerrarModal(); toast('✔ Esquemas guardados'); V.revacunas(); } catch (e) {}
+  }
   /* ---------- 🤝 ASOCIACIÓN: productos de terceros (catálogo, entradas, regresos y liquidación) ---------- */
   V.asociacion = () => {
     const A = asocCfgs(), l = Object.keys(A);
@@ -13752,7 +13830,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
