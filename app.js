@@ -1263,18 +1263,47 @@ const App = (() => {
       hojas.push({ nombre: 'Comparativo', titulo: 'Comparativo ' + yA + ' vs ' + yB, sub: [donde, 'Del ' + cmp.periodo.actual.desde + ' al ' + cmp.periodo.actual.hasta + ' contra el ' + cmp.periodo.anterior.desde + ' al ' + cmp.periodo.anterior.hasta],
         cols: [{ t: 'Indicador', w: 34 }, { t: yA, w: 20, fmt: 'der' }, { t: yB, w: 20, fmt: 'der' }, { t: 'Cambio', w: 14, fmt: 'der' }],
         filas: cmp.kpi.map(x => { const d = x.tipo === '%' ? Math.round((x.a - x.b) * 10) / 10 : delta(x.a, x.b), malo = d !== null && d !== 0 && (x.malSiSube ? d > 0 : d < 0);
-          return { tono: malo ? 'mal' : d ? 'ok' : '', v: [x.t, fv(x.a, x.tipo), fv(x.b, x.tipo), d === null ? 'nuevo' : (d > 0 ? '+' : '') + d + (x.tipo === '%' ? ' pts' : ' %')] }; }) });
+          return { tono: malo ? 'mal' : d ? 'ok' : '', v: [x.t, fv(x.a, x.tipo), fv(x.b, x.tipo), d === null ? 'nuevo' : (d > 0 ? '+' : '') + d + (x.tipo === '%' ? ' pts' : ' %')] }; }),
+        graficas: (() => { const din = cmp.kpi.filter(x => x.tipo !== 'n' && x.tipo !== '%'); return din.length ? [{ tipo: 'categorias', titulo: yA + ' contra ' + yB, fmt: 'mon', etiquetas: din.map(x => x.t),
+          series: [{ nombre: yA, datos: din.map(x => x.a) }, { nombre: yB, datos: din.map(x => x.b) }] }] : []; })() });
+    }
+    // 2b) 👥 Cartera de clientes: base de datos, activos, dormidos, perdidos y su evolución mes a mes
+    let cart = null; try { cart = await pedir('cartera', { sucursal: p.sucursal }, true); } catch (e) {}
+    if (cart && cart.clientes) {
+      const bd = (D().clientes || []).filter(x => !p.sucursal || x.suc === p.sucursal).length, cl = cart.clientes;
+      const E = ['Al día', 'Toca comprar', 'Atrasado', 'Dormido', 'Perdido'], cuenta = e => cl.filter(x => x.estado === e).length, venta12 = e => cl.filter(x => x.estado === e).reduce((t, x) => t + (x.v12 || 0), 0);
+      const QUE = { 'Al día': 'Compró hace poco; todavía no le toca', 'Toca comprar': 'Ya le toca según cada cuánto compra', 'Atrasado': 'Se pasó 30 % de su tiempo normal de compra',
+        'Dormido': 'Sin comprar el doble de su tiempo normal o más de 90 días', 'Perdido': 'Más de 180 días sin comprar', 'Sin compras': 'Registrado en la base de datos pero nunca ha comprado' };
+      const activos = cuenta('Al día') + cuenta('Toca comprar') + cuenta('Atrasado'), sinC = Math.max(0, bd - cl.length);
+      const ini = p.desde.slice(0, 7), fin = p.hasta.slice(0, 7), mPer = (cart.meses || []).filter(m => m.mes >= ini && m.mes <= fin), nuevosP = mPer.reduce((t, m) => t + m.nuevos, 0);
+      const m12 = (cart.meses || []).slice(-12), MES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'], etM = m => MES[Number(m.mes.slice(5)) - 1] + ' ' + m.mes.slice(2, 4);
+      const filas = E.map(e => ({ e: e, n: cuenta(e), v: venta12(e) })).concat([{ e: 'Sin compras', n: sinC, v: 0 }]);
+      hojas.push({ nombre: 'Clientes', titulo: 'Cartera de clientes', sub: [donde + ' · foto al ' + cart.hoy, 'Activos = al día + les toca comprar + atrasados'],
+        resumen: [['Clientes en la base de datos', bd, 'num', 'marino'], ['Activos', activos, 'num', 'verde'], ['Dormidos', cuenta('Dormido'), 'num', 'ambar'], ['Perdidos', cuenta('Perdido'), 'num', 'rojo'],
+          ['Con compras', cl.length, 'num', 'azul'], ['Nuevos', nuevosP, 'num', 'verde'], ['Toca comprar o atrasados', cuenta('Toca comprar') + cuenta('Atrasado'), 'num', 'ambar'], ['Sin compras', sinC, 'num', 'gris']],
+        cols: [{ t: 'Estado', w: 22 }, { t: 'Clientes', w: 11, fmt: 'num', suma: 1 }, { t: '% de la base', w: 12, fmt: 'der' }].concat(cart.dinero ? [{ t: 'Venta últimos 12 meses', w: 18, fmt: 'mon', suma: 1 }] : []).concat([{ t: 'Qué significa', w: 52 }]),
+        filas: filas.map(x => ({ tono: x.e === 'Dormido' ? 'av' : x.e === 'Perdido' ? 'mal' : x.e === 'Sin compras' ? 'gris' : '', v: [x.e, x.n, bd ? (x.n / bd * 100).toFixed(1) + ' %' : ''].concat(cart.dinero ? [x.v] : []).concat([QUE[x.e]]) })),
+        graficas: [{ tipo: 'categorias', titulo: 'Clientes por estado', fmt: 'num', etiquetas: filas.map(x => x.e), series: [{ nombre: 'Clientes', datos: filas.map(x => x.n) }],
+          colores: ['#2f9e4a', '#5b9cf0', '#e0a33a', '#d9772b', '#c94a3d', '#9aa6b8'] }] });
+      hojas.push({ nombre: 'Clientes mes a mes', titulo: 'Clientes mes a mes', sub: [donde + ' · últimos 12 meses', 'Reactivados = volvieron después de más de 90 días · Se perdieron = cumplieron 180 días sin comprar'],
+        cols: [{ t: 'Mes', w: 12 }, { t: 'Compraron', w: 12, fmt: 'num', suma: 1 }, { t: 'Nuevos', w: 11, fmt: 'num', suma: 1 }, { t: 'Recurrentes', w: 12, fmt: 'num', suma: 1 }, { t: 'Reactivados', w: 12, fmt: 'num', suma: 1 }, { t: 'Se perdieron', w: 13, fmt: 'num', suma: 1 }].concat(cart.dinero ? [{ t: 'Venta', w: 15, fmt: 'mon', suma: 1 }] : []),
+        filas: m12.map(m => ({ v: [etM(m), m.compraron, m.nuevos, m.recurrentes, m.reactivados, m.perdidos].concat(cart.dinero ? [m.venta] : []) })),
+        graficas: [{ tipo: 'tiempo', titulo: 'Clientes que compraron, nuevos y perdidos', fmt: 'num', etiquetas: m12.map(etM),
+          series: [{ nombre: 'Compraron', datos: m12.map(m => m.compraron) }, { nombre: 'Nuevos', datos: m12.map(m => m.nuevos) }, { nombre: 'Se perdieron', datos: m12.map(m => m.perdidos) }] }] });
     }
     // 3) Productos más vendidos
     hojas.push({ nombre: 'Más vendidos', titulo: 'Productos más vendidos', sub: [per],
       cols: [{ t: '#', w: 6, fmt: 'num' }, { t: 'Producto', w: 44 }, { t: 'Cantidad', w: 12, fmt: 'num', suma: 1 }, { t: 'Venta neta', w: 15, fmt: 'mon', suma: 1 }].concat(c ? [{ t: 'Utilidad', w: 15, fmt: 'mon', suma: 1 }, { t: 'Margen', w: 10 }] : []),
-      filas: (r.topProductos || []).map((x, i) => ({ v: [i + 1, x.nombre, x.cant, x.importe].concat(c ? [x.utilidad, x.importe ? (x.utilidad / x.importe * 100).toFixed(1) + '%' : ''] : []) })) });
+      filas: (r.topProductos || []).map((x, i) => ({ v: [i + 1, x.nombre, x.cant, x.importe].concat(c ? [x.utilidad, x.importe ? (x.utilidad / x.importe * 100).toFixed(1) + '%' : ''] : []) })),
+      graficas: [{ tipo: 'categorias', titulo: 'Los 10 más vendidos (venta neta)', fmt: 'mon', etiquetas: (r.topProductos || []).slice(0, 10).map(x => String(x.nombre).split(',')[0].slice(0, 32)), series: [{ nombre: 'Venta neta', datos: (r.topProductos || []).slice(0, 10).map(x => x.importe) }] }] });
     // 4) Últimos 12 meses
     const m12 = r.meses || [], conC = k.compras !== null && k.compras !== undefined;
     hojas.push({ nombre: '12 meses', titulo: 'Últimos 12 meses', sub: [donde],
       cols: [{ t: 'Mes', w: 14 }, { t: 'Ventas', w: 15, fmt: 'mon', suma: 1 }].concat(conC ? [{ t: 'Compras', w: 15, fmt: 'mon', suma: 1 }] : []).concat(c ? [{ t: 'Utilidad', w: 15, fmt: 'mon', suma: 1 }] : [])
         .concat(R0 ? [{ t: 'Gastos de operación', w: 16, fmt: 'mon', suma: 1 }, { t: 'Utilidad neta', w: 15, fmt: 'mon', suma: 1 }] : []),
-      filas: m12.map(x => ({ v: [x.etiqueta, x.ventas].concat(conC ? [x.compras] : []).concat(c ? [x.utilidad] : []).concat(R0 ? [x.gastosOp, x.utilidadNeta] : []) })) });
+      filas: m12.map(x => ({ v: [x.etiqueta, x.ventas].concat(conC ? [x.compras] : []).concat(c ? [x.utilidad] : []).concat(R0 ? [x.gastosOp, x.utilidadNeta] : []) })),
+      graficas: [{ tipo: 'tiempo', titulo: 'Tendencia de los últimos 12 meses', fmt: 'mon', etiquetas: m12.map(x => x.etiqueta),
+        series: [{ nombre: 'Ventas', datos: m12.map(x => x.ventas) }].concat(conC ? [{ nombre: 'Compras', datos: m12.map(x => x.compras) }] : []).concat(c ? [{ nombre: 'Utilidad', datos: m12.map(x => x.utilidad) }] : []) }] });
     // 5) Caducidad
     const cad = l => l.map(x => ({ tono: x.dias < 0 ? 'mal' : x.dias <= 60 ? 'av' : '', v: [x.nombre, sucNom(x.suc), x.lote, x.cad, x.dias, x.cant] }));
     const colsCad = [{ t: 'Producto', w: 42 }, { t: 'Sucursal', w: 16 }, { t: 'Lote', w: 14 }, { t: 'Caducidad', w: 13 }, { t: 'Días', w: 8, fmt: 'num' }, { t: 'Existencia', w: 11, fmt: 'num', suma: 1 }];
@@ -1282,8 +1311,9 @@ const App = (() => {
       resumen: [['Lotes caducados', (r.caducados || []).length, 'num'], ['Lotes por caducar', (r.porCaducar || []).length, 'num']], cols: colsCad, filas: cad((r.caducados || []).concat(r.porCaducar || [])) });
     // 6) Clientes, vendedores, sucursales y categorías
     const lista = (nom, tit, col, l, f) => hojas.push({ nombre: nom, titulo: tit, sub: [per], cols: [{ t: '#', w: 6, fmt: 'num' }, { t: col, w: 44 }, { t: 'Venta neta', w: 16, fmt: 'mon', suma: 1 }],
-      filas: (l || []).map((x, i) => ({ v: [i + 1, f ? f(x.nombre) : x.nombre, x.valor] })) });
-    lista('Clientes', 'Mejores clientes', 'Cliente', r.topClientes);
+      filas: (l || []).map((x, i) => ({ v: [i + 1, f ? f(x.nombre) : x.nombre, x.valor] })),
+      graficas: (l || []).length ? [{ tipo: 'categorias', titulo: tit + ((l || []).length > 10 ? ' (los 10 primeros)' : ''), fmt: 'mon', etiquetas: l.slice(0, 10).map(x => String(f ? f(x.nombre) : x.nombre).slice(0, 30)), series: [{ nombre: 'Venta neta', datos: l.slice(0, 10).map(x => x.valor) }] }] : [] });
+    lista('Mejores clientes', 'Mejores clientes', 'Cliente', r.topClientes);
     lista('Vendedores', 'Ventas por vendedor', 'Vendedor', r.porVendedor);
     if ((r.porSucursal || []).length > 1) lista('Sucursales', 'Ventas por sucursal', 'Sucursal', r.porSucursal, sucNom);
     lista('Categorías', 'Ventas por categoría', 'Categoría', r.porCategoria);
@@ -8587,6 +8617,35 @@ const App = (() => {
   /**
    * hojas: [{ nombre, titulo, sub:[líneas], resumen:[[etiqueta, valor, fmt]], cols:[{t, w, fmt:'txt'|'num'|'mon'|'fecha', suma}], filas:[{v:[...], tono:'mal'|'av'|'ok'|'gris'}] }]
    */
+  /**
+   * 📈 Gráfica como imagen para los Excel (Chart.js en un lienzo fuera de pantalla, fondo blanco).
+   * g: { tipo: 'tiempo' | 'categorias', titulo, etiquetas:[…], series:[{ nombre, datos:[…] }], fmt: 'mon' | 'num' }
+   *   tiempo: barras si son pocos periodos (≤ 6), líneas si son más · categorias: barras (horizontales si son más de 8)
+   */
+  function graficaPng(g) {
+    if (typeof Chart === 'undefined' || !g || !(g.etiquetas || []).length) return null;
+    const W = 1100, H = 480, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const pocos = g.etiquetas.length <= 6, linea = g.tipo === 'tiempo' && !pocos, horiz = g.tipo === 'categorias' && g.etiquetas.length > 8;
+    const COL = ['#1d4690', '#2f9e4a', '#e0a33a', '#5b9cf0', '#c94a3d', '#7c5cc4'];
+    const mon = g.fmt === 'mon', fmtV = v => mon ? '$' + Math.round(v).toLocaleString('es-MX') : Math.round(v * 10) / 10 + '';
+    const ejeV = v => mon ? (Math.abs(v) >= 1e6 ? '$' + (v / 1e6).toFixed(1) + ' M' : Math.abs(v) >= 1e3 ? '$' + Math.round(v / 1e3) + ' mil' : '$' + v) : v;
+    const fondo = { id: 'fondo', beforeDraw: ch => { const c = ch.ctx; c.save(); c.fillStyle = '#ffffff'; c.fillRect(0, 0, ch.width, ch.height); c.restore(); } };
+    const etiq = { id: 'etiq', afterDatasetsDraw: ch => { if (linea || g.series.length > 3 || g.etiquetas.length > 12) return; const c = ch.ctx; c.save(); c.font = '600 13px Calibri, Arial'; c.fillStyle = '#33445a';
+      ch.data.datasets.forEach((d, i) => ch.getDatasetMeta(i).data.forEach((b, j) => { const v = d.data[j]; if (!v) return; const t = fmtV(v);
+        if (horiz) { c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(t, b.x + 6, b.y); } else { c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillText(t, b.x, b.y - 4); } })); c.restore(); } };
+    let ch;
+    try {
+      ch = new Chart(cv, { type: linea ? 'line' : 'bar', plugins: [fondo, etiq],
+        data: { labels: g.etiquetas, datasets: g.series.map((x, i) => ({ label: x.nombre, data: x.datos, borderColor: COL[i % COL.length], backgroundColor: !linea && g.colores && g.series.length === 1 ? g.colores : linea ? COL[i % COL.length] : COL[i % COL.length] + (g.series.length > 1 ? 'dd' : ''),
+          borderWidth: linea ? 3 : 0, pointRadius: linea ? 3.5 : 0, tension: 0.25, borderRadius: linea ? 0 : 4, maxBarThickness: 70 })) },
+        options: { responsive: false, animation: false, devicePixelRatio: 1, indexAxis: horiz ? 'y' : 'x', layout: { padding: { top: 10, right: horiz ? 90 : 24, left: 8, bottom: 4 } },
+          plugins: { title: { display: !!g.titulo, text: g.titulo, color: '#0f1f3d', font: { size: 20, weight: 'bold', family: 'Calibri, Arial' }, padding: { bottom: 14 } },
+            legend: { display: g.series.length > 1, position: 'bottom', labels: { color: '#33445a', font: { size: 14 }, usePointStyle: true, boxWidth: 10 } }, tooltip: { enabled: false } },
+          scales: { [horiz ? 'y' : 'x']: { ticks: { color: '#33445a', font: { size: 13 } }, grid: { display: false }, border: { color: '#c9d2df' } },
+            [horiz ? 'x' : 'y']: { beginAtZero: true, ticks: { color: '#61728a', font: { size: 12 }, callback: ejeV }, grid: { color: '#e6ebf2' }, border: { display: false } } } } });
+      return { data: cv.toDataURL('image/png'), w: W, h: H };
+    } catch (e) { return null; } finally { try { ch && ch.destroy(); } catch (e) {} }
+  }
   async function excelLocal(archivo, hojas) {
     const ExcelJS = await libLocal('exceljs');
     const wb = new ExcelJS.Workbook(); wb.creator = 'Interés Veterinario®'; wb.created = new Date();
@@ -8594,6 +8653,7 @@ const App = (() => {
     // 🎨 Diseño corporativo "tarjetas": logotipo + título, totales clave en tarjetas de color, tabla con encabezado azul noche
     const VERDE = 'FF0F1F3D', CLARO = 'FFEFF5F1', BORDE = { style: 'thin', color: { argb: 'FFD9DEE6' } };
     const TARJ = [{ f: 'FF0F1F3D', t: 'FFFFFFFF' }, { f: 'FF2A5FB8', t: 'FFFFFFFF' }, { f: 'FF2F9E4A', t: 'FFFFFFFF' }, { f: 'FFFFF4D6', t: 'FF8A5A00' }];
+    const TCOL = { marino: TARJ[0], azul: TARJ[1], verde: TARJ[2], ambar: TARJ[3], rojo: { f: 'FFFCE8E6', t: 'FFB3261E' }, gris: { f: 'FFEEF1F5', t: 'FF61728A' } };   // color fijo opcional: resumen [etiqueta, valor, fmt, color]
     const TONO = { mal: { font: 'FFB3261E', fill: 'FFFCE8E6' }, av: { font: 'FF8A5A00', fill: 'FFFFF4D6' }, ok: { font: 'FF1F6F4A' }, gris: { font: 'FF8A918C' } };
     const FMT = { num: '#,##0.##;[Red]-#,##0.##', mon: '"$"#,##0.00;[Red]-"$"#,##0.00', fecha: 'dd/mm/yyyy' };
     hojas.forEach(h => {
@@ -8623,7 +8683,7 @@ const App = (() => {
         cortes.push(nc);
         for (let i = 0; i < h.resumen.length; i += porFila) {
           h.resumen.slice(i, i + porFila).forEach((x, j) => {
-            const c1 = cortes[j] + 1, c2 = Math.max(c1, cortes[j + 1]), k = TARJ[(i + j) % TARJ.length];
+            const c1 = cortes[j] + 1, c2 = Math.max(c1, cortes[j + 1]), k = TCOL[x[3]] || TARJ[(i + j) % TARJ.length];
             const val = x[2] === 'mon' ? $$(x[1]) : x[2] === 'num' ? nf(x[1]) : String(x[1] === null || x[1] === undefined ? '' : x[1]);
             const a = une(r, c1, c2), b = une(r + 1, c1, c2);
             a.value = x[0]; a.font = { name: 'Calibri', size: 9, color: { argb: k.t } }; b.value = val; b.font = { name: 'Calibri', size: 15, bold: true, color: { argb: k.t } };
@@ -8664,6 +8724,12 @@ const App = (() => {
       ws.pageSetup = { orientation: nc > 7 ? 'landscape' : 'portrait', paperSize: 1, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: filaEnc + ':' + filaEnc,
         margins: { left: 0.4, right: 0.4, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 } };
       ws.headerFooter = { oddFooter: '&L&8Interés Veterinario®&C&8' + String(h.titulo).replace(/&/g, '&&') + '&R&8Página &P de &N' };
+      // 📈 gráficas debajo de la tabla (cada una ocupa ~16 renglones)
+      (h.graficas || []).forEach(g => { const im = graficaPng(g); if (!im) return;
+        r += 1; let ancho = 0; for (let c = 1; c <= nc; c++) ancho += (ws.getColumn(c).width || 10) * 7;
+        const w = Math.min(760, Math.max(520, ancho)), hh = Math.round(w * im.h / im.w);
+        ws.addImage(wb.addImage({ base64: im.data, extension: 'png' }), { tl: { col: 0, row: r - 1 }, ext: { width: w, height: hh } });
+        r += Math.ceil(hh / 20) + 1; });
       r += 1; ws.getCell(r, 1).value = 'Generado el ' + new Date().toLocaleString('es-MX') + ' · ' + (U().nombre || ''); ws.getCell(r, 1).font = { size: 8, italic: true, color: { argb: 'FF8A918C' } };
     });
     const buf = await wb.xlsx.writeBuffer();
