@@ -1060,6 +1060,18 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
   .fab-rap button { width: 52px; height: 52px; padding: 0; justify-content: center; border-radius: 50%; font-size: 0; }
   .fab-rap button span { font-size: 22px; }
 }
+.conv-cl { border: 1px solid var(--borde); border-radius: 10px; padding: 6px 10px; margin: 6px 0; background: var(--superficie-2); }
+.conv-cl summary { cursor: pointer; padding: 4px 0; }
+.conv-cl textarea { width: 100%; font-size: 13px; line-height: 1.45; }
+.conv-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+.conv-chips .chip { padding: 3px 8px; font-size: 11.5px; min-height: 0; font-family: ui-monospace, monospace; }
+.conv-firma { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--borde); }
+.conv-firma:first-child { border-top: 0; }
+.conv-firma-img { width: 130px; height: 52px; border-radius: 8px; background: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+.conv-firma-img img { max-width: 124px; max-height: 48px; }
+.conv-firma-img .muted { color: #8a8f86; }
+.conv-firma-dat { flex: 1; min-width: 120px; }
+.conv-firma-acc { display: flex; gap: 6px; flex-wrap: wrap; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

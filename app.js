@@ -610,8 +610,8 @@ const App = (() => {
       ${rt ? `<span>🧭 Preparado para ruta <b>${haceTxt(rt.t)}</b> · ${nf((rt.listas || 0) + (rt.detalles || 0))} consultas guardadas</span>` : ''}
       ${n ? `<span>⟳ <b>${n}</b> por sincronizar${S.sincronizando ? ' (enviando…)' : ' · se envían solas con buena señal'}</span>` : '<span>✔ Todo sincronizado</span>'}
       <button onclick="App.prepararRuta()">📥 Actualizar para ruta</button>
-      ${S.vacRes && S.vacRes.semana ? `<button class="bienv-vac" onclick="App.bienvIr('revacunas')">💉 Revacunaciones: <b>${S.vacRes.semana}</b> ganadero${S.vacRes.semana === 1 ? '' : 's'} por avisar esta semana ›</button>` : ''}`;
-    resumenVacunas();
+      ${S.vacRes && S.vacRes.semana ? `<button class="bienv-vac" onclick="App.bienvIr('revacunas')">💉 Revacunaciones: <b>${S.vacRes.semana}</b> ganadero${S.vacRes.semana === 1 ? '' : 's'} por avisar esta semana ›</button>` : ''}${convAvisoTxt()}`;
+    resumenVacunas(); resumenConvenios();
   }
   /** 💉 Aviso semanal de revacunaciones (dueño, Administrador y gerentes): se consulta una vez al día. */
   async function resumenVacunas() {
@@ -2100,7 +2100,7 @@ const App = (() => {
       S.pdfListo = { titulo: r.nombre, texto: info.texto, url: r.url, b64: r.b64 || '' };
       const conArch = !!pdfArchivo();   // 📎 el dispositivo puede adjuntar el PDF (iPhone, iPad, Mac, Android)
       const tel = String(info.cel || '').replace(/\D/g, '').slice(-10);
-      modal('PDF listo', `<p>📄 <b>${esc(r.nombre)}</b></p>
+      modal('PDF listo', `<p>📄 <b>${esc(r.nombre)}</b></p>${r.aviso ? `<p class="etq av" style="display:block;white-space:normal;padding:8px 10px">⚠️ ${esc(r.aviso)}</p>` : ''}
         <p class="muted">Quedó guardado en tu Drive, carpeta “Interés Veterinario - PDF”. ${conArch ? 'Con <b>💬 WhatsApp con PDF</b> se abre la hoja de compartir: elige WhatsApp y luego el contacto; el archivo va adjunto.' : 'Ábrelo y usa el botón <b>Compartir</b> de tu iPhone, iPad o Mac para mandar el archivo por WhatsApp o correo, o envía directamente el enlace:'}</p>
         <div class="acciones" style="justify-content:flex-start">
           <a class="btn primario" href="${esc(r.url)}" target="_blank" rel="noopener">📄 Abrir PDF</a>
@@ -2404,9 +2404,10 @@ const App = (() => {
     const el = $('#cfSucs'); if (!el) return;
     const l = U().rol === 'Administrador' ? (D().sucursales || []) : sucsPermitidas();
     S.sucsCfg = l;
-    el.innerHTML = tabla([{ t: 'Sucursal', h: x => `<div class="con-avatar">${avatarSuc(x.id)}<div><b>${esc(x.nombre)}</b>${x.cerrada ? ' <span class="etq mal">🔚 Cerrada</span>' : ''}<br><small class="muted">${esc(x.tipo || '')}</small></div></div>` },
+    el.innerHTML = tabla([{ t: 'Sucursal', h: x => `<div class="con-avatar">${avatarSuc(x.id)}<div><b>${esc(x.nombre)}</b>${x.cerrada ? ' <span class="etq mal">🔚 Cerrada</span>' : ''}<br><small class="muted">${esc(x.tipo || '')}</small>${puede('dueno') && !esMatriz(x.id) && !x.cerrada ? ` <span data-conv="${esc(x.id)}">${convEtq((S.convEst || {})[x.id])}</span>` : ''}</div></div>` },
       { t: 'Dirección', cls: 'ocultar-movil', h: x => esc(x.direccion) }, { t: 'Teléfono', h: x => esc(x.tel) }], l, { clic: 'App.verSucCfg', vacio: 'Sin sucursales' });
     cargarAvatares(el).then(() => { if (U().rol === 'Administrador') repararMinisSuc(l); });
+    convEstados();
   }
   /** Al abrir la app (administrador): revisa qué sucursales con foto aún no tienen miniatura y la crea. */
   async function revisarMinisSuc() {
@@ -2450,7 +2451,7 @@ const App = (() => {
     const fotoBloque = bloqueFotoSuc(x.id);
     modal('🏬 ' + x.nombre, `<div class="arch-par">${fotoBloque}</div>
       <div class="tarjeta" style="margin-top:10px">${dato('Tipo', x.tipo)}${dato('Dirección', x.direccion)}${dato('Teléfono', x.tel)}${dato('Correo', x.email)}${dato('Serie de notas', x.serie)}${dato('Lista de precios', x.lista)}</div>
-      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button>${puede('dueno') && /consignaci/i.test(x.tipo || '') ? `<button class="btn" onclick="App.convenioForm('${esc(x.id)}')">📄 Convenio de consignación</button>` : ''}${puede('dueno') && !esMatriz(x.id) ? `<button class="btn" onclick="App.cierreSuc('${esc(x.id)}')">${x.cerrada ? '🔚 Ver cierre' : '🔚 Cerrar sucursal'}</button>` : ''}${puede('dueno') ? `<button class="btn primario" onclick="App.sucForm('${esc(x.id)}')">⚙️ Configurar sucursal</button>` : ''}</div>`);
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button>${puede('dueno') && !esMatriz(x.id) && !x.cerrada ? `<button class="btn" onclick="App.convenioForm('${esc(x.id)}')">📄 Convenio</button>` : ''}${puede('dueno') && !esMatriz(x.id) ? `<button class="btn" onclick="App.cierreSuc('${esc(x.id)}')">${x.cerrada ? '🔚 Ver cierre' : '🔚 Cerrar sucursal'}</button>` : ''}${puede('dueno') ? `<button class="btn primario" onclick="App.sucForm('${esc(x.id)}')">⚙️ Configurar sucursal</button>` : ''}</div>`);
   }
   /** Imagen de la sucursal: Matriz usa el logotipo general; las demás su foto (con Cambiar / Quitar). */
   function bloqueFotoSuc(id) {
@@ -4241,20 +4242,105 @@ const App = (() => {
         { t: 'Resultado', h: x => `<span class="etq ${RS[x.resultado] || ''}">${esc(x.resultado)}</span>` + (x.motivo ? `<br><small class="muted">${esc(x.usuario)}: ${esc(x.motivo)}</small>` : `<br><small class="muted">${esc(x.usuario)}</small>`) }], r.lista, { vacio: 'Sin intentos en el periodo' })}</div>`;
   }
   function limVer() { S.flim = { suc: $('#lmS').value, desde: $('#lmD').value, hasta: $('#lmH').value }; limitesReporte(); }
-  /* ---------- 📄 CONVENIO DE CONSIGNACIÓN (solo el dueño): no lista productos; los traspasos firmados son sus anexos ---------- */
+  /* ---------- 📄 CONVENIOS CON SUCURSALES (solo el dueño): plantilla base + ajustes por sucursal, firma y vencimiento ---------- */
+  const CONV_ETQ = { 'Vigente': 'ok', 'Por vencer': 'av', 'Vencido': 'mal', 'Por firmar': 'av', 'Sin convenio': '', 'No aplica': '' };
+  const CONV_ICO = { 'Vigente': '✅', 'Por vencer': '⏳', 'Vencido': '⛔', 'Por firmar': '✍️', 'Sin convenio': '📄', 'No aplica': '➖' };
+  function convEtq(x) { return x && x.estado ? `<span class="etq ${CONV_ETQ[x.estado] || ''}">${CONV_ICO[x.estado] || ''} ${esc(x.estado)}</span>` : ''; }
+  function convVenceTxt(x) { return !x || !x.vence ? '' : x.vence === 'indefinida' ? 'vigencia indefinida' : (x.dias < 0 ? 'venció el ' : 'vence el ') + fechaCorta(x.vence) + (x.dias !== null && x.dias !== undefined ? ' (' + (x.dias < 0 ? 'hace ' + Math.abs(x.dias) : 'en ' + x.dias) + ' días)' : ''); }
+  const CONV_VAR_TXT = { consignante: 'tu nombre', rfc_consignante: 'tu RFC', consignatario: 'nombre del consignatario', sucursal: 'nombre de la sucursal', lista: 'lista de precios', periodicidad: 'semanal / quincenal / mensual',
+    plazo: 'días para pagar', devolucion: 'días antes de caducar', aviso: 'días de aviso', ciudad: 'ciudad', tope: 'monto máximo', monto_pagare: 'monto del pagaré', vigencia: 'texto de la vigencia' };
+  /** 📄 Vista general: estado del convenio de cada sucursal. */
+  async function convenios() {
+    let r; try { r = await pedir('convenios', {}); } catch (e) { return toast(/desconocida/i.test(e.message || '') ? 'Se activa con el servidor 236.' : e.message, true); }
+    S.convLista = r.sucursales || []; convMapa(S.convLista);
+    const orden = { 'Vencido': 0, 'Por vencer': 1, 'Sin convenio': 2, 'Por firmar': 3, 'Vigente': 4, 'No aplica': 5 };
+    const l = S.convLista.slice().sort((a, b) => (orden[a.estado] - orden[b.estado]) || a.nombre.localeCompare(b.nombre));
+    modal('📄 Convenios con sucursales', `<p class="muted peq">Aquí ves qué sucursales tienen convenio y cuándo vence. Toca una para elaborarlo, ajustarlo o renovarlo. Las cláusulas que cambies en una sucursal <b>solo aplican a ella</b>; la <b>plantilla base</b> es el punto de partida de los convenios nuevos.</p>
+      <div class="acciones" style="justify-content:flex-start;margin:4px 0 8px"><button class="btn" onclick="App.convBase()">✏️ Editar plantilla base</button></div>
+      ${tabla([{ t: 'Sucursal', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo || '')}${x.consignatario ? ' · ' + esc(x.consignatario) : ''}</small>` },
+        { t: 'Convenio', h: x => convEtq(x) + (convVenceTxt(x) ? `<br><small class="muted">${esc(convVenceTxt(x))}</small>` : '') }], l, { clic: 'App.convAbrir', vacio: 'Sin sucursales activas' })}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+    S.convOrden = l;
+  }
+  function convBienv() { bienvIr('config'); setTimeout(convenios, 400); }
+  function convAbrir(i) { const x = (S.convOrden || [])[i]; if (x) convenioForm(x.id); }
+  function convMapa(l) { S.convEst = {}; (l || []).forEach(x => S.convEst[x.id] = x); document.querySelectorAll('[data-conv]').forEach(el => el.innerHTML = convEtq(S.convEst[el.dataset.conv])); }
+  /** Estado de los convenios para la lista de Config › Sucursales y el aviso de la bienvenida. */
+  async function convEstados() { if (!puede('dueno') || navigator.onLine === false) return; try { const r = await pedir('convenios', {}, true); convMapa(r.sucursales || []); } catch (e) {} }
+  async function resumenConvenios() {
+    const u = U() || {}; if (!(u.permisos || {}).dueno || navigator.onLine === false || S.convPidiendo) return;
+    const k = 'convres_' + (u.id || ''), c = LS.get(k, null), hoy = hoyISO();
+    if (c && c.d === hoy) { if (!S.convRes) { S.convRes = c.r; pintarBienvEstado(); } return; }
+    S.convPidiendo = true;
+    try { const r = await pedir('convenios', { resumen: 1 }, true); S.convRes = r; LS.set(k, { d: hoy, r: r }); pintarBienvEstado(); } catch (e) {} finally { S.convPidiendo = false; }
+  }
+  function convAvisoTxt() {
+    const r = S.convRes; if (!r) return ''; const p = [];
+    if (r.vencidos) p.push(r.vencidos + ' vencido' + (r.vencidos === 1 ? '' : 's')); if (r.porVencer) p.push(r.porVencer + ' por vencer');
+    return p.length ? `<button class="bienv-vac" onclick="App.convBienv()">📄 Convenios: <b>${p.join(' · ')}</b> ›</button>` : '';
+  }
+  function convClHtml(l) {
+    return l.map((c, i) => `<details class="conv-cl" ${S.convAbierta === i ? 'open' : ''}><summary><b>${i + 1}. ${esc(c.t || '(sin título)')}</b>${c.si ? ` <small class="muted">· solo con ${c.si === 'tope' ? 'monto máximo' : 'pagaré'}</small>` : ''}</summary>
+      <label>Título<input data-ct="${i}" value="${esc(c.t)}"></label><label>Texto<textarea data-cx="${i}" rows="6" onfocus="S_convFoco(${i})">${esc(c.x)}</textarea></label>
+      <div class="fila"><label>Se incluye<select data-cs="${i}">${opts([['', 'Siempre'], ['tope', 'Solo si hay monto máximo'], ['pagare', 'Solo si hay pagaré']], c.si || '')}</select></label>
+      <button class="btn fijo" onclick="App.convClMover(${i},-1)" ${i ? '' : 'disabled'}>▲</button><button class="btn fijo" onclick="App.convClMover(${i},1)" ${i < l.length - 1 ? '' : 'disabled'}>▼</button><button class="btn fijo" onclick="App.convClQuitar(${i})">🗑️</button></div></details>`).join('')
+      + `<div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.convClAgregar()">➕ Agregar cláusula</button></div>`;
+  }
+  function convChips() { return `<p class="muted peq" style="margin:4px 0">Toca una palabra clave para ponerla donde está el cursor; en el documento se cambia por el dato real:</p><div class="conv-chips">${Object.keys(CONV_VAR_TXT).map(k => `<button type="button" class="btn chip" title="${esc(CONV_VAR_TXT[k])}" onmousedown="event.preventDefault()" onclick="App.convChip('${k}')">{${k}}</button>`).join('')}</div>`; }
+  function convLeerCl() {
+    const l = S.convCl || []; document.querySelectorAll('[data-ct]').forEach(el => { const i = +el.dataset.ct; if (l[i]) l[i].t = el.value; });
+    document.querySelectorAll('[data-cx]').forEach(el => { const i = +el.dataset.cx; if (l[i]) l[i].x = el.value; });
+    document.querySelectorAll('[data-cs]').forEach(el => { const i = +el.dataset.cs; if (l[i]) l[i].si = el.value; }); return l;
+  }
+  function convPintarCl() { const el = $('#cvCl'); if (el) el.innerHTML = convClHtml(S.convCl || []); }
+  function convClAgregar() { convLeerCl(); S.convCl.push({ t: 'Nueva cláusula', x: '', si: '' }); S.convAbierta = S.convCl.length - 1; convPintarCl(); }
+  function convClQuitar(i) { convLeerCl(); if (!confirm('¿Quitar la cláusula "' + (S.convCl[i] || {}).t + '"?')) return; S.convCl.splice(i, 1); S.convAbierta = -1; convPintarCl(); }
+  function convClMover(i, d) { convLeerCl(); const l = S.convCl, j = i + d; if (j < 0 || j >= l.length) return; [l[i], l[j]] = [l[j], l[i]]; S.convAbierta = j; convPintarCl(); }
+  function convChip(k) {
+    const ta = document.querySelector(`[data-cx="${S.convFoco}"]`); if (!ta) return toast('Primero toca dentro del texto de una cláusula', true);
+    const a = ta.selectionStart || 0, b = ta.selectionEnd || 0, t = '{' + k + '}'; ta.value = ta.value.slice(0, a) + t + ta.value.slice(b); ta.focus(); ta.selectionStart = ta.selectionEnd = a + t.length;
+  }
+  window.S_convFoco = i => { S.convFoco = i; };
+  function convUsarBase() { if (!confirm('¿Reemplazar las cláusulas de esta sucursal por las de la plantilla base?')) return; S.convCl = JSON.parse(JSON.stringify(S.conv.base)); S.convAbierta = -1; convPintarCl(); toast('Se cargó la plantilla base; se aplica al generar el convenio'); }
+  /** ✏️ Plantilla base: el punto de arranque de todos los convenios nuevos. */
+  async function convBase(desdeSuc) {
+    S.convVolver = desdeSuc && S.conv ? S.conv.suc.id : ''; let r = S.conv; if (!r || !r.base) { const l = (D().sucursales || []).find(x => !esMatriz(x.id)); if (!l) return toast('No hay sucursales', true); try { r = await pedir('convenioCfg', { suc: l.id }); } catch (e) { return toast(e.message, true); } }
+    S.convModo = 'base'; S.convCl = JSON.parse(JSON.stringify(r.base)); S.convAbierta = -1; S.convFoco = -1;
+    modal('✏️ Plantilla base del convenio', `<p class="muted peq">Estas cláusulas son las que se cargan al elaborar un convenio <b>nuevo</b>. Cambiarlas aquí <b>no modifica</b> los convenios que ya ajustaste en cada sucursal.</p>${convChips()}<div id="cvCl">${convClHtml(S.convCl)}</div>
+      <div class="acciones"><button class="btn" onclick="${S.convVolver ? `App.convenioForm('${esc(S.convVolver)}')` : 'App.cerrarModal()'}">Cancelar</button><button class="btn" onclick="App.convBaseGuardar(1)">↺ Volver a la original</button><button class="btn primario" onclick="App.convBaseGuardar()">💾 Guardar plantilla base</button></div>`);
+  }
+  async function convBaseGuardar(orig) {
+    if (orig && !confirm('¿Volver a las cláusulas originales del sistema? Se pierde lo que cambiaste en la plantilla base.')) return;
+    const l = orig ? [] : convLeerCl().filter(c => String(c.t).trim() && String(c.x).trim());
+    try { const r = await pedir('guardarConvenioBase', { clausulas: l }); if (S.conv) S.conv.base = r.base; cerrarModal(); toast('✔ Plantilla base guardada (' + r.base.length + ' cláusulas)'); if (S.convVolver) convenioForm(S.convVolver); } catch (e) {}
+  }
   async function convenioForm(id) {
-    let r; try { r = await pedir('convenioCfg', { suc: id }); } catch (e) { return toast(/desconocida/i.test(e.message || '') ? 'Se activa con el servidor 235.' : e.message, true); }
-    S.conv = r; const d = r.datos, c = r.cfg, v = x => esc(x === undefined || x === null ? '' : x);
-    modal('📄 Convenio de consignación · ' + r.suc.nombre, `<p class="muted peq">El convenio <b>no lista productos</b>: cada traspaso que le mandes a esta sucursal, firmado de recibido, forma parte de él como anexo. Se recomienda que lo revise tu abogado antes de firmarlo.</p>
+    let r; try { r = await pedir('convenioCfg', { suc: id }); } catch (e) { return toast(/desconocida/i.test(e.message || '') ? 'Se activa con el servidor 236.' : e.message, true); }
+    S.conv = r; S.convModo = 'suc'; S.convCl = JSON.parse(JSON.stringify(r.datos.clausulas || r.base)); S.convAbierta = -1; S.convFoco = -1;
+    const d = r.datos, c = r.cfg, v = x => esc(x === undefined || x === null ? '' : x), e = r.estado || {};
+    const renovar = e.estado === 'Vencido' || e.estado === 'Por vencer';
+    modal('📄 Convenio · ' + r.suc.nombre, `<div class="tarjeta" style="margin:0 0 8px"><span id="cvEst">${convEtq(e)} ${convVenceTxt(e) ? `<small class="muted">${esc(convVenceTxt(e))}</small>` : ''}</span>
+        ${e.estado === 'Sin convenio' ? '<p class="muted peq" style="margin:4px 0 0">Esta sucursal aún no tiene convenio. Revisa los datos y genera el documento.</p>' : renovar ? '<p class="muted peq" style="margin:4px 0 0">Para <b>renovarlo</b>, cambia la fecha de firma a la nueva fecha y genera el convenio; quedará “Por firmar” hasta que lo marques como firmado.</p>' : ''}
+        ${d.elaborado ? `<div class="fila" style="margin-top:6px"><label class="check"><input type="checkbox" id="cvFirm" ${d.firmado ? 'checked' : ''}> Ya está firmado</label><label>Fecha en que se firmó<input type="date" id="cvFecF" value="${v(d.fechaFirma || d.fecha)}"></label><button class="btn fijo" onclick="App.convFirma()">💾 Guardar</button></div>` : ''}
+        <label class="check"><input type="checkbox" id="cvNoAp" ${d.noAplica ? 'checked' : ''} onchange="App.convNoAplica(this.checked)"> Esta sucursal no necesita convenio (no avisar)</label></div>
+      ${d.elaborado ? `<div class="tarjeta" style="margin:0 0 8px"><h4 style="margin:0 0 4px">✍️ Firmas digitales <small class="muted">(tinta azul)</small></h4>
+        <p class="muted peq" style="margin:0 0 6px">Firmen en este equipo después de revisar el convenio generado. Al terminar, toca <b>📄 Generar convenio</b> para que las firmas queden en el PDF. Si cambias algo del convenio y lo vuelves a generar, las firmas se quitan y hay que firmar de nuevo.</p>
+        <div id="cvFirmas">${convFirmasHtml()}</div></div>` : ''}
+      <p class="muted peq">El convenio <b>no lista productos</b>: cada traspaso que le mandes a esta sucursal, firmado de recibido, forma parte de él como anexo. Se recomienda que lo revise tu abogado antes de firmarlo.</p>
       <h4 style="margin:10px 0 4px">El consignatario</h4>
       <div class="rejilla"><label>Nombre completo<input id="cvNom" value="${v(d.nombre)}"></label><label>RFC<input id="cvRfc" value="${v(d.rfc)}" style="text-transform:uppercase"></label>
         <label>Identificación (opcional)<input id="cvIde" value="${v(d.identificacion)}" placeholder="INE núm. …"></label><label>Domicilio<input id="cvDom" value="${v(d.domicilio)}"></label>
-        <label>Fecha de firma<input type="date" id="cvFec" value="${v(d.fecha)}"></label><label>Vigencia (meses; 0 = indefinida)<input type="number" id="cvVig" min="0" value="${v(d.vigencia)}"></label>
+        <label>Fecha del convenio<input type="date" id="cvFec" value="${v(renovar ? hoyISO() : d.fecha)}"></label><label>Vigencia (meses; 0 = indefinida)<input type="number" id="cvVig" min="0" value="${v(d.vigencia)}"></label>
         <label>Monto máximo de mercancía (opcional)<input type="number" id="cvTope" min="0" step="1000" value="${v(d.tope)}" placeholder="sin tope"></label>
         <label>Testigo 1 (opcional)<input id="cvT1" value="${v(d.testigo1)}"></label><label>Testigo 2 (opcional)<input id="cvT2" value="${v(d.testigo2)}"></label></div>
+      <label class="check"><input type="checkbox" id="cvRen" ${d.renovacion ? 'checked' : ''}> Renovación automática por periodos iguales</label>
       <label class="check"><input type="checkbox" id="cvPag" ${d.pagare ? 'checked' : ''} onchange="document.getElementById('cvPagM').style.display=this.checked?'':'none'"> Incluir pagaré como garantía</label>
       <div id="cvPagM" style="${d.pagare ? '' : 'display:none'}"><div class="rejilla"><label>Monto del pagaré<input type="number" id="cvMonP" min="0" step="1000" value="${v(d.montoPagare)}" placeholder="igual al tope"></label>
         <label>Interés moratorio mensual (%)<input type="number" id="cvInt" min="0" step="0.5" value="${v(c.interes)}"></label></div></div>
+      <details style="margin-top:8px"><summary><b>📝 Cláusulas de esta sucursal</b> <small class="muted">(${r.propia ? 'ajustadas para esta sucursal' : 'iguales a la plantilla base'})</small></summary>
+        <p class="muted peq" style="margin:4px 0">Lo que cambies aquí se guarda <b>solo para esta sucursal</b> al generar el convenio; la plantilla base no se toca.</p>
+        <div class="acciones" style="justify-content:flex-start;margin:2px 0"><button class="btn" onclick="App.convUsarBase()">↺ Usar la plantilla base</button><button class="btn" onclick="App.convBase(1)">✏️ Editar plantilla base</button></div>
+        ${convChips()}<div id="cvCl">${convClHtml(S.convCl)}</div></details>
       <details style="margin-top:8px"><summary><b>Condiciones generales</b> <small class="muted">(se guardan para todas las sucursales)</small></summary>
         <div class="rejilla"><label>Consignante<input id="cvCon" value="${v(c.consignante)}"></label><label>RFC del consignante<input id="cvCRfc" value="${v(c.rfc)}"></label>
           <label>Liquidación<select id="cvPer">${opts([['semanal', 'Semanal'], ['quincenal', 'Quincenal'], ['mensual', 'Mensual']], c.periodicidad)}</select></label>
@@ -4264,14 +4350,53 @@ const App = (() => {
           <label>Ciudad y jurisdicción<input id="cvCiu" value="${v(c.ciudad)}"></label></div></details>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.convenioPdf()">📄 Generar convenio</button></div>`);
   }
+  function convFirmaNombre(rol) { const d = S.conv.datos, g = id => (($('#' + id) || {}).value || '').trim(); return { consignante: g('cvCon') || S.conv.cfg.consignante, consignatario: g('cvNom') || d.nombre, testigo1: g('cvT1') || d.testigo1, testigo2: g('cvT2') || d.testigo2 }[rol] || ''; }
+  const CONV_ROLES = [['consignante', 'El consignante'], ['consignatario', 'El consignatario'], ['testigo1', 'Testigo 1'], ['testigo2', 'Testigo 2']];
+  function convFirmasHtml() {
+    const F = S.conv.firmas || {};
+    return CONV_ROLES.map(([k, t]) => { const f = F[k], ok = f && f.valida;
+      return `<div class="conv-firma"><div class="conv-firma-img">${ok && f.img ? `<img src="${f.img}" alt="firma">` : `<span class="muted peq">${f ? 'Firma de una versión anterior' : 'Sin firma'}</span>`}</div>
+        <div class="conv-firma-dat"><b>${esc(t)}</b><br><small class="muted">${esc(convFirmaNombre(k) || '—')}${ok ? ' · ✔ ' + esc(fechaCorta(f.fecha)) : ''}</small></div>
+        <div class="conv-firma-acc">${k === 'consignante' && S.conv.firmaGuardada && !ok ? `<button class="btn fijo" onclick="App.convFirmar('${k}',1)">Usar mi firma</button>` : ''}<button class="btn ${ok ? '' : 'primario'} fijo" onclick="App.convFirmar('${k}')">${ok ? '↺ Volver a firmar' : '✍️ Firmar'}</button>${f ? `<button class="btn fijo" onclick="App.convFirmaQuitar('${k}')">🗑️</button>` : ''}</div></div>`; }).join('');
+  }
+  async function convFirmar(rol, guardada) {
+    const r = S.conv; if (!r) return; const t = (CONV_ROLES.find(x => x[0] === rol) || [])[1], nom = convFirmaNombre(rol);
+    let f = { guardada: 1 };
+    if (!guardada) {
+      f = await capturarFirma({ titulo: 'Firma · ' + t + (nom ? ' · ' + nom : ''), color: '#1a3dbd', nombre: /^testigo/.test(rol) && !nom ? undefined : false, verbo: 'firma como testigo',
+        nota: 'Firma con el dedo o con el lápiz, igual que en papel. Queda en <b>tinta azul</b> sobre la línea de firma del convenio.', recordar: rol === 'consignante', okTxt: 'Guardar firma' });
+      if (!f || !f.png) return;
+    }
+    toast('Guardando firma…');
+    try {
+      const x = await pedir('firmaConvenio', { suc: r.suc.id, rol: rol, png: f.png || '', nombre: f.nombre || nom, guardada: !!f.guardada, recordar: !!f.recordar });
+      r.firmas = x.firmas; if (f.recordar) r.firmaGuardada = true; if (f.nombre && /^testigo/.test(rol) && $('#cv' + (rol === 'testigo1' ? 'T1' : 'T2')) && !$('#cv' + (rol === 'testigo1' ? 'T1' : 'T2')).value) $('#cv' + (rol === 'testigo1' ? 'T1' : 'T2')).value = f.nombre;
+      const el = $('#cvFirmas'); if (el) el.innerHTML = convFirmasHtml(); convRefrescar(x.estado);
+      const v = k => x.firmas[k] && x.firmas[k].valida;
+      toast('✔ Firma guardada' + (v('consignante') && v('consignatario') ? ' · ya está firmado; toca 📄 Generar convenio para el PDF' + (v('testigo1') && v('testigo2') ? '' : ' (los testigos pueden firmar antes)') : ' · falta ' + (v('consignante') ? 'el consignatario' : v('consignatario') ? 'el consignante' : 'consignante y consignatario')));
+    } catch (e) {}
+  }
+  async function convFirmaQuitar(rol) {
+    if (!confirm('¿Quitar esta firma del convenio?')) return;
+    try { const x = await pedir('firmaConvenio', { suc: S.conv.suc.id, rol: rol, quitar: true }); S.conv.firmas = x.firmas; const el = $('#cvFirmas'); if (el) el.innerHTML = convFirmasHtml(); convRefrescar(x.estado); toast('✔ Firma quitada'); } catch (e) {}
+  }
+  function convRefrescar(est) { if (S.conv) S.conv.estado = est; if ($('#cvFirm')) $('#cvFirm').checked = /Vigente|Por vencer|Vencido/.test(est.estado || ''); if ($('#cvEst')) $('#cvEst').innerHTML = convEtq(est) + (convVenceTxt(est) ? ` <small class="muted">${esc(convVenceTxt(est))}</small>` : ''); if (S.convEst && S.conv) { S.convEst[S.conv.suc.id] = Object.assign({}, S.convEst[S.conv.suc.id] || {}, est); convMapa(Object.values(S.convEst)); } LS.del('convres_' + (U().id || '')); S.convRes = null; resumenConvenios(); }
+  async function convFirma() {
+    const f = $('#cvFirm').checked, fe = $('#cvFecF').value;
+    if (f && !fe) return toast('Escribe la fecha en que se firmó', true);
+    try { const est = await pedir('estadoConvenio', { suc: S.conv.suc.id, firmado: f, fechaFirma: fe }); S.conv.datos.firmado = f; S.conv.datos.fechaFirma = fe; convRefrescar(est); toast('✔ ' + (f ? 'Convenio firmado · ' + (convVenceTxt(est) || 'vigente') : 'Marcado sin firmar')); } catch (e) {}
+  }
+  async function convNoAplica(v) { try { const est = await pedir('estadoConvenio', { suc: S.conv.suc.id, noAplica: v }); convRefrescar(est); toast(v ? '✔ Ya no se avisará de esta sucursal' : '✔ Se volverá a avisar de esta sucursal'); } catch (e) {} }
   function convenioPdf() {
     const r = S.conv; if (!r) return; const g = id => ($('#' + id) || {}).value || '';
     if (!g('cvNom').trim()) return toast('Escribe el nombre del consignatario', true);
-    const p = { suc: r.suc.id,
-      datos: { nombre: g('cvNom').trim(), rfc: g('cvRfc').trim().toUpperCase(), identificacion: g('cvIde').trim(), domicilio: g('cvDom').trim(), fecha: g('cvFec'), vigencia: g('cvVig'), tope: g('cvTope'),
+    const cl = convLeerCl().filter(c => String(c.t).trim() && String(c.x).trim()); if (!cl.length) return toast('El convenio necesita al menos una cláusula', true);
+    const p = { suc: r.suc.id, clausulas: cl,
+      datos: { nombre: g('cvNom').trim(), rfc: g('cvRfc').trim().toUpperCase(), identificacion: g('cvIde').trim(), domicilio: g('cvDom').trim(), fecha: g('cvFec'), vigencia: g('cvVig'), tope: g('cvTope'), renovacion: !!($('#cvRen') && $('#cvRen').checked),
         pagare: !!($('#cvPag') && $('#cvPag').checked), montoPagare: g('cvMonP'), testigo1: g('cvT1').trim(), testigo2: g('cvT2').trim() },
       cfg: { consignante: g('cvCon').trim(), rfc: g('cvCRfc').trim().toUpperCase(), periodicidad: g('cvPer'), plazo: g('cvPlazo'), devolucionCad: g('cvCad'), avisoTerminacion: g('cvAviso'), ciudad: g('cvCiu').trim(), interes: g('cvInt') || r.cfg.interes } };
-    generarPdf('convenioConsig', p, { titulo: 'Convenio de consignación', texto: 'Convenio de consignación · ' + r.suc.nombre });
+    generarPdf('convenioConsig', p, { titulo: 'Convenio de consignación', texto: 'Convenio de consignación · ' + r.suc.nombre, asunto: 'Convenio de consignación ' + r.suc.nombre, volver: `App.convenioForm('${esc(r.suc.id)}')` });
+    setTimeout(() => { S.convRes = null; LS.del('convres_' + (U().id || '')); resumenConvenios(); convEstados(); }, 4000);
   }
   /* ---------- 🔚 CIERRE DE SUCURSAL (solo el dueño): lista de revisión, guía paso a paso, acta y reapertura ---------- */
   const CIERRE_GUIA = {
@@ -13020,12 +13145,12 @@ const App = (() => {
       if (window.innerWidth <= 700) setTimeout(() => { try { i.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (er) {} }, 250);
     });
   }
-  function padFirma(cv) {
+  function padFirma(cv, color) {
     if (!cv || cv._pad) return; cv._pad = 1;
     const r0 = cv.getBoundingClientRect(), dpr = Math.min(3, window.devicePixelRatio || 1);
     if (r0.width > 0 && r0.height > 0) { cv.width = Math.round(r0.width * dpr); cv.height = Math.round(r0.height * dpr); }
     const x = cv.getContext('2d'), base = 2.2 * (cv.width / Math.max(1, r0.width || cv.width));
-    x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = '#1a2a6c'; x.lineWidth = base;
+    x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = color || '#1a2a6c'; x.lineWidth = base;
     let pinta = false, ult = null;
     const pos = e => { const r = cv.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return [(t.clientX - r.left) * cv.width / r.width, (t.clientY - r.top) * cv.height / r.height]; };
     const ini = e => { pinta = true; ult = pos(e); x.beginPath(); x.moveTo(ult[0], ult[1]); if (e.pointerId !== undefined && cv.setPointerCapture) { try { cv.setPointerCapture(e.pointerId); } catch (er) {} } e.preventDefault(); };
@@ -13055,10 +13180,10 @@ const App = (() => {
       const capa = document.createElement('div'); capa.className = 'firma-capa';
       capa.innerHTML = `<div class="firma-caja"><div class="firma-enc"><b>✍️ ${esc(o.titulo || 'Firma')}</b><button class="btn chico" data-a="x">✕</button></div>
         ${o.nombre !== false ? `<label class="firma-nom">Nombre de quien ${esc(o.verbo || 'recibe')}<input id="fmNom" value="${esc(o.nombreIni || '')}" autocomplete="off"></label>` : ''}
-        <div class="firma-zona"><canvas class="firma-pad firma-grande"></canvas><span class="firma-guia">Firme aquí</span></div>
+        ${o.nota ? `<p class="muted peq" style="margin:2px 0 6px">${o.nota}</p>` : ''}<div class="firma-zona"><canvas class="firma-pad firma-grande"></canvas><span class="firma-guia">Firme aquí</span></div>${o.recordar ? `<label class="check"><input type="checkbox" id="fmRec" checked> Guardar mi firma para los siguientes convenios</label>` : ''}
         <div class="acciones"><button class="btn" data-a="b">🧽 Borrar</button>${o.opcional ? `<button class="btn" data-a="o">${esc(o.omitirTxt || 'Continuar sin firma')}</button>` : ''}<button class="btn primario" data-a="g">✔ ${esc(o.okTxt || 'Guardar firma')}</button></div></div>`;
       document.body.appendChild(capa); document.body.classList.add('sin-scroll');
-      const cv = capa.querySelector('canvas'); requestAnimationFrame(() => padFirma(cv));
+      const cv = capa.querySelector('canvas'); requestAnimationFrame(() => padFirma(cv, o.color));
       const cerrar = v => { capa.remove(); document.body.classList.remove('sin-scroll'); res(v); };
       capa.addEventListener('click', e => {
         const a = e.target.closest('[data-a]'); if (!a) return;
@@ -13069,7 +13194,7 @@ const App = (() => {
           if (!cv._firmado) return toast('Falta la firma', true);
           const nom = capa.querySelector('#fmNom') ? capa.querySelector('#fmNom').value.trim() : '';
           if (o.nombre !== false && o.nombreObl !== false && !nom) return toast('Escribe el nombre de quien ' + (o.verbo || 'recibe'), true);
-          cerrar({ png: firmaPng(cv), nombre: nom });
+          cerrar({ png: firmaPng(cv), nombre: nom, recordar: !!(capa.querySelector('#fmRec') && capa.querySelector('#fmRec').checked) });
         }
       });
     });
@@ -13413,7 +13538,7 @@ const App = (() => {
         <div class="logo-prev"><div><small class="muted">Actual</small><div class="logo-caja">${window.LOGO ? `<img src="${window.LOGO}" alt="">` : '<span class="muted">Sin logotipo</span>'}</div></div><div id="lgNuevo" class="logo-prev"></div></div>
         <div class="acciones"><label class="btn">📁 Elegir nuevo logotipo<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="App.prepararLogo(this)"></label><span id="lgAcc" style="display:contents"></span></div></div>` : ''}
       ${u.rol === 'Administrador' && puede('recetas') ? `<div class="tarjeta"><h3>💊 Datos para las recetas</h3><p class="muted">Aparecen al pie de cada receta en PDF, junto a la firma.</p><div id="cfRx"><span class="muted">Cargando…</span></div></div>` : ''}
-      <div class="tarjeta"><h3>🏬 Sucursales</h3>${puede('dueno') ? '<div class="acciones" style="justify-content:flex-start;margin:0 0 6px"><button class="btn primario" onclick="App.sucForm()">➕ Nueva sucursal</button></div>' : ''}<p class="muted">${puede('dueno') ? 'Toca una sucursal para configurarla: sus datos, tipo de operación, lista de precios, foto, 🛡️ límites de compra por volumen y 🤝 productos de terceros.' : u.rol === 'Administrador' ? 'Toca una sucursal para poner o cambiar su foto (carpeta Sucursal_Images).' : 'Datos de tu sucursal.'}</p><div id="cfSucs"></div></div>
+      <div class="tarjeta"><h3>🏬 Sucursales</h3>${puede('dueno') ? '<div class="acciones" style="justify-content:flex-start;margin:0 0 6px"><button class="btn primario" onclick="App.sucForm()">➕ Nueva sucursal</button><button class="btn" onclick="App.convenios()">📄 Convenios</button></div>' : ''}<p class="muted">${puede('dueno') ? 'Toca una sucursal para configurarla: sus datos, tipo de operación, lista de precios, foto, 🛡️ límites de compra por volumen y 🤝 productos de terceros.' : u.rol === 'Administrador' ? 'Toca una sucursal para poner o cambiar su foto (carpeta Sucursal_Images).' : 'Datos de tu sucursal.'}</p><div id="cfSucs"></div></div>
       ${u.rol === 'Administrador' ? `<div class="tarjeta"><h3>👥 Vendedores y usuarios</h3><p class="muted">Foto de cada vendedor (carpeta Vendedor_Images). Los demás datos se editan en la hoja Catalogo_Vendedor.</p><div id="cfVend"><span class="muted">Cargando…</span></div></div>` : ''}
       ${puede('configuracion') ? `<div class="tarjeta"><h3>Pagos y saldos de las notas</h3><p class="muted">La app calcula lo pagado y el saldo de cada nota sumando sus cobros de la hoja Cobranza (relacionados por ID_Venta). Aquí puedes ver qué notas tienen guardado en Nota_Venta un pagado o saldo distinto y corregirlas.</p>
         <div class="fila"><button class="btn fijo" onclick="App.revisarSaldos(false)">Revisar notas y órdenes de compra</button></div><div id="cfSaldos" style="margin-top:12px"></div></div>` : ''}
@@ -14119,7 +14244,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
