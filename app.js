@@ -1616,7 +1616,8 @@ const App = (() => {
     g.font = 'bold 110px Arial'; g.fillText($$(m.estado === 'Vigente' ? m.saldo : m.importe), 50, 350);
     g.font = '24px Arial'; g.fillText('Emitido: ' + m.fecha, 50, 425); g.textAlign = 'right'; g.font = 'bold 28px Arial'; g.fillText('Válido hasta: ' + m.vence, W - 50, 425); g.textAlign = 'left';
     g.fillStyle = 'rgba(255,255,255,.6)'; g.fillRect(50, 455, W - 100, 2); g.fillStyle = '#fff'; g.font = '20px Arial';
-    g.fillText('Aplícalo en tu próxima compra en cualquier sucursal de Interés Veterinario®.', 50, 492); g.fillText('No canjeable por efectivo. Aplican restricciones.', 50, 522);
+    g.fillText('Presenta este QR (o tu tarjeta de cliente) en tu próxima compra.', 50, 492); g.fillText('No canjeable por efectivo. Aplican restricciones.', 50, 522);
+    try { if (m.cli) { const q = await qrCanvas(QR_CLI + encodeURIComponent(m.cli), 170); g.fillStyle = '#fff'; rr(W - 230, 150, 180, 180, 16); g.fill(); g.drawImage(q, W - 225, 155, 170, 170); } } catch (e) {}
     return new Promise(ok => cv.toBlob(ok, 'image/png'));
   }
   async function monederoWa() {
@@ -1660,6 +1661,17 @@ const App = (() => {
   }
 
   /* ---- límite de crédito: el servidor bloquea con 'LIMITE_CREDITO::{json}' ---- */
+  /* ---- 🛡️ compras por volumen: el vendedor de la sucursal decide si continúa (con motivo) ---- */
+  function errLimite(e) { const m = String((e && e.message) || ''); if (m.indexOf('LIMITE_VOLUMEN::') !== 0) return null; try { return JSON.parse(m.slice(16)); } catch (x) { return {}; } }
+  function pedirAutLimite(info, reintentar) {
+    modal('🛡️ Compra arriba del límite', `<p><b>${esc(info.cliente || '')}</b> ${info.generico ? '(público en general)' : info.socio ? 'es socio' : 'no es socio'} y esta nota rebasa lo permitido:</p>
+      ${tabla([{ t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.periodo)}</small>` }, { t: 'Ya llevó', num: 1, h: x => nf(x.ya) }, { t: 'Quiere', num: 1, h: x => nf(x.quiere) }, { t: 'Límite', num: 1, h: x => `<b>${nf(x.limite)}</b>` }], info.productos || [])}
+      <p class="muted peq">Para cuidar el abasto de los socios. Puedes bajar la cantidad o, si se justifica, continuar escribiendo el motivo (queda registrado con tu nombre).</p>
+      <label>Motivo<input id="alMot" placeholder="p. ej. compra para su rancho grande, ya lo conocemos"></label>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Corregir cantidades</button><button class="btn primario" id="alAut">Continuar con la venta</button></div>`);
+    const b = document.getElementById('alAut'); if (!b) return;
+    b.onclick = () => { const m = ($('#alMot').value || '').trim(); if (m.length < 3) return toast('Escribe el motivo', true); cerrarModal(); reintentar({ autorizaLimite: { motivo: m } }); };
+  }
   function errCredito(e) { const m = String((e && e.message) || ''); if (m.indexOf('LIMITE_CREDITO::') !== 0) return null; try { return JSON.parse(m.slice(16)); } catch (x) { return {}; } }
   function pedirAutCredito(info, reintentar) {
     const f = (t, v, c) => `<div class="fila" style="justify-content:space-between"><span>${t}</span><b style="${c ? 'color:var(--peligro-fuerte)' : ''}">${$$(v)}</b></div>`;
@@ -1705,7 +1717,7 @@ const App = (() => {
         (r.avisos || []).forEach(a => toast(a, true));
         toast('✔ Nota ' + r.folio + ' actualizada. Total ' + $$(r.total) + ' · saldo ' + $$(r.saldo));
         S.venta = ventaNueva(); guardarBorrador(); refrescarStock(); S.tabVen = 'notas'; ir('ventas', true); verVenta(r.ID_Venta);
-      } catch (e) { if ($('#vGuardar')) $('#vGuardar').disabled = false; const ic = errCredito(e); if (ic) return pedirAutCredito(ic, guardarVenta);
+      } catch (e) { if ($('#vGuardar')) $('#vGuardar').disabled = false; const il = errLimite(e); if (il) return pedirAutLimite(il, a => guardarVenta(Object.assign({}, aut || {}, a))); const ic = errCredito(e); if (ic) return pedirAutCredito(ic, a => guardarVenta(Object.assign({}, aut || {}, a)));
         if (e.red) toast('Editar una nota requiere conexión', true); }
       return;
     }
@@ -1727,7 +1739,7 @@ const App = (() => {
         S.venta = ventaNueva(); guardarBorrador();
         toast('📴 Sin conexión: venta guardada en el dispositivo. Se enviará al reconectar.' + (rxUri ? ' La foto de la receta adjúntala desde la nota cuando tengas señal.' : ''));
         S.tabVen = 'notas'; ir('ventas', true); modal('Venta pendiente de sincronizar', nota);
-      } else { $('#vGuardar').disabled = false; const ic = errCredito(e); if (ic) return pedirAutCredito(ic, guardarVenta); toast(e.message, true); }
+      } else { $('#vGuardar').disabled = false; const il = errLimite(e); if (il) return pedirAutLimite(il, a => guardarVenta(Object.assign({}, aut || {}, a))); const ic = errCredito(e); if (ic) return pedirAutCredito(ic, a => guardarVenta(Object.assign({}, aut || {}, a))); toast(e.message, true); }
     }
   }
   function descontarStockLocal(v) {
@@ -3973,7 +3985,9 @@ const App = (() => {
     if (!S.fsuc) S.fsuc = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h };
     alDia(S.fsuc);
     $('#vista').innerHTML = `<div class="tarjeta no-imprimir"><div class="fila"><label>Desde<input type="date" id="sDesde" value="${S.fsuc.desde}"></label><label>Hasta<input type="date" id="sHasta" value="${S.fsuc.hasta}"></label>
-      <button class="btn primario fijo" onclick="App.cargarSucursales()">Actualizar</button><button class="btn fijo" onclick="App.verGestiones()">👥 Cambio de encargado</button></div></div><div class="espacio"></div><div id="sRes"><div class="vacio">Cargando…</div></div>`;
+      <button class="btn primario fijo" onclick="App.cargarSucursales()">Actualizar</button><button class="btn fijo" onclick="App.verGestiones()">👥 Cambio de encargado</button>
+      <button class="btn fijo" onclick="App.sucForm()">➕ Nueva sucursal</button><button class="btn fijo" onclick="App.sucElegir('config')">⚙️ Configurar sucursal</button>
+      <button class="btn fijo" onclick="App.sucElegir('liq')">📦 Liquidación de consignación</button><button class="btn fijo" onclick="App.limitesReporte()">🛡️ Compras por volumen</button></div></div><div class="espacio"></div><div id="sRes"><div class="vacio">Cargando…</div></div>`;
     agregarMesAnio('sDesde', 'sHasta', cargarSucursales);
     cargarSucursales();
   };
@@ -3983,6 +3997,74 @@ const App = (() => {
     try { S.datSuc = await pedir('sucursalesResumen', S.fsuc); } catch (e) { $('#sRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     pintarSucursales();
   }
+  /* ---------- ➕ ALTA / ⚙️ CONFIGURACIÓN DE SUCURSAL, 📦 LIQUIDACIÓN DE CONSIGNACIÓN Y 🛡️ COMPRAS POR VOLUMEN ---------- */
+  function sucElegir(acc) {
+    const l = (D().sucursales || []).filter(x => x.id !== 'SUC_MAT_1' || acc === 'config');
+    modal(acc === 'liq' ? '📦 Liquidación de consignación' : '⚙️ Configurar sucursal', `<label>Sucursal<select id="seSuc">${l.map(x => `<option value="${esc(x.id)}">${esc(x.nombre)}${x.tipo ? ' · ' + esc(x.tipo) : ''}</option>`).join('')}</select></label>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.sucElegido('${acc}')">Continuar</button></div>`);
+  }
+  function sucElegido(acc) { const id = $('#seSuc').value; cerrarModal(); if (acc === 'liq') liquidacion(id); else sucForm(id); }
+  async function sucForm(id) {
+    modal(id ? '⚙️ Configurar sucursal' : '➕ Nueva sucursal', '<div class="vacio">Cargando…</div>');
+    let r; try { r = S.sucCfg = await pedir('sucursalCfg', { suc: id || '' }); } catch (e) { $('#modalCuerpo').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    const s = r.suc || {}, L = r.limites; S.limProd = (L.productos || []).slice();
+    $('#modalCuerpo').innerHTML = `${id ? `<p class="muted peq">Series: notas <b>${esc(s.serie)}</b> · traspasos <b>${esc(s.trasp)}</b> · órdenes de compra <b>${esc(s.oc)}</b> (no se cambian porque ya tienen folios).</p>` : '<p class="muted peq">Con la clave se arman solas sus series de notas, cotizaciones, traspasos, ajustes, mermas y órdenes de compra; sus folios empiezan en 1.</p>'}
+      <div class="rejilla"><label>Nombre<input id="sfNom" value="${esc(s.nombre || '')}" placeholder="p. ej. AGL-Candelaria"></label>
+        ${id ? '' : '<label>Clave (serie de sus notas)<input id="sfClave" maxlength="8" style="text-transform:uppercase" placeholder="p. ej. AGC"></label><label>Nombre corto (para traspasos y compras)<input id="sfCorto" maxlength="10" placeholder="p. ej. Cand"></label>'}
+        <label>Tipo de operación<select id="sfTipo">${opts(r.tipos, s.tipo && r.tipos.indexOf(s.tipo) >= 0 ? s.tipo : /consig/i.test(s.tipo || '') ? 'Ventas a Consignación' : 'Sucursal')}</select></label>
+        <label>Lista de precios (su costo)<select id="sfLista">${opts(r.listas, s.lista || 'AGL')}</select></label>
+        <label>Estado (impuesto sobre nómina)<select id="sfEdo"><option value="">—</option>${r.estados.map(x => `<option ${s.estado === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+        <label>Responsable o gerente<input id="sfResp" value="${esc(s.responsable || '')}" list="sfPers"><datalist id="sfPers">${r.personal.map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist></label>
+        <label>Responsable de pagos<input id="sfPag" value="${esc(s.pagos || '')}"></label>
+        <label>Teléfono<input id="sfTel" type="tel" value="${esc(s.tel || '')}"></label><label>Correo<input id="sfMail" type="email" value="${esc(s.email || '')}"></label></div>
+      <label>Dirección<input id="sfDir" value="${esc(s.direccion || '')}"></label><label>Observaciones<input id="sfObs" value="${esc(s.obs || '')}"></label>
+      <div class="tarjeta" style="margin-top:12px"><h4 style="margin:0 0 6px">🛡️ Control de compras por volumen</h4>
+        <label class="check"><input type="checkbox" id="slAct" ${L.activo ? 'checked' : ''}> Activar en esta sucursal</label>
+        <div class="rejilla"><label>Quien no es socio: piezas por producto a la semana<input type="number" id="slNo" min="0" step="1" value="${L.piezasNoSocio}"></label>
+          <label>Socio: tolerancia sobre su promedio mensual (%)<input type="number" id="slTol" min="0" step="5" value="${L.tolerancia}"></label>
+          <label>Socio nuevo sin historial: piezas al mes<input type="number" id="slIni" min="0" step="1" value="${L.socioInicial}"></label>
+          <label>Productos protegidos<select id="slTodos" onchange="App.limTodos()"><option value="1">Todos</option><option value="0" ${L.todos ? '' : 'selected'}>Solo los que elija</option></select></label></div>
+        <div id="slProdBox" style="${L.todos ? 'display:none' : ''}"><div class="buscador"><input id="slProd" placeholder="Agrega un producto…" autocomplete="off"></div><div id="slChips" class="fila" style="flex-wrap:wrap;gap:6px;margin-top:6px"></div></div>
+        <p class="muted peq">Público en general: el límite aplica en cada nota. Al rebasarlo, el vendedor puede continuar escribiendo el motivo; todo queda en 🛡️ Compras por volumen.</p></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.sucGuardar('${esc(id || '')}')">${id ? 'Guardar' : 'Dar de alta'}</button></div>`;
+    limChips(); buscador($('#slProd'), { fuente: q => fuenteProductos('', '', true)(q), limpiar: true, alElegir: x => { if (S.limProd.indexOf(x.id) < 0) S.limProd.push(x.id); limChips(); } });
+  }
+  function limTodos() { $('#slProdBox').style.display = $('#slTodos').value === '1' ? 'none' : ''; }
+  function limChips() { const el = $('#slChips'); if (!el) return; el.innerHTML = (S.limProd || []).map((id, i) => { const p = prod(id); return `<span class="etq">${esc(p ? p.nombre : id)} <a href="#" onclick="App.limQuitar(${i});return false">✕</a></span>`; }).join('') || '<small class="muted">Sin productos elegidos</small>'; }
+  function limQuitar(i) { S.limProd.splice(i, 1); limChips(); }
+  async function sucGuardar(id) {
+    const p = { id: id, nombre: $('#sfNom').value, clave: $('#sfClave') ? $('#sfClave').value : '', corto: $('#sfCorto') ? $('#sfCorto').value : '', tipo: $('#sfTipo').value, lista: $('#sfLista').value,
+      estado: $('#sfEdo').value, responsable: $('#sfResp').value, pagos: $('#sfPag').value, tel: $('#sfTel').value, email: $('#sfMail').value, direccion: $('#sfDir').value, obs: $('#sfObs').value,
+      limites: { activo: $('#slAct').checked, todos: $('#slTodos').value === '1', productos: S.limProd || [], piezasNoSocio: $('#slNo').value, tolerancia: $('#slTol').value, socioInicial: $('#slIni').value } };
+    try { const r = await pedir('guardarSucursal', p); cerrarModal(); toast(id ? '✔ Sucursal actualizada' : '✔ Sucursal ' + r.id + ' dada de alta'); if (typeof refrescarDatos === 'function') refrescarDatos(true); } catch (e) {}
+  }
+  async function liquidacion(suc) {
+    const h = hoyISO(), f = S.fliq = S.fliq || { desde: h.slice(0, 8) + '01', hasta: h }; if (suc) f.suc = suc;
+    $('#sRes').innerHTML = '<div class="vacio">Calculando…</div>';
+    let r; try { r = S.liq = await pedir('liquidacionConsig', f); } catch (e) { $('#sRes').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    $('#sRes').innerHTML = `<div class="tarjeta"><h3 style="margin:0 0 8px">📦 Liquidación de consignación · ${esc(r.nombre)}</h3><div class="fila" style="align-items:flex-end">
+        <label>Desde<input type="date" id="lqD" value="${f.desde}"></label><label>Hasta<input type="date" id="lqH" value="${f.hasta}"></label><button class="btn primario fijo" onclick="App.liqVer()">Ver</button><button class="btn fijo" onclick="window.print()">🖨️ Imprimir</button></div>
+        <p class="muted peq">Lo que vendió la sucursal de tus productos del ${esc(r.desde)} al ${esc(r.hasta)}, a su lista <b>${esc(r.lista)}</b> (lo que te debe), y el inventario tuyo que sigue allá.</p></div>
+      <div class="kpis"><div class="kpi"><small>Te debe (a su lista)</small><b class="ok-txt">${$$(r.adeudo)}</b><span>${nf(r.piezas)} piezas · ${nf(r.notas)} notas</span></div>
+        <div class="kpi"><small>Vendió a sus clientes</small><b>${$$(r.venta)}</b><span>sin IVA · su ganancia ${$$(r.venta - r.adeudo)}</span></div>
+        <div class="kpi"><small>Tu inventario allá</small><b>${$$(r.valorInventario)}</b><span>${nf(r.piezasInventario)} piezas a su lista</span></div></div>
+      <div class="tarjeta"><h3>🧾 Vendido en el periodo</h3>${tabla([{ t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${nf(x.notas)} nota(s)</small>` }, { t: 'Piezas', num: 1, h: x => nf(x.cant) }, { t: 'Precio lista', num: 1, h: x => $$(x.precioLista) }, { t: 'Te debe', num: 1, h: x => `<b>${$$(x.adeudo)}</b>` }, { t: 'Vendió en', num: 1, cls: 'ocultar-movil', h: x => $$(x.venta) }], r.lineas, { vacio: 'Sin ventas en el periodo' })}</div>
+      <div class="tarjeta"><h3>📦 Inventario en consignación hoy</h3>${tabla([{ t: 'Producto', k: 'nombre' }, { t: 'Piezas', num: 1, h: x => nf(x.cant) }, { t: 'Precio lista', num: 1, cls: 'ocultar-movil', h: x => $$(x.precioLista) }, { t: 'Valor', num: 1, h: x => $$(x.valor) }], r.inventario, { vacio: 'Sin existencias' })}</div>`;
+  }
+  function liqVer() { S.fliq = Object.assign(S.fliq || {}, { desde: $('#lqD').value, hasta: $('#lqH').value }); liquidacion(); }
+  async function limitesReporte() {
+    const h = hoyISO(), f = S.flim = S.flim || { desde: h.slice(0, 8) + '01', hasta: h, suc: '' };
+    $('#sRes').innerHTML = '<div class="vacio">Cargando…</div>';
+    let r; try { r = await pedir('limitesVolumen', f); } catch (e) { $('#sRes').innerHTML = `<div class="vacio">${esc(e.message || 'Requiere conexión')}</div>`; return; }
+    const RS = { Bloqueado: 'mal', Autorizado: 'av', 'Sin conexión': '' };
+    $('#sRes').innerHTML = `<div class="tarjeta"><h3 style="margin:0 0 8px">🛡️ Compras arriba del límite</h3><div class="fila" style="align-items:flex-end">
+        <label>Sucursal<select id="lmS">${opts(D().sucursales || [], f.suc || '', 'Todas')}</select></label><label>Desde<input type="date" id="lmD" value="${f.desde}"></label><label>Hasta<input type="date" id="lmH" value="${f.hasta}"></label><button class="btn primario fijo" onclick="App.limVer()">Ver</button></div>
+        <p class="muted peq">Cada vez que alguien quiso llevar más de lo permitido: si se detuvo, si el vendedor continuó (con su motivo) o si fue una venta sin conexión.</p></div>
+      <div class="tarjeta">${tabla([{ t: 'Fecha', h: x => esc(x.fecha) + `<br><small class="muted">${esc(sucNom(x.suc))}</small>` }, { t: 'Cliente', h: x => `<b>${esc(x.cliente)}</b><br><small class="muted">${x.socio === 'SI' ? 'socio' : x.socio === 'Público' ? 'público en general' : 'no socio'}</small>` },
+        { t: 'Producto', h: x => esc(x.producto) + `<br><small class="muted">${esc(x.periodo)}</small>` }, { t: 'Ya · quiere · límite', num: 1, h: x => `${nf(x.ya)} · <b>${nf(x.quiere)}</b> · ${nf(x.limite)}` },
+        { t: 'Resultado', h: x => `<span class="etq ${RS[x.resultado] || ''}">${esc(x.resultado)}</span>` + (x.motivo ? `<br><small class="muted">${esc(x.usuario)}: ${esc(x.motivo)}</small>` : `<br><small class="muted">${esc(x.usuario)}</small>`) }], r.lista, { vacio: 'Sin intentos en el periodo' })}</div>`;
+  }
+  function limVer() { S.flim = { suc: $('#lmS').value, desde: $('#lmD').value, hasta: $('#lmH').value }; limitesReporte(); }
   /* ---------- CAMBIO DE ENCARGADO / REAPERTURA (solo el dueño): la sucursal y su histórico siguen; cambia la gestión ---------- */
   async function verGestiones(suc) {
     modal('👥 Cambio de encargado', '<div class="vacio">Cargando…</div>');
@@ -8810,6 +8892,8 @@ const App = (() => {
       { k: 'Enc_Pagos', t: 'Encargado de pagos' }, { k: 'Tel_Enc_Pagos', t: 'Tel. pagos' }, { k: 'Potencial', t: 'Potencial' }, { k: 'Origen', t: '¿Cómo nos conoció? (origen)', tipo: 'select', ops: CRM_ORIGENES.map(x => [x, x]), vacio: '' },
       { k: 'ID_Sucursal', t: 'Sucursal', tipo: 'select', ops: D().sucursales, dis: !U().todasSucursales }, { k: 'Vendedor', t: 'Vendedor', tipo: 'select', ops: D().vendedores, vacio: '', dis: !comercial },
       { k: 'Status', t: 'Estado', tipo: 'select', ops: [['Activo', 'Activo'], ['Inactivo', 'Inactivo (baja)'], ['Prospecto', 'Prospecto']] },
+      { k: 'Socio_Asociacion', t: 'Socio de la asociación (control de compras)', tipo: 'select', ops: [['NO', 'No'], ['SI', 'Sí, es socio']] },
+      { k: 'Limite_Semanal', t: 'Límite por semana si no es socio (piezas por producto)', tipo: 'number' }, { k: 'Limite_Mensual', t: 'Límite inicial al mes si es socio nuevo', tipo: 'number' },
       { k: 'Comentarios', t: 'Comentarios', tipo: 'textarea', ancho: 1 }];
     if (full && /^\d{2}\/\d{2}\/\d{4}$/.test(String(full['Fecha_cumpleaños'] || ''))) { const f = String(full['Fecha_cumpleaños']).split('/'); full['Fecha_cumpleaños'] = f[2] + '-' + f[1] + '-' + f[0]; }
     const ini = c ? full : { Lista_de_Precios: 'Publico', D_Credito: 0, Status: 'Activo', ID_Sucursal: sucTrabajo(), Vendedor: U().id };
@@ -8867,7 +8951,8 @@ const App = (() => {
         ${puede('ventas') ? `<button class="btn" onclick="App.ventasDeCliente('${esc(c.id)}','${esc(String(x.Razon_social || x.Nombre_cliente || '').replace(/'/g, ''))}')">🧾 Ver sus ventas</button><button class="btn" onclick="App.venderA('${esc(c.id)}')">🛒 Venderle</button>` : ''}
         ${puede('cobranza') ? `<button class="btn" onclick="App.verEdoCta('${esc(c.id)}')">📊 Estado de cuenta</button>` : ''}
         ${puedeReunion() ? `<button class="btn" onclick="App.formReunion('${esc(c.id)}')">📅 Invitar a reunión</button>` : ''}
-        <button class="btn" onclick="App.tarjetaCliente('${esc(c.id)}')">🪪 Tarjeta con QR</button>
+        <button class="btn" onclick="App.tarjetaCliente('${esc(c.id)}')">🪪 Tarjeta y monedero</button>
+        ${puede('ventas') ? `<button class="btn" onclick="App.limiteClienteForm('${esc(c.id)}')">🛡️ Socio y límite de compra</button>` : ''}
         ${dueno ? `<button class="btn" onclick="App.comiCliente('${esc(c.id)}','${esc(String(x.Razon_social || x.Nombre_cliente || '').replace(/'/g, ''))}')">💼 Comisionista</button>` : ''}
         ${dueno ? `<button class="btn peligro" onclick="App.eliminarCliente('${esc(c.id)}')">🗑️ Eliminar</button>` : ''}
         ${admin ? `<button class="btn primario" onclick="App.formCliente(${i})">✏️ Editar</button>` : ''}
@@ -9578,7 +9663,8 @@ const App = (() => {
       try { S.ultimaVenta = await pedir('detalleVenta', { ID_Venta: r.ID_Venta }, true); ticketNota(false); if (cambio) posAvisoCambio(cambio); } catch (e2) {}
     } catch (e) {
       if (b) b.disabled = false;
-      const ic = errCredito(e); if (ic) return pedirAutCredito(ic, a => posCobrar(a));
+      const il = errLimite(e); if (il) return pedirAutLimite(il, a => posCobrar(Object.assign({}, aut || {}, a)));
+      const ic = errCredito(e); if (ic) return pedirAutCredito(ic, a => posCobrar(Object.assign({}, aut || {}, a)));
       if (e.red) {
         encolar('guardarVenta', params, 'Venta rápida a ' + (c.razon || c.nombre || '') + ' por ' + $$(t.total));
         descontarStockLocal(v); notaOffline(v, t, params); listo();
@@ -9608,7 +9694,7 @@ const App = (() => {
     try { const logo = await new Promise((ok, mal) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = mal; i.src = window.LOGO || 'logo.png'; });
       const lh = 170, lw = Math.min(W - 80, logo.width * lh / logo.height), lh2 = lw * logo.height / logo.width; x.drawImage(logo, (W - lw) / 2, 40 + (lh - lh2) / 2, lw, lh2); } catch (e) {}
     x.textAlign = 'center'; x.fillStyle = '#fff';
-    x.font = '600 22px Arial'; x.globalAlpha = .8; x.fillText('TARJETA DE CLIENTE', W / 2, 360); x.globalAlpha = 1;
+    x.font = '600 22px Arial'; x.globalAlpha = .8; x.fillText('TARJETA DE CLIENTE · MONEDERO', W / 2, 360); x.globalAlpha = 1;
     const nom = String(c.razon || c.nombre || ''); ajustar(nom, W - 80, 50, 26); x.fillText(nom, W / 2, 420);
     if (c.razon && c.nombre && c.razon !== c.nombre) { x.font = '28px Arial'; x.globalAlpha = .8; x.fillText(String(c.nombre).slice(0, 36), W / 2, 462); x.globalAlpha = 1; }
     const qr = await qrCanvas(QR_CLI + encodeURIComponent(c.id), 380);
@@ -9621,7 +9707,7 @@ const App = (() => {
       x.fillStyle = '#fff'; x.textAlign = 'left'; x.fillText(edo, X0 + 34, 958); x.textAlign = 'center';
     }
     x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(W / 2 - 120, edo ? 994 : 950, 240, 2);
-    x.fillStyle = '#fff'; x.globalAlpha = .9; x.font = 'italic 26px Arial'; x.fillText('Presenta tu tarjeta en cada compra', W / 2, edo ? 1040 : 1000); x.globalAlpha = 1;
+    x.fillStyle = '#fff'; x.globalAlpha = .9; x.font = 'italic 24px Arial'; x.fillText('Preséntala en cada compra: aquí se aplica tu monedero', W / 2, edo ? 1040 : 1000); x.globalAlpha = 1;
     return new Promise(ok => cv.toBlob(ok, 'image/png'));
   }
   async function tarjetaCliente(id) {
@@ -9631,6 +9717,19 @@ const App = (() => {
     modal('🪪 Tarjeta del cliente', `<div style="text-align:center"><img src="${url}" alt="Tarjeta" style="width:100%;max-width:300px;border-radius:18px;box-shadow:0 4px 16px rgba(0,0,0,.25)"></div>
       <p class="muted peq">Al escanear el QR en la venta (cámara de la app o pistola lectora) se elige al cliente y se le aplican sus precios. Si tu personal lo escanea con la cámara del celular, abre Nueva venta con ese cliente; a cualquier otra persona no le muestra nada.</p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button><button class="btn" onclick="App.tarjetaBajar()">⬇️ Descargar</button><button class="btn primario" onclick="App.tarjetaEnviar()">💬 Enviar por WhatsApp</button></div>`);
+  }
+  function limiteClienteForm(id) {
+    const c = cliente(id); if (!c) return;
+    modal('🛡️ Socio y límite de compra · ' + esc(c.razon || c.nombre), `<p class="muted peq">Solo aplica en sucursales con el control de compras por volumen activado. Si no es socio y no le pones límite, se usa el de la sucursal (2 piezas por producto a la semana). Al socio se le permite su promedio mensual + 20 %; si es nuevo, el límite inicial que pongas aquí.</p>
+      <div class="rejilla"><label class="check"><input type="checkbox" id="lcSocio" ${c.socio ? 'checked' : ''}> Es socio de la asociación</label>
+        <label>Límite por semana si no es socio (piezas por producto)<input type="number" id="lcSem" min="0" step="1" value="${c.limS || ''}" placeholder="de la sucursal"></label>
+        <label>Límite inicial al mes si es socio nuevo<input type="number" id="lcMes" min="0" step="1" value="${c.limM || ''}" placeholder="de la sucursal"></label></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarLimiteCliente('${esc(id)}')">Guardar</button></div>`);
+  }
+  async function guardarLimiteCliente(id) {
+    try { const r = await pedir('limiteCliente', { idCliente: id, socio: $('#lcSocio').checked, semanal: $('#lcSem').value, mensual: $('#lcMes').value });
+      const c = cliente(id); if (c) { c.socio = r.socio ? 1 : 0; c.limS = Number(r.limS) || 0; c.limM = Number(r.limM) || 0; LS.set('datos', S.datos); }
+      cerrarModal(); toast('✔ Guardado'); } catch (e) {}
   }
   function tarjetaBajar() { const t = S.tarjeta; if (!t) return; const a = document.createElement('a'); a.href = URL.createObjectURL(t.blob); a.download = 'tarjeta-' + String(t.id).replace(/[^\w-]/g, '_') + '.png'; document.body.appendChild(a); a.click(); a.remove(); }
   async function tarjetaEnviar() {
@@ -13546,7 +13645,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),

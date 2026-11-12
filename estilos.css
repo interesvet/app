@@ -110,7 +110,7 @@ textarea { min-height: 70px; resize: vertical; }
 .rejilla { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .rejilla-2 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
 /* que ninguna tabla ni texto largo empuje la tarjeta fuera de la pantalla: cada celda de rejilla puede encogerse y las tablas se desplazan dentro de su marco */
-.rejilla-2 > *, .rejilla > *, .kpis > *, .cmp-kpis > *, .fila > * { min-width: 0; }
+.rejilla-2 > *, .rejilla > *, .kpis > *, .cmp-kpis > * { min-width: 0; }
 .tarjeta { min-width: 0; }
 .tarjeta p, .tarjeta small, .tarjeta h3, .tarjeta h4, .aviso-cand { overflow-wrap: break-word; }
 .vista { overflow-x: clip; }
