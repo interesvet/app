@@ -4355,7 +4355,7 @@ const App = (() => {
   }
   function vacWhats(i) {
     const x = S.vacLista[i]; if (!x) return;
-    window.open(WA_BASE + '52' + x.cel + '?text=' + encodeURIComponent(vacMensaje(x)), '_blank');
+    window.open(WA_BASE + '52' + x.cel + '?text=' + encodeURIComponent(x.texto || vacMensaje(x)), '_blank');   // texto de la plantilla editable (servidor) o el de respaldo
     vacMarcar(i, 'WhatsApp');
   }
   async function vacReglas() {
@@ -12282,10 +12282,11 @@ const App = (() => {
   function msjCopiar(i) { const x = S.msj && S.msj.items[i]; if (!x) return; try { navigator.clipboard.writeText(x.texto); toast('📋 Texto copiado'); } catch (e) { prompt('Copia el texto:', x.texto); } }
   /* ---------- ✏️ Redactar los mensajes de WhatsApp (dueño / Administrador) ---------- */
   const PLT_T = { reunion: '🤝 Recordatorio de reunión (un día antes)', visita: '📅 Aviso de visita (un día antes)', porVencer: '⏰ Nota por vencer', vencida: '💰 Cobranza vencida',
-    compra: '🛒 Le toca comprar', cumple: '🎂 Felicitación de cumpleaños', aniversario: '🎉 Felicitación de aniversario (empresas)', monedero: '🎁 Monedero por vencer (7 días y 1 día antes)', monederoVencido: '🎁 Monedero vencido (al día siguiente)', firma: '✍️ Firma (va al final de todos)' };
+    compra: '🛒 Le toca comprar', cumple: '🎂 Felicitación de cumpleaños', aniversario: '🎉 Felicitación de aniversario (empresas)', monedero: '🎁 Monedero por vencer (7 días y 1 día antes)', monederoVencido: '🎁 Monedero vencido (al día siguiente)',
+    vacuna: '💉 Revacunación (30 y 15 días antes)', vacunaRefuerzo: '💉 Refuerzo de vacuna (21 días)', vacunaCrias: '🐄 Vacunar a las crías (cada 2 meses)', vacunaVencida: '⚠️ Revacunación vencida', firma: '✍️ Firma (va al final de todos)' };
   const PLT_EJ = { cliente: 'Juan Pérez', fecha: 'martes 10 de noviembre de 2026, 10:00 h', tema: 'Plan de vacunación', lugar: 'Lugar: Rancho El Sol', objetivo: 'Presentar productos nuevos',
     folio: 'MAT-0627', saldo: '$1,250.00', vence: 'el 12/11/2026', notas: '• Nota MAT-0601 (venció 01/11/2026): $800.00\n• Nota MAT-0610 (venció 05/11/2026): $450.00', total: '$1,250.00',
-    productos: 'MEGACAL-M, DORACIDE', sucursal: '· Champotón', regalo: '🎁 Como regalo, tiene 5 % de descuento en sus compras en cualquiera de nuestras sucursales hasta el 24 de noviembre.\nAplican restricciones.', vigencia: '24 de noviembre', cuando: 'en 7 días, el 15/01/2027' };
+    productos: 'MEGACAL-M, DORACIDE', sucursal: '· Champotón', regalo: '🎁 Como regalo, tiene 5 % de descuento en sus compras en cualquiera de nuestras sucursales hasta el 24 de noviembre.\nAplican restricciones.', vigencia: '24 de noviembre', cuando: 'en 7 días, el 15/01/2027', vacuna: 'NOVA 11 VIAS', fecha_vacuna: '29/11/2026', ultima: '31/05/2026' };
   const pltLlenar = (t, v) => String(t || '').replace(/\{(\w+)\}/g, (m, k) => v[k] !== undefined ? v[k] : m).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   async function formPlantillas() {
     let r; try { r = await pedir('plantillasMensajes', {}, true); } catch (e) { return toast(/desconocida/i.test(e.message) ? 'Se activa en cuanto se publique la actualización del servidor (222).' : e.message, true); }
