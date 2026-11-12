@@ -1010,6 +1010,7 @@ label:has(> select[id$="Suc"]) > select:focus, label:has(input[id$="Cli"]) input
 .cierre-txt { flex: 1 1 55%; min-width: 0; } @media (max-width: 600px) { .cierre-cab .btn { margin-left: 30px; } }
 .cierre-como { margin: 6px 0 0 30px; } .cierre-como summary { cursor: pointer; color: var(--info); font-size: 13px; } .cierre-como p { margin: 6px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--texto-2); }
 /* 💉 Revacunaciones */
+.kpi.kpi-activo { border-color: var(--marca); box-shadow: 0 0 0 2px var(--marca) inset; }
 .vac-fila { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--borde); flex-wrap: wrap; }
 .vac-fila:last-child { border-bottom: 0; }
 .vac-inf { flex: 1 1 260px; min-width: 0; line-height: 1.5; }
