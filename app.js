@@ -1217,21 +1217,160 @@ const App = (() => {
     $('#mpSimR').textContent = v ? 'ganarías ' + $$(c) + ' de comisión' : '';
   }
 
+  /* ---------- 📊 TABLERO: periodo rápido (años · semestres · trimestres · meses, varios a la vez, sin esperar) ---------- */
+  const DM = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const DSEM = [[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12]], DTRI = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]];
+  const dashSuc = () => $('#dSuc') ? $('#dSuc').value : '';
   V.dashboard = () => {
-    const h = hoyISO(), ini = h.slice(0, 8) + '01';
-    const u = U();
-    $('#vista').innerHTML = `<div class="tarjeta"><div class="fila">
-      <label>Desde<input type="date" id="dDesde" value="${ini}"></label><label>Hasta<input type="date" id="dHasta" value="${h}"></label>
-      ${u.todasSucursales ? `<label>Sucursal<select id="dSuc">${optsSuc('', false, 'Todas')}</select></label>` : ''}
-      <button class="btn primario fijo" onclick="App.cargarDashboard()">Actualizar</button><button class="btn fijo" onclick="App.excelDashboard()">📊 Exportar a Excel</button></div></div><div class="espacio"></div><div id="dash"></div>`;
-    agregarMesAnio('dDesde', 'dHasta', cargarDashboard);
-    cargarDashboard();
+    const h = hoyISO(), ini = h.slice(0, 8) + '01', u = U(), y = +h.slice(0, 4), m = +h.slice(5, 7);
+    S.dashSel = S.dashSel || { anios: [y], sem: [], tri: [], mes: [m] };
+    $('#vista').innerHTML = `<div class="tarjeta dash-per">
+      <div class="dash-top">${u.todasSucursales ? `<select id="dSuc" onchange="App.dashSucCambio()" title="Sucursal">${optsSuc('', false, 'Todas las sucursales')}</select>` : ''}
+        <button class="btn fijo" onclick="App.dashRefrescar()" title="Volver a leer los datos del servidor">⟳ Actualizar</button><button class="btn fijo" onclick="App.excelDashboard()">📊 Excel</button></div>
+      <div class="dash-atajos"><button type="button" class="dchip" onclick="App.dashAtajo('mes')">Este mes</button><button type="button" class="dchip" onclick="App.dashAtajo('mesAnt')">Mes anterior</button><button type="button" class="dchip" onclick="App.dashAtajo('anio')">Este año</button><button type="button" class="dchip" onclick="App.dashAtajo('anioAnt')">Año anterior</button></div>
+      <div class="muted peq" id="dEstado"></div>
+      <div id="dChips"></div>
+      <details class="dash-rango"><summary>📅 Rango exacto de fechas</summary><div class="fila"><label>Desde<input type="date" id="dDesde" value="${ini}"></label><label>Hasta<input type="date" id="dHasta" value="${h}"></label><button class="btn primario fijo" onclick="App.cargarDashboard()">Ver</button></div></details>
+      </div><div class="espacio"></div><div id="dash"><div class="vacio">Cargando…</div></div>`;
+    dashChips(); dashIniciar();
   };
-  async function cargarDashboard() {
+  function dashChips() {
+    const el = $('#dChips'); if (!el) return; const s = S.dashSel, cub = (S.cubo || {})[dashSuc()];
+    const hoyY = +hoyISO().slice(0, 4), anios = cub && cub.meses.length ? Array.from(new Set(cub.meses.map(k => +k.slice(0, 4)).concat([hoyY]))).sort() : [hoyY - 2, hoyY - 1, hoyY];
+    const ch = (g, v, t, on) => `<button type="button" class="dchip ${on ? 'on' : ''}" onclick="App.dashTog('${g}',${v})">${t}</button>`;
+    el.innerHTML = `<div class="dgrupo"><b>Años</b>${anios.map(a => ch('anios', a, a, s.anios.includes(a))).join('')}</div>
+      <div class="dgrupo"><b>Semestres</b>${ch('sem', 1, '1er semestre', s.sem.includes(1))}${ch('sem', 2, '2º semestre', s.sem.includes(2))}</div>
+      <div class="dgrupo"><b>Trimestres</b>${[1, 2, 3, 4].map(t => ch('tri', t, 'T' + t, s.tri.includes(t))).join('')}</div>
+      <div class="dgrupo"><b>Meses</b>${DM.map((n, i) => ch('mes', i + 1, n, s.mes.includes(i + 1))).join('')}${s.sem.length || s.tri.length || s.mes.length ? `<button type="button" class="dchip limpiar" onclick="App.dashTog('todo',0)">Todo el año</button>` : ''}</div>`;
+  }
+  function dashTog(g, v) {
+    const s = S.dashSel;
+    if (g === 'todo') { s.sem = []; s.tri = []; s.mes = []; }
+    else { const l = s[g], i = l.indexOf(v); if (i >= 0) l.splice(i, 1); else l.push(v); if (g === 'anios' && !l.length) l.push(v); }
+    S.dashModo = 'rapido'; dashChips(); dashArmar();
+  }
+  function dashAtajo(t) {
+    const h = hoyISO(), y = +h.slice(0, 4), m = +h.slice(5, 7), s = S.dashSel; s.sem = []; s.tri = [];
+    if (t === 'mes') { s.anios = [y]; s.mes = [m]; } if (t === 'mesAnt') { s.anios = [m === 1 ? y - 1 : y]; s.mes = [m === 1 ? 12 : m - 1]; }
+    if (t === 'anio') { s.anios = [y]; s.mes = []; } if (t === 'anioAnt') { s.anios = [y - 1]; s.mes = []; }
+    S.dashModo = 'rapido'; dashChips(); dashArmar();
+  }
+  /** Claves yyyy-MM elegidas (sin meses futuros). */
+  function dashClaves() {
+    const s = S.dashSel, h = hoyISO().slice(0, 7), set = new Set();
+    s.sem.forEach(x => DSEM[x - 1].forEach(m => set.add(m))); s.tri.forEach(x => DTRI[x - 1].forEach(m => set.add(m))); s.mes.forEach(m => set.add(m));
+    const meses = set.size ? Array.from(set).sort((a, b) => a - b) : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const out = []; s.anios.slice().sort().forEach(y => meses.forEach(m => { const k = y + '-' + String(m).padStart(2, '0'); if (k <= h) out.push(k); }));
+    return out;
+  }
+  const dashEtq = k => DM[+k.slice(5, 7) - 1] + ' ' + k.slice(2, 4);
+  async function dashIniciar(forzar) {
+    const suc = dashSuc(); S.cubo = S.cubo || {}; S.dashSnap = S.dashSnap || {};
+    const kc = 'cubo_' + (U().id || '') + '_' + (suc || 'todas');
+    if (!S.cubo[suc]) { const g = await KV.get(kc); if (g && g.d) S.cubo[suc] = g; }
+    if (S.cubo[suc]) { dashChips(); dashArmar(); }
+    const viejo = !S.cubo[suc] || forzar || Date.now() - new Date(S.cubo[suc].generado).getTime() > 20 * 60000;
+    const est = $('#dEstado'); if (est && viejo) est.textContent = S.cubo[suc] ? '⟳ actualizando datos…' : '⟳ preparando tus datos (solo la primera vez tarda)…';
+    const tSnap = (!S.dashSnap[suc] || forzar) ? pedir('dashboard', { desde: hoyISO().slice(0, 8) + '01', hasta: hoyISO(), sucursal: suc }, true).then(r => { S.dashSnap[suc] = r; }).catch(() => {}) : Promise.resolve();
+    const tCubo = viejo ? pedir('dashboardCubo', { sucursal: suc }, true).then(r => { S.cubo[suc] = r; KV.set(kc, r); }).catch(e => { if (!S.cubo[suc]) { const el = $('#dash'); if (el) el.innerHTML = `<div class="vacio">${/desconocida/i.test(e.message || '') ? 'El tablero rápido se activa con el servidor 245.' : e.red ? 'El tablero requiere conexión la primera vez.' : esc(e.message)}</div>`; } }) : Promise.resolve();
+    await Promise.all([tSnap, tCubo]);
+    if (dashSuc() !== suc || !$('#dash')) return;
+    if (est) est.textContent = ''; dashChips(); dashArmar();
+  }
+  function dashSucCambio() { S.dashModo = 'rapido'; dashIniciar(); }
+  function dashRefrescar() { if (S.dashModo === 'rango') return cargarDashboard(); dashIniciar(true); }
+  /** Suma los meses elegidos del cubo. */
+  function dashSuma(cub, claves) {
+    const t = { v: 0, vi: 0, n: 0, cob: 0, mer: 0, cos: 0, cmp: 0, ord: 0, suc: {}, ven: {}, cli: {}, cat: {}, pr: {}, g: [0, 0, 0, 0] };
+    const ad = (a, b) => Object.keys(b).forEach(k => a[k] = (a[k] || 0) + b[k]);
+    claves.forEach(k => { const m = cub.d[k]; if (!m) return; t.v += m.v; t.vi += m.vi; t.n += m.n; t.cob += m.cob; t.mer += m.mer; t.cos += m.cos || 0; t.cmp += m.cmp || 0; t.ord += m.ord || 0;
+      ad(t.suc, m.suc); ad(t.ven, m.ven); ad(t.cli, m.cli); ad(t.cat, m.cat);
+      Object.keys(m.pr).forEach(id => { const a = t.pr[id] || (t.pr[id] = [0, 0, 0]), b = m.pr[id]; a[0] += b[0]; a[1] += b[1]; a[2] += b[2] || 0; });
+      const g = cub.gastos && cub.gastos[k]; if (g) g.forEach((x, i) => t.g[i] += x); });
+    return t;
+  }
+  const dr2 = x => Math.round(x * 100) / 100;
+  const dashTop = (o, n) => Object.keys(o).map(k => ({ nombre: k, valor: dr2(o[k]) })).sort((a, b) => b.valor - a.valor).slice(0, n);
+  function dashArmar() {
+    const suc = dashSuc(), cub = (S.cubo || {})[suc], snap = (S.dashSnap || {})[suc];
+    if (!cub || !$('#dash')) return;
+    const claves = dashClaves(), est = $('#dEstado');
+    if (est && !/actualizando|preparando/.test(est.textContent)) est.textContent = 'Datos al ' + new Date(cub.generado).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    if (!claves.length) { $('#dash').innerHTML = '<div class="vacio">Ese periodo todavía no llega.</div>'; return; }
+    const T = dashSuma(cub, claves), cu = cub.conUtil, k0 = snap ? snap.kpi : {};
+    const fin = claves[claves.length - 1], ufin = new Date(+fin.slice(0, 4), +fin.slice(5, 7), 0), hoy = hoyISO();
+    const desde = claves[0] + '-01', hasta = (ufin.toISOString().slice(0, 10) > hoy ? hoy : ufin.toISOString().slice(0, 10));
+    const kpi = Object.assign({}, k0, { ventas: dr2(T.v), ventasConIva: dr2(T.vi), notas: T.n, ticket: T.n ? dr2(T.v / T.n) : 0, cobrado: dr2(T.cob), mermas: dr2(T.mer), clientes: Object.keys(T.cli).length,
+      compras: cub.verCompras ? dr2(T.cmp) : null, ordenes: cub.verCompras ? T.ord : null, porRecibir: undefined, sinFactura: undefined, comprasPagado: undefined, comprasSaldo: undefined, comprasConSaldo: undefined });
+    if (k0.valorInventario !== undefined || cub.valLista) kpi.mermaPct = T.v ? dr2(T.mer / T.v * 100) : 0;
+    if (cu) { kpi.costoVentas = dr2(T.cos); kpi.utilidad = dr2(T.v - T.cos); kpi.margen = T.v ? dr2((T.v - T.cos) / T.v * 100) : 0; kpi.utilidadNeta = dr2(T.v - T.cos - T.mer); kpi.fletePct = cub.fletePct; }
+    else { delete kpi.utilidad; delete kpi.costoVentas; delete kpi.margen; delete kpi.utilidadNeta; }
+    if (cub.valLista) kpi.valLista = cub.valLista;
+    /* serie: si es un solo mes, los 12 meses que terminan en él; si son varios, los elegidos */
+    let serie = claves; if (claves.length === 1) { serie = []; const y = +fin.slice(0, 4), m = +fin.slice(5, 7); for (let i = 11; i >= 0; i--) { const d = new Date(y, m - 1 - i, 1); serie.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); } }
+    const meses = serie.map(k => { const m = cub.d[k] || { v: 0, cmp: 0, mer: 0, cos: 0 }, g = cub.gastos ? cub.gastos[k] || [0, 0, 0, 0] : null, u = cu ? m.v - (m.cos || 0) : null;
+      return { clave: k, etiqueta: dashEtq(k), ventas: dr2(m.v), compras: cub.verCompras ? dr2(m.cmp || 0) : null, mermas: dr2(m.mer), utilidad: cu ? dr2(u) : null,
+        gastosOp: g ? g[0] : null, utilidadNeta: g && cu ? dr2(u - m.mer - g[3] - g[0] - g[1] - g[2]) : null }; });
+    const nom = cub.nombres || {};
+    const prods = Object.keys(T.pr).map(id => ({ id: id, nombre: nom[id] || id, cant: dr2(T.pr[id][0]), importe: dr2(T.pr[id][1]), utilidad: cu ? dr2(T.pr[id][2]) : null })).sort((a, b) => b.importe - a.importe);
+    const r = Object.assign({}, snap || { caducados: [], porCaducar: [] }, { periodo: { desde: fechaCorta(desde), hasta: fechaCorta(hasta) }, kpi: kpi, meses: meses,
+      porSucursal: dashTop(T.suc, 20), porVendedor: dashTop(T.ven, 15), topClientes: dashTop(T.cli, 10), porCategoria: dashTop(T.cat, 12), topProductos: prods.slice(0, 15),
+      resultados: null, gastosRapido: cub.gastos ? { op: dr2(T.g[0]), fin: dr2(T.g[1]), com: dr2(T.g[2]) } : null, serieTitulo: claves.length === 1 ? '📈 Últimos 12 meses' : '📈 Mes por mes del periodo elegido' });
+    const p = { desde: desde, hasta: hasta, sucursal: suc, claves: claves };
+    S.dashModo = 'rapido';
+    pintarDash(r, p, dashComparar(cub, claves, T, prods, desde, hasta));
+    dashDetalle(p);
+  }
+  /** Comparativo instantáneo: los mismos meses del año anterior. */
+  function dashComparar(cub, claves, A, prodsA, desde, hasta) {
+    const atras = claves.map(k => (+k.slice(0, 4) - 1) + k.slice(4)), B = dashSuma(cub, atras), cu = cub.conUtil, nom = cub.nombres || {};
+    const kpi = [], add = (k, t, a, b, tipo, mal) => { if (a === null || a === undefined) return; kpi.push({ k: k, t: t, a: dr2(a), b: dr2(b || 0), tipo: tipo || '$', malSiSube: !!mal }); };
+    add('ventas', 'Ventas netas (sin IVA)', A.v, B.v);
+    if (cu) { add('utilidad', 'Utilidad bruta', A.v - A.cos, B.v - B.cos); add('margen', 'Margen bruto', A.v ? (A.v - A.cos) / A.v * 100 : 0, B.v ? (B.v - B.cos) / B.v * 100 : 0, '%'); }
+    if (cub.gastos) { add('gastos', 'Gastos', A.g[0] + A.g[1], B.g[0] + B.g[1], '$', true); if (A.g[2] || B.g[2]) add('comisiones', 'Comisiones', A.g[2], B.g[2], '$', true);
+      if (cu) add('utilidadNeta', 'Utilidad neta', A.v - A.cos - A.mer - A.g.reduce((s, x) => s + x, 0), B.v - B.cos - B.mer - B.g.reduce((s, x) => s + x, 0)); }
+    add('notas', 'Notas de venta', A.n, B.n, 'n'); add('ticket', 'Ticket promedio', A.n ? A.v / A.n : 0, B.n ? B.v / B.n : 0);
+    add('clientes', 'Clientes que compraron', Object.keys(A.cli).length, Object.keys(B.cli).length, 'n'); add('cobrado', 'Cobrado', A.cob, B.cob);
+    if (cub.verCompras) add('compras', 'Compras', A.cmp, B.cmp, '$', true); add('mermas', 'Mermas', A.mer, B.mer, '$', true);
+    const pm = {}; Object.keys(A.pr).forEach(id => pm[id] = { id: id, nombre: nom[id] || id, cantA: dr2(A.pr[id][0]), impA: dr2(A.pr[id][1]), utilA: cu ? dr2(A.pr[id][2]) : null, cantB: 0, impB: 0, utilB: cu ? 0 : null });
+    Object.keys(B.pr).forEach(id => { const o = pm[id] = pm[id] || { id: id, nombre: nom[id] || id, cantA: 0, impA: 0, utilA: cu ? 0 : null }; o.cantB = dr2(B.pr[id][0]); o.impB = dr2(B.pr[id][1]); o.utilB = cu ? dr2(B.pr[id][2]) : null; });
+    const prods = Object.keys(pm).map(k => pm[k]).sort((x, y) => y.impA - x.impA || y.impB - x.impB);
+    const rk = (l, f, key) => { const m = {}; l.slice().sort((x, y) => f(y) - f(x)).forEach((x, i) => { if (f(x) > 0) m[key(x)] = i + 1; }); return m; };
+    const ra = rk(prods, x => x.impA, x => x.id), rb = rk(prods, x => x.impB, x => x.id); prods.forEach(x => { x.rA = ra[x.id] || null; x.rB = rb[x.id] || null; });
+    const cm = {}; Object.keys(A.cli).forEach(n => cm[n] = { nombre: n, a: dr2(A.cli[n]), b: 0 }); Object.keys(B.cli).forEach(n => { (cm[n] = cm[n] || { nombre: n, a: 0, b: 0 }).b = dr2(B.cli[n]); });
+    const clis = Object.keys(cm).map(k => cm[k]); const ca = rk(clis, x => x.a, x => x.nombre), cbk = rk(clis, x => x.b, x => x.nombre); clis.forEach(x => { x.rA = ca[x.nombre] || null; x.rB = cbk[x.nombre] || null; });
+    const top = (l, f, n) => l.filter(x => f(x) > 0).sort((x, y) => f(y) - f(x)).slice(0, n);
+    const dB = (+desde.slice(0, 4) - 1) + desde.slice(4), hB = (+hasta.slice(0, 4) - 1) + hasta.slice(4);
+    return { periodo: { actual: { desde: fechaCorta(desde), hasta: fechaCorta(hasta) }, anterior: { desde: fechaCorta(dB), hasta: fechaCorta(hB) } }, kpi: kpi,
+      meses: claves.map((k, i) => ({ etiqueta: dashEtq(k), ventas: dr2((cub.d[k] || {}).v || 0), ventasAnt: dr2((cub.d[atras[i]] || {}).v || 0) })),
+      productos: prods, topProductos: top(prods, x => x.impA, 10), topProductosAnt: top(prods, x => x.impB, 10), topClientes: top(clis, x => x.a, 10), topClientesAnt: top(clis, x => x.b, 10),
+      nuevos: prods.filter(x => x.impA > 0 && !(x.impB > 0)).length, perdidos: prods.filter(x => x.impB > 0 && !(x.impA > 0)).length,
+      clientesNuevos: clis.filter(x => x.a > 0 && !(x.b > 0)).length, clientesPerdidos: clis.filter(x => x.b > 0 && !(x.a > 0)).length, mesesSinGastos: [], huecosGastos: [], verUtil: !!cu };
+  }
+  /** Detalle que no cabe en el resumen por mes (estado de resultados y compras pagadas/por recibir): se trae en segundo plano
+   *  solo cuando los meses elegidos van seguidos; mientras, el tablero ya está a la vista. */
+  function dashDetalle(p) {
+    clearTimeout(S.dashDetT);
+    const seguidos = p.claves.every((k, i) => !i || (() => { const a = p.claves[i - 1]; const d = new Date(+a.slice(0, 4), +a.slice(5, 7), 1); return k === d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })());
+    if (!seguidos) return;
+    const firma = JSON.stringify(p);
+    S.dashDetT = setTimeout(async () => {
+      let d; try { d = await pedir('dashboard', { desde: p.desde, hasta: p.hasta, sucursal: p.sucursal }, true); } catch (e) { return; }
+      if (!S.dash || JSON.stringify(S.dash.p) !== firma || S.dashModo !== 'rapido') return;
+      const r = S.dash.r; ['porRecibir', 'sinFactura', 'sinFacturaTotal', 'comprasPagado', 'comprasSaldo', 'comprasConSaldo'].forEach(x => r.kpi[x] = d.kpi[x]);
+      r.resultados = d.resultados; const sc = window.scrollY; pintarDash(r, S.dash.p, S.comp); window.scrollTo(0, sc);
+    }, 900);
+  }
+  async function cargarDashboard() {   /* 📅 rango exacto de fechas: lo calcula el servidor */
+    const p = { desde: $('#dDesde').value, hasta: $('#dHasta').value, sucursal: dashSuc() };
+    let r; try { r = await pedir('dashboard', p); } catch (e) { $('#dash').innerHTML = '<div class="vacio">El tablero requiere conexión.</div>'; return; }
+    S.dashModo = 'rango'; const est = $('#dEstado'); if (est) est.textContent = 'Rango exacto: ' + fechaCorta(p.desde) + ' – ' + fechaCorta(p.hasta);
+    document.querySelectorAll('#dChips .dchip.on').forEach(b => b.classList.remove('on'));
+    pintarDash(r, p);
+  }
+  function pintarDash(r, p, comp) {
+
     S.charts.forEach(c => c.destroy()); S.charts = [];
-    const p = { desde: $('#dDesde').value, hasta: $('#dHasta').value, sucursal: $('#dSuc') ? $('#dSuc').value : '' };
-    let r;
-    try { r = await pedir('dashboard', p); } catch (e) { $('#dash').innerHTML = '<div class="vacio">El tablero requiere conexión.</div>'; return; }
     S.dash = { r: r, p: p };
     const k = r.kpi, c = k.utilidad !== undefined;
     const kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
@@ -1239,8 +1378,8 @@ const App = (() => {
     const vc = k.compras !== null && k.compras !== undefined;
     const htmlCompras = !vc ? '' : `<div class="tarjeta"><h3 style="margin-top:0">📦 Compras y cuentas por pagar <small class="muted" style="font-weight:400">· solo órdenes con factura o nota del proveedor</small></h3><div class="kpis" style="margin:0">
       <div class="kpi kpi-clic" onclick="App.ir('compras')"><small>Compras del periodo</small><b>${$$(k.compras)}</b><span>${k.ordenes} ${k.ordenes === 1 ? 'orden con factura' : 'órdenes con factura'}${k.porRecibir ? ' · ' + k.porRecibir + ' por recibir' : ''}${k.sinFactura ? '<br>' + k.sinFactura + ' sin factura (' + $$(k.sinFacturaTotal) + ') no se cuentan' : ''}</span></div>
-      <div class="kpi"><small>Pagado de esas compras</small><b>${$$(k.comprasPagado || 0)}</b><span>${k.compras > 0 ? Math.round((k.comprasPagado || 0) / k.compras * 100) + ' % del total' : '—'}</span></div>
-      <div class="kpi"><small>Por pagar del periodo</small><b>${$$(k.comprasSaldo || 0)}</b><span>${k.comprasConSaldo || 0} ${k.comprasConSaldo === 1 ? 'orden' : 'órdenes'} con saldo</span></div>
+      <div class="kpi"><small>Pagado de esas compras</small><b>${k.comprasPagado === undefined ? '…' : $$(k.comprasPagado || 0)}</b><span>${k.comprasPagado === undefined ? (p.claves && p.claves.length > 1 && !r.resultados ? 'elige meses seguidos para verlo' : 'calculando…') : k.compras > 0 ? Math.round((k.comprasPagado || 0) / k.compras * 100) + ' % del total' : '—'}</span></div>
+      <div class="kpi"><small>Por pagar del periodo</small><b>${k.comprasSaldo === undefined ? '…' : $$(k.comprasSaldo || 0)}</b><span>${k.comprasSaldo === undefined ? '' : (k.comprasConSaldo || 0) + ' ' + (k.comprasConSaldo === 1 ? 'orden' : 'órdenes') + ' con saldo'}</span></div>
       <div class="kpi kpi-clic" onclick="App.ir('compras')"><small>Cuentas por pagar (total)</small><b>${$$(k.cxp)}</b><span>${k.cxpOrdenes || 0} ${k.cxpOrdenes === 1 ? 'orden' : 'órdenes'}${k.cxpVencido > 0.009 ? ` · <b class="txt-mal">vencido ${$$(k.cxpVencido)}</b>` : ' · nada vencido'}</span></div>
       </div></div>`;
     $('#dash').innerHTML = `<div class="kpis">
@@ -1252,6 +1391,7 @@ const App = (() => {
       ${kpi('Mermas', $$(k.mermas), k.valLista ? k.mermaPct + '% de las ventas · a precio ' + esc(k.valLista) : c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
       ${c ? kpi(k.valLista ? 'Utilidad bruta (a precio ' + esc(k.valLista) + ')' : U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)') : ''}
       ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%') : ''}
+      ${!(r.resultados && !r.resultados.error) && r.gastosRapido ? kpi('🔒 Gastos', $$(r.gastosRapido.op + r.gastosRapido.fin), 'Operación ' + $$(r.gastosRapido.op) + ' · financieros ' + $$(r.gastosRapido.fin) + (r.gastosRapido.com ? ' · comisiones aparte ' + $$(r.gastosRapido.com) : '') + (k.ventas ? ' · ' + ((r.gastosRapido.op + r.gastosRapido.fin) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
         'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (r.resultados.comisiones ? ' · comisiones aparte ' + $$(r.resultados.comisiones) : '') + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
       </div>
@@ -1261,7 +1401,7 @@ const App = (() => {
       ${htmlCompras}
       <div class="tarjeta"><h3>🔥 Productos más vendidos</h3>${tabla([{ t: 'Producto', k: 'nombre' }, { t: 'Cantidad', num: 1, h: x => nf(x.cant) },
         { t: 'Venta neta', num: 1, h: x => $$(x.importe) }].concat(c ? [{ t: 'Utilidad', num: 1, h: x => $$(x.utilidad) }, { t: 'Margen', num: 1, h: x => x.importe ? (x.utilidad / x.importe * 100).toFixed(1) + '%' : '—' }] : []), r.topProductos)}</div>
-      <div class="tarjeta"><h3>📈 Últimos 12 meses</h3><div class="grafica"><canvas id="gMeses"></canvas></div></div>
+      <div class="tarjeta"><h3>${r.serieTitulo || '📈 Últimos 12 meses'}</h3><div class="grafica"><canvas id="gMeses"></canvas></div></div>
       <div class="espacio"></div>
       <div class="rejilla-2">
         <div class="tarjeta"><h3>Ventas por vendedor</h3><div class="grafica"><canvas id="gVend"></canvas></div></div>
@@ -1271,13 +1411,13 @@ const App = (() => {
       </div>
       <div class="espacio"></div>
       ${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}
-      ${r.resultados ? htmlResultados(r.resultados) : ''}<div id="miPlan"></div>`;
+      ${r.resultados ? htmlResultados(r.resultados) : r.gastosRapido && p.claves && p.claves.length ? `<p class="muted peq">${p.claves.every((x, i) => !i || x > p.claves[i - 1]) && S.dashDetT ? '📑 El estado de resultados detallado aparece en un momento…' : ''}</p>` : ''}<div id="miPlan"></div>`;
     if (!puede('dueno') && !esContador()) cargarMiPlan();
     if (U().rol === 'Gerente') cargarSocAviso();
     const ds = [{ label: 'Ventas', data: r.meses.map(m => m.ventas), borderColor: css('--s1'), backgroundColor: css('--s1') }];
     if (k.compras !== null && k.compras !== undefined) ds.push({ label: 'Compras', data: r.meses.map(m => m.compras), borderColor: css('--s2'), backgroundColor: css('--s2') });
     if (c) ds.push({ label: 'Utilidad', data: r.meses.map(m => m.utilidad), borderColor: css('--s3'), backgroundColor: css('--s3') });
-    if (r.resultados && !r.resultados.error) {
+    if ((r.resultados && !r.resultados.error) || r.meses.some(m => m.gastosOp !== null && m.gastosOp !== undefined)) {
       ds.push({ label: 'Gastos de operación', data: r.meses.map(m => m.gastosOp), borderColor: css('--aviso'), backgroundColor: css('--aviso') });
       ds.push({ label: 'Utilidad neta', data: r.meses.map(m => m.utilidadNeta), borderColor: css('--texto'), backgroundColor: css('--texto'), borderDash: [5, 4] });
     }
@@ -1287,7 +1427,7 @@ const App = (() => {
         plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: x => x.dataset.label + ': ' + $$(x.raw) } } },
         scales: { y: { ticks: { callback: tickMoneda } }, x: { grid: { display: false } } } } });
     barras('gSuc', r.porSucursal.map(x => ({ nombre: sucNom(x.nombre), valor: x.valor })), null, true);
-    cargarComparativo(p);
+    if (comp) { S.comp = comp; pintarComparativo(); } else cargarComparativo(p);
     barras('gCat', r.porCategoria, null, true);
     barras('gVend', r.porVendedor, null, true);
     if (r.resultados && !r.resultados.error && $('#gGastos')) {
@@ -1557,7 +1697,7 @@ const App = (() => {
   }
   async function verGastosCat(i) {
     const x = S.listaGastos[i];
-    let l; try { l = await pedir('gastosDetalle', { desde: $('#dDesde').value, hasta: $('#dHasta').value, categoria: x.cat, grupo: x.grupo }); } catch (e) { return; }
+    let l; try { l = await pedir('gastosDetalle', { desde: (S.dash && S.dash.p.desde) || $('#dDesde').value, hasta: (S.dash && S.dash.p.hasta) || $('#dHasta').value, categoria: x.cat, grupo: x.grupo }); } catch (e) { return; }
     const t = l.reduce((a, f) => a + f.monto, 0);
     modal(x.cat + ' · ' + x.grupo, `<p>${nf(l.length)} facturas · ${$$(t)} sin IVA</p>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Emisor', h: f => `<b>${esc(f.emisor)}</b><br><small class="muted">${esc(f.rfc)}</small>` },
       { t: 'Sin IVA', num: 1, h: f => $$(f.monto) }, { t: 'IVA', num: 1, h: f => $$(f.iva) }, { t: 'Total', num: 1, h: f => $$(f.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' }], l));
@@ -15186,7 +15326,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,

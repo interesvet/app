@@ -1124,6 +1124,17 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
 .ev-chip-ed { background: none; border: 0; cursor: pointer; font-size: 13px; padding: 0 0 0 4px; opacity: .75; }
 .ev-chip-ed:hover { opacity: 1; }
 .ev-capa { z-index: 3000; }
+.dash-per .dgrupo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.dash-per .dgrupo b { font-size: 12.5px; color: var(--texto-2); min-width: 74px; }
+.dchip { border: 1px solid var(--borde); background: var(--superficie-2); color: var(--texto); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13.5px; cursor: pointer; }
+.dchip.on { background: var(--marca); border-color: var(--marca); color: #fff; font-weight: 700; }
+.dchip.limpiar { border-style: dashed; color: var(--texto-2); }
+.dash-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.dash-top select { flex: 1 1 180px; min-width: 0; }
+.dash-atajos { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--borde); }
+#dEstado { margin-top: 6px; min-height: 1em; }
+.dash-rango { margin-top: 10px; }
+.dash-rango summary { cursor: pointer; color: var(--texto-2); font-size: 13px; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
