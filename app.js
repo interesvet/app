@@ -8644,9 +8644,9 @@ const App = (() => {
       <div class="rejilla"><label>RFC<input id="tcRfc" value="${esc(c.emisor.rfc || '')}" style="text-transform:uppercase"></label><label>Razón social (como en tu constancia)<input id="tcNom" value="${esc(c.emisor.nombre || '')}" style="text-transform:uppercase"></label>
         <label>Régimen fiscal<select id="tcReg">${catOpts(cat.regimen, c.emisor.regimen || '', 'Elegir…')}</select></label></div>
       <h4 style="margin:12px 0 4px">Serie y C.P. de expedición por sucursal</h4>
-      <p class="muted peq" style="margin:0 0 4px">Usa una serie distinta a la que usabas en el portal del SAT, para que los folios no se repitan.</p>
-      ${tabla([{ t: 'Sucursal', k: 'nombre' }, { t: 'Serie', h: (x, i) => `<input id="tcSe${i}" value="${esc(x.serie)}" style="max-width:120px;text-transform:uppercase">` }, { t: 'C.P.', h: (x, i) => `<input id="tcCp${i}" value="${esc(x.cp)}" inputmode="numeric" maxlength="5" style="max-width:90px">` },
-        { t: 'Siguiente folio', h: (x, i) => `<input id="tcFo${i}" type="number" min="1" value="${x.folio}" style="max-width:100px">` }], c.sucs)}
+      <p class="muted peq" style="margin:0 0 4px">Si solo factura Matriz, llena solo Matriz y deja vacías las demás: <b>todas las notas se facturan con la serie de Matriz</b>. Si usas la misma serie que en el portal del SAT, pon en “Siguiente folio” tu último folio + 1 y ya no factures con esa serie en el portal. Las facturas de prueba llevan su propio contador y no gastan tus folios.</p>
+      ${tabla([{ t: 'Sucursal', k: 'nombre' }, { t: 'Serie', h: x => `<input id="tcSe${c.sucs.indexOf(x)}" value="${esc(x.serie)}" style="max-width:120px;text-transform:uppercase">` }, { t: 'C.P.', h: x => `<input id="tcCp${c.sucs.indexOf(x)}" value="${esc(x.cp)}" inputmode="numeric" maxlength="5" style="max-width:90px">` },
+        { t: 'Siguiente folio', h: x => `<input id="tcFo${c.sucs.indexOf(x)}" type="number" min="1" value="${x.folio}" style="max-width:100px">` }], c.sucs)}
       <div class="acciones izq"><button class="btn" onclick="App.timbProbar()">🔌 Probar conexión</button><button class="btn primario" onclick="App.timbGuardar()">Guardar</button> <span id="tcMsg" class="peq"></span></div>
       <p class="muted peq">La contraseña se guarda en el servidor y nadie la puede ver después. Tu certificado de sello digital (CSD) se sube en tu cuenta de Facturama, no aquí.</p>`;
   }
@@ -8659,7 +8659,7 @@ const App = (() => {
     const c = S.timbCfg; if (!c) return;
     if (c.amb === 'produccion' && !confirm('¿Cambiar a PRODUCCIÓN? Las facturas que timbres valdrán ante el SAT y gastarán folios.')) return;
     const p = { amb: c.amb, usuario: $('#tcUsr').value.trim(), pass: $('#tcPass').value, emisor: { rfc: $('#tcRfc').value.trim(), nombre: $('#tcNom').value.trim(), regimen: $('#tcReg').value },
-      sucs: c.sucs.map((s, i) => ({ id: s.id, nombre: s.nombre, serie: $('#tcSe' + i).value.trim(), cp: $('#tcCp' + i).value.trim(), folio: $('#tcFo' + i).value })) };
+      sucs: c.sucs.map((s, i) => ({ id: s.id, nombre: s.nombre, serie: (($('#tcSe' + i) || {}).value || '').trim(), cp: (($('#tcCp' + i) || {}).value || '').trim(), folio: ($('#tcFo' + i) || {}).value })) };
     try { await pedir('guardarTimbradoCfg', p); toast('✔ Timbrado guardado'); S.timb = null; cargarTimbCfg(); } catch (e) {}
   }
   async function timbProbar() {
@@ -8681,9 +8681,9 @@ const App = (() => {
       ${r.sin ? `<div class="aviso-cand">⚠️ <b>${nf(r.sin)} productos</b> sin clave del SAT.</div>` : '<p class="ok-txt">✔ Todos los productos activos tienen clave del SAT.</p>'}
       <h4 style="margin:10px 0 4px">Por categoría</h4>
       <div class="tabla-cont">${tabla([{ t: 'Categoría', k: 'cat' }, { t: 'Productos', num: 1, h: x => nf(x.n) + (x.sin ? `<br><small class="error">${nf(x.sin)} sin clave</small>` : '') },
-        { t: 'Clave producto/servicio', h: (x, i) => `<input id="scC${i}" value="${esc(x.clave)}" inputmode="numeric" maxlength="8" placeholder="8 números" style="max-width:130px" ${ed ? '' : 'disabled'}>` },
-        { t: 'Unidad', h: (x, i) => `<select id="scU${i}" ${ed ? '' : 'disabled'}>${opts(uni, x.unidad || 'H87')}</select>` },
-        { t: '', h: (x, i) => ed ? `<button class="btn chico" onclick="App.satAplicarCat(${i}, true)" title="Solo a los que no tienen">Aplicar a los que faltan</button> <button class="btn chico" onclick="App.satAplicarCat(${i}, false)">A todos</button>` : '' }], r.categorias)}</div>
+        { t: 'Clave producto/servicio', h: x => `<input id="scC${r.categorias.indexOf(x)}" value="${esc(x.clave)}" inputmode="numeric" maxlength="8" placeholder="8 números" style="max-width:130px" ${ed ? '' : 'disabled'}>` },
+        { t: 'Unidad', h: x => `<select id="scU${r.categorias.indexOf(x)}" ${ed ? '' : 'disabled'}>${opts(uni, x.unidad || 'H87')}</select>` },
+        { t: '', h: x => { const i = r.categorias.indexOf(x); return ed ? `<button class="btn chico" onclick="App.satAplicarCat(${i}, true)" title="Solo a los que no tienen">Aplicar a los que faltan</button> <button class="btn chico" onclick="App.satAplicarCat(${i}, false)">A todos</button>` : ''; } }], r.categorias)}</div>
       <details style="margin-top:10px"><summary><b>Producto por producto</b> (${nf(r.productos.length)})</summary>
         <label style="margin:8px 0">Buscar<input id="spQ" oninput="App.satFiltrar()" placeholder="Nombre, clave o categoría"></label><div id="spRes"></div>
         ${ed ? '<div class="acciones izq"><button class="btn primario" onclick="App.satGuardarProds()">Guardar cambios de productos</button></div>' : ''}</details>
@@ -8715,7 +8715,7 @@ const App = (() => {
   async function timbrarNotaForm(id) {
     let r; try { r = await pedir('prepararTimbrado', { ID_Venta: id }); } catch (e) { return; }
     S.timbP = r; const cat = D().catalogos || {}, rc = r.receptor, t = r.totales;
-    modal('🧾 Factura de la nota ' + r.nota, `<p style="margin-top:0">${timbEtq(r.amb)} ${r.sf ? '· Serie-folio <b>' + esc(r.sf) + '</b>' : ''} ${r.cpExp ? '· Expedida en C.P. ' + esc(r.cpExp) : ''}</p>
+    modal('🧾 Factura de la nota ' + r.nota, `<p style="margin-top:0">${timbEtq(r.amb)} ${r.sf ? '· Serie-folio <b>' + esc(r.sf) + '</b>' + (r.amb !== 'produccion' ? ' <small class="muted">(folio de prueba)</small>' : '') : ''} ${r.cpExp ? '· Expedida en C.P. ' + esc(r.cpExp) : ''}</p>
       ${r.avisos.map(a => `<div class="aviso-cand">⚠️ ${esc(a)}</div>`).join('')}
       <h4 style="margin:10px 0 4px">Cliente</h4>
       <div class="rejilla"><label>RFC<input id="tfRfc" value="${esc(rc.rfc)}" style="text-transform:uppercase"></label><label>Razón social (como en su constancia, sin "S.A. de C.V.")<input id="tfNom" value="${esc(rc.nombre)}" style="text-transform:uppercase"></label>
