@@ -1104,6 +1104,8 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 317, f: '13/11/2026', t: [{ x: '🧾 Timbrado de facturas con Facturama (por ahora en modo de pruebas): botón “Timbrar factura” en la nota.', p: 'facturacion' },
+      { x: '🏷️ Productos › Claves del SAT: asigna la clave de cada producto por categoría o uno por uno.', p: 'productos_editar' }] },
     { v: 316, f: '13/11/2026', t: [{ x: 'Este aviso: después de cada actualización verás aquí lo nuevo de la app.' },
       { x: 'La app anota sola los errores que ocurran en cualquier equipo, para corregirlos más rápido. Los ves en Configuración › 🐞 Errores de la app.', p: 'dueno' },
       { x: 'Reclamaciones: los enlaces a la nota de venta y a la orden de compra vuelven a abrir.' }] },
@@ -3710,7 +3712,7 @@ const App = (() => {
   async function cargarFactNota(id) {
     const el = $('#notaFact'); if (!el) return;
     let r; try { r = await pedir('facturasNota', { ID_Venta: id }, true); } catch (e) { el.innerHTML = '<span class="muted">Facturación: requiere conexión.</span>'; return; }
-    S.factNota = r; pintarFactNota();
+    S.factNota = r; await timbEstado(); pintarFactNota();
   }
   function pintarFactNota(form) {
     const r = S.factNota, el = $('#notaFact'); if (!r || !el) return;
@@ -3723,6 +3725,7 @@ const App = (() => {
       ${r.facturas.map(fila).join('') || '<p class="muted">Sin factura ligada.</p>'}
       ${r.piezas && r.piezas.length ? `<details style="margin-top:6px" ${r.piezas.some(x => x.pendientes > 0) && r.facturas.length ? 'open' : ''}><summary>🔢 Piezas facturadas: ${nf(r.piezas.reduce((a, x) => a + x.facturadas, 0))} de ${nf(r.piezas.reduce((a, x) => a + x.vendidas, 0))}${r.piezas.some(x => x.pendientes > 0) ? ' · <b class="txt-mal">faltan ' + nf(r.piezas.reduce((a, x) => a + x.pendientes, 0)) + '</b>' : ' ✔'}</summary>
         ${tabla([{ t: 'Producto', h: x => esc(x.nombre) }, { t: 'Vendidas', num: 1, h: x => nf(x.vendidas) }, { t: 'Facturadas', num: 1, h: x => nf(x.facturadas) }, { t: 'Sin facturar', num: 1, h: x => x.pendientes ? `<b class="txt-mal">${nf(x.pendientes)}</b>` : '✔' }, { t: 'Facturas', h: x => esc(x.facturas) }], r.piezas)}</details>` : ''}`;
+    if (!form && S.timb && S.timb.activo && (r.porFacturar === null || r.porFacturar === undefined || r.porFacturar > 0.009)) h += `<div class="acciones izq" style="margin-top:6px"><button class="btn primario" onclick="App.timbrarNotaForm('${esc(r.id)}')">🧾 Timbrar factura</button> ${timbEtq(S.timb.amb)}</div>`;
     if (form === 'asignar') {
       h += `<div class="tarjeta" style="margin-top:8px"><div class="rejilla">
         <label>Factura<select id="nfSel">${r.sugeridas.map(f => `<option value="${f.id}">${esc(f.sf)} · ${esc(f.fecha)}${f.global ? ' · GLOBAL' : ''}${f.libre !== null ? ' · libre ' + $$(f.libre) : ''}</option>`).join('')}<option value="">Otra: escribir serie-folio…</option></select></label>
@@ -3892,7 +3895,7 @@ const App = (() => {
         ${d.sustituidaPor ? `Sustituida por <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituidaPor)}')"><b>${esc(d.sustituidaPor)}</b></a>: sus notas pasaron a esa factura.` : `Sus notas quedaron <b>por facturar</b> hasta que subas la factura nueva.<div class="acciones" style="justify-content:flex-start;margin-top:6px"><button class="btn primario" onclick="App.formSustituir('${d.id}')">🔁 Subir la factura que la sustituye</button></div>`}</div>` : ''}
       ${d.sustituye ? `<p class="muted peq">🔁 Sustituye a <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituye)}')">${esc(d.sustituye)}</a> (cancelada).</p>` : ''}${d.avisoSust ? `<div class="aviso-cand">⚠️ ${esc(d.avisoSust)}</div>` : ''}
       <p>${esc(d.receptor || '')} ${d.rfc ? '· RFC ' + esc(d.rfc) : ''}${d.uuid ? '<br><small class="muted">UUID ' + esc(d.uuid) + '</small>' : ''}${d.comentarios ? '<br><small class="muted">' + esc(d.comentarios) + '</small>' : ''}</p>
-      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.ctCobrosFactura('${d.id}')">💵 Cobros y comprobantes</button>${d.estado !== 'Cancelada' && (d.urlPdf || d.urlXml) ? `<button class="btn" onclick="App.enviarFactCli('${esc(d.id)}')">📤 Enviar al cliente</button>` : ''}${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.ctCobrosFactura('${d.id}')">💵 Cobros y comprobantes</button>${d.estado !== 'Cancelada' && d.origen === 'Timbrada en la app' && puede('facturacion') ? `<button class="btn peligro" onclick="App.timbCancelarForm('${esc(d.id)}','${esc(d.sf)}')">🚫 Cancelar ante el SAT</button>` : ''}${d.estado !== 'Cancelada' && (d.urlPdf || d.urlXml) ? `<button class="btn" onclick="App.enviarFactCli('${esc(d.id)}')">📤 Enviar al cliente</button>` : ''}${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
       ${tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', h: x => esc(x.cliente) },
         { t: 'Total nota', num: 1, h: x => $$(x.totalNota) + (x.nc ? `<br><small class="muted">N/C −${$$(x.nc)} → a facturar ${$$(x.facturable)}</small>` : '') }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
         { t: 'Otras facturas', h: x => esc(x.otras.join(', ')) },
@@ -7544,7 +7547,7 @@ const App = (() => {
   }
   const enlazarFiltros = fn => ['#pfTxt', '#pfCat', '#pfLab', '#pfAct', '#pfLista'].forEach(s => enlazarFiltro(s, fn));
   function prodCatalogo() {
-    $('#pCont').innerHTML = filtrosProd(puede('productos_editar') ? '<button class="btn primario fijo" onclick="App.formProducto(null)">+ Nuevo producto</button>' : '') + '<div id="pRes"></div>';
+    $('#pCont').innerHTML = filtrosProd((puede('productos_editar') ? '<button class="btn primario fijo" onclick="App.formProducto(null)">+ Nuevo producto</button>' : '') + (puede('productos_editar') || puede('facturacion') ? '<button class="btn fijo" onclick="App.clavesSat()">🏷️ Claves del SAT</button>' : '')) + '<div id="pRes"></div>';
     const pintar = () => { const l = prodFiltrados(); S.lista = l; const suc = sucFiltro();
       $('#pRes').innerHTML = `<p class="muted">${l.length} productos</p>` + tabla([{ t: '', h: p => imgMini(p) }, { t: 'Clave', k: 'id' }, { t: 'Producto', h: p => `<b>${esc(p.nombre)}</b>` }, { t: 'Unidad', k: 'unidad', cls: 'ocultar-movil' },
         { t: 'Categoría', k: 'categoria', cls: 'ocultar-movil' }, { t: 'Laboratorio', k: 'lab', cls: 'ocultar-movil' }, { t: 'P. Público', num: 1, h: p => $$(p.precios.Publico) },
@@ -8616,6 +8619,154 @@ const App = (() => {
   }
   function abrirConteoAut(id) { S.ctoId = id; ir('conteo'); }
   /** Sucursal: pedir a Matriz la factura de una nota (constancia de situación fiscal obligatoria). */
+  /* =====================================================================================
+   *  🧾 TIMBRADO CON FACTURAMA: configuración (dueño), claves del SAT, timbrar desde la nota y cancelar
+   * ===================================================================================== */
+  async function timbEstado(forzar) {
+    if (!forzar && S.timb && Date.now() - S.timb.t < 10 * 60000) return S.timb;
+    try { const r = await pedir('timbradoEstado', {}, true); S.timb = Object.assign({ t: Date.now() }, r); } catch (e) { S.timb = S.timb || { activo: false, t: Date.now() }; }
+    return S.timb;
+  }
+  const timbEtq = amb => amb === 'produccion' ? '<span class="etq ok">✅ PRODUCCIÓN</span>' : '<span class="etq av">🧪 PRUEBAS</span>';
+  const catOpts = (l, sel, vacio) => opts((l || []).map(u => Array.isArray(u) ? u : [u.id, u.id + ' · ' + u.nombre]), sel, vacio);
+
+  /* ---------- Configuración › 🧾 Timbrado ---------- */
+  async function cargarTimbCfg() {
+    const el = $('#cfTimb'); if (!el) return;
+    let c; try { c = await pedir('timbradoCfg', {}, true); } catch (e) { el.innerHTML = '<span class="muted">' + esc(e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message || '') ? 'Se activa con el servidor 249.' : e.message) + '</span>'; return; }
+    S.timbCfg = c; const cat = D().catalogos || {};
+    el.innerHTML = `<div class="fila" style="align-items:center;margin-bottom:6px"><span class="muted">Ambiente:</span>
+        <span class="cx-seg"><button type="button" class="${c.amb !== 'produccion' ? 'on' : ''}" onclick="App.timbAmb('pruebas')">🧪 Pruebas</button><button type="button" class="${c.amb === 'produccion' ? 'on' : ''}" onclick="App.timbAmb('produccion')">✅ Producción</button></span>
+        <small class="muted" id="tcAmbTxt">${c.amb === 'produccion' ? 'Las facturas valen ante el SAT y gastan folios.' : 'Las facturas de pruebas no valen ante el SAT ni gastan folios; no se ligan a las notas.'}</small></div>
+      <div class="rejilla"><label>Usuario de Facturama<input id="tcUsr" value="${esc(c.usuario)}" autocomplete="off"></label>
+        <label>Contraseña de Facturama<input id="tcPass" type="password" autocomplete="new-password" placeholder="${c.tienePass ? '●●●●●●●● (guardada; escribe solo para cambiarla)' : 'Escríbela'}"></label></div>
+      <h4 style="margin:12px 0 4px">Emisor</h4>
+      <div class="rejilla"><label>RFC<input id="tcRfc" value="${esc(c.emisor.rfc || '')}" style="text-transform:uppercase"></label><label>Razón social (como en tu constancia)<input id="tcNom" value="${esc(c.emisor.nombre || '')}" style="text-transform:uppercase"></label>
+        <label>Régimen fiscal<select id="tcReg">${catOpts(cat.regimen, c.emisor.regimen || '', 'Elegir…')}</select></label></div>
+      <h4 style="margin:12px 0 4px">Serie y C.P. de expedición por sucursal</h4>
+      <p class="muted peq" style="margin:0 0 4px">Usa una serie distinta a la que usabas en el portal del SAT, para que los folios no se repitan.</p>
+      ${tabla([{ t: 'Sucursal', k: 'nombre' }, { t: 'Serie', h: (x, i) => `<input id="tcSe${i}" value="${esc(x.serie)}" style="max-width:120px;text-transform:uppercase">` }, { t: 'C.P.', h: (x, i) => `<input id="tcCp${i}" value="${esc(x.cp)}" inputmode="numeric" maxlength="5" style="max-width:90px">` },
+        { t: 'Siguiente folio', h: (x, i) => `<input id="tcFo${i}" type="number" min="1" value="${x.folio}" style="max-width:100px">` }], c.sucs)}
+      <div class="acciones izq"><button class="btn" onclick="App.timbProbar()">🔌 Probar conexión</button><button class="btn primario" onclick="App.timbGuardar()">Guardar</button> <span id="tcMsg" class="peq"></span></div>
+      <p class="muted peq">La contraseña se guarda en el servidor y nadie la puede ver después. Tu certificado de sello digital (CSD) se sube en tu cuenta de Facturama, no aquí.</p>`;
+  }
+  function timbAmb(a) {
+    if (!S.timbCfg) return; S.timbCfg.amb = a;
+    document.querySelectorAll('#cfTimb .cx-seg button').forEach((b, i) => b.classList.toggle('on', (i === 1) === (a === 'produccion')));
+    const t = $('#tcAmbTxt'); if (t) t.textContent = a === 'produccion' ? '⚠️ Producción: las facturas valen ante el SAT y gastan folios. Guarda para aplicar.' : 'Las facturas de pruebas no valen ante el SAT ni gastan folios; no se ligan a las notas. Guarda para aplicar.';
+  }
+  async function timbGuardar() {
+    const c = S.timbCfg; if (!c) return;
+    if (c.amb === 'produccion' && !confirm('¿Cambiar a PRODUCCIÓN? Las facturas que timbres valdrán ante el SAT y gastarán folios.')) return;
+    const p = { amb: c.amb, usuario: $('#tcUsr').value.trim(), pass: $('#tcPass').value, emisor: { rfc: $('#tcRfc').value.trim(), nombre: $('#tcNom').value.trim(), regimen: $('#tcReg').value },
+      sucs: c.sucs.map((s, i) => ({ id: s.id, nombre: s.nombre, serie: $('#tcSe' + i).value.trim(), cp: $('#tcCp' + i).value.trim(), folio: $('#tcFo' + i).value })) };
+    try { await pedir('guardarTimbradoCfg', p); toast('✔ Timbrado guardado'); S.timb = null; cargarTimbCfg(); } catch (e) {}
+  }
+  async function timbProbar() {
+    const m = $('#tcMsg'); if (m) m.textContent = 'Probando…';
+    try { const r = await pedir('probarTimbrado', {}); if (m) { m.className = 'peq ok-txt'; m.textContent = '✔ Conectado a Facturama (' + (r.amb === 'produccion' ? 'producción' : 'pruebas') + ')'; } }
+    catch (e) { if (m) { m.className = 'peq error'; m.textContent = '✕ ' + (e.message || e); } }
+  }
+
+  /* ---------- 🏷️ Claves del SAT de los productos ---------- */
+  async function clavesSat(volverA) {
+    S.satVolver = volverA || null;
+    let r; try { r = await pedir('clavesSat', {}); } catch (e) { if (/desconocida/i.test(e.message || '')) toast('Se activa con el servidor 249', true); return; }
+    S.sat = r; pintarClavesSat();
+  }
+  function pintarClavesSat() {
+    const r = S.sat, ed = puede('productos_editar') || puede('dueno'), uni = r.unidades;
+    const satUrl = 'http:' + '\/\/pys.sat.gob.mx/PyS/catPyS.aspx';
+    modal('🏷️ Claves del SAT de tus productos', `<p class="muted" style="margin-top:0">Cada producto necesita su <b>clave de producto o servicio</b> (8 números) y su <b>unidad</b> para poder facturarlo. Asígnalas por categoría de un jalón y corrige las que haga falta. Confírmalas con tu contador; las puedes buscar en el <a href="${satUrl}" target="_blank" rel="noopener">catálogo oficial del SAT</a>.</p>
+      ${r.sin ? `<div class="aviso-cand">⚠️ <b>${nf(r.sin)} productos</b> sin clave del SAT.</div>` : '<p class="ok-txt">✔ Todos los productos activos tienen clave del SAT.</p>'}
+      <h4 style="margin:10px 0 4px">Por categoría</h4>
+      <div class="tabla-cont">${tabla([{ t: 'Categoría', k: 'cat' }, { t: 'Productos', num: 1, h: x => nf(x.n) + (x.sin ? `<br><small class="error">${nf(x.sin)} sin clave</small>` : '') },
+        { t: 'Clave producto/servicio', h: (x, i) => `<input id="scC${i}" value="${esc(x.clave)}" inputmode="numeric" maxlength="8" placeholder="8 números" style="max-width:130px" ${ed ? '' : 'disabled'}>` },
+        { t: 'Unidad', h: (x, i) => `<select id="scU${i}" ${ed ? '' : 'disabled'}>${opts(uni, x.unidad || 'H87')}</select>` },
+        { t: '', h: (x, i) => ed ? `<button class="btn chico" onclick="App.satAplicarCat(${i}, true)" title="Solo a los que no tienen">Aplicar a los que faltan</button> <button class="btn chico" onclick="App.satAplicarCat(${i}, false)">A todos</button>` : '' }], r.categorias)}</div>
+      <details style="margin-top:10px"><summary><b>Producto por producto</b> (${nf(r.productos.length)})</summary>
+        <label style="margin:8px 0">Buscar<input id="spQ" oninput="App.satFiltrar()" placeholder="Nombre, clave o categoría"></label><div id="spRes"></div>
+        ${ed ? '<div class="acciones izq"><button class="btn primario" onclick="App.satGuardarProds()">Guardar cambios de productos</button></div>' : ''}</details>
+      <div class="acciones">${S.satVolver ? `<button class="btn primario" onclick="App.timbrarNotaForm('${esc(S.satVolver)}')">← Volver a la factura</button>` : '<button class="btn" onclick="App.cerrarModal()">Cerrar</button>'}</div>`);
+    satFiltrar();
+  }
+  function satFiltrar() {
+    const q = ($('#spQ') || {}).value || '', ed = puede('productos_editar') || puede('dueno');
+    const l = S.sat.productos.filter(p => !q || coincide(p.id + ' ' + p.nombre + ' ' + p.cat + ' ' + p.clave, q)).slice(0, 150);
+    $('#spRes').innerHTML = tabla([{ t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.id)} · ${esc(x.cat)}</small>` },
+      { t: 'Clave', h: x => `<input class="spC" data-id="${esc(x.id)}" value="${esc(x.clave)}" maxlength="8" inputmode="numeric" style="max-width:120px" ${ed ? '' : 'disabled'}>` },
+      { t: 'Unidad', h: x => `<select class="spU" data-id="${esc(x.id)}" ${ed ? '' : 'disabled'}>${opts(S.sat.unidades, x.unidad || 'H87')}</select>` }], l, { vacio: 'Sin productos' }) + (l.length >= 150 ? '<p class="muted peq">Se muestran 150; usa el buscador.</p>' : '');
+  }
+  async function satAplicarCat(i, soloVacios) {
+    const x = S.sat.categorias[i], clave = $('#scC' + i).value.trim(), unidad = $('#scU' + i).value;
+    if (!/^\d{8}$/.test(clave)) return toast('La clave del SAT debe tener 8 números', true);
+    if (!soloVacios && !confirm('¿Poner la clave ' + clave + ' a los ' + x.n + ' productos de ' + x.cat + '? También cambia los que ya tenían otra.')) return;
+    try { const r = await pedir('guardarClavesSat', { categoria: x.cat, clave: clave, unidad: unidad, soloVacios: soloVacios }); S.sat = r; toast('✔ ' + nf(r.cambiados) + ' productos actualizados'); pintarClavesSat(); } catch (e) {}
+  }
+  async function satGuardarProds() {
+    const orig = {}; S.sat.productos.forEach(p => orig[p.id] = p);
+    const lista = []; document.querySelectorAll('#spRes .spC').forEach(inp => { const id = inp.dataset.id, u = document.querySelector('#spRes .spU[data-id="' + CSS.escape(id) + '"]').value, c = inp.value.trim();
+      if (orig[id] && (orig[id].clave !== c || (orig[id].unidad || 'H87') !== u)) lista.push({ id: id, clave: c, unidad: u }); });
+    if (!lista.length) return toast('No hay cambios');
+    try { const r = await pedir('guardarClavesSat', { lista: lista }); S.sat = r; toast('✔ ' + nf(r.cambiados) + ' productos actualizados'); pintarClavesSat(); } catch (e) {}
+  }
+
+  /* ---------- 🧾 Timbrar la factura de una nota ---------- */
+  async function timbrarNotaForm(id) {
+    let r; try { r = await pedir('prepararTimbrado', { ID_Venta: id }); } catch (e) { return; }
+    S.timbP = r; const cat = D().catalogos || {}, rc = r.receptor, t = r.totales;
+    modal('🧾 Factura de la nota ' + r.nota, `<p style="margin-top:0">${timbEtq(r.amb)} ${r.sf ? '· Serie-folio <b>' + esc(r.sf) + '</b>' : ''} ${r.cpExp ? '· Expedida en C.P. ' + esc(r.cpExp) : ''}</p>
+      ${r.avisos.map(a => `<div class="aviso-cand">⚠️ ${esc(a)}</div>`).join('')}
+      <h4 style="margin:10px 0 4px">Cliente</h4>
+      <div class="rejilla"><label>RFC<input id="tfRfc" value="${esc(rc.rfc)}" style="text-transform:uppercase"></label><label>Razón social (como en su constancia, sin "S.A. de C.V.")<input id="tfNom" value="${esc(rc.nombre)}" style="text-transform:uppercase"></label>
+        <label>C.P. fiscal<input id="tfCp" value="${esc(rc.cp)}" maxlength="5" inputmode="numeric"></label><label>Régimen fiscal<select id="tfReg">${catOpts(cat.regimen, rc.regimen, 'Elegir…')}</select></label>
+        <label>Uso del CFDI<select id="tfUso">${catOpts(cat.usoCfdi, rc.uso, 'Elegir…')}</select></label><label>Correo para enviarla (opcional)<input id="tfMail" type="email" value="${esc(rc.email)}"></label></div>
+      <label class="check" style="margin-top:4px"><input type="checkbox" id="tfGuardar" checked> Guardar estos datos fiscales en la ficha del cliente</label>
+      <h4 style="margin:10px 0 4px">Pago</h4>
+      <div class="rejilla"><label>Método<select id="tfMet" onchange="App.timbMet()">${opts([['PUE', 'PUE · Una sola exhibición (pagada)'], ['PPD', 'PPD · En parcialidades o diferido (a crédito)']], r.metodo)}</select></label>
+        <label>Forma de pago<select id="tfForma">${opts(cat.formasPago || [], String(Number(r.forma)))}</select></label></div>
+      <p class="muted peq" style="margin:2px 0 0">${r.saldo > 0.009 ? 'La nota tiene saldo de ' + $$(r.saldo) + ': se propone PPD (forma 99). Después de cada abono habrá que timbrar su complemento de pago.' : 'La nota está pagada: se propone PUE con la forma del último cobro.'}</p>
+      <h4 style="margin:10px 0 4px">Conceptos</h4>
+      <div class="tabla-cont">${tabla([{ t: 'Producto', h: x => esc(x.nombre) }, { t: 'Clave SAT', h: x => x.clave ? esc(x.clave) + ' · ' + esc(x.unidad) : '<span class="etq mal">falta</span>' },
+        { t: 'Cant.', num: 1, h: x => nf(x.q) }, { t: 'Precio', num: 1, h: x => $$(x.precio) }, { t: 'Desc.', num: 1, h: x => x.desc ? $$(x.desc) : '—' }, { t: 'IVA', num: 1, h: x => x.exento ? 'Exento' : Math.round(x.tasa * 100) + '%' }, { t: 'Importe', num: 1, h: x => $$(x.total) }], r.conceptos)}</div>
+      ${r.conceptos.some(x => !x.clave) ? `<div class="acciones izq"><button class="btn" onclick="App.clavesSat('${esc(r.id)}')">🏷️ Asignar claves del SAT</button></div>` : ''}
+      <p style="text-align:right;margin:8px 0 0">Subtotal <b>${$$(t.sub)}</b>${t.desc ? ' · Descuento <b>' + $$(t.desc) + '</b>' : ''} · IVA <b>${$$(t.iva)}</b> · Total <b class="ok-txt" style="font-size:1.15em">${$$(t.total)}</b></p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" ${r.puede ? '' : 'disabled title="Corrige los avisos primero"'} onclick="App.timbrarNota()">🧾 ${r.amb === 'produccion' ? 'Timbrar factura' : 'Timbrar de prueba'}</button></div>`);
+    timbMet();
+  }
+  function timbMet() { const m = $('#tfMet'), f = $('#tfForma'); if (!m || !f) return; if (m.value === 'PPD') { f.value = '99'; f.disabled = true; } else { f.disabled = false; if (f.value === '99') f.value = String(Number(S.timbP.metodo === 'PUE' ? S.timbP.forma : 3)); } }
+  async function timbrarNota() {
+    const r = S.timbP; if (!r) return;
+    const rec = { rfc: $('#tfRfc').value.trim(), nombre: $('#tfNom').value.trim(), cp: $('#tfCp').value.trim(), regimen: $('#tfReg').value, uso: $('#tfUso').value, email: $('#tfMail').value.trim() };
+    const met = $('#tfMet').value, forma = $('#tfForma').value;
+    if (!confirm((r.amb === 'produccion' ? '¿Timbrar la factura ante el SAT?' : '¿Timbrar una factura DE PRUEBA (sin validez)?') + '\n\n' + rec.nombre + ' · ' + rec.rfc + '\nTotal ' + $$(r.totales.total) + ' · ' + met)) return;
+    let x; try { x = await pedir('timbrarNota', { ID_Venta: r.id, receptor: rec, metodo: met, forma: forma, guardarCliente: $('#tfGuardar').checked }); } catch (e) { return; }
+    S.timbUlt = x;
+    if (x.prueba) {
+      modal('✅ Factura de prueba timbrada', `<div class="aviso-cand" style="border-color:var(--ok)">🧪 <b>Prueba sin validez ante el SAT</b> · no se ligó a la nota.</div>
+        <p><b>${esc(x.sf)}</b> · Total ${$$(x.total)}<br><small class="muted">Folio fiscal de prueba: ${esc(x.uuid)}</small></p>
+        <div class="acciones izq">${x.urlPdf ? `<a class="btn" href="${esc(x.urlPdf)}" target="_blank">📄 Ver PDF</a>` : ''}<a class="btn" href="${esc(x.urlXml)}" target="_blank">🧾 Ver XML</a><button class="btn peligro" onclick="App.timbCancelarPrueba()">Cancelar esta prueba</button></div>
+        <p class="muted peq">Revisa que el PDF salga como lo quieres (datos del cliente, conceptos, claves). Cuando todo esté bien, cambia a Producción en Configuración › 🧾 Timbrado.</p>
+        <div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Listo</button></div>`);
+      return;
+    }
+    toast('✅ Factura ' + x.sf + ' timbrada'); if (x.idFactura) verFactura(x.idFactura); if (S.vista === 'ventas') refrescarVentasVista();
+  }
+  async function timbCancelarPrueba() {
+    const x = S.timbUlt; if (!x || !x.fmId) return;
+    try { const r = await pedir('cancelarTimbrada', { fmId: x.fmId, motivo: '02' }); toast('Prueba: ' + (r.estado || 'enviada') + (r.mensaje ? ' · ' + r.mensaje : '')); cerrarModal(); } catch (e) {}
+  }
+  function timbCancelarForm(idFac, sf) {
+    modal('🚫 Cancelar ante el SAT · ' + sf, `<p class="muted" style="margin-top:0">La cancelación se manda al SAT por medio de Facturama. Si el cliente debe aceptarla, quedará en espera hasta que responda.</p>
+      <label>Motivo<select id="tcMot" onchange="document.getElementById('tcSustL').style.display=this.value==='01'?'':'none'">${opts([['02', '02 · Emitida con errores sin relación'], ['01', '01 · Emitida con errores con relación (la sustituye otra)'], ['03', '03 · No se llevó a cabo la operación'], ['04', '04 · Operación nominativa en factura global']], '02')}</select></label>
+      <label id="tcSustL" style="display:none">Folio fiscal (UUID) de la factura que la sustituye<input id="tcSust" placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX" style="text-transform:uppercase"></label>
+      <div class="acciones"><button class="btn" onclick="App.verFactura('${esc(idFac)}')">Volver</button><button class="btn peligro" onclick="App.timbCancelar('${esc(idFac)}')">Cancelar factura ante el SAT</button></div>`);
+  }
+  async function timbCancelar(idFac) {
+    const m = $('#tcMot').value, u = ($('#tcSust') || {}).value || '';
+    if (!confirm('¿Cancelar esta factura ante el SAT? No se puede deshacer.')) return;
+    try { const r = await pedir('cancelarTimbrada', { id: idFac, motivo: m, uuidSust: u.trim() }); toast(r.estadoSat === 'pendiente' ? '⏳ Cancelación solicitada: falta que el cliente la acepte' : '🚫 Factura cancelada ante el SAT'); verFactura(idFac); if (S.vista === 'ventas') refrescarVentasVista(); } catch (e) {}
+  }
   function formSolFactura(id) {
     const d = S.ultimaVenta && S.ultimaVenta.id === id ? S.ultimaVenta : null; if (!d) return;
     const cat = D().catalogos || {};
@@ -14844,11 +14995,12 @@ const App = (() => {
   }
   V.config = async () => {
     const u = U();
-    setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) { cargarSucsCfg(); cargarRespaldos(); cargarErroresCfg(); } }, 0);
+    setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) { cargarSucsCfg(); cargarRespaldos(); cargarErroresCfg(); cargarTimbCfg(); } }, 0);
     $('#vista').innerHTML = `<div class="tarjeta"><h3>Mi sesión</h3><p>${esc(u.nombre)} · <b>${esc(u.rolNombre || u.rol)}</b> · ${esc(u.correo)}<br>Sucursal: ${esc(sucNom(u.sucursal))} · Acceso: ${u.todasSucursales ? 'todas las sucursales' : 'solo su sucursal'}</p>
       <p class="muted">Datos guardados en este dispositivo: ${(D().productos || []).length} productos, ${(D().clientes || []).length} clientes, ${(D().stock || []).length} lotes. Última actualización: ${D().servidor ? new Date(D().servidor).toLocaleString('es-MX') : '—'}</p>
       <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button><button class="btn fijo" onclick="App.verNovedades()">✨ Novedades</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}${puede('seguimiento') ? '<button class="btn fijo" onclick="App.formPlantillas()">📲 Mensajes de WhatsApp</button>' : ''}${puede('ventas') || puede('dueno') ? '<button class="btn fijo" onclick="App.formCumple()">🎂 Regalo de cumpleaños</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
       ${puede('dueno') ? '<div class="tarjeta"><h3>🛟 Respaldos automáticos</h3><div id="cfResp"><span class="muted">Revisando…</span></div></div>' : ''}
+      ${puede('dueno') ? '<div class="tarjeta"><h3>🧾 Timbrado de facturas (Facturama)</h3><div id="cfTimb"><span class="muted">Revisando…</span></div></div>' : ''}
       ${puede('dueno') ? '<div class="tarjeta"><h3>🐞 Errores de la app</h3><p class="muted" style="margin-top:0">Lo que ha fallado en los equipos de tu personal (errores del programa, no avisos normales). Cópialo y mándalo a soporte para corregirlo.</p><div id="cfErr"><span class="muted">Revisando…</span></div></div>' : ''}
       ${puede('dueno') || u.rol === 'Contador' ? `<div class="tarjeta"><h3>🔐 Cierre de mes</h3><p class="muted">${puede('dueno') ? 'Revisa los pendientes del mes y ciérralo: después, cualquier cambio que altere sus cifras necesita tu autorización y queda registrado.' : 'Meses cerrados por el dueño, sus cifras al cerrar y los cambios posteriores.'}</p><div class="acciones" style="justify-content:flex-start"><button class="btn primario" onclick="App.cierreMes()">📅 Ver meses</button></div></div>` : ''}
       <div class="tarjeta"><h3>Operaciones pendientes de sincronizar (${S.cola.length})</h3>${tabla([{ t: 'Capturada', k: 'creado' }, { t: 'Operación', k: 'desc' }, { t: 'Error', h: o => o.error ? `<span class="error">${esc(o.error)}</span>` : 'En espera' },
@@ -15566,7 +15718,7 @@ const App = (() => {
     invCambiarVal, formCumple, guardarCumple, cbCumple, agregarLineaVenta, usarMonedero, verMonedero, verMonederoI, monederoWa, monederoPdf, monederoPng,
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
-    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades,
+    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, clavesSat, satFiltrar, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,

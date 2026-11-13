@@ -1183,6 +1183,7 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
 .cx-bar.neu-b { background: var(--texto-3); }
 .nov-v { margin-bottom: 12px; }
 .nov-v ul { margin: 6px 0 0; padding-left: 20px; line-height: 1.5; }
+#cfTimb .cx-seg { flex: none; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
