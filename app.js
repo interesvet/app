@@ -1422,8 +1422,8 @@ const App = (() => {
       <div class="rejilla-2 d2 cx-graf">
         <div><h4>Diferencia mes a mes</h4><p class="muted peq">Verde: ${A} vendió más que ${B} · rojo: vendió menos</p><div class="grafica" style="height:260px"><canvas id="gDif"></canvas></div></div>
         <div><h4>Las curvas de cada año</h4><p class="muted peq">Mismos meses, una línea por año</p><div class="grafica" style="height:260px"><canvas id="gCurvas"></canvas></div></div>
-        <div><h4>Qué productos explican la diferencia</h4><p class="muted peq">Lo que ganaste o perdiste en cada uno contra ${B}</p><div class="grafica" id="gxP" style="height:300px"><canvas id="gExpP"></canvas></div></div>
-        <div><h4>Qué clientes explican la diferencia</h4><p class="muted peq">Crecieron o dejaron de comprar</p><div class="grafica" id="gxC" style="height:300px"><canvas id="gExpC"></canvas></div></div>
+        <div><h4>Qué productos explican la diferencia</h4><p class="muted peq">Lo que ganaste o perdiste en cada uno contra ${B}</p><div class="cx-exp" id="gxP"></div></div>
+        <div><h4>Qué clientes explican la diferencia</h4><p class="muted peq">Crecieron o dejaron de comprar</p><div class="cx-exp" id="gxC"></div></div>
       </div>
       <div class="acciones izq" style="margin-top:10px"><button class="btn primario" onclick="App.compProductos()">📋 Producto por producto (${nf(r.productos.length)})</button>
         <span class="muted peq">✨ ${nf(r.nuevos)} productos nuevos · ${nf(r.perdidos)} que se vendieron en ${B} y no en ${A} · ${nf(r.clientesNuevos)} clientes nuevos · ${nf(r.clientesPerdidos)} que compraron en ${B} y no en ${A}</span></div>`}`;
@@ -1440,15 +1440,19 @@ const App = (() => {
         borderDash: y === B ? [6, 4] : [], borderWidth: y === A ? 3 : 2, pointRadius: y === A ? 3 : 2, tension: .3 })) },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + $$(c.raw) } } },
         scales: { y: { ticks: { callback: tickMoneda }, grid: { color: css('--borde') } }, x: { grid: { display: false } } } } });
-    const explica = (id, caja, lista) => {
-      const l = lista.filter(o => Math.abs(o.d) >= 1).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 10).sort((a, b) => b.d - a.d);
-      if ($('#' + caja)) $('#' + caja).style.height = Math.max(200, l.length * 30 + 50) + 'px';
-      grafica(id, { type: 'bar', data: { labels: l.map(o => o.n), datasets: [{ data: l.map(o => dr2(o.d)), backgroundColor: l.map(o => o.d >= 0 ? ok : mal), borderRadius: 4, maxBarThickness: 22 }] },
-        options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => { const o = l[c.dataIndex]; return [(o.d >= 0 ? '+' : '') + $$(o.d), A + ': ' + $$(o.a), B + ': ' + $$(o.b)]; } } } },
-          scales: { x: ejeM, y: { grid: { display: false }, ticks: { autoSkip: false, font: { size: 11 }, callback: function (v) { const t = this.getLabelForValue(v); return t.length > 30 ? t.slice(0, 29) + '…' : t; } } } } } });
+    /* barras de diferencia en HTML: nombre y, abajo y más chico, la presentación del producto */
+    const explica = (caja, lista) => {
+      const l = lista.filter(o => Math.abs(o.d) >= 1).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 10).sort((a, b) => b.d - a.d), el = $('#' + caja); if (!el) return;
+      if (!l.length) { el.innerHTML = '<div class="vacio">Sin diferencias</div>'; return; }
+      const neg = Math.max(0, ...l.map(o => -o.d)), pos = Math.max(0, ...l.map(o => o.d)), tot = neg + pos || 1, cero = neg / tot * 100;
+      el.innerHTML = l.map(o => { const w = Math.abs(o.d) / tot * 100;
+        return `<div class="cx-fila" title="${esc(o.n)}${o.p ? ', ' + esc(o.p) : ''} · ${A}: ${$$(o.a)} · ${B}: ${$$(o.b)}"><div class="cx-nom"><span>${esc(o.n)}</span>${o.p ? `<small>${esc(o.p)}</small>` : ''}</div>
+          <div class="cx-pista"><i class="cx-cero" style="left:${cero.toFixed(2)}%"></i><i class="cx-bar ${o.d >= 0 ? 'sube' : 'baja'}" style="left:${(o.d >= 0 ? cero : cero - w).toFixed(2)}%;width:${Math.max(w, .6).toFixed(2)}%"></i></div>
+          <div class="cx-val ${o.d >= 0 ? 'ok-txt' : 'error'}">${o.d >= 0 ? '+' : '−'}${tickMoneda(Math.round(Math.abs(o.d)))}</div></div>`; }).join('');
     };
-    explica('gExpP', 'gxP', r.productos.map(o => ({ n: rdCorto(o.nombre), a: o.impA, b: o.impB, d: o.impA - o.impB })));
-    explica('gExpC', 'gxC', x.clis.map(o => ({ n: o.nombre, a: o.a, b: o.b, d: o.a - o.b })));
+    const pres = n => { const t = String(n || ''), i = t.indexOf(','); return i < 0 ? [t.trim(), ''] : [t.slice(0, i).trim(), t.slice(i + 1).trim()]; };
+    explica('gxP', r.productos.map(o => { const q = pres(o.nombre); return { n: q[0], p: q[1], a: o.impA, b: o.impB, d: o.impA - o.impB }; }));
+    explica('gxC', x.clis.map(o => ({ n: o.nombre, a: o.a, b: o.b, d: o.a - o.b })));
   }
   /** Lectura rápida: lo importante en palabras. */
   function cxLectura(x, dif) {
