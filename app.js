@@ -12413,8 +12413,13 @@ const App = (() => {
       <div class="acciones izq"><button type="button" class="btn chico" onclick="App.evPonAgregar()">➕ Agregar ponente</button></div>
       <h4 style="margin:12px 0 4px">🏢 Organizan</h4><p class="muted peq" style="margin:0 0 4px">Interés Veterinario® siempre aparece. Marca si hay coorganizadores; sus logotipos salen en la invitación.</p>
       <div id="evOrgs" class="ev-chips"><span class="muted peq">Cargando…</span></div>
-      <details class="ev-grupo" id="evOrgNuevo"><summary>➕ Nuevo coorganizador</summary><div class="rejilla"><label>Nombre<input id="evOrgN" placeholder="Ej. Laboratorio Bayer"></label><label>Logotipo (PNG o JPG)<input type="file" id="evOrgL" accept="image/png,image/jpeg,image/webp"></label></div>
+      <details class="ev-grupo" id="evOrgNuevo"><summary>➕ Nuevo coorganizador</summary>
+        <label>Tomarlo de un cliente o proveedor <small class="muted">(usa su nombre y su foto o logotipo)</small><input id="evOrgQ" placeholder="Buscar cliente o proveedor" oninput="App.evOrgBuscar(this.value)"></label><div id="evOrgRes" class="ev-lista"></div>
+        <div id="evOrgPrev" class="ev-org-prev"></div><div class="rejilla"><label>Nombre<input id="evOrgN" placeholder="Ej. Laboratorio Bayer"></label><label>Logotipo (PNG o JPG)<input type="file" id="evOrgL" accept="image/png,image/jpeg,image/webp"></label></div>
         <div class="acciones izq"><button type="button" class="btn" id="evOrgBtn" onclick="App.evOrgGuardar()">💾 Guardar coorganizador</button></div></details>
+      <h4 style="margin:12px 0 4px">🖼️ Imagen de fondo de la invitación <small class="muted">(opcional)</small></h4>
+      <p class="muted peq" style="margin:0 0 4px">Una imagen alusiva al tema (la diseñas tú). Se pone tenue, como marca de agua, detrás del texto.</p>
+      <div class="fila"><input type="file" id="evFondo" accept="image/jpeg,image/png,image/webp" onchange="App.evFondoElegir(this)">${e.fondo ? '<label class="check"><input type="checkbox" id="evFondoQ"> Quitar la imagen actual</label>' : ''}</div><div id="evFondoPrev" class="ev-fondo-prev"></div>
       <h4 style="margin:12px 0 4px">${e.id ? 'Invitar a más personas' : 'Invitar a'}</h4>
       <details class="ev-grupo" open><summary>🏬 Sucursales completas <small class="muted">(gerente y vendedores)</small></summary><div class="ev-chips">${sucs.map(x => `<label class="ev-chip"><input type="checkbox" data-evsuc="${esc(x.id)}" onchange="App.evCuenta()"> ${esc(x.nombre)}</label>`).join('') || '<span class="muted">—</span>'}</div></details>
       <details class="ev-grupo"><summary>👥 Personas del equipo</summary><input id="evEmpQ" placeholder="Buscar por nombre" oninput="App.evFiltrarEmp(this.value)"><div class="ev-lista" id="evEmps">${emps.map(v => `<label class="ev-item" data-n="${esc(String(v.nombre).toLowerCase())}"><input type="checkbox" data-evemp="${esc(v.id)}" onchange="App.evCuenta()"> ${esc(v.nombre)} <small class="muted">${esc(sn(v.suc))}${v.rol ? ' · ' + esc(v.rol) : ''}</small></label>`).join('')}</div></details>
@@ -12426,7 +12431,7 @@ const App = (() => {
       <label class="check"><input type="checkbox" id="evCal" ${e.id ? (e.calendario ? 'checked' : '') : 'checked'}> Enviar invitación de Google Calendar a quienes tengan correo</label>
       <label class="check"><input type="checkbox" id="evAviso" checked> Avisar en la app a las personas de mi equipo invitadas</label></div>
       <div class="acciones"><button class="btn" onclick="${e.id ? `App.verEvento('${esc(e.id)}')` : 'App.cerrarModal()'}">Cancelar</button><button class="btn primario" id="evBtn" onclick="App.guardarEvento()">${e.id ? '💾 Guardar cambios' : '🤝 Crear reunión'}</button></div>`);
-    S.evPon = (e.ponentes || []).map(x => Object.assign({}, x)); S.evOrgSel = (e.organizadores || []).map(x => x.id); evPonPintar(); evOrgCargar();
+    S.evPon = (e.ponentes || []).map(x => Object.assign({}, x)); S.evOrgSel = (e.organizadores || []).map(x => x.id); S.evFondoNuevo = ''; S.evOrgLogo = ''; evPonPintar(); evOrgCargar();
     evCuenta();
   }
   function evPonLeer() { document.querySelectorAll('[data-pn]').forEach(i => { const k = +i.dataset.pn; if (S.evPon[k]) S.evPon[k][i.dataset.c] = i.value; }); }
@@ -12441,6 +12446,30 @@ const App = (() => {
     const el = $('#evOrgs'); if (!el) return;
     el.innerHTML = S.evOrgs.length ? S.evOrgs.map(o => `<label class="ev-chip ev-org ${S.evOrgSel.indexOf(o.id) >= 0 ? 'on' : ''}"><input type="checkbox" ${S.evOrgSel.indexOf(o.id) >= 0 ? 'checked' : ''} onchange="App.evOrgMarcar('${esc(o.id)}', this.checked)">${o.logo ? `<img src="${o.logo}" alt="">` : ''} ${esc(o.nombre)}</label>`).join('') : '<span class="muted peq">Aún no hay coorganizadores guardados.</span>';
   }
+  function evOrgBuscar(q) {
+    q = String(q || '').trim().toLowerCase(); const el = $('#evOrgRes'); if (!el) return;
+    if (q.length < 2) { el.innerHTML = ''; return; }
+    const cl = (D().clientes || []).filter(c => (String(c.razon || '') + ' ' + String(c.nombre || '')).toLowerCase().indexOf(q) >= 0).slice(0, 8).map(c => ({ t: 'cliFoto', id: c.id, n: c.razon || c.nombre, f: c.foto, k: '🐄 Cliente' }));
+    const pr = (D().proveedores || []).filter(p => (String(p.nombre || '') + ' ' + String(p.razon || '')).toLowerCase().indexOf(q) >= 0).slice(0, 6).map(p => ({ t: 'provLogo', id: p.id, n: p.nombre || p.razon, f: p.logo, k: '🏭 Proveedor' }));
+    S.evOrgOps = cl.concat(pr);
+    el.innerHTML = S.evOrgOps.map((o, i) => `<div class="ev-item" onclick="App.evOrgTomar(${i})">${esc(o.n)} <small class="muted">${o.k}${o.f ? ' · 🖼️ con imagen' : ' · sin imagen'}</small></div>`).join('') || '<div class="muted peq">Sin resultados</div>';
+  }
+  /** Convierte cualquier imagen (dataURI) a PNG de máximo 500 px. */
+  function evAPng(uri) { return new Promise(ok => { const i = new Image(); i.onload = () => { const k = Math.min(1, 500 / Math.max(i.width, i.height)), c = document.createElement('canvas'); c.width = Math.round(i.width * k); c.height = Math.round(i.height * k); c.getContext('2d').drawImage(i, 0, 0, c.width, c.height); ok(c.toDataURL('image/png')); }; i.onerror = () => ok(''); i.src = uri; }); }
+  async function evOrgTomar(i) {
+    const o = (S.evOrgOps || [])[i]; if (!o) return;
+    $('#evOrgN').value = o.n; $('#evOrgQ').value = ''; $('#evOrgRes').innerHTML = ''; S.evOrgLogo = '';
+    const pv = $('#evOrgPrev'); pv.innerHTML = '<span class="muted peq">Buscando su imagen…</span>';
+    let uri = ''; if (o.f) { try { const r = await pedir('minisArchivo', { tipo: o.t, ids: [o.id] }, true); uri = r[o.id] || ''; } catch (x) {} }
+    if (uri) { S.evOrgLogo = await evAPng(uri); pv.innerHTML = `<img src="${S.evOrgLogo}" alt=""> <span class="muted peq">Se usará esta imagen. Si prefieres otra, elige el archivo abajo.</span>`; }
+    else pv.innerHTML = `<span class="muted peq">${esc(o.n)} no tiene foto ni logotipo guardado: elige el archivo del logotipo abajo.</span>`;
+  }
+  async function evFondoElegir(inp) {
+    const f = (inp.files || [])[0], pv = $('#evFondoPrev'); S.evFondoNuevo = ''; if (!f) { pv.innerHTML = ''; return; }
+    S.evFondoNuevo = await new Promise(ok => { const r = new FileReader(); r.onload = () => { const i = new Image(); i.onload = () => { const k = Math.min(1, 1350 / Math.max(i.width, i.height)), c = document.createElement('canvas');
+      c.width = Math.round(i.width * k); c.height = Math.round(i.height * k); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(i, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', 0.82)); }; i.onerror = () => ok(''); i.src = r.result; }; r.readAsDataURL(f); });
+    pv.innerHTML = S.evFondoNuevo ? `<img src="${S.evFondoNuevo}" alt="">` : '<span class="error">No se pudo leer la imagen</span>';
+  }
   function evOrgMarcar(id, v) {
     S.evOrgSel = S.evOrgSel.filter(x => x !== id); if (v) { if (S.evOrgSel.length >= 3) { toast('Máximo 3 coorganizadores', true); evOrgCargar(); return; } S.evOrgSel.push(id); }
     evOrgCargar();
@@ -12452,9 +12481,9 @@ const App = (() => {
   }
   async function evOrgGuardar() {
     const n = $('#evOrgN').value.trim(), f = ($('#evOrgL').files || [])[0];
-    if (!n) return toast('Escribe el nombre del coorganizador', true); if (!f) return toast('Elige su logotipo', true);
+    if (!n) return toast('Escribe el nombre del coorganizador', true); if (!f && !S.evOrgLogo) return toast('Elige su logotipo', true);
     $('#evOrgBtn').disabled = true;
-    try { const logo = await evLogoReducido(f), r = await pedir('guardarOrganizador', { nombre: n, logo: logo }); S.evOrgs = (S.evOrgs || []).concat([r]); if (S.evOrgSel.length < 3) S.evOrgSel.push(r.id);
+    try { const logo = f ? await evLogoReducido(f) : S.evOrgLogo, r = await pedir('guardarOrganizador', { nombre: n, logo: logo }); S.evOrgLogo = ''; const pv = $('#evOrgPrev'); if (pv) pv.innerHTML = ''; S.evOrgs = (S.evOrgs || []).concat([r]); if (S.evOrgSel.length < 3) S.evOrgSel.push(r.id);
       $('#evOrgN').value = ''; $('#evOrgL').value = ''; $('#evOrgNuevo').open = false; evOrgCargar(); toast('✔ Coorganizador guardado'); } catch (x) {} finally { const b = $('#evOrgBtn'); if (b) b.disabled = false; }
   }
   function evTipo(t) { document.querySelectorAll('.ev-seg button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $('#evPres').style.display = t === 'Virtual' ? 'none' : ''; $('#evVirt').style.display = t === 'Virtual' ? '' : 'none'; }
@@ -12500,7 +12529,8 @@ const App = (() => {
     const p = { id: S.evEd || undefined, tema: $('#evTema').value.trim(), tipo: virt ? 'Virtual' : 'Presencial', fecha: $('#evFecha').value, hora: $('#evHora').value, duracion: +$('#evDur').value,
       plataforma: $('#evPlat').value, liga: $('#evLiga').value.trim(), sede: $('#evSede').value.trim(), direccion: $('#evDir').value.trim(), mapa: $('#evMapa').value.trim(),
       descripcion: $('#evDesc').value.trim(), invitados: inv, calendario: $('#evCal').checked, avisoApp: $('#evAviso').checked,
-      ponentes: (evPonLeer(), S.evPon.filter(x => String(x.nombre || '').trim())), organizadores: S.evOrgSel.slice() };
+      ponentes: (evPonLeer(), S.evPon.filter(x => String(x.nombre || '').trim())), organizadores: S.evOrgSel.slice(),
+      fondo: S.evFondoNuevo || undefined, quitarFondo: !!($('#evFondoQ') && $('#evFondoQ').checked) };
     if (!p.tema) return toast('Escribe el tema de la reunión', true);
     if (!p.fecha || !p.hora) return toast('Indica la fecha y la hora', true);
     if (!S.evEd && !inv.length) return toast('Elige al menos un invitado', true);
@@ -12508,6 +12538,7 @@ const App = (() => {
     try {
       const r = await pedir('crearEvento', p);
       toast('✔ Reunión ' + (S.evEd ? 'actualizada' : 'creada') + (r.nuevos ? ' · ' + r.nuevos + ' invitado(s)' : '') + (r.errorCalendario ? ' · ⚠️ Calendar: ' + r.errorCalendario : ''));
+      if (p.fondo || p.quitarFondo) { S.evFondos = S.evFondos || {}; delete S.evFondos[r.id]; }
       S.evDet = r; pintarEvento(r); evProximas('#evProx');
     } catch (e) { const b = $('#evBtn'); if (b) b.disabled = false; }
   }
@@ -12556,7 +12587,8 @@ const App = (() => {
   function evImagen() {
     S.evImg = S.evImg || { estilo: 'noche', formato: 'post' };
     modal('🎨 Invitación en imagen', `<div class="fila"><label>Estilo<select id="eiEst" onchange="App.evDibujar()">${opts(Object.keys(EV_ESTILOS).map(k => [k, EV_ESTILOS[k].n]), S.evImg.estilo)}</select></label>
-        <label>Formato<select id="eiFmt" onchange="App.evDibujar()">${opts([['post', 'Publicación (cuadrada) · Facebook / Instagram / WhatsApp'], ['historia', 'Historia / estado (vertical)']], S.evImg.formato)}</select></label></div>
+        <label>Formato<select id="eiFmt" onchange="App.evDibujar()">${opts([['post', 'Publicación (cuadrada) · Facebook / Instagram / WhatsApp'], ['historia', 'Historia / estado (vertical)']], S.evImg.formato)}</select></label>
+        ${S.evDet.fondo ? `<label>Imagen de fondo<input type="range" id="eiAlfa" min="0" max="60" value="${S.evImg.alfa === undefined ? 22 : S.evImg.alfa}" oninput="App.evDibujar()"></label>` : ''}</div>
       <div class="ev-lienzo"><canvas id="eiCv"></canvas></div>
       <p class="muted peq">Con <b>📤 Compartir</b> eliges WhatsApp, Facebook o Instagram. Para que cada invitado confirme, mándale también su enlace con 💬 en la lista de invitados.</p>
       <div class="acciones"><button class="btn" onclick="App.verEvento('${esc(S.evDet.id)}')">← Volver</button><button class="btn" onclick="App.evCopiar()">📋 Copiar texto</button><button class="btn" onclick="App.evDescargar()">⬇️ Descargar</button>${navigator.share ? '<button class="btn primario" onclick="App.evCompartir()">📤 Compartir</button>' : ''}</div>`);
@@ -12564,7 +12596,7 @@ const App = (() => {
   }
   function evLineas(x, t, max) { const p = String(t || '').split(/\s+/), l = []; let a = ''; p.forEach(w => { const b = a ? a + ' ' + w : w; if (x.measureText(b).width > max && a) { l.push(a); a = w; } else a = b; }); if (a) l.push(a); return l; }
   async function evDibujar() {
-    const e = S.evDet, est = $('#eiEst').value, fmt = $('#eiFmt').value; S.evImg = { estilo: est, formato: fmt };
+    const e = S.evDet, est = $('#eiEst').value, fmt = $('#eiFmt').value, alfa = $('#eiAlfa') ? +$('#eiAlfa').value : (S.evImg.alfa === undefined ? 22 : S.evImg.alfa); S.evImg = { estilo: est, formato: fmt, alfa: alfa };
     const T = EV_ESTILOS[est], W = 1080, H = fmt === 'historia' ? 1920 : 1080, cv = $('#eiCv'); if (!cv) return;
     cv.width = W; cv.height = H; const x = cv.getContext('2d'), F = 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif', M = 90, story = fmt === 'historia';
     // logos: el tuyo y los de los coorganizadores (se cargan una vez)
@@ -12572,12 +12604,19 @@ const App = (() => {
     if ((e.organizadores || []).length && !S.evOrgs) { try { S.evOrgs = (await pedir('organizadores', {}, true)).organizadores || []; } catch (er) { S.evOrgs = []; } }
     const orgL = (e.organizadores || []).map(o => (S.evOrgs || []).find(z => z.id === o.id)).filter(Boolean);
     const imgs = (await Promise.all([carga(logoHD())].concat(orgL.map(o => carga(o.logo))))).filter(Boolean);
+    S.evFondos = S.evFondos || {};
+    if (e.fondo && S.evFondos[e.id] === undefined) { try { S.evFondos[e.id] = (await pedir('fondoEvento', { id: e.id }, true)).uri || ''; } catch (er) { S.evFondos[e.id] = ''; } }
+    const fondo = e.fondo ? await carga(S.evFondos[e.id]) : null;
     const rr = (a, b, w, h, r) => { x.beginPath(); if (x.roundRect) x.roundRect(a, b, w, h, r); else x.rect(a, b, w, h); x.fill(); };
     const pieH = story ? 230 : 165, limite = H - pieH;
     const pinta = k => {
       const z = n => Math.round(n * k);
       const g = x.createLinearGradient(0, 0, W * 0.4, H); g.addColorStop(0, T.fondo[0]); g.addColorStop(1, T.fondo[1]); x.fillStyle = g; x.fillRect(0, 0, W, H);
       x.globalAlpha = est === 'clasico' ? 0.07 : 0.10; x.fillStyle = T.acento; x.beginPath(); x.arc(W + 60, -40, 360, 0, 7); x.fill(); x.beginPath(); x.arc(-120, H + 80, 420, 0, 7); x.fill(); x.globalAlpha = 1;
+      if (fondo && alfa > 0) {   // marca de agua: cubre todo el lienzo, centrada
+        const s2 = Math.max(W / fondo.width, H / fondo.height), fw = fondo.width * s2, fh = fondo.height * s2;
+        x.globalAlpha = alfa / 100; x.drawImage(fondo, (W - fw) / 2, (H - fh) / 2, fw, fh); x.globalAlpha = 1;
+      }
       if (T.banda) { x.fillStyle = T.banda; x.fillRect(0, 0, W, 14); x.fillRect(0, H - 14, W, 14); }
       let y = z(story ? 160 : 76);
       if (imgs.length) {
@@ -14637,7 +14676,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
