@@ -12398,14 +12398,22 @@ const App = (() => {
     const sucs = (D().sucursales || []).filter(x => !x.cerrada && (jefe || x.id === u.sucursal));
     const emps = (D().vendedores || []).filter(v => jefe || v.suc === u.sucursal).sort((a, b) => String(a.nombre).localeCompare(b.nombre));
     const sn = id => (sucs.find(x => x.id === id) || {}).nombre || sucNom(id) || '';
+    S.evPlantSel = evPlant(e.plantilla || (S.evImg && S.evImg.plantilla) || 'ejecutivo'); S.evSedeId = e.sedeId || ''; S.evEdObj = e.id ? e : null;
     modal(e.id ? '✏️ Editar reunión' : '🤝 Crear reunión', `<div class="ev-form">
+      <div class="ev-plant-bar"><div><b class="peq">🎨 Plantilla</b><div class="ev-plant-chips" id="evPlantChips">${EV_PLANT.map(k => `<button type="button" data-k="${k}" class="ev-pchip ${k === S.evPlantSel ? 'on' : ''}" onclick="App.evPlantElegir('${k}')">${EV_DIS[k][0]}</button>`).join('')}</div><small class="muted">La vista previa se arma mientras capturas. Tócala para verla en grande.</small></div>
+        <canvas id="evPrevCv" title="Ver en grande" onclick="App.evPrevGrande()"></canvas></div>
       <label>Tema de la reunión<input id="evTema" maxlength="160" value="${esc(e.tema || '')}" placeholder="Ej. Lanzamiento de la línea de biológicos 2027"></label>
       <div class="ev-seg"><button type="button" data-t="Presencial" class="${e.tipo !== 'Virtual' ? 'on' : ''}" onclick="App.evTipo('Presencial')">📍 Presencial</button><button type="button" data-t="Virtual" class="${e.tipo === 'Virtual' ? 'on' : ''}" onclick="App.evTipo('Virtual')">💻 Virtual</button></div>
       <div class="rejilla"><label>Fecha<input type="date" id="evFecha" min="${hoy}" value="${esc(e.inicio ? e.inicio.slice(0, 10) : '')}"></label><label>Hora<input type="time" id="evHora" value="${esc(e.inicio ? evHora(e.inicio) : '10:00')}"></label>
         <label>Duración<select id="evDur">${opts([[30, '30 min'], [60, '1 hora'], [90, '1 h 30 min'], [120, '2 horas'], [180, '3 horas'], [240, '4 horas'], [360, '6 horas'], [480, 'Todo el día (8 h)']], String(e.duracion || 60))}</select></label></div>
-      <div id="evPres" style="${e.tipo === 'Virtual' ? 'display:none' : ''}"><div class="rejilla"><label>Sede<input id="evSede" list="evSedes" value="${esc(e.sede || '')}" placeholder="Ej. Matriz, salón, rancho…"><datalist id="evSedes">${(D().sucursales || []).filter(x => !x.cerrada).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist></label>
+      <div id="evPres" style="${e.tipo === 'Virtual' ? 'display:none' : ''}">
+        <div class="fila"><label style="flex:1 1 220px">📍 Sede guardada<select id="evSedeSel" onchange="App.evSedeElegir(this.value)"><option value="">Cargando…</option></select></label>
+          <label class="check" id="evSedeLogoL" style="display:none"><input type="checkbox" id="evSedeLogo" ${e.sedeLogo === false ? '' : 'checked'}> Mostrar su logotipo en la invitación</label></div>
+        <div class="rejilla"><label>Sede<input id="evSede" list="evSedes" value="${esc(e.sede || '')}" placeholder="Ej. Matriz, salón, rancho…"><datalist id="evSedes">${(D().sucursales || []).filter(x => !x.cerrada).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist></label>
         <label>Dirección<input id="evDir" value="${esc(e.direccion || '')}" placeholder="Calle, número, colonia, ciudad"></label></div>
-        <label>Enlace de Google Maps (opcional)<input id="evMapa" value="${esc(e.mapa || '')}" placeholder="Pega aquí la ubicación compartida"></label></div>
+        <label>Enlace de Google Maps (opcional)<input id="evMapa" value="${esc(e.mapa || '')}" placeholder="Pega aquí la ubicación compartida"></label>
+        <details class="ev-grupo"><summary>💾 Guardar esta sede para usarla después</summary><label>Logotipo de la sede (opcional)<input type="file" id="evSedeArch" accept="image/png,image/jpeg,image/webp"></label>
+          <div class="acciones izq"><button type="button" class="btn" onclick="App.evSedeGuardarActual()">💾 Guardar en mis sedes</button></div></details></div>
       <div id="evVirt" style="${e.tipo === 'Virtual' ? '' : 'display:none'}"><div class="rejilla"><label>Plataforma<select id="evPlat">${opts(EV_PLAT.map(x => [x, x]), e.plataforma || 'Google Meet')}</select></label>
         <label>Liga para entrar<input id="evLiga" value="${esc(e.liga || '')}" placeholder="meet.google.com/… · zoom.us/j/…"></label></div></div>
       <label>Agenda o descripción (opcional)<textarea id="evDesc" rows="3" maxlength="1500" placeholder="Puntos a tratar, qué traer, ponente…">${esc(e.descripcion || '')}</textarea></label>
@@ -12432,6 +12440,8 @@ const App = (() => {
       <label class="check"><input type="checkbox" id="evAviso" checked> Avisar en la app a las personas de mi equipo invitadas</label></div>
       <div class="acciones"><button class="btn" onclick="${e.id ? `App.verEvento('${esc(e.id)}')` : 'App.cerrarModal()'}">Cancelar</button><button class="btn primario" id="evBtn" onclick="App.guardarEvento()">${e.id ? '💾 Guardar cambios' : '🤝 Crear reunión'}</button></div>`);
     S.evPon = (e.ponentes || []).map(x => Object.assign({}, x)); S.evOrgSel = (e.organizadores || []).map(x => x.id); S.evFondoNuevo = ''; S.evOrgLogo = ''; evPonPintar(); evOrgCargar();
+    const fm = $('.ev-form'); if (fm) { fm.addEventListener('input', evPrevProgramar); fm.addEventListener('change', evPrevProgramar); fm.addEventListener('click', ev => { if (ev.target.closest('button')) evPrevProgramar(); }); }
+    evCatalogos().then(() => { const sl = $('#evSedeSel'); if (sl) { sl.innerHTML = evSedeOpts(); const sd = (S.evSedes || []).find(x => x.id === S.evSedeId); const l = $('#evSedeLogoL'); if (l) l.style.display = sd && sd.logo ? '' : 'none'; } evPrevActualizar(); });
     evCuenta();
   }
   function evPonLeer() { document.querySelectorAll('[data-pn]').forEach(i => { const k = +i.dataset.pn; if (S.evPon[k]) S.evPon[k][i.dataset.c] = i.value; }); }
@@ -12468,11 +12478,11 @@ const App = (() => {
     const f = (inp.files || [])[0], pv = $('#evFondoPrev'); S.evFondoNuevo = ''; if (!f) { pv.innerHTML = ''; return; }
     S.evFondoNuevo = await new Promise(ok => { const r = new FileReader(); r.onload = () => { const i = new Image(); i.onload = () => { const k = Math.min(1, 1350 / Math.max(i.width, i.height)), c = document.createElement('canvas');
       c.width = Math.round(i.width * k); c.height = Math.round(i.height * k); const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(i, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', 0.82)); }; i.onerror = () => ok(''); i.src = r.result; }; r.readAsDataURL(f); });
-    pv.innerHTML = S.evFondoNuevo ? `<img src="${S.evFondoNuevo}" alt="">` : '<span class="error">No se pudo leer la imagen</span>';
+    pv.innerHTML = S.evFondoNuevo ? `<img src="${S.evFondoNuevo}" alt="">` : '<span class="error">No se pudo leer la imagen</span>'; evPrevProgramar();
   }
   function evOrgMarcar(id, v) {
     S.evOrgSel = S.evOrgSel.filter(x => x !== id); if (v) { if (S.evOrgSel.length >= 3) { toast('Máximo 3 coorganizadores', true); evOrgCargar(); return; } S.evOrgSel.push(id); }
-    evOrgCargar();
+    evOrgCargar(); evPrevProgramar();
   }
   /** Reduce el logotipo a 500 px (conserva la transparencia del PNG). */
   function evLogoReducido(file) {
@@ -12484,7 +12494,7 @@ const App = (() => {
     if (!n) return toast('Escribe el nombre del coorganizador', true); if (!f && !S.evOrgLogo) return toast('Elige su logotipo', true);
     $('#evOrgBtn').disabled = true;
     try { const logo = f ? await evLogoReducido(f) : S.evOrgLogo, r = await pedir('guardarOrganizador', { nombre: n, logo: logo }); S.evOrgLogo = ''; const pv = $('#evOrgPrev'); if (pv) pv.innerHTML = ''; S.evOrgs = (S.evOrgs || []).concat([r]); if (S.evOrgSel.length < 3) S.evOrgSel.push(r.id);
-      $('#evOrgN').value = ''; $('#evOrgL').value = ''; $('#evOrgNuevo').open = false; evOrgCargar(); toast('✔ Coorganizador guardado'); } catch (x) {} finally { const b = $('#evOrgBtn'); if (b) b.disabled = false; }
+      $('#evOrgN').value = ''; $('#evOrgL').value = ''; $('#evOrgNuevo').open = false; evOrgCargar(); evPrevProgramar(); toast('✔ Coorganizador guardado'); } catch (x) {} finally { const b = $('#evOrgBtn'); if (b) b.disabled = false; }
   }
   function evTipo(t) { document.querySelectorAll('.ev-seg button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $('#evPres').style.display = t === 'Virtual' ? 'none' : ''; $('#evVirt').style.display = t === 'Virtual' ? '' : 'none'; }
   function evFiltrarEmp(q) { q = String(q || '').toLowerCase(); document.querySelectorAll('#evEmps .ev-item').forEach(x => x.style.display = !q || x.dataset.n.indexOf(q) >= 0 ? '' : 'none'); }
@@ -12530,7 +12540,8 @@ const App = (() => {
       plataforma: $('#evPlat').value, liga: $('#evLiga').value.trim(), sede: $('#evSede').value.trim(), direccion: $('#evDir').value.trim(), mapa: $('#evMapa').value.trim(),
       descripcion: $('#evDesc').value.trim(), invitados: inv, calendario: $('#evCal').checked, avisoApp: $('#evAviso').checked,
       ponentes: (evPonLeer(), S.evPon.filter(x => String(x.nombre || '').trim())), organizadores: S.evOrgSel.slice(),
-      fondo: S.evFondoNuevo || undefined, quitarFondo: !!($('#evFondoQ') && $('#evFondoQ').checked) };
+      fondo: S.evFondoNuevo || undefined, quitarFondo: !!($('#evFondoQ') && $('#evFondoQ').checked),
+      plantilla: S.evPlantSel, sedeId: S.evSedeId && (S.evSedes || []).some(x => x.id === S.evSedeId && x.nombre === $('#evSede').value.trim()) ? S.evSedeId : '', sedeLogo: !$('#evSedeLogo') || $('#evSedeLogo').checked };
     if (!p.tema) return toast('Escribe el tema de la reunión', true);
     if (!p.fecha || !p.hora) return toast('Indica la fecha y la hora', true);
     if (!S.evEd && !inv.length) return toast('Elige al menos un invitado', true);
@@ -12539,6 +12550,7 @@ const App = (() => {
       const r = await pedir('crearEvento', p);
       toast('✔ Reunión ' + (S.evEd ? 'actualizada' : 'creada') + (r.nuevos ? ' · ' + r.nuevos + ' invitado(s)' : '') + (r.errorCalendario ? ' · ⚠️ Calendar: ' + r.errorCalendario : ''));
       if (p.fondo || p.quitarFondo) { S.evFondos = S.evFondos || {}; delete S.evFondos[r.id]; }
+      S.evImg = Object.assign({}, S.evImg || {}, { plantilla: p.plantilla, id: r.id });
       S.evDet = r; pintarEvento(r); evProximas('#evProx');
     } catch (e) { const b = $('#evBtn'); if (b) b.disabled = false; }
   }
@@ -12578,85 +12590,350 @@ const App = (() => {
     const m = prompt('¿Por qué se cancela? (lo verán los invitados al abrir su enlace)'); if (m === null) return;
     try { await pedir('cancelarEvento', { id: S.evDet.id, motivo: m.trim() }); toast('🚫 Reunión cancelada. Avisa a los invitados que ya habían confirmado.'); verEvento(S.evDet.id); evProximas('#evProx'); } catch (e) {}
   }
-  /* ---- 🎨 Invitación en imagen (post 1080×1080 · historia/estado 1080×1920) ---- */
-  const EV_ESTILOS = {
-    noche: { n: 'Noche azul', fondo: ['#0b1528', '#17325e'], texto: '#ffffff', suave: '#bccadf', acento: '#e7b04a', chip: '#6fcf6a', chipTxt: '#0b1528' },
-    clasico: { n: 'Clásico', fondo: ['#fbfaf6', '#efece2'], texto: '#1b1d18', suave: '#50544a', acento: '#1f6f4a', chip: '#1f6f4a', chipTxt: '#ffffff', banda: '#1f6f4a' },
-    campo: { n: 'Campo', fondo: ['#2a8a5e', '#0f3d28'], texto: '#ffffff', suave: '#d6eadd', acento: '#f2c94c', chip: '#f2c94c', chipTxt: '#0f3d28' }
-  };
-  function evImagen() {
-    S.evImg = S.evImg || { estilo: 'noche', formato: 'post' };
-    modal('🎨 Invitación en imagen', `<div class="fila"><label>Estilo<select id="eiEst" onchange="App.evDibujar()">${opts(Object.keys(EV_ESTILOS).map(k => [k, EV_ESTILOS[k].n]), S.evImg.estilo)}</select></label>
-        <label>Formato<select id="eiFmt" onchange="App.evDibujar()">${opts([['post', 'Publicación (cuadrada) · Facebook / Instagram / WhatsApp'], ['historia', 'Historia / estado (vertical)']], S.evImg.formato)}</select></label>
-        ${S.evDet.fondo ? `<label>Imagen de fondo<input type="range" id="eiAlfa" min="0" max="60" value="${S.evImg.alfa === undefined ? 22 : S.evImg.alfa}" oninput="App.evDibujar()"></label>` : ''}</div>
-      <div class="ev-lienzo"><canvas id="eiCv"></canvas></div>
-      <p class="muted peq">Con <b>📤 Compartir</b> eliges WhatsApp, Facebook o Instagram. Para que cada invitado confirme, mándale también su enlace con 💬 en la lista de invitados.</p>
-      <div class="acciones"><button class="btn" onclick="App.verEvento('${esc(S.evDet.id)}')">← Volver</button><button class="btn" onclick="App.evCopiar()">📋 Copiar texto</button><button class="btn" onclick="App.evDescargar()">⬇️ Descargar</button>${navigator.share ? '<button class="btn primario" onclick="App.evCompartir()">📤 Compartir</button>' : ''}</div>`);
-    evDibujar();
+  /* ---- 🎨 Plantillas de invitación (canvas 1080×1080 publicación · 1080×1920 historia/estado) ---- */
+  const EV_DIS = (function () {
+  const F = 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif', SERIF = 'Georgia,"Times New Roman",serif';
+  function lineas(x, t, max) { const p = String(t || '').split(/\s+/), l = []; let a = ''; p.forEach(w => { const b = a ? a + ' ' + w : w; if (x.measureText(b).width > max && a) { l.push(a); a = w; } else a = b; }); if (a) l.push(a); return l; }
+  function rr(x, a, b, w, h, r) { x.beginPath(); if (x.roundRect) x.roundRect(a, b, w, h, r); else x.rect(a, b, w, h); }
+  function texto(x, t, px, y, max, font, color, lh, maxL, align) {
+    x.font = font; x.fillStyle = color; x.textAlign = align || 'left'; let ls = lineas(x, t, max).slice(0, maxL || 9);
+    ls.forEach(l => { x.fillText(l, px, y); y += lh; }); return y;
   }
-  function evLineas(x, t, max) { const p = String(t || '').split(/\s+/), l = []; let a = ''; p.forEach(w => { const b = a ? a + ' ' + w : w; if (x.measureText(b).width > max && a) { l.push(a); a = w; } else a = b; }); if (a) l.push(a); return l; }
-  async function evDibujar() {
-    const e = S.evDet, est = $('#eiEst').value, fmt = $('#eiFmt').value, alfa = $('#eiAlfa') ? +$('#eiAlfa').value : (S.evImg.alfa === undefined ? 22 : S.evImg.alfa); S.evImg = { estilo: est, formato: fmt, alfa: alfa };
-    const T = EV_ESTILOS[est], W = 1080, H = fmt === 'historia' ? 1920 : 1080, cv = $('#eiCv'); if (!cv) return;
-    cv.width = W; cv.height = H; const x = cv.getContext('2d'), F = 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif', M = 90, story = fmt === 'historia';
-    // logos: el tuyo y los de los coorganizadores (se cargan una vez)
-    const carga = src => new Promise(ok => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
-    if ((e.organizadores || []).length && !S.evOrgs) { try { S.evOrgs = (await pedir('organizadores', {}, true)).organizadores || []; } catch (er) { S.evOrgs = []; } }
-    const orgL = (e.organizadores || []).map(o => (S.evOrgs || []).find(z => z.id === o.id)).filter(Boolean);
-    const imgs = (await Promise.all([carga(logoHD())].concat(orgL.map(o => carga(o.logo))))).filter(Boolean);
-    S.evFondos = S.evFondos || {};
-    if (e.fondo && S.evFondos[e.id] === undefined) { try { S.evFondos[e.id] = (await pedir('fondoEvento', { id: e.id }, true)).uri || ''; } catch (er) { S.evFondos[e.id] = ''; } }
-    const fondo = e.fondo ? await carga(S.evFondos[e.id]) : null;
-    const rr = (a, b, w, h, r) => { x.beginPath(); if (x.roundRect) x.roundRect(a, b, w, h, r); else x.rect(a, b, w, h); x.fill(); };
-    const pieH = story ? 230 : 165, limite = H - pieH;
-    const pinta = k => {
-      const z = n => Math.round(n * k);
-      const g = x.createLinearGradient(0, 0, W * 0.4, H); g.addColorStop(0, T.fondo[0]); g.addColorStop(1, T.fondo[1]); x.fillStyle = g; x.fillRect(0, 0, W, H);
-      x.globalAlpha = est === 'clasico' ? 0.07 : 0.10; x.fillStyle = T.acento; x.beginPath(); x.arc(W + 60, -40, 360, 0, 7); x.fill(); x.beginPath(); x.arc(-120, H + 80, 420, 0, 7); x.fill(); x.globalAlpha = 1;
-      if (fondo && alfa > 0) {   // marca de agua: cubre todo el lienzo, centrada
-        const s2 = Math.max(W / fondo.width, H / fondo.height), fw = fondo.width * s2, fh = fondo.height * s2;
-        x.globalAlpha = alfa / 100; x.drawImage(fondo, (W - fw) / 2, (H - fh) / 2, fw, fh); x.globalAlpha = 1;
-      }
-      if (T.banda) { x.fillStyle = T.banda; x.fillRect(0, 0, W, 14); x.fillRect(0, H - 14, W, 14); }
-      let y = z(story ? 160 : 76);
-      if (imgs.length) {
-        const varios = imgs.length > 1, lh = z(story ? (varios ? 150 : 190) : (varios ? 100 : 130)), gap = 24, pad = 20;
-        const ws = imgs.map(i => Math.min(i.width * lh / i.height, varios ? (W - M * 2 - gap * (imgs.length - 1)) / imgs.length - pad * 2 : 600));
-        let lx = (W - (ws.reduce((a, b) => a + b + pad * 2, 0) + gap * (imgs.length - 1))) / 2;
-        imgs.forEach((i, n) => { const w = ws[n], h = Math.min(lh, i.height * w / i.width);
-          if (est !== 'clasico' || varios) { x.fillStyle = 'rgba(255,255,255,.95)'; rr(lx, y - 16, w + pad * 2, lh + 32, 22); }
-          x.drawImage(i, lx + pad, y + (lh - h) / 2, w, h); lx += w + pad * 2 + gap; });
-        y += lh + z(story ? 96 : 66);
-      } else y += 40;
-      x.textAlign = 'center'; x.fillStyle = T.acento; x.font = `700 ${z(story ? 40 : 32)}px ${F}`; x.fillText('I N V I T A C I Ó N', W / 2, y); y += z(story ? 36 : 26);
-      x.fillRect(W / 2 - 60, y, 120, 5); y += z(story ? 90 : 66);
-      x.fillStyle = T.texto; let fs = z(story ? 84 : 68); x.font = `800 ${fs}px ${F}`; let ls = evLineas(x, e.tema, W - M * 2);
-      while (ls.length > 3 && fs > 40) { fs -= 6; x.font = `800 ${fs}px ${F}`; ls = evLineas(x, e.tema, W - M * 2); }
-      ls.slice(0, 4).forEach(l => { x.fillText(l, W / 2, y); y += fs * 1.16; }); y += z(story ? 46 : 20);
-      const chip = e.tipo === 'Virtual' ? 'REUNIÓN VIRTUAL' : 'REUNIÓN PRESENCIAL'; x.font = `800 ${z(story ? 32 : 26)}px ${F}`;
-      const cw = x.measureText(chip).width + 56, chh = z(story ? 62 : 50); x.fillStyle = T.chip; rr((W - cw) / 2, y - chh * 0.7, cw, chh, chh / 2);
-      x.fillStyle = T.chipTxt; x.fillText(chip, W / 2, y + 2); y += z(story ? 116 : 80);
-      const fila = (ico, t1, t2) => { x.fillStyle = T.texto; x.font = `700 ${z(story ? 50 : 40)}px ${F}`; evLineas(x, (ico ? ico + '  ' : '') + t1, W - M * 2).slice(0, 2).forEach(l => { x.fillText(l, W / 2, y); y += z(story ? 60 : 48); });
-        if (t2) { x.fillStyle = T.suave; x.font = `500 ${z(story ? 38 : 31)}px ${F}`; evLineas(x, t2, W - M * 2).slice(0, 2).forEach(l => { x.fillText(l, W / 2, y); y += z(story ? 50 : 40); }); }
-        y += z(story ? 38 : 20); };
-      const dia = evDia(e.inicio); fila('📅', dia.charAt(0).toUpperCase() + dia.slice(1)); fila('🕙', evHora(e.inicio) + ' a ' + e.horaFin + ' h');
-      if (e.tipo === 'Virtual') fila('💻', e.plataforma || 'Videollamada', 'Te enviamos la liga para entrar'); else fila('📍', e.sede || 'Sede', e.direccion);
-      const pon = e.ponentes || [];
-      if (pon.length && (story || pon.length === 1)) pon.slice(0, 4).forEach((p, n) => fila(n ? '' : '🎤', p.nombre, p.cargo));
-      else if (pon.length) fila('🎤', pon.map(p => p.nombre).join(' · '), pon.map(p => p.cargo).filter(Boolean).join(' · '));
-      if (story && e.descripcion) { x.fillStyle = T.suave; x.font = `italic 500 ${z(36)}px ${F}`; evLineas(x, e.descripcion.replace(/\s+/g, ' '), W - M * 2).slice(0, 4).forEach(l => { x.fillText(l, W / 2, y); y += z(48); }); }
+  function titulo(x, t, px, y, max, peso, tam, color, maxL, align, fam) {
+    let fs = tam; x.font = `${peso} ${fs}px ${fam || F}`; let ls = lineas(x, t, max);
+    while (ls.length > (maxL || 3) && fs > tam * 0.55) { fs -= 4; x.font = `${peso} ${fs}px ${fam || F}`; ls = lineas(x, t, max); }
+    x.fillStyle = color; x.textAlign = align || 'left'; ls.slice(0, maxL + 1).forEach(l => { x.fillText(l, px, y); y += fs * 1.12; }); return y;
+  }
+  /** Fila de logotipos sin fondo, centrados en [x0, x0+ancho], alto h. */
+  function logos(x, imgs, x0, y, ancho, h, align) {
+    if (!imgs.length) return y;
+    const gap = Math.max(28, h * 0.4), sep = imgs.length > 1;
+    /* mismo "peso visual": los logotipos muy anchos se hacen un poco más bajos */
+    const hs = imgs.map(i => h * Math.min(1, Math.sqrt(1.6 / (i.width / i.height))));
+    let ws = imgs.map((i, n) => i.width * hs[n] / i.height), tot = ws.reduce((a, b) => a + b, 0) + gap * (imgs.length - 1);
+    if (tot > ancho) { const k = (ancho - gap * (imgs.length - 1)) / ws.reduce((a, b) => a + b, 0); ws = ws.map(w => w * k); tot = ancho; }
+    let lx = align === 'left' ? x0 : x0 + (ancho - tot) / 2;
+    imgs.forEach((i, n) => { const w = ws[n], hh = i.height * w / i.width; x.drawImage(i, lx, y + (h - hh) / 2, w, hh);
+      if (sep && n < imgs.length - 1) { x.fillStyle = 'rgba(0,0,0,.14)'; x.fillRect(lx + w + gap / 2 - 1, y + h * 0.15, 2, h * 0.7); }
+      lx += w + gap; });
+    return y + h;
+  }
+  function fondoFoto(x, img, W, H, alfa) { if (!img || !alfa) return; const s = Math.max(W / img.width, H / img.height), w = img.width * s, h = img.height * s; x.globalAlpha = alfa; x.drawImage(img, (W - w) / 2, (H - h) / 2, w, h); x.globalAlpha = 1; }
+  const lugar = d => d.tipo === 'Virtual' ? ['Reunión virtual', d.plataforma || 'Videollamada'] : [d.sede || 'Sede', d.direccion || ''];
+  const pon = d => (d.ponentes || []).map(p => p.nombre + (p.cargo ? ' · ' + p.cargo : '')).join('   |   ');
+
+  /* 1 · EJECUTIVO: panel lateral azul con la fecha grande, contenido sobre blanco */
+  function ejecutivo(x, W, H, d) {
+    const st = H > W; x.fillStyle = '#ffffff'; x.fillRect(0, 0, W, H); fondoFoto(x, d.fondo, W, H, d.alfa * 0.6);
+    const AZ = '#0f2a4a', OR = '#c9a24a', VE = '#1f6f4a';
+    if (!st) {
+      const pw = W * 0.34; const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#13355e'); g.addColorStop(1, AZ); x.fillStyle = g; x.fillRect(0, 0, pw, H);
+      x.fillStyle = OR; x.fillRect(pw, 0, 8, H);
+      x.textAlign = 'center'; x.fillStyle = '#9fb3cf'; x.font = `600 30px ${F}`; x.fillText(d.semana.toUpperCase(), pw / 2, 300);
+      x.fillStyle = '#fff'; x.font = `800 230px ${F}`; x.fillText(d.diaNum, pw / 2, 520);
+      x.fillStyle = OR; x.font = `800 46px ${F}`; x.fillText(d.mes.toUpperCase(), pw / 2, 590); x.fillStyle = '#9fb3cf'; x.font = `500 34px ${F}`; x.fillText(d.anio, pw / 2, 640);
+      x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(pw / 2 - 60, 690, 120, 2);
+      x.fillStyle = '#fff'; x.font = `700 40px ${F}`; x.fillText(d.horaIni, pw / 2, 760); x.fillStyle = '#9fb3cf'; x.font = `500 28px ${F}`; x.fillText('a ' + d.horaFin + ' h', pw / 2, 800);
+      const cx = pw + 70, cw = W - cx - 70; let y = 70;
+      y = logos(x, d.logos, cx, y, cw, 110, 'left') + 70;
+      x.fillStyle = VE; x.font = `800 26px ${F}`; x.textAlign = 'left'; x.fillText((d.tipo === 'Virtual' ? 'REUNIÓN VIRTUAL' : 'REUNIÓN PRESENCIAL') + '  ·  INVITACIÓN', cx, y); y += 70;
+      y = titulo(x, d.tema, cx, y, cw, 800, 66, AZ, 3) + 10; x.fillStyle = OR; x.fillRect(cx, y, 90, 6); y += 64;
+      if ((d.ponentes || []).length) { x.fillStyle = '#6b7280'; x.font = `600 24px ${F}`; x.fillText(d.ponentes.length > 1 ? 'IMPARTEN' : 'IMPARTE', cx, y); y += 40;
+        d.ponentes.slice(0, 2).forEach(p => { y = texto(x, p.nombre, cx, y, cw, `700 36px ${F}`, AZ, 42, 1); if (p.cargo) y = texto(x, p.cargo, cx, y - 2, cw, `400 26px ${F}`, '#4b5563', 34, 1); y += 10; }); y += 16; }
+      const L = lugar(d); x.fillStyle = '#6b7280'; x.font = `600 24px ${F}`; x.fillText(d.tipo === 'Virtual' ? 'PLATAFORMA' : 'SEDE', cx, y); y += 40;
+      y = texto(x, L[0], cx, y, cw, `700 34px ${F}`, AZ, 40, 2); if (L[1]) texto(x, L[1], cx, y, cw, `400 26px ${F}`, '#4b5563', 34, 2);
+      x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(pw / 2 - 60, H - 170, 120, 2);
+      x.fillStyle = '#fff'; x.font = `700 26px ${F}`; x.fillText('Interés Veterinario®', pw / 2, H - 120); x.fillStyle = '#9fb3cf'; x.font = `400 21px ${F}`;
+      (d.orgNombres.length ? lineas(x, 'Organizan junto con ' + d.orgNombres.join(' y '), pw - 60) : ['Confirma tu asistencia']).slice(0, 2).forEach((l, n) => x.fillText(l, pw / 2, H - 86 + n * 28));
+    } else {
+      const ph = H * 0.30; const g = x.createLinearGradient(0, 0, W, ph); g.addColorStop(0, '#13355e'); g.addColorStop(1, AZ); x.fillStyle = g; x.fillRect(0, 0, W, ph); x.fillStyle = OR; x.fillRect(0, ph, W, 10);
+      x.textAlign = 'center'; x.fillStyle = '#9fb3cf'; x.font = `600 36px ${F}`; x.fillText(d.semana.toUpperCase(), W / 2, 150);
+      x.fillStyle = '#fff'; x.font = `800 230px ${F}`; x.fillText(d.diaNum, W / 2, 370); x.fillStyle = OR; x.font = `800 52px ${F}`; x.fillText(d.mes.toUpperCase() + ' ' + d.anio, W / 2, 450);
+      x.fillStyle = '#fff'; x.font = `700 44px ${F}`; x.fillText(d.horaIni + ' a ' + d.horaFin + ' h', W / 2, 530);
+      let y = ph + 80; y = logos(x, d.logos, 90, y, W - 180, 140) + 90;
+      x.fillStyle = VE; x.font = `800 30px ${F}`; x.fillText(d.tipo === 'Virtual' ? 'REUNIÓN VIRTUAL' : 'REUNIÓN PRESENCIAL', W / 2, y); y += 90;
+      y = titulo(x, d.tema, W / 2, y, W - 180, 800, 78, AZ, 3, 'center') + 20; x.fillStyle = OR; x.fillRect(W / 2 - 60, y, 120, 6); y += 90;
+      (d.ponentes || []).slice(0, 3).forEach(p => { y = texto(x, '🎤 ' + p.nombre, W / 2, y, W - 180, `700 42px ${F}`, AZ, 50, 1, 'center'); if (p.cargo) y = texto(x, p.cargo, W / 2, y, W - 180, `400 32px ${F}`, '#4b5563', 42, 1, 'center'); y += 24; });
+      const L = lugar(d); y = texto(x, (d.tipo === 'Virtual' ? '💻 ' : '📍 ') + L[0], W / 2, y + 20, W - 180, `700 42px ${F}`, AZ, 52, 2, 'center'); if (L[1]) texto(x, L[1], W / 2, y, W - 180, `400 32px ${F}`, '#4b5563', 42, 2, 'center');
+      x.fillStyle = AZ; x.fillRect(0, H - 150, W, 150); x.fillStyle = '#fff'; x.font = `700 38px ${F}`; x.fillText('Interés Veterinario®', W / 2, H - 82); x.fillStyle = '#9fb3cf'; x.font = `400 28px ${F}`;
+      x.fillText(d.orgNombres.length ? 'Organizan junto con ' + d.orgNombres.join(' y ') : 'Confirma tu asistencia', W / 2, H - 40);
+    }
+  }
+
+  /* 2 · GALA: azul profundo con marco dorado y banda marfil curva para los logotipos */
+  function gala(x, W, H, d) {
+    const st = H > W, OR = '#d4af37', OR2 = '#f1d77a';
+    const g = x.createRadialGradient(W / 2, H * 0.55, 50, W / 2, H * 0.55, H); g.addColorStop(0, '#1b3a6b'); g.addColorStop(1, '#070f22'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    fondoFoto(x, d.fondo, W, H, d.alfa * 0.7);
+    const bh = st ? 330 : 230; x.fillStyle = '#fbf7ee'; x.beginPath(); x.moveTo(0, 0); x.lineTo(W, 0); x.lineTo(W, bh - 40); x.quadraticCurveTo(W / 2, bh + 50, 0, bh - 40); x.closePath(); x.fill();
+    x.strokeStyle = OR; x.lineWidth = 3; x.beginPath(); x.moveTo(0, bh - 30); x.quadraticCurveTo(W / 2, bh + 62, W, bh - 30); x.stroke();
+    logos(x, d.logos, 110, st ? 90 : 50, W - 220, st ? 170 : 120);
+    x.strokeStyle = OR; x.lineWidth = 2; const m = 34; x.strokeRect(m, bh + 30, W - m * 2, H - bh - 30 - m); x.strokeStyle = 'rgba(212,175,55,.45)'; x.strokeRect(m + 10, bh + 40, W - m * 2 - 20, H - bh - 50 - m);
+    x.textAlign = 'center'; let y = bh + (st ? 330 : 100);
+    x.fillStyle = OR2; x.font = `italic 400 ${st ? 54 : 40}px ${SERIF}`; x.fillText('Tenemos el honor de invitarle a', W / 2, y); y += st ? 110 : 80;
+    y = titulo(x, d.tema, W / 2, y, W - 200, 700, st ? 84 : 64, '#ffffff', 3, 'center', SERIF) + (st ? 20 : 4);
+    x.fillStyle = OR; x.fillRect(W / 2 - 140, y, 110, 2); x.fillRect(W / 2 + 30, y, 110, 2); x.save(); x.translate(W / 2, y + 1); x.rotate(Math.PI / 4); x.fillRect(-8, -8, 16, 16); x.restore(); y += st ? 100 : 70;
+    x.fillStyle = OR2; x.font = `600 ${st ? 40 : 32}px ${F}`; x.fillText([d.semana, d.diaNum + ' de ' + d.mes, d.anio].join('  ·  ').toUpperCase(), W / 2, y); y += st ? 70 : 52;
+    x.fillStyle = '#fff'; x.font = `500 ${st ? 40 : 32}px ${F}`; x.fillText(d.horaIni + ' a ' + d.horaFin + ' horas', W / 2, y); y += st ? 80 : 58;
+    const L = lugar(d); y = texto(x, L[0], W / 2, y, W - 220, `700 ${st ? 42 : 32}px ${F}`, '#fff', st ? 52 : 40, 1, 'center'); if (L[1]) y = texto(x, L[1], W / 2, y, W - 220, `400 ${st ? 32 : 25}px ${F}`, '#c9d3e6', st ? 42 : 32, 2, 'center');
+    if ((d.ponentes || []).length) { y += st ? 50 : 26; x.fillStyle = OR2; x.font = `italic 400 ${st ? 38 : 28}px ${SERIF}`; x.fillText(d.ponentes.length > 1 ? 'Ponentes' : 'Ponente', W / 2, y); y += st ? 56 : 40;
+      d.ponentes.slice(0, st ? 3 : 2).forEach(p => { y = texto(x, p.nombre + (p.cargo ? ' — ' + p.cargo : ''), W / 2, y, W - 220, `500 ${st ? 36 : 27}px ${F}`, '#fff', st ? 48 : 36, 1, 'center'); }); }
+    x.fillStyle = OR; x.font = `700 ${st ? 30 : 23}px ${F}`; x.fillText('INTERÉS VETERINARIO®' + (d.orgNombres.length ? '  ·  ' + d.orgNombres.join('  ·  ').toUpperCase() : ''), W / 2, H - m - (st ? 50 : 34));
+  }
+
+  /* 4 · MODERNO: blanco con bloques diagonales verde y azul, todo alineado a la izquierda */
+  function moderno(x, W, H, d) {
+    const st = H > W, VE = '#1f8a5b', AZ = '#1d4f91', OS = '#14213d';
+    x.fillStyle = '#f7f8f5'; x.fillRect(0, 0, W, H); fondoFoto(x, d.fondo, W, H, d.alfa * 0.6);
+    x.fillStyle = VE; x.beginPath(); x.moveTo(W, H * 0.48); x.lineTo(W, H); x.lineTo(W * 0.42, H); x.closePath(); x.fill();
+    x.fillStyle = AZ; x.beginPath(); x.moveTo(W, H * 0.62); x.lineTo(W, H); x.lineTo(W * 0.66, H); x.closePath(); x.fill();
+    x.fillStyle = 'rgba(31,138,91,.12)'; x.beginPath(); x.arc(W * 0.92, H * 0.08, st ? 260 : 190, 0, 7); x.fill();
+    const px = 80, cw = W - 160; let y = st ? 110 : 70;
+    y = logos(x, d.logos, px, y, cw * 0.85, st ? 130 : 100, 'left') + (st ? 110 : 80);
+    x.textAlign = 'left'; x.fillStyle = VE; x.font = `800 ${st ? 30 : 24}px ${F}`; x.fillText('INVITACIÓN  ·  ' + (d.tipo === 'Virtual' ? 'VIRTUAL' : 'PRESENCIAL'), px, y); y += st ? 26 : 20;
+    x.fillRect(px, y, 70, 6); y += st ? 100 : 76;
+    y = titulo(x, d.tema, px, y, cw * (st ? 1 : 0.92), 900, st ? 92 : 70, OS, 3) + (st ? 40 : 20);
+    /* fecha en bloques */
+    const bw = st ? 200 : 150, bh = st ? 190 : 140; x.fillStyle = OS; rr(x, px, y, bw, bh, 22); x.fill();
+    x.fillStyle = '#fff'; x.textAlign = 'center'; x.font = `900 ${st ? 96 : 72}px ${F}`; x.fillText(d.diaNum, px + bw / 2, y + bh * 0.58); x.fillStyle = '#9fe0bf'; x.font = `800 ${st ? 30 : 24}px ${F}`; x.fillText(d.mes.slice(0, 3).toUpperCase(), px + bw / 2, y + bh * 0.85);
+    x.textAlign = 'left'; const tx = px + bw + 34; x.fillStyle = OS; x.font = `800 ${st ? 44 : 34}px ${F}`; x.fillText(d.semana.charAt(0).toUpperCase() + d.semana.slice(1) + ', ' + d.mes + ' ' + d.anio, tx, y + bh * 0.38);
+    x.fillStyle = '#4b5563'; x.font = `500 ${st ? 38 : 30}px ${F}`; x.fillText('🕙 ' + d.horaIni + ' a ' + d.horaFin + ' h', tx, y + bh * 0.78); y += bh + (st ? 80 : 56);
+    const L = lugar(d); y = texto(x, (d.tipo === 'Virtual' ? '💻 ' : '📍 ') + L[0], px, y, cw * 0.62, `800 ${st ? 40 : 31}px ${F}`, OS, st ? 50 : 40, 2); if (L[1]) y = texto(x, L[1], px, y, cw * 0.58, `400 ${st ? 32 : 25}px ${F}`, '#4b5563', st ? 42 : 32, 2);
+    if ((d.ponentes || []).length) { y += st ? 30 : 18; d.ponentes.slice(0, st ? 3 : 2).forEach(p => { y = texto(x, '🎤 ' + p.nombre, px, y, cw * 0.58, `700 ${st ? 36 : 28}px ${F}`, OS, st ? 44 : 34, 1); if (p.cargo) y = texto(x, p.cargo, px + (st ? 52 : 40), y, cw * 0.5, `400 ${st ? 28 : 22}px ${F}`, '#4b5563', st ? 36 : 28, 1); }); }
+    x.fillStyle = '#fff'; x.textAlign = 'right'; x.font = `800 ${st ? 38 : 30}px ${F}`; x.fillText('Interés Veterinario®', W - 60, H - (st ? 90 : 70)); x.font = `500 ${st ? 26 : 21}px ${F}`;
+    x.fillText(d.orgNombres.length ? 'con ' + d.orgNombres.join(' y ') : '¡Te esperamos!', W - 60, H - (st ? 48 : 38));
+  }
+
+  /* 5 · TARJETA: degradado verde-turquesa con tarjeta blanca flotante y datos en recuadros */
+  function tarjeta(x, W, H, d) {
+    const st = H > W, VE = '#1f6f4a', TQ = '#0e7c86', OS = '#1b1d18';
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, TQ); g.addColorStop(1, '#2a8a5e'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    fondoFoto(x, d.fondo, W, H, Math.min(1, d.alfa * 1.6));
+    x.fillStyle = 'rgba(255,255,255,.10)'; for (let i = 0; i < W; i += 36) for (let j = 0; j < H; j += 36) { x.beginPath(); x.arc(i, j, 2.2, 0, 7); x.fill(); }
+    const m = st ? 70 : 60, px = m + 56, cw = W - (m + 56) * 2, pie = st ? 200 : 120;
+    const cont = (x, y) => {
+      y = logos(x, d.logos, px, y, cw, st ? 150 : 104) + (st ? 50 : 32); x.fillStyle = '#e5e7eb'; x.fillRect(px, y, cw, 2); y += st ? 80 : 56;
+      x.textAlign = 'center'; x.fillStyle = TQ; x.font = `800 ${st ? 30 : 23}px ${F}`; x.fillText('I N V I T A C I Ó N', W / 2, y); y += st ? 80 : 58;
+      y = titulo(x, d.tema, W / 2, y, cw, 800, st ? 76 : 56, OS, 3, 'center') + (st ? 30 : 12);
+      const tile = (tx, ty, tw, th, ico, a, b) => { x.fillStyle = '#f1f5f3'; rr(x, tx, ty, tw, th, 20); x.fill(); x.textAlign = 'center'; x.fillStyle = VE; x.font = `700 ${st ? 30 : 24}px ${F}`; x.fillText(ico + ' ' + a, tx + tw / 2, ty + th * (b ? 0.44 : 0.6)); if (b) { x.fillStyle = '#4b5563'; x.font = `500 ${st ? 26 : 20}px ${F}`; lineas(x, b, tw - 30).slice(0, 1).forEach(l => x.fillText(l, tx + tw / 2, ty + th * 0.76)); } };
+      const th = st ? 120 : 92, half = (cw - 20) / 2;
+      tile(px, y, half, th, '📅', d.semana.charAt(0).toUpperCase() + d.semana.slice(1) + ' ' + d.diaNum, d.mes + ' ' + d.anio); tile(px + half + 20, y, half, th, '🕙', d.horaIni + ' h', 'termina ' + d.horaFin + ' h'); y += th + 18;
+      const L = lugar(d); tile(px, y, cw, th, d.tipo === 'Virtual' ? '💻' : '📍', L[0], L[1]); y += th + (st ? 46 : 30);
+      if ((d.ponentes || []).length) { x.textAlign = 'center'; x.fillStyle = '#6b7280'; x.font = `700 ${st ? 24 : 19}px ${F}`; x.fillText(d.ponentes.length > 1 ? 'PONENTES' : 'PONENTE', W / 2, y); y += st ? 46 : 34;
+        d.ponentes.slice(0, st ? 3 : 2).forEach(p => { y = texto(x, p.nombre + (p.cargo ? ' · ' + p.cargo : ''), W / 2, y, cw, `600 ${st ? 32 : 25}px ${F}`, OS, st ? 42 : 32, 1, 'center'); }); y += st ? 10 : 0; }
       return y;
     };
-    let k = 1, y = pinta(k);
-    for (let n = 0; n < 8 && y > limite; n++) { k *= 0.92; y = pinta(k); }
-    // pie
-    x.fillStyle = T.acento; x.fillRect(M, H - pieH + (story ? 20 : 15), W - M * 2, 3);
-    x.fillStyle = T.texto; x.font = `800 ${story ? 44 : 36}px ${F}`; x.fillText('Interés Veterinario®', W / 2, H - (story ? 140 : 92));
-    x.fillStyle = T.suave; x.font = `500 ${story ? 32 : 27}px ${F}`;
-    x.fillText(orgL.length ? 'Organizan junto con ' + orgL.map(o => o.nombre).join(' y ') : '¡Te esperamos! Confirma tu asistencia', W / 2, H - (story ? 90 : 52));
+    const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; const alto = cont(tmp.getContext('2d'), 0) + (st ? 120 : 76);
+    const ch = Math.min(H - pie - 40, alto), cy = Math.max(30, (H - pie - ch) / 2 + (st ? 10 : 6));
+    x.save(); x.shadowColor = 'rgba(0,0,0,.28)'; x.shadowBlur = 50; x.shadowOffsetY = 18; x.fillStyle = '#fff'; rr(x, m, cy, W - m * 2, ch, 42); x.fill(); x.restore();
+    cont(x, cy + (st ? 70 : 44));
+    x.textAlign = 'center'; x.fillStyle = '#fff'; x.font = `800 ${st ? 40 : 30}px ${F}`; x.fillText('Interés Veterinario®', W / 2, H - (st ? 120 : 70)); x.font = `500 ${st ? 28 : 21}px ${F}`; x.fillStyle = 'rgba(255,255,255,.85)';
+    x.fillText(d.orgNombres.length ? 'Organizan junto con ' + d.orgNombres.join(' y ') : 'Confirma tu asistencia', W / 2, H - (st ? 74 : 38));
   }
+
+  /* 6 · EDITORIAL: papel marfil, tipografía de revista, reglas finas y número de día en contorno */
+  function editorial(x, W, H, d) {
+    const st = H > W, TX = '#1a1a1a', AC = '#1f6f4a', PA = '#f5f0e6';
+    x.fillStyle = PA; x.fillRect(0, 0, W, H); fondoFoto(x, d.fondo, W, H, d.alfa * 0.5);
+    const m = st ? 80 : 70; x.fillStyle = TX; x.fillRect(m, m, W - m * 2, 4); x.fillRect(m, m + 12, W - m * 2, 1.5);
+    x.textAlign = 'left'; x.font = `700 ${st ? 26 : 21}px ${F}`; x.fillText('INTERÉS VETERINARIO®', m, m + 54); x.textAlign = 'right';
+    x.fillText((d.tipo === 'Virtual' ? 'EDICIÓN VIRTUAL' : 'EDICIÓN PRESENCIAL') + ' · ' + d.anio, W - m, m + 54);
+    let y = m + (st ? 190 : 120);
+    x.textAlign = 'left'; x.fillStyle = AC; x.font = `italic 400 ${st ? 48 : 36}px ${SERIF}`; x.fillText('Invitación', m, y); y += st ? 100 : 70;
+    y = titulo(x, d.tema, m, y, W - m * 2, 700, st ? 104 : 80, TX, st ? 4 : 3, 'left', SERIF) + (st ? 30 : 10);
+    x.fillStyle = TX; x.fillRect(m, y, W - m * 2, 1.5); y += st ? 40 : 30;
+    /* columna izquierda: número en contorno; derecha: datos */
+    const nY = y + (st ? 250 : 190); x.lineWidth = 3; x.strokeStyle = AC; x.font = `900 ${st ? 300 : 230}px ${SERIF}`; x.textAlign = 'left'; x.strokeText(d.diaNum, m - 6, nY);
+    const cx = m + (st ? 380 : 300), cw = W - cx - m; let yy = y + (st ? 60 : 44);
+    x.fillStyle = TX; x.font = `700 ${st ? 40 : 31}px ${F}`; x.fillText(d.semana.charAt(0).toUpperCase() + d.semana.slice(1) + ', ' + d.mes, cx, yy); yy += st ? 54 : 42;
+    x.fillStyle = '#555'; x.font = `400 ${st ? 34 : 26}px ${F}`; x.fillText(d.horaIni + ' – ' + d.horaFin + ' h', cx, yy); yy += st ? 70 : 52;
+    const L = lugar(d); yy = texto(x, L[0], cx, yy, cw, `700 ${st ? 36 : 28}px ${F}`, TX, st ? 44 : 34, 2); if (L[1]) yy = texto(x, L[1], cx, yy, cw, `400 ${st ? 28 : 22}px ${F}`, '#555', st ? 36 : 28, 2);
+    y = Math.max(nY + 30, yy + 20);
+    if ((d.ponentes || []).length) { x.fillStyle = TX; x.fillRect(m, y, W - m * 2, 1.5); y += st ? 60 : 44; x.fillStyle = AC; x.font = `italic 400 ${st ? 34 : 26}px ${SERIF}`; x.fillText(d.ponentes.length > 1 ? 'Con la participación de' : 'Con la participación de', m, y); y += st ? 54 : 40;
+      d.ponentes.slice(0, st ? 3 : 2).forEach(p => { x.fillStyle = TX; x.font = `700 ${st ? 36 : 28}px ${F}`; x.fillText(p.nombre, m, y); if (p.cargo) { const w = x.measureText(p.nombre + '  ').width; x.fillStyle = '#555'; x.font = `400 ${st ? 28 : 22}px ${F}`; x.fillText('— ' + p.cargo, m + w, y); } y += st ? 48 : 36; }); }
+    const lh = st ? 120 : 84; x.fillStyle = TX; x.fillRect(m, H - m - lh - 40, W - m * 2, 1.5);
+    logos(x, d.logos, m, H - m - lh - 10, W - m * 2, lh, 'left');
+  }
+
+  /* 9 · BOLETO: boleto de evento con talón perforado sobre fondo oscuro */
+  function boleto(x, W, H, d) {
+    const st = H > W, OS = '#1c1f2b', VE = '#1f8a5b', OR = '#e9b949';
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#262b3d'); g.addColorStop(1, '#111320'); x.fillStyle = g; x.fillRect(0, 0, W, H); fondoFoto(x, d.fondo, W, H, d.alfa * 0.7);
+    x.fillStyle = OR; x.textAlign = 'center'; x.font = `800 ${st ? 40 : 30}px ${F}`; x.fillText('★  ESTÁS INVITADO  ★', W / 2, st ? 150 : 80);
+    const m = st ? 70 : 60, ty = st ? 220 : 120, th = H - ty - (st ? 170 : 90), tw = W - m * 2;
+    const stubH = st ? 440 : 0, stubW = st ? 0 : 270;
+    x.save(); x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 40; x.shadowOffsetY = 14; x.fillStyle = '#fffdf7'; rr(x, m, ty, tw, th, 30); x.fill(); x.restore();
+    /* muescas y perforación */
+    x.fillStyle = '#181b29';
+    if (st) { const py = ty + th - stubH; x.beginPath(); x.arc(m, py, 30, 0, 7); x.arc(m + tw, py, 30, 0, 7); x.fill(); x.fillStyle = '#c9c3b5'; for (let i = m + 50; i < m + tw - 40; i += 28) x.fillRect(i, py - 2, 14, 4); }
+    else { const px2 = m + tw - stubW; x.beginPath(); x.arc(px2, ty, 30, 0, 7); x.arc(px2, ty + th, 30, 0, 7); x.fill(); x.fillStyle = '#c9c3b5'; for (let j = ty + 50; j < ty + th - 40; j += 28) x.fillRect(px2 - 2, j, 4, 14); }
+    const ax = m + 50, aw = (st ? tw : tw - stubW) - 100, areaH = (st ? th - stubH : th);
+    const cuerpo = (x, y) => {
+    y = logos(x, d.logos, ax, y, aw, st ? 130 : 110, 'left') + (st ? 70 : 56);
+    x.textAlign = 'left'; x.fillStyle = VE; x.font = `800 ${st ? 28 : 21}px ${F}`; x.fillText((d.tipo === 'Virtual' ? 'REUNIÓN VIRTUAL' : 'REUNIÓN PRESENCIAL'), ax, y); y += st ? 76 : 54;
+    y = titulo(x, d.tema, ax, y, aw, 800, st ? 72 : 52, OS, 3) + (st ? 20 : 6);
+    const L = lugar(d); y = texto(x, (d.tipo === 'Virtual' ? '💻 ' : '📍 ') + L[0], ax, y, aw, `700 ${st ? 34 : 26}px ${F}`, OS, st ? 42 : 32, 1); if (L[1]) y = texto(x, L[1], ax, y, aw, `400 ${st ? 28 : 21}px ${F}`, '#5b6070', st ? 36 : 28, 2);
+    if ((d.ponentes || []).length) { y += st ? 16 : 8; d.ponentes.slice(0, 2).forEach(p => { y = texto(x, '🎤 ' + p.nombre + (p.cargo ? ' · ' + p.cargo : ''), ax, y, aw, `600 ${st ? 30 : 23}px ${F}`, OS, st ? 40 : 30, 1); }); }
+    return y; };
+    const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; const hC = cuerpo(tmp.getContext('2d'), 0);
+    cuerpo(x, ty + Math.max(st ? 60 : 44, (areaH - hC) / 2 + (st ? 20 : 26)));
+    /* talón */
+    const sx = st ? m : m + tw - stubW, sy = st ? ty + th - stubH : ty, sw = st ? tw : stubW, sh = st ? stubH : th;
+    x.fillStyle = VE; rr(x, sx + 20, sy + 20, sw - 40, sh - 40, 20); x.fill(); x.textAlign = 'center'; x.fillStyle = 'rgba(255,255,255,.8)';
+    const scx = sx + sw / 2, scy = sy + sh / 2;
+    x.font = `700 ${st ? 30 : 22}px ${F}`; x.fillText(d.semana.toUpperCase(), scx, scy - (st ? 110 : 120)); x.fillStyle = '#fff'; x.font = `900 ${st ? 130 : 110}px ${F}`; x.fillText(d.diaNum, scx, scy + (st ? 10 : 0));
+    x.font = `800 ${st ? 34 : 26}px ${F}`; x.fillText(d.mes.toUpperCase(), scx, scy + (st ? 60 : 46)); x.fillStyle = OR; x.font = `800 ${st ? 34 : 28}px ${F}`; x.fillText(d.horaIni + ' h', scx, scy + (st ? 112 : 110));
+    x.fillStyle = 'rgba(255,255,255,.75)'; x.font = `500 ${st ? 24 : 19}px ${F}`; x.fillText('a ' + d.horaFin + ' h', scx, scy + (st ? 146 : 140));
+    x.fillStyle = 'rgba(255,255,255,.7)'; x.font = `600 ${st ? 26 : 20}px ${F}`; x.fillText('Interés Veterinario®' + (d.orgNombres.length ? ' · ' + d.orgNombres.join(' · ') : ''), W / 2, H - (st ? 90 : 40));
+  }
+
+  /* 10 · CIENCIA: fondo claro con patrón hexagonal, panel de datos azul y acentos turquesa */
+  function ciencia(x, W, H, d) {
+    const st = H > W, AZ = '#0b3c5d', TQ = '#14a3a3', CL = '#eef6f8';
+    x.fillStyle = CL; x.fillRect(0, 0, W, H); fondoFoto(x, d.fondo, W, H, d.alfa * 0.6);
+    const hx = (cx, cy, r) => { x.beginPath(); for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i + Math.PI / 6; x[i ? 'lineTo' : 'moveTo'](cx + r * Math.cos(a), cy + r * Math.sin(a)); } x.closePath(); };
+    x.strokeStyle = 'rgba(20,163,163,.18)'; x.lineWidth = 2; const r = 46, dx = r * Math.sqrt(3);
+    for (let j = 0, row = 0; j < H * 0.45; j += r * 1.5, row++) for (let i = W * 0.45 + (row % 2) * dx / 2; i < W + dx; i += dx) { hx(i, j, r); x.stroke(); }
+    [[W - 160, 140, 'rgba(20,163,163,.25)'], [W - 260, 300, 'rgba(11,60,93,.18)']].forEach(([a, b, c]) => { hx(a, b, 70); x.fillStyle = c; x.fill(); });
+    const px = 80, cw = W - 160;
+    const bloque = (x, y) => {
+    y = logos(x, d.logos, px, y, cw * 0.8, st ? 130 : 96, 'left') + (st ? 100 : 66);
+    x.textAlign = 'left'; x.fillStyle = TQ; x.font = `800 ${st ? 30 : 23}px ${F}`; x.fillText('INVITACIÓN', px, y); x.fillRect(px + x.measureText('INVITACIÓN').width + 20, y - 10, 120, 4); y += st ? 90 : 64;
+    y = titulo(x, d.tema, px, y, cw, 800, st ? 84 : 62, AZ, 3) + (st ? 30 : 14);
+    if ((d.ponentes || []).length) { d.ponentes.slice(0, st ? 3 : 2).forEach(p => { x.fillStyle = TQ; hx(px + 18, y - 12, 16); x.fill(); y = texto(x, p.nombre, px + 50, y, cw - 50, `700 ${st ? 36 : 28}px ${F}`, AZ, st ? 42 : 32, 1); if (p.cargo) y = texto(x, p.cargo, px + 50, y, cw - 50, `400 ${st ? 28 : 22}px ${F}`, '#4a6375', st ? 36 : 28, 1); y += st ? 14 : 6; }); y += st ? 20 : 8; }
+    const ph = st ? 420 : 230, py = y + (st ? 50 : 30);
+    x.fillStyle = AZ; rr(x, px - 20, py, cw + 40, ph, 30); x.fill();
+    const col = (cx2, t1, t2, t3) => { x.textAlign = 'left'; x.fillStyle = TQ; x.font = `800 ${st ? 24 : 19}px ${F}`; x.fillText(t1, cx2, py + (st ? 80 : 60)); x.fillStyle = '#fff'; x.font = `800 ${st ? 40 : 31}px ${F}`; lineas(x, t2, (cw - 80) / 3).slice(0, 2).forEach((l, i) => x.fillText(l, cx2, py + (st ? 136 : 104) + i * (st ? 46 : 36))); x.fillStyle = '#a9c4d6'; x.font = `400 ${st ? 26 : 20}px ${F}`; lineas(x, t3, (cw - 80) / 3).slice(0, 3).forEach((l, i) => x.fillText(l, cx2, py + (st ? 240 : 182) + i * (st ? 34 : 26))); };
+    const L = lugar(d), c3 = (cw - 40) / 3;
+    if (st) { /* en vertical: tres filas */
+      x.textAlign = 'left'; [['FECHA', d.semana.charAt(0).toUpperCase() + d.semana.slice(1) + ' ' + d.diaNum + ' de ' + d.mes], ['HORARIO', d.horaIni + ' a ' + d.horaFin + ' h'], [d.tipo === 'Virtual' ? 'PLATAFORMA' : 'SEDE', L[0] + (L[1] ? ' · ' + L[1] : '')]].forEach((f, i) => {
+        x.fillStyle = TQ; x.font = `800 24px ${F}`; x.fillText(f[0], px + 20, py + 70 + i * 104); x.fillStyle = '#fff'; x.font = `700 34px ${F}`; x.fillText(lineas(x, f[1], cw - 40)[0], px + 20, py + 112 + i * 104); if (i === 2 && lineas(x, f[1], cw - 40)[1]) { x.font = `400 28px ${F}`; x.fillStyle = '#a9c4d6'; x.fillText(lineas(x, f[1], cw - 40).slice(1).join(' '), px + 20, py + 152 + i * 104); } });
+    } else { col(px + 10, 'FECHA', d.semana.charAt(0).toUpperCase() + d.semana.slice(1) + ' ' + d.diaNum, d.mes + ' ' + d.anio); col(px + 10 + c3 + 20, 'HORARIO', d.horaIni + ' h', 'a ' + d.horaFin + ' h'); col(px + 10 + (c3 + 20) * 2, d.tipo === 'Virtual' ? 'PLATAFORMA' : 'SEDE', L[0], L[1]); }
+    return py + ph; };
+    const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; const hB = bloque(tmp.getContext('2d'), 0);
+    bloque(x, Math.max(st ? 100 : 60, (H - (st ? 90 : 50) - hB) / 2));
+    x.textAlign = 'center'; x.fillStyle = AZ; x.font = `700 ${st ? 28 : 21}px ${F}`; x.fillText('Interés Veterinario®' + (d.orgNombres.length ? ' · ' + d.orgNombres.join(' · ') : '') + ' · Confirma tu asistencia', W / 2, H - (st ? 60 : 26));
+  }
+  return { ejecutivo: ['Ejecutivo', ejecutivo], gala: ['Gala', gala], moderno: ['Moderno', moderno], tarjeta: ['Tarjeta', tarjeta], editorial: ['Editorial', editorial], boleto: ['Boleto', boleto], ciencia: ['Ciencia', ciencia] };
+  })();
+  const EV_PLANT = ['ejecutivo', 'gala', 'moderno', 'tarjeta', 'editorial', 'boleto', 'ciencia'];
+  const evPlant = k => EV_DIS[k] ? k : 'ejecutivo';
+  /** Logotipo sin fondo como imagen lista para dibujar (se guarda en memoria). */
+  function evLogoSF(src) {
+    S.evLogoSF = S.evLogoSF || {};
+    if (!src) return Promise.resolve(null);
+    if (!S.evLogoSF[src]) S.evLogoSF[src] = (async () => { let u = src; try { u = await logoTransparente(src, 700); } catch (e) {}
+      return await new Promise(ok => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = u; }); })();
+    return S.evLogoSF[src];
+  }
+  const evCargaImg = src => new Promise(ok => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
+  async function evCatalogos() {
+    const t = [];
+    if (!S.evOrgs) t.push(pedir('organizadores', {}, true).then(r => { S.evOrgs = r.organizadores || []; }).catch(() => { S.evOrgs = []; }));
+    if (!S.evSedes) t.push(pedir('sedesEvento', {}, true).then(r => { S.evSedes = r.sedes || []; }).catch(() => { S.evSedes = []; }));
+    await Promise.all(t);
+  }
+  /** Datos que usan las plantillas. e: { tema, tipo, inicio, horaFin, sede, direccion, plataforma, ponentes, organizadores:[{id,nombre}], sedeId, sedeLogo, descripcion }, fondo: dataURI */
+  async function evDatos(e, fondoUri, alfa) {
+    await evCatalogos();
+    const f = new Date(String(e.inicio || '').replace(' ', 'T')), ok = !isNaN(f);
+    const orgs = (e.organizadores || []).map(o => (S.evOrgs || []).find(z => z.id === o.id)).filter(Boolean);
+    const sd = e.tipo !== 'Virtual' && e.sedeId && e.sedeLogo !== false ? (S.evSedes || []).find(x => x.id === e.sedeId) : null;
+    const logos = (await Promise.all([evLogoSF(logoHD())].concat(orgs.map(o => evLogoSF(o.logo)), sd && sd.logo ? [evLogoSF(sd.logo)] : []))).filter(Boolean);
+    const dia = ok ? evDia(e.inicio) : 'Fecha por definir';
+    return { tema: e.tema || 'Tema de la reunión', tipo: e.tipo || 'Presencial', semana: ok ? f.toLocaleDateString('es-MX', { weekday: 'long' }) : 'día', diaNum: ok ? String(f.getDate()) : '--',
+      mes: ok ? f.toLocaleDateString('es-MX', { month: 'long' }) : 'mes', anio: ok ? String(f.getFullYear()) : '', dia: dia.charAt(0).toUpperCase() + dia.slice(1),
+      horaIni: ok ? evHora(e.inicio) : '--:--', horaFin: e.horaFin || '--:--', sede: e.sede || '', direccion: e.direccion || '', plataforma: e.plataforma || '',
+      ponentes: (e.ponentes || []).filter(p => p.nombre), logos: logos, orgNombres: orgs.map(o => o.nombre), fondo: await evCargaImg(fondoUri), alfa: (alfa === undefined ? 22 : alfa) / 100, descripcion: e.descripcion || '' };
+  }
+  function evPintar(cv, k, fmt, d) { cv.width = 1080; cv.height = fmt === 'historia' ? 1920 : 1080; const x = cv.getContext('2d'); x.clearRect(0, 0, cv.width, cv.height); x.textBaseline = 'alphabetic'; EV_DIS[evPlant(k)][1](x, cv.width, cv.height, d); }
+  async function evFondoDe(e) {
+    S.evFondos = S.evFondos || {}; if (!e || !e.id || !e.fondo) return '';
+    if (S.evFondos[e.id] === undefined) { try { S.evFondos[e.id] = (await pedir('fondoEvento', { id: e.id }, true)).uri || ''; } catch (er) { S.evFondos[e.id] = ''; } }
+    return S.evFondos[e.id];
+  }
+  function evImagen() {
+    const e = S.evDet; S.evImg = Object.assign({ formato: 'post', alfa: 22 }, S.evImg || {}, { plantilla: evPlant((S.evImg && S.evImg.id === e.id && S.evImg.plantilla) || e.plantilla) , id: e.id });
+    modal('🎨 Invitación en imagen', `<div class="ev-plant-chips" id="eiChips">${EV_PLANT.map(k => `<button type="button" class="ev-pchip ${k === S.evImg.plantilla ? 'on' : ''}" onclick="App.evImgPlant('${k}')">${EV_DIS[k][0]}</button>`).join('')}</div>
+      <div class="fila"><label>Formato<select id="eiFmt" onchange="App.evDibujar()">${opts([['post', 'Publicación (cuadrada) · Facebook / Instagram / WhatsApp'], ['historia', 'Historia / estado (vertical)']], S.evImg.formato)}</select></label>
+        ${e.fondo ? `<label>Imagen de fondo<input type="range" id="eiAlfa" min="0" max="60" value="${S.evImg.alfa}" oninput="App.evDibujar()"></label>` : ''}</div>
+      <div class="ev-lienzo"><canvas id="eiCv"></canvas></div>
+      <p class="muted peq">Con <b>📤 Compartir</b> eliges WhatsApp, Facebook o Instagram. Para que cada invitado confirme, mándale también su enlace con 💬 en la lista de invitados.</p>
+      <div class="acciones"><button class="btn" onclick="App.verEvento('${esc(e.id)}')">← Volver</button><button class="btn" onclick="App.evCopiar()">📋 Copiar texto</button><button class="btn" onclick="App.evDescargar()">⬇️ Descargar</button>${navigator.share ? '<button class="btn primario" onclick="App.evCompartir()">📤 Compartir</button>' : ''}</div>`);
+    evDibujar();
+  }
+  function evImgPlant(k) { S.evImg.plantilla = k; document.querySelectorAll('#eiChips .ev-pchip').forEach(b => b.classList.toggle('on', b.textContent === EV_DIS[k][0])); evDibujar(); }
+  async function evDibujar() {
+    const e = S.evDet, cv = $('#eiCv'); if (!cv) return;
+    S.evImg.formato = $('#eiFmt').value; if ($('#eiAlfa')) S.evImg.alfa = +$('#eiAlfa').value;
+    const d = await evDatos(e, await evFondoDe(e), S.evImg.alfa);
+    evPintar(cv, S.evImg.plantilla, S.evImg.formato, d);
+  }
+  /* ---- 👁️ Vista previa en vivo dentro del formulario ---- */
+  function evDurFin(fecha, hora, dur) { const d = new Date(fecha + 'T' + (hora || '00:00')); if (isNaN(d)) return ''; d.setMinutes(d.getMinutes() + (+dur || 60)); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function evDelForm() {
+    const g = id => (($('#' + id) || {}).value || '').trim(), virt = $('#evVirt') && $('#evVirt').style.display !== 'none';
+    evPonLeer();
+    return { tema: g('evTema'), tipo: virt ? 'Virtual' : 'Presencial', inicio: g('evFecha') ? g('evFecha') + 'T' + (g('evHora') || '10:00') : '', horaFin: evDurFin(g('evFecha'), g('evHora'), g('evDur')),
+      sede: g('evSede'), direccion: g('evDir'), plataforma: g('evPlat'), ponentes: (S.evPon || []).filter(p => String(p.nombre || '').trim()),
+      organizadores: (S.evOrgSel || []).map(id => ({ id: id })), sedeId: S.evSedeId || '', sedeLogo: !$('#evSedeLogo') || $('#evSedeLogo').checked, descripcion: g('evDesc') };
+  }
+  function evPrevProgramar() { clearTimeout(S.evPrevT); S.evPrevT = setTimeout(evPrevActualizar, 280); }
+  async function evPrevActualizar() {
+    const cv = $('#evPrevCv'); if (!cv) return;
+    const quitar = $('#evFondoQ') && $('#evFondoQ').checked;
+    const fondo = S.evFondoNuevo || (quitar ? '' : await evFondoDe(S.evEdObj));
+    const d = await evDatos(evDelForm(), fondo, 22); S.evPrevD = d;
+    evPintar(cv, S.evPlantSel, 'post', d);
+    const g = $('#evPrevGrandeCv'); if (g) evPintar(g, S.evPlantSel, S.evPrevFmt || 'post', d);
+  }
+  function evPlantElegir(k) { S.evPlantSel = k; document.querySelectorAll('#evPlantChips .ev-pchip').forEach(b => b.classList.toggle('on', b.dataset.k === k)); evPrevActualizar(); }
+  function evPrevGrande() {
+    const c = document.createElement('div'); c.className = 'modal clave-modal'; c.id = 'evPrevCapa';
+    c.innerHTML = `<div class="modal-caja" style="max-width:560px"><div class="modal-cab"><h3>👁️ Vista previa · ${esc(EV_DIS[evPlant(S.evPlantSel)][0])}</h3></div><div class="modal-cuerpo">
+      <div class="ev-seg"><button type="button" data-f="post" class="${(S.evPrevFmt || 'post') === 'post' ? 'on' : ''}">Publicación</button><button type="button" data-f="historia" class="${S.evPrevFmt === 'historia' ? 'on' : ''}">Historia / estado</button></div>
+      <div class="ev-lienzo"><canvas id="evPrevGrandeCv"></canvas></div><div class="acciones"><button class="btn primario" data-a="ok">Seguir capturando</button></div></div></div>`;
+    document.body.appendChild(c);
+    c.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.evPrevFmt = b.dataset.f; c.querySelectorAll('[data-f]').forEach(z => z.classList.toggle('on', z === b)); evPrevActualizar(); });
+    c.querySelector('[data-a="ok"]').onclick = () => c.remove();
+    evPrevActualizar();
+  }
+  /* ---- 📍 Sedes frecuentes ---- */
+  function evSedeOpts() { return opts([['', '— Elegir sede guardada —']].concat((S.evSedes || []).map(x => [x.id, x.nombre])), S.evSedeId || ''); }
+  function evSedeElegir(id) {
+    S.evSedeId = id; const sd = (S.evSedes || []).find(x => x.id === id);
+    if (sd) { $('#evSede').value = sd.nombre; $('#evDir').value = sd.direccion || ''; $('#evMapa').value = sd.mapa || ''; }
+    const l = $('#evSedeLogoL'); if (l) l.style.display = sd && sd.logo ? '' : 'none';
+    evPrevProgramar();
+  }
+  async function evSedeGuardarActual() {
+    const n = $('#evSede').value.trim(); if (!n) return toast('Escribe el nombre de la sede', true);
+    const f = ($('#evSedeArch') || {}).files ? $('#evSedeArch').files[0] : null;
+    try { const r = await pedir('guardarSedeEvento', { id: S.evSedeId || undefined, nombre: n, direccion: $('#evDir').value.trim(), mapa: $('#evMapa').value.trim(), logo: f ? await evLogoReducido(f) : undefined });
+      S.evSedes = null; await evCatalogos(); S.evSedeId = r.id; $('#evSedeSel').innerHTML = evSedeOpts(); evSedeElegir(r.id); toast('✔ Sede guardada: la tendrás lista en las siguientes reuniones'); } catch (e) {}
+  }
+  async function evSedes() {
+    S.evSedes = null; await evCatalogos();
+    modal('📍 Sedes frecuentes', `<p class="muted peq">Los lugares donde sueles dar pláticas. Al crear una reunión eliges la sede y se llenan solos el nombre, la dirección, la ubicación y su logotipo.</p>
+      <div class="acciones izq"><button class="btn primario" onclick="App.evSedeForm()">➕ Nueva sede</button></div>
+      ${(S.evSedes || []).length ? S.evSedes.map((x, i) => `<div class="ev-sede" onclick="App.evSedeForm(${i})">${x.logo ? `<img src="${x.logo}" alt="">` : '<span class="ev-sede-sin">📍</span>'}<div><b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.direccion || 'Sin dirección')}</small>${x.mapa ? '<br><small>🗺️ con ubicación</small>' : ''}</div></div>`).join('') : '<p class="muted">Aún no tienes sedes guardadas.</p>'}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  function evSedeForm(i) {
+    const x = i === undefined ? {} : S.evSedes[i];
+    modal(x.id ? '✏️ ' + x.nombre : '➕ Nueva sede', `<label>Nombre<input id="sdN" value="${esc(x.nombre || '')}" placeholder="Ej. Hotel Misión, Salón ejidal, Rancho El Porvenir"></label>
+      <label>Dirección<input id="sdD" value="${esc(x.direccion || '')}" placeholder="Calle, número, colonia, ciudad"></label>
+      <label>Ubicación (enlace de Google Maps)<input id="sdM" value="${esc(x.mapa || '')}" placeholder="Pega aquí la ubicación compartida"></label>
+      <label>Logotipo (opcional)<input type="file" id="sdL" accept="image/png,image/jpeg,image/webp"></label>${x.logo ? `<p><img src="${x.logo}" style="height:48px;background:#fff;border-radius:6px;padding:3px"> <label class="check" style="display:inline-flex"><input type="checkbox" id="sdQ"> Quitar logotipo</label></p>` : ''}
+      <div class="acciones"><button class="btn" onclick="App.evSedes()">Cancelar</button>${x.id ? `<button class="btn" onclick="App.evSedeQuitar('${esc(x.id)}')">🗑️ Quitar</button>` : ''}<button class="btn primario" onclick="App.evSedeGuardar('${esc(x.id || '')}')">💾 Guardar</button></div>`);
+  }
+  async function evSedeGuardar(id) {
+    const f = ($('#sdL').files || [])[0];
+    try { await pedir('guardarSedeEvento', { id: id || undefined, nombre: $('#sdN').value.trim(), direccion: $('#sdD').value.trim(), mapa: $('#sdM').value.trim(), logo: f ? await evLogoReducido(f) : undefined, quitarLogo: !!($('#sdQ') && $('#sdQ').checked) }); toast('✔ Sede guardada'); evSedes(); } catch (e) {}
+  }
+  async function evSedeQuitar(id) { if (!confirm('¿Quitar esta sede de tu lista? Las reuniones ya creadas conservan sus datos.')) return; try { await pedir('quitarSedeEvento', { id: id }); evSedes(); } catch (e) {} }
   function evBlob() { return new Promise(r => $('#eiCv').toBlob(r, 'image/png')); }
-  const evArchivo = () => 'Invitacion-' + String(S.evDet.tema).replace(/[^\wáéíóúñ ]/gi, '').trim().replace(/\s+/g, '-').slice(0, 40) + (S.evImg.formato === 'historia' ? '-historia' : '') + '.png';
+  const evArchivo = () => 'Invitacion-' + String(S.evDet.tema).replace(/[^\wáéíóúñ ]/gi, '').trim().replace(/\s+/g, '-').slice(0, 40) + '-' + EV_DIS[evPlant(S.evImg.plantilla)][0] + (S.evImg.formato === 'historia' ? '-historia' : '') + '.png';
   async function evCompartir() {
     const b = await evBlob(), f = new File([b], evArchivo(), { type: 'image/png' });
     try { if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f], text: evMsg(S.evDet) }); else evDescargar(); } catch (e) {}
@@ -12749,7 +13026,7 @@ const App = (() => {
       <label>Estado<select id="reuEst">${opts([['', 'Todas'], ['activas', 'Pendientes y confirmadas']].concat(Object.keys(REU_TXT).map(k => [k, REU_TXT[k]])), S.fReu.est)}</select></label>
       <button class="btn fijo" onclick="App.cargarReuniones(true)">⟳ Actualizar</button></div>
       <p class="muted peq" style="margin:4px 0 0">Para invitar a un cliente abre su ficha (Clientes) y toca <b>📅 Invitar a reunión</b>.${puede('dueno') || U().rol === 'Administrador' ? ' Para reunirte con una sucursal: <button class="btn chico" onclick="App.formReunionSuc()">🏬 Invitar a una sucursal</button>' : ''}</p></div><div id="reuRes"><div class="vacio">Cargando…</div></div>`;
-    $('#vista').insertAdjacentHTML('afterbegin', '<div class="acciones izq" style="margin:0 0 8px"><button class="btn primario" onclick="App.formEvento()">🤝 Crear reunión</button><button class="btn" onclick="App.evPasadas()">🗂️ Reuniones anteriores</button></div><div id="evProx"></div>'); evProximas('#evProx');
+    $('#vista').insertAdjacentHTML('afterbegin', '<div class="acciones izq" style="margin:0 0 8px"><button class="btn primario" onclick="App.formEvento()">🤝 Crear reunión</button><button class="btn" onclick="App.evSedes()">📍 Sedes</button><button class="btn" onclick="App.evPasadas()">🗂️ Reuniones anteriores</button></div><div id="evProx"></div>'); evProximas('#evProx');
     $('#reuQ').oninput = e => { S.fReu.q = e.target.value; pintarReuniones(); };
     $('#reuEst').onchange = e => { S.fReu.est = e.target.value; pintarReuniones(); };
     cargarReuniones();
@@ -14676,7 +14953,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
