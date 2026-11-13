@@ -1224,16 +1224,28 @@ const App = (() => {
   V.dashboard = () => {
     const h = hoyISO(), ini = h.slice(0, 8) + '01', u = U(), y = +h.slice(0, 4), m = +h.slice(5, 7);
     S.dashSel = S.dashSel || { anios: [y], sem: [], tri: [], mes: [m] };
-    $('#vista').innerHTML = `<div class="tarjeta dash-per">
+    $('#vista').innerHTML = `<div id="dSent"></div><div class="tarjeta dash-per" id="dPer"><div class="dper-res" id="dRes"></div><div class="dper-cuerpo">
       <div class="dash-top">${u.todasSucursales ? `<select id="dSuc" onchange="App.dashSucCambio()" title="Sucursal">${optsSuc('', false, 'Todas las sucursales')}</select>` : ''}
         <button class="btn fijo" onclick="App.dashRefrescar()" title="Volver a leer los datos del servidor">⟳ Actualizar</button><button class="btn fijo" onclick="App.excelDashboard()">📊 Excel</button></div>
       <div class="dash-atajos"><button type="button" class="dchip" onclick="App.dashAtajo('mes')">Este mes</button><button type="button" class="dchip" onclick="App.dashAtajo('mesAnt')">Mes anterior</button><button type="button" class="dchip" onclick="App.dashAtajo('anio')">Este año</button><button type="button" class="dchip" onclick="App.dashAtajo('anioAnt')">Año anterior</button></div>
       <div class="muted peq" id="dEstado"></div>
       <div id="dChips"></div>
       <details class="dash-rango"><summary>📅 Rango exacto de fechas</summary><div class="fila"><label>Desde<input type="date" id="dDesde" value="${ini}"></label><label>Hasta<input type="date" id="dHasta" value="${h}"></label><button class="btn primario fijo" onclick="App.cargarDashboard()">Ver</button></div></details>
-      </div><div class="espacio"></div><div id="dash"><div class="vacio">Cargando…</div></div>`;
-    dashChips(); dashIniciar();
+      </div></div><div class="espacio"></div><div id="dash"><div class="vacio">Cargando…</div></div>`;
+    dashChips(); dashIniciar(); dashFijo();
   };
+  /** El panel de periodos se queda fijo arriba; al bajar se reduce a una barra (años + periodo + Cambiar). */
+  function dashFijo() {
+    const sen = $('#dSent'), p = $('#dPer'); if (!sen || !p) return;
+    const b = document.querySelector('.barra'), alto = b ? b.offsetHeight : 0; p.style.top = alto + 'px';
+    if (S.dashObs) S.dashObs.disconnect(); if (!window.IntersectionObserver) return;
+    S.dashObs = new IntersectionObserver(e => { if (!document.body.contains(p)) return S.dashObs.disconnect();
+      const fuera = !e[0].isIntersecting && e[0].boundingClientRect.top < alto + 1; if (fuera !== p.classList.contains('compacto')) { p.classList.toggle('compacto', fuera); if (!fuera) p.classList.remove('abierto'); dashChips(); } },
+      { rootMargin: '-' + alto + 'px 0px 0px 0px' });
+    S.dashObs.observe(sen);
+  }
+  function dashPerAbrir() { const p = $('#dPer'); if (!p) return; p.classList.toggle('abierto'); dashChips(); }
+  function dashCorte(v) { S.dashCorte = v; dashChips(); dashArmar(); }
   function dashChips() {
     const el = $('#dChips'); if (!el) return; const s = S.dashSel, cub = (S.cubo || {})[dashSuc()];
     const hoyY = +hoyISO().slice(0, 4), anios = cub && cub.meses.length ? Array.from(new Set(cub.meses.map(k => +k.slice(0, 4)).concat([hoyY]))).sort() : [hoyY - 2, hoyY - 1, hoyY];
@@ -1241,7 +1253,18 @@ const App = (() => {
     el.innerHTML = `<div class="dgrupo"><b>Años</b>${anios.map(a => ch('anios', a, a, s.anios.includes(a))).join('')}</div>
       <div class="dgrupo"><b>Semestres</b>${ch('sem', 1, '1er semestre', s.sem.includes(1))}${ch('sem', 2, '2º semestre', s.sem.includes(2))}</div>
       <div class="dgrupo"><b>Trimestres</b>${[1, 2, 3, 4].map(t => ch('tri', t, 'T' + t, s.tri.includes(t))).join('')}</div>
-      <div class="dgrupo"><b>Meses</b>${DM.map((n, i) => ch('mes', i + 1, n, s.mes.includes(i + 1))).join('')}${s.sem.length || s.tri.length || s.mes.length ? `<button type="button" class="dchip limpiar" onclick="App.dashTog('todo',0)">Todo el año</button>` : ''}</div>`;
+      <div class="dgrupo"><b>Meses</b>${DM.map((n, i) => ch('mes', i + 1, n, s.mes.includes(i + 1))).join('')}${s.sem.length || s.tri.length || s.mes.length ? `<button type="button" class="dchip limpiar" onclick="App.dashTog('todo',0)">Todo el año</button>` : ''}</div>
+      <div class="dgrupo"><b>Comparar</b>${dashCorteChips()}</div>`;
+    const res = $('#dRes'); if (res) { const p = $('#dPer'), ab = p && p.classList.contains('abierto');
+      res.innerHTML = `<span class="dres-anios">${s.anios.slice().sort().map(a => `<button type="button" class="dchip on" onclick="App.dashTog('anios',${a})" title="Quitar ${a}">${a}</button>`).join('')}</span>
+        <span class="dres-txt">${esc(dashPerTxt())} · ${S.dashCorte === 'completo' ? 'año completo' : 'hasta hoy'}</span>
+        <button type="button" class="dchip dres-btn" onclick="App.dashPerAbrir()">${ab ? 'Listo ▴' : '✏️ Cambiar ▾'}</button>`; }
+  }
+  const dashCorteChips = () => [['fecha', '⏱ Hasta hoy', 'Mismos días transcurridos en ambos años'], ['completo', '📅 Año completo', 'Lo que llevas contra todo el año de referencia']]
+    .map(o => `<button type="button" class="dchip ${(S.dashCorte || 'fecha') === o[0] ? 'on' : ''}" title="${o[2]}" onclick="App.dashCorte('${o[0]}')">${o[1]}</button>`).join('');
+  function dashPerTxt() {
+    const s = S.dashSel; if (!s.sem.length && !s.tri.length && !s.mes.length) return 'Todo el año';
+    return s.sem.slice().sort().map(x => x + 'º sem.').concat(s.tri.slice().sort().map(x => 'T' + x)).concat(s.mes.slice().sort((a, b) => a - b).map(m => DM[m - 1])).join(', ');
   }
   function dashTog(g, v) {
     const s = S.dashSel;
@@ -1309,10 +1332,10 @@ const App = (() => {
     const B = S.dashVs && disp.includes(S.dashVs) ? S.dashVs : (ys.length > 1 ? ys[ys.length - 2] : A - 1);
     const set = new Set(); s.sem.forEach(x => DSEM[x - 1].forEach(m => set.add(m))); s.tri.forEach(x => DTRI[x - 1].forEach(m => set.add(m))); s.mes.forEach(m => set.add(m));
     const ms = set.size ? Array.from(set).sort((a, b) => a - b) : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-    const ok = ms.filter(m => A < hY || m <= hM), justo = A === hY;
+    const comp = S.dashCorte === 'completo', ok = ms.filter(m => A < hY || m <= hM), okB = comp ? ms : ok, justo = A === hY && !comp;
     const filas = Array.from(new Set(ys.concat([B]))).sort((a, b) => a - b);
     const obj = (y, m) => dashMes(cub, dKey(y, m), justo && y < hY && m === hM);
-    return { A: A, B: B, disp: disp, ms: ms, ok: ok, filas: filas, obj: obj, dia: justo && ok.includes(hM) ? (cub.dia || +h.slice(8, 10)) : 0, hM: hM };
+    return { A: A, B: B, disp: disp, ms: ms, ok: ok, okB: okB, comp: comp && okB.length > ok.length || (comp && A === hY && ok.includes(hM)), filas: filas, obj: obj, dia: justo && ok.includes(hM) ? (cub.dia || +h.slice(8, 10)) : 0, hM: hM };
   }
   function dashArmar() {
     const suc = dashSuc(), cub = (S.cubo || {})[suc], snap = (S.dashSnap || {})[suc];
@@ -1330,7 +1353,7 @@ const App = (() => {
     else { delete kpi.utilidad; delete kpi.costoVentas; delete kpi.margen; delete kpi.utilidadNeta; }
     if (cub.valLista) kpi.valLista = cub.valLista;
     /* año principal contra año de comparación, mismos meses */
-    const X = dashAB(cub), TA = dashSumaObjs(X.ok.map(m => X.obj(X.A, m))), TB = dashSumaObjs(X.ok.map(m => X.obj(X.B, m))), hayB = TB.v > 0 || TB.n > 0;
+    const X = dashAB(cub), TA = dashSumaObjs(X.ok.map(m => X.obj(X.A, m))), TB = dashSumaObjs(X.okB.map(m => X.obj(X.B, m))), hayB = TB.v > 0 || TB.n > 0;
     /* evolución: los meses elegidos del año principal (si es uno solo, los 12 que terminan en él); referencia: las ventas del año de comparación */
     let serie = X.ok.map(m => dKey(X.A, m));
     if (serie.length <= 1) { const y = X.A, m = X.ok[0] || X.ms[0]; serie = []; for (let i = 11; i >= 0; i--) { const d = new Date(y, m - 1 - i, 1); serie.push(dKey(d.getFullYear(), d.getMonth() + 1)); } }
@@ -1371,29 +1394,29 @@ const App = (() => {
     const clis = Object.keys(cm).map(k => cm[k]); const ca = rk(clis, x => x.a, x => x.nombre), cbk = rk(clis, x => x.b, x => x.nombre); clis.forEach(x => { x.rA = ca[x.nombre] || null; x.rB = cbk[x.nombre] || null; });
     const top = (l, f, n) => l.filter(x => f(x) > 0).sort((x, y) => f(y) - f(x)).slice(0, n);
     const ult = X.ok[X.ok.length - 1] || X.ms[X.ms.length - 1], pri = X.ok[0] || X.ms[0], dd = n => String(n).padStart(2, '0');
-    const finDe = y => (X.dia && ult === X.hM ? dd(X.dia) : dd(new Date(y, ult, 0).getDate())) + '/' + dd(ult) + '/' + y;
+    const ultB = X.okB[X.okB.length - 1] || ult, finDe = (y, u) => (X.dia && u === X.hM ? dd(X.dia) : dd(new Date(y, u, 0).getDate())) + '/' + dd(u) + '/' + y;
     const mesesX = X.ok.map(m => { const a = X.obj(X.A, m).m || {}, b = X.obj(X.B, m).m || {}; return { mes: m, etiqueta: DM[m - 1], ventas: dr2(a.v || 0), ventasAnt: dr2(b.v || 0) }; });
-    return { periodo: { actual: { desde: '01/' + dd(pri) + '/' + X.A, hasta: finDe(X.A) }, anterior: { desde: '01/' + dd(pri) + '/' + X.B, hasta: finDe(X.B) } }, kpi: kpi,
+    return { periodo: { actual: { desde: '01/' + dd(pri) + '/' + X.A, hasta: finDe(X.A, ult) }, anterior: { desde: '01/' + dd(pri) + '/' + X.B, hasta: finDe(X.B, ultB) } }, kpi: kpi,
       meses: mesesX, productos: prods, topProductos: top(prods, x => x.impA, 10), topProductosAnt: top(prods, x => x.impB, 10), topClientes: top(clis, x => x.a, 10), topClientesAnt: top(clis, x => x.b, 10),
       nuevos: prods.filter(x => x.impA > 0 && !(x.impB > 0)).length, perdidos: prods.filter(x => x.impB > 0 && !(x.impA > 0)).length,
       clientesNuevos: clis.filter(x => x.a > 0 && !(x.b > 0)).length, clientesPerdidos: clis.filter(x => x.b > 0 && !(x.a > 0)).length, mesesSinGastos: [], huecosGastos: [], verUtil: !!cu,
-      x: { A: X.A, B: X.B, hayB: hayB, disp: X.disp, ms: X.ms, ok: X.ok, filas: X.filas, dia: X.dia, hM: X.hM, cu: !!cu, gastos: !!cub.gastos, verCompras: !!cub.verCompras, TA: A, TB: B, clis: clis, obj: X.obj } };
+      x: { A: X.A, B: X.B, hayB: hayB, disp: X.disp, ms: X.ms, ok: X.ok, okB: X.okB, comp: X.comp, filas: X.filas, dia: X.dia, hM: X.hM, cu: !!cu, gastos: !!cub.gastos, verCompras: !!cub.verCompras, TA: A, TB: B, clis: clis, obj: X.obj } };
   }
   /** 📅 Sección "¿Qué cambió?": tarjetas, lectura rápida, mapa de meses, diferencia mes a mes, curvas y quién explica el cambio. */
   function pintarCompX() {
     const r = S.comp, el = $('#dashComp'); if (!r || !r.x || !el) return;
     const x = r.x, A = x.A, B = x.B, TA = x.TA, TB = x.TB, gT = t => t.g.reduce((s, v) => s + v, 0);
     const rango = x.ok.length ? (x.ok.length === 12 ? 'Todo el año' : x.ok.length > 2 && x.ok.every((m, i) => !i || m === x.ok[i - 1] + 1) ? DM[x.ok[0] - 1] + ' – ' + DM[x.ok[x.ok.length - 1] - 1] : x.ok.map(m => DM[m - 1]).join(', ')) : '—';
-    const justo = x.dia ? ` · ${DM[x.hM - 1].toLowerCase()} comparado con los mismos ${x.dia} días` : '';
+    const justo = x.dia ? ` · ${DM[x.hM - 1].toLowerCase()} comparado con los mismos ${x.dia} días` : '', bL = x.comp ? B + ' completo' : String(B);
     const selVs = `<select class="cmp-vs" onchange="App.dashVs(this.value)" title="Año contra el que se compara">${x.disp.map(y => `<option value="${y}" ${y === B ? 'selected' : ''}>${y}</option>`).join('')}</select>`;
     const tarj = [['Ventas netas', TA.v, TB.v]];
     if (x.cu) tarj.push(['Utilidad bruta', TA.v - TA.cos, TB.v - TB.cos]); else tarj.push(['Notas de venta', TA.n, TB.n, 'n']);
     if (x.cu && x.gastos) tarj.push(['Utilidad neta', TA.v - TA.cos - TA.mer - gT(TA), TB.v - TB.cos - TB.mer - gT(TB)]); else tarj.push(['Ticket promedio', TA.n ? TA.v / TA.n : 0, TB.n ? TB.v / TB.n : 0]);
     tarj.push(['Clientes que compraron', Object.keys(TA.cli).length, Object.keys(TB.cli).length, 'n']);
     const dif = x.ok.map(m => { const a = x.obj(A, m).m, b = x.obj(B, m).m; return { m: m, a: a ? a.v : 0, b: b ? b.v : 0, d: (a ? a.v : 0) - (b ? b.v : 0) }; });
-    el.innerHTML = `<div class="cmp-cab"><h3 style="margin:0">📅 ¿Qué cambió de ${B} a ${A}? <small class="muted" style="font-weight:400">Comparar contra</small> ${selVs}</h3><small class="muted">${esc(rango)} en ambos años${justo}</small></div>
+    el.innerHTML = `<div class="cmp-cab"><h3 style="margin:0">📅 ¿Qué cambió de ${B} a ${A}? <small class="muted" style="font-weight:400">Comparar contra</small> ${selVs}</h3><small class="muted">${x.comp ? `${A} hasta hoy contra ${B} completo` : esc(rango) + ' en ambos años' + justo}</small></div>
       ${!x.hayB ? `<div class="vacio">No hay ventas en ${B} en esos meses para comparar. Elige otro año en “Comparar contra”.</div>` : `
-      <div class="cx-top"><div class="cx-kpis">${tarj.map(t => `<div class="cmp-kpi"><small>${esc(t[0])}</small><b>${fmtK(dr2(t[1]), t[3])}</b><span>${chipDelta(t[1], t[2], false, t[3])} <em>${B}: ${fmtK(dr2(t[2]), t[3])}</em></span></div>`).join('')}</div>
+      <div class="cx-top"><div class="cx-kpis">${tarj.map(t => `<div class="cmp-kpi"><small>${esc(t[0])}</small><b>${fmtK(dr2(t[1]), t[3])}</b><span>${chipDelta(t[1], t[2], false, t[3])} <em>${bL}: ${fmtK(dr2(t[2]), t[3])}</em></span></div>`).join('')}</div>
         <div class="cx-lectura">${cxLectura(x, dif)}</div></div>
       <div class="cx-bloque"><div class="cx-mapa-cab"><h4>Mapa de meses</h4><span class="cx-seg" id="cxSeg"></span></div><p class="muted peq" style="margin:2px 0 6px">Más intenso = más alto · última fila: cambio de ${A} contra ${B}</p><div class="tabla-cont" id="cxMapa"></div></div>
       <div class="rejilla-2 d2 cx-graf">
@@ -1431,7 +1454,11 @@ const App = (() => {
   function cxLectura(x, dif) {
     const A = x.A, B = x.B, TA = x.TA, TB = x.TB, d = TA.v - TB.v, curso = A === +hoyISO().slice(0, 4), l = [];
     const p = TB.v ? (d / TB.v * 100).toFixed(1) + '%' : '';
-    l.push(`${A} ${curso ? 'lleva' : 'vendió'} <b>${$$(Math.abs(d))} ${d >= 0 ? 'más' : 'menos'}</b> que ${B}${p ? ' (' + (d >= 0 ? '+' : '−') + p.replace('-', '') + ')' : ''}.`);
+    if (x.comp) {
+      l.push(`${A} lleva <b>${$$(TA.v)}</b>; todo ${B} (mismos meses) fue <b>${$$(TB.v)}</b>.`);
+      l.push(d >= 0 ? `<b>Ya superaste ${B}</b> por ${$$(d)}.` : `Te faltan <b>${$$(-d)}</b> para igualar ${B} · llevas el <b>${TB.v ? (TA.v / TB.v * 100).toFixed(1) : 0}%</b>.`);
+      const rest = x.okB.filter(m => !x.ok.includes(m)); if (rest.length && d < 0) l.push(`En ${B}, los meses que aún no llegan (${rest.map(m => DM[m - 1]).join(', ')}) sumaron ${$$(rest.reduce((t, m) => t + ((x.obj(B, m).m || {}).v || 0), 0))}.`);
+    } else l.push(`${A} ${curso ? 'lleva' : 'vendió'} <b>${$$(Math.abs(d))} ${d >= 0 ? 'más' : 'menos'}</b> que ${B}${p ? ' (' + (d >= 0 ? '+' : '−') + p.replace('-', '') + ')' : ''}.`);
     const abajo = dif.filter(o => o.d < 0), arriba = dif.filter(o => o.d > 0);
     if (dif.length > 1) l.push(abajo.length ? (abajo.length === dif.length ? `Todos los meses quedaron abajo de ${B}.` : `Quedaron abajo: <b>${abajo.map(o => DM[o.m - 1]).join(', ')}</b> (${abajo.length} de ${dif.length} meses).`) : `Todos los meses quedaron arriba de ${B}.`);
     if (dif.length > 1 && arriba.length) { const mx = arriba.reduce((a, b) => b.d > a.d ? b : a); l.push(`<b>${DM[mx.m - 1]}</b> fue el mes que más aportó (+${$$(mx.d)}).`); }
@@ -1455,7 +1482,7 @@ const App = (() => {
     const vals = []; x.filas.forEach(y => x.ms.forEach(mm => { const v = celda(y, mm); if (v) vals.push(Math.abs(v)); }));
     const mx = Math.max(1, ...vals);
     const td = (v, ast) => v === null ? '<td class="muted">—</td>' : `<td style="background:rgba(66,133,224,${(Math.max(0, v) / mx * .8 + .06).toFixed(2)});${v / mx > .55 ? 'color:#fff;' : ''}font-weight:600">${fmt(v)}${ast ? '*' : ''}</td>`;
-    const tot = y => x.ok.reduce((s, mm) => s + (val(x.obj(y, mm).m) || 0), 0);
+    const tot = y => (y === x.A ? x.ok : x.okB).reduce((s, mm) => s + (val(x.obj(y, mm).m) || 0), 0);
     $('#cxMapa').innerHTML = `<table class="cx-mapa"><thead><tr><th></th>${x.ms.map(mm => `<th>${DM[mm - 1]}</th>`).join('')}<th>Total</th></tr></thead><tbody>
       ${x.filas.map(y => `<tr class="${y === x.A ? 'cx-a' : y === x.B ? 'cx-b' : ''}"><th>${y}</th>${x.ms.map(mm => td(celda(y, mm), x.dia && y !== x.A && mm === x.hM)).join('')}<td><b>${fmtT(dr2(tot(y)))}</b></td></tr>`).join('')}
       <tr class="cx-cambio"><th>Cambio</th>${x.ms.map(mm => x.ok.includes(mm) ? `<td>${chipDelta(celda(x.A, mm) || 0, celda(x.B, mm) || 0, met === 'c')}</td>` : '<td></td>').join('')}<td>${chipDelta(tot(x.A), tot(x.B), met === 'c')}</td></tr></tbody></table>${x.dia ? `<p class="muted peq" style="margin:4px 0 0">* ${DM[x.hM - 1]}: del 1 al ${x.dia} en los años anteriores, para compararlo justo contra lo que va del mes.</p>` : ''}`;
@@ -15454,7 +15481,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashPerAbrir, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
