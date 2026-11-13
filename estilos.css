@@ -1121,6 +1121,9 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
 .ev-sede img { width: 64px; height: 44px; object-fit: contain; background: #fff; border-radius: 8px; padding: 3px; flex: none; }
 .ev-sede-sin { width: 64px; text-align: center; font-size: 26px; flex: none; }
 @media (min-width: 900px) { .ev-plant-bar canvas { width: 150px; height: auto; max-height: 200px; } }
+.ev-chip-ed { background: none; border: 0; cursor: pointer; font-size: 13px; padding: 0 0 0 4px; opacity: .75; }
+.ev-chip-ed:hover { opacity: 1; }
+.ev-capa { z-index: 3000; }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

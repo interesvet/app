@@ -12411,7 +12411,7 @@ const App = (() => {
         <label>Duración<select id="evDur">${opts([[30, '30 min'], [60, '1 hora'], [90, '1 h 30 min'], [120, '2 horas'], [180, '3 horas'], [240, '4 horas'], [360, '6 horas'], [480, 'Todo el día (8 h)']], String(e.duracion || 60))}</select></label></div>
       <div id="evPres" style="${e.tipo === 'Virtual' ? 'display:none' : ''}">
         <div class="fila"><label style="flex:1 1 220px">📍 Sede guardada<select id="evSedeSel" onchange="App.evSedeElegir(this.value)"><option value="">Cargando…</option></select></label>
-          <label class="check" id="evSedeLogoL" style="display:none"><input type="checkbox" id="evSedeLogo" ${e.sedeLogo === false ? '' : 'checked'}> Mostrar su logotipo en la invitación</label></div>
+          <button type="button" class="btn fijo" id="evSedeEd" style="display:none" onclick="App.evSedeEditar(S_evSedeId())">✏️ Editar sede</button></div>
         <div class="rejilla"><label>Sede<input id="evSede" list="evSedes" value="${esc(e.sede || '')}" placeholder="Ej. Matriz, salón, rancho…"><datalist id="evSedes">${(D().sucursales || []).filter(x => !x.cerrada).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist></label>
         <label>Dirección<input id="evDir" value="${esc(e.direccion || '')}" placeholder="Calle, número, colonia, ciudad"></label></div>
         <label>Enlace de Google Maps (opcional)<input id="evMapa" value="${esc(e.mapa || '')}" placeholder="Pega aquí la ubicación compartida"></label>
@@ -12444,7 +12444,7 @@ const App = (() => {
       <div class="acciones"><button class="btn" onclick="${e.id ? `App.verEvento('${esc(e.id)}')` : 'App.cerrarModal()'}">Cancelar</button><button class="btn primario" id="evBtn" onclick="App.guardarEvento()">${e.id ? '💾 Guardar cambios' : '🤝 Crear reunión'}</button></div>`);
     S.evPon = (e.ponentes || []).map(x => Object.assign({}, x)); S.evOrgSel = (e.organizadores || []).map(x => x.id); S.evFondoNuevo = ''; S.evExtNueva = ''; S.evOrgLogo = ''; evPonPintar(); evOrgCargar();
     const fm = $('.ev-form'); if (fm) { fm.addEventListener('input', evPrevProgramar); fm.addEventListener('change', evPrevProgramar); fm.addEventListener('click', ev => { if (ev.target.closest('button')) evPrevProgramar(); }); }
-    evCatalogos().then(() => { const sl = $('#evSedeSel'); if (sl) { sl.innerHTML = evSedeOpts(); const sd = (S.evSedes || []).find(x => x.id === S.evSedeId); const l = $('#evSedeLogoL'); if (l) l.style.display = sd && sd.logo ? '' : 'none'; } evPrevActualizar(); });
+    evCatalogos().then(() => { const sl = $('#evSedeSel'); if (sl) { sl.innerHTML = evSedeOpts(); const sd = (S.evSedes || []).find(x => x.id === S.evSedeId); const l = $('#evSedeEd'); if (l) l.style.display = sd ? '' : 'none'; } evPrevActualizar(); });
     evCuenta();
   }
   function evPonLeer() { document.querySelectorAll('[data-pn]').forEach(i => { const k = +i.dataset.pn; if (S.evPon[k]) S.evPon[k][i.dataset.c] = i.value; }); }
@@ -12463,10 +12463,58 @@ const App = (() => {
     evPonPintar(); evPrevProgramar();
   }
   function evPonQuitar(i) { evPonLeer(); S.evPon.splice(i, 1); evPonPintar(); }
+  /** Ventana encima del formulario (no lo cierra). */
+  function evCapa(titulo, html) {
+    const c = document.createElement('div'); c.className = 'modal clave-modal ev-capa';
+    c.innerHTML = `<div class="modal-caja" style="max-width:520px"><div class="modal-cab"><h3>${titulo}</h3></div><div class="modal-cuerpo">${html}</div></div>`;
+    document.body.appendChild(c); return c;
+  }
+  window.S_evSedeId = () => S.evSedeId;
+  /** ✏️ Editar o quitar un organizador guardado. */
+  function evOrgEditar(id) {
+    const o = (S.evOrgs || []).find(x => x.id === id); if (!o) return;
+    const c = evCapa('✏️ Organizador', `<label>Nombre<input id="oeN" value="${esc(o.nombre)}"></label>
+      <p>${o.logo ? `<img src="${o.logo}" style="height:56px;max-width:180px;background:#fff;border-radius:8px;padding:4px">` : '<span class="muted">Sin logotipo</span>'}</p>
+      <label>Cambiar logotipo (opcional)<input type="file" id="oeL" accept="image/png,image/jpeg,image/webp"></label>
+      <div class="acciones"><button class="btn" data-a="x">Cancelar</button><button class="btn" data-a="q">🗑️ Quitar de la lista</button><button class="btn primario" data-a="g">💾 Guardar</button></div>`);
+    c.addEventListener('click', async ev => {
+      const a = (ev.target.closest('[data-a]') || {}).dataset; if (!a || !a.a) return;
+      if (a.a === 'x') return c.remove();
+      if (a.a === 'q') { if (!confirm('¿Quitar "' + o.nombre + '" de tus organizadores? Las reuniones ya creadas lo dejarán de mostrar.')) return;
+        try { await pedir('quitarOrganizador', { id: id }); S.evOrgs = S.evOrgs.filter(x => x.id !== id); S.evOrgSel = (S.evOrgSel || []).filter(x => x !== id); c.remove(); evOrgCargar(); evPrevProgramar(); toast('✔ Organizador quitado'); } catch (e) {} return; }
+      const n = c.querySelector('#oeN').value.trim(); if (!n) return toast('Escribe el nombre', true);
+      const f = (c.querySelector('#oeL').files || [])[0];
+      try { const logo = f ? await evLogoReducido(f) : undefined, r = await pedir('guardarOrganizador', { id: id, nombre: n, logo: logo });
+        o.nombre = r.nombre; if (logo) { if (S.evLogoSF) delete S.evLogoSF[o.logo]; o.logo = logo; } c.remove(); evOrgCargar(); evPrevProgramar(); toast('✔ Organizador actualizado'); } catch (e) {}
+    });
+  }
+  /** ✏️ Editar la sede guardada sin salir del formulario. */
+  function evSedeEditar(id) {
+    const x = (S.evSedes || []).find(z => z.id === id); if (!x) return;
+    const c = evCapa('✏️ Sede', `<label>Nombre<input id="seN" value="${esc(x.nombre)}"></label><label>Dirección<input id="seD" value="${esc(x.direccion || '')}"></label>
+      <label>Ubicación (enlace de Google Maps)<input id="seM" value="${esc(x.mapa || '')}"></label>
+      ${x.logo ? `<p><img src="${x.logo}" style="height:48px;background:#fff;border-radius:6px;padding:3px"></p>` : ''}<label>Logotipo (opcional)<input type="file" id="seL" accept="image/png,image/jpeg,image/webp"></label>
+      <div class="acciones"><button class="btn" data-a="x">Cancelar</button><button class="btn primario" data-a="g">💾 Guardar</button></div>`);
+    c.addEventListener('click', async ev => {
+      const a = (ev.target.closest('[data-a]') || {}).dataset; if (!a || !a.a) return;
+      if (a.a === 'x') return c.remove();
+      const f = (c.querySelector('#seL').files || [])[0];
+      try { await pedir('guardarSedeEvento', { id: id, nombre: c.querySelector('#seN').value.trim(), direccion: c.querySelector('#seD').value.trim(), mapa: c.querySelector('#seM').value.trim(), logo: f ? await evLogoReducido(f) : undefined });
+        S.evSedes = null; await evCatalogos(); c.remove(); const sl = $('#evSedeSel'); if (sl) { sl.innerHTML = evSedeOpts(); evSedeElegir(id); } toast('✔ Sede actualizada'); } catch (e) {}
+    });
+  }
+  /** 🏢 Lista de organizadores guardados (desde la pestaña Reuniones). */
+  async function evOrganizadores() {
+    S.evOrgs = null; await evCatalogos();
+    modal('🏢 Organizadores', `<p class="muted peq">Instituciones y empresas que organizan pláticas contigo. Sus logotipos salen en la invitación junto al tuyo.</p>
+      <div id="evOrgLista">${evOrgListaHtml()}</div><div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  function evOrgListaHtml() { return (S.evOrgs || []).length ? S.evOrgs.map(o => `<div class="ev-sede" onclick="App.evOrgEditar('${esc(o.id)}')">${o.logo ? `<img src="${o.logo}" alt="">` : '<span class="ev-sede-sin">🏢</span>'}<div><b>${esc(o.nombre)}</b><br><small class="muted">Toca para editar</small></div></div>`).join('') : '<p class="muted">Aún no hay organizadores guardados. Se agregan al crear una reunión.</p>'; }
   async function evOrgCargar(forzar) {
     if (!S.evOrgs || forzar) { try { S.evOrgs = (await pedir('organizadores', {}, true)).organizadores || []; } catch (x) { S.evOrgs = []; } }
+    const ol = $('#evOrgLista'); if (ol) ol.innerHTML = evOrgListaHtml();
     const el = $('#evOrgs'); if (!el) return;
-    el.innerHTML = S.evOrgs.length ? S.evOrgs.map(o => `<label class="ev-chip ev-org ${S.evOrgSel.indexOf(o.id) >= 0 ? 'on' : ''}"><input type="checkbox" ${S.evOrgSel.indexOf(o.id) >= 0 ? 'checked' : ''} onchange="App.evOrgMarcar('${esc(o.id)}', this.checked)">${o.logo ? `<img src="${o.logo}" alt="">` : ''} ${esc(o.nombre)}</label>`).join('') : '<span class="muted peq">Aún no hay coorganizadores guardados.</span>';
+    el.innerHTML = S.evOrgs.length ? S.evOrgs.map(o => `<label class="ev-chip ev-org ${S.evOrgSel.indexOf(o.id) >= 0 ? 'on' : ''}"><input type="checkbox" ${S.evOrgSel.indexOf(o.id) >= 0 ? 'checked' : ''} onchange="App.evOrgMarcar('${esc(o.id)}', this.checked)">${o.logo ? `<img src="${o.logo}" alt="">` : ''} ${esc(o.nombre)}<button type="button" class="ev-chip-ed" title="Editar" onclick="event.preventDefault();event.stopPropagation();App.evOrgEditar('${esc(o.id)}')">✏️</button></label>`).join('') : '<span class="muted peq">Aún no hay coorganizadores guardados.</span>';
   }
   function evOrgBuscar(q) {
     q = String(q || '').trim().toLowerCase(); const el = $('#evOrgRes'); if (!el) return;
@@ -12559,7 +12607,7 @@ const App = (() => {
       descripcion: $('#evDesc').value.trim(), invitados: inv, calendario: $('#evCal').checked, avisoApp: $('#evAviso').checked,
       ponentes: (evPonLeer(), S.evPon.filter(x => String(x.nombre || '').trim())), organizadores: S.evOrgSel.slice(),
       fondo: S.evFondoNuevo || undefined, quitarFondo: !!($('#evFondoQ') && $('#evFondoQ').checked),
-      plantilla: S.evPlantSel, subtitulo: $('#evSub').value.trim(), externa: S.evExtNueva || undefined, quitarExterna: !!($('#evExtQ') && $('#evExtQ').checked), sedeId: S.evSedeId && (S.evSedes || []).some(x => x.id === S.evSedeId && x.nombre === $('#evSede').value.trim()) ? S.evSedeId : '', sedeLogo: !$('#evSedeLogo') || $('#evSedeLogo').checked };
+      plantilla: S.evPlantSel, subtitulo: $('#evSub').value.trim(), externa: S.evExtNueva || undefined, quitarExterna: !!($('#evExtQ') && $('#evExtQ').checked), sedeId: S.evSedeId && (S.evSedes || []).some(x => x.id === S.evSedeId && x.nombre === $('#evSede').value.trim()) ? S.evSedeId : '', sedeLogo: false };
     if (!p.tema) return toast('Escribe el tema de la reunión', true);
     if (!p.fecha || !p.hora) return toast('Indica la fecha y la hora', true);
     if (!S.evEd && !inv.length) return toast('Elige al menos un invitado', true);
@@ -13003,8 +13051,7 @@ const App = (() => {
     await evCatalogos();
     const f = new Date(String(e.inicio || '').replace(' ', 'T')), ok = !isNaN(f);
     const orgs = (e.organizadores || []).map(o => (S.evOrgs || []).find(z => z.id === o.id)).filter(Boolean);
-    const sd = e.tipo !== 'Virtual' && e.sedeId && e.sedeLogo !== false ? (S.evSedes || []).find(x => x.id === e.sedeId) : null;
-    const lista = orgs.map(o => ({ src: o.logo, nombre: o.nombre })).concat(sd && sd.logo ? [{ src: sd.logo, nombre: sd.nombre }] : []);
+    const lista = orgs.map(o => ({ src: o.logo, nombre: o.nombre }));   /* solo organizadores; la sede no va en el encabezado */
     const [mio, ...imgs] = await Promise.all([evLogoSF(logoHD())].concat(lista.map(o => evLogoSF(o.src))));
     const orgsD = lista.map((o, i) => ({ img: imgs[i], nombre: o.nombre })).filter(o => o.img);
     const dia = ok ? evDia(e.inicio) : 'Fecha por definir';
@@ -13058,7 +13105,7 @@ const App = (() => {
     evPonLeer();
     return { tema: g('evTema'), tipo: virt ? 'Virtual' : 'Presencial', inicio: g('evFecha') ? g('evFecha') + 'T' + (g('evHora') || '10:00') : '', horaFin: evDurFin(g('evFecha'), g('evHora'), g('evDur')),
       sede: g('evSede'), direccion: g('evDir'), plataforma: g('evPlat'), subtitulo: g('evSub'), ponentes: (S.evPon || []).filter(p => String(p.nombre || '').trim()),
-      organizadores: (S.evOrgSel || []).map(id => ({ id: id })), sedeId: S.evSedeId || '', sedeLogo: !$('#evSedeLogo') || $('#evSedeLogo').checked, descripcion: g('evDesc') };
+      organizadores: (S.evOrgSel || []).map(id => ({ id: id })), sedeId: S.evSedeId || '', sedeLogo: false, descripcion: g('evDesc') };
   }
   function evPrevProgramar() { clearTimeout(S.evPrevT); S.evPrevT = setTimeout(evPrevActualizar, 280); }
   async function evPrevActualizar() {
@@ -13086,7 +13133,7 @@ const App = (() => {
   function evSedeElegir(id) {
     S.evSedeId = id; const sd = (S.evSedes || []).find(x => x.id === id);
     if (sd) { $('#evSede').value = sd.nombre; $('#evDir').value = sd.direccion || ''; $('#evMapa').value = sd.mapa || ''; }
-    const l = $('#evSedeLogoL'); if (l) l.style.display = sd && sd.logo ? '' : 'none';
+    const l = $('#evSedeEd'); if (l) l.style.display = sd ? '' : 'none';
     evPrevProgramar();
   }
   async function evSedeGuardarActual() {
@@ -13209,7 +13256,7 @@ const App = (() => {
       <label>Estado<select id="reuEst">${opts([['', 'Todas'], ['activas', 'Pendientes y confirmadas']].concat(Object.keys(REU_TXT).map(k => [k, REU_TXT[k]])), S.fReu.est)}</select></label>
       <button class="btn fijo" onclick="App.cargarReuniones(true)">⟳ Actualizar</button></div>
       <p class="muted peq" style="margin:4px 0 0">Para invitar a un cliente abre su ficha (Clientes) y toca <b>📅 Invitar a reunión</b>.${puede('dueno') || U().rol === 'Administrador' ? ' Para reunirte con una sucursal: <button class="btn chico" onclick="App.formReunionSuc()">🏬 Invitar a una sucursal</button>' : ''}</p></div><div id="reuRes"><div class="vacio">Cargando…</div></div>`;
-    $('#vista').insertAdjacentHTML('afterbegin', '<div class="acciones izq" style="margin:0 0 8px"><button class="btn primario" onclick="App.formEvento()">🤝 Crear reunión</button><button class="btn" onclick="App.evSedes()">📍 Sedes</button><button class="btn" onclick="App.evPasadas()">🗂️ Reuniones anteriores</button></div><div id="evProx"></div>'); evProximas('#evProx');
+    $('#vista').insertAdjacentHTML('afterbegin', '<div class="acciones izq" style="margin:0 0 8px"><button class="btn primario" onclick="App.formEvento()">🤝 Crear reunión</button><button class="btn" onclick="App.evSedes()">📍 Sedes</button><button class="btn" onclick="App.evOrganizadores()">🏢 Organizadores</button><button class="btn" onclick="App.evPasadas()">🗂️ Reuniones anteriores</button></div><div id="evProx"></div>'); evProximas('#evProx');
     $('#reuQ').oninput = e => { S.fReu.q = e.target.value; pintarReuniones(); };
     $('#reuEst').onchange = e => { S.fReu.est = e.target.value; pintarReuniones(); };
     cargarReuniones();
@@ -15136,7 +15183,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
