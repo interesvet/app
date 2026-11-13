@@ -1,0 +1,16 @@
+# Prueba de humo: en cada publicación abre la app con datos de prueba, recorre las secciones
+# y marca en rojo (con aviso por correo de GitHub) si aparece un error del programa.
+name: Prueba de humo
+on: [push, workflow_dispatch]
+jobs:
+  humo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-save playwright@1.48.2
+      - run: npx playwright install --with-deps chromium
+      - run: node tools/pruebas/humo.js

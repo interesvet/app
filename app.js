@@ -36,6 +36,9 @@ const App = (() => {
     },
     del(k) { try { localStorage.removeItem('iv_' + k); } catch (e) {} }
   };
+  /* 🐞 errores del programa (no avisos normales): ver REGISTRO DE ERRORES */
+  const ERR_SRV = /(TypeError|ReferenceError|SyntaxError|RangeError|Cannot read|Cannot set|is not defined|is not a function|undefined is not|null is not|Exception:|Service invoked too many|Exceeded maximum|tiempo de ejecuci|Se superó|Internal error|Error interno)/i;
+  const ERR_RUIDO = /(ResizeObserver loop|^Script error\.?$|Load failed|NetworkError|Failed to fetch|AbortError|operation was aborted|Sin conexión|Señal débil)/i;
   /** Al abrir: completa lo guardado con la copia de IndexedDB (la más reciente gana; en la cola no se pierde ninguna operación). */
   async function cargarLocal() {
     if (typeof indexedDB === 'undefined') return;
@@ -453,7 +456,7 @@ const App = (() => {
           const r = JSON.parse(txt);
           if (r.ok) { if (CQ.guardable(accion)) CQ.guardar(accion, params || {}, r.data, txt.length); return res(r.data); }
           if (String(r.error).indexOf('SESION') === 0) { salir(r.error.replace('SESION: ', '')); }
-          rej(new Error(r.error));
+          { const e = new Error(r.error); e.srv = true; rej(e); }
         })
         .withFailureHandler(err => {
           if (n < 1 && navigator.onLine !== false && (CQ.guardable(accion) || /^(listar|detalle|ver|minis|reporte|historial|folio|version|bajar|portafolio|pdf|dashboard|datos|bootstrap|archivos|existencias|kardex|pedido)/i.test(accion))) return setTimeout(() => intento(n + 1), 1500 + Math.random() * 1000);
@@ -483,7 +486,7 @@ const App = (() => {
         throw new Error('Contraseña incorrecta');
       }
     }
-    catch (e) { if (!silencioso && String(e.message || '').indexOf('LIMITE_CREDITO::') !== 0) toast(e.message, true); throw e; }
+    catch (e) { if (e && e.srv && ERR_SRV.test(String(e.message || ''))) errAnotar(e.message, 'acción: ' + accion, 'servidor'); if (!silencioso && String(e.message || '').indexOf('LIMITE_CREDITO::') !== 0) toast(e.message, true); throw e; }
     finally { if (!silencioso) cargando(false); }
   }
   /** 📄 Tope del convenio rebasado: solo el dueño lo autoriza; el monto autorizado es el nuevo tope. */
@@ -1032,6 +1035,98 @@ const App = (() => {
   /** Para volver a la misma sección después de recargar (actualización de la app). */
   function guardarVolver() { try { if (S.vista && S.token) LS.set('volverA', { v: S.vista, t: Date.now() }); } catch (e) {} }
   window.addEventListener('pagehide', guardarVolver);
+  /* =====================================================================================
+   *  🐞 REGISTRO DE ERRORES: lo que falla en el equipo de alguien (un error del programa, no un aviso normal)
+   *  se anota en el equipo y se manda en segundo plano; el dueño lo ve en Configuración › 🐞 Errores de la app.
+   * ===================================================================================== */
+  function errVersion() { try { return S.ver && S.ver.act ? String(textoVersion(S.ver.act).n || '') : ''; } catch (e) { return ''; } }
+  function errAnotar(msg, det, origen) {
+    try {
+      msg = String(msg || '').trim().slice(0, 500); if (!msg || ERR_RUIDO.test(msg)) return;
+      const l = LS.get('errCola', []) || [], k = msg + '|' + (S.vista || ''), ya = l.find(e => e.k === k);
+      if (ya) { ya.veces = (ya.veces || 1) + 1; ya.t = new Date().toISOString(); }
+      else l.push({ k: k, t: new Date().toISOString(), msg: msg, det: (origen ? '[' + origen + '] ' : '') + String(det || '').slice(0, 1800), vista: S.vista || '', ver: errVersion(), equipo: String(navigator.userAgent || '').slice(0, 200), veces: 1 });
+      LS.set('errCola', l.slice(-30));
+      clearTimeout(S.errT); S.errT = setTimeout(errEnviar, 8000);
+    } catch (e) {}
+  }
+  async function errEnviar() {
+    const l = LS.get('errCola', []) || [];
+    if (!l.length || S.errEnviando || !S.token || navigator.onLine === false) return;
+    S.errEnviando = true;
+    try {
+      await call('registrarErrores', { lista: l.map(e => ({ t: e.t, msg: e.msg, det: e.det, vista: e.vista, ver: e.ver, equipo: e.equipo, veces: e.veces })) });
+      const resto = (LS.get('errCola', []) || []).filter(e => !l.some(x => x.k === e.k && x.t === e.t)); LS.set('errCola', resto);
+    } catch (e) { /* se reintenta en el siguiente error o al abrir la app */ }
+    finally { S.errEnviando = false; }
+  }
+  window.addEventListener('error', ev => { if (!ev || (!ev.message && !ev.error)) return; errAnotar(ev.message || (ev.error && ev.error.message), (ev.error && ev.error.stack) || ((ev.filename || '') + ':' + (ev.lineno || '') + ':' + (ev.colno || '')), 'js'); });
+  window.addEventListener('unhandledrejection', ev => {
+    const r = ev && ev.reason; if (!r) return;
+    if (r.cancelada || r.red) return;
+    const m = r.message || String(r);
+    if (r.srv && !ERR_SRV.test(m)) return;   /* aviso normal del servidor ("Elige la sucursal"…) */
+    errAnotar(m, r.stack || '', r.srv ? 'servidor' : 'promesa');
+  });
+
+  /* ---------- Configuración › 🐞 Errores de la app (dueño) ---------- */
+  async function cargarErroresCfg() {
+    const el = $('#cfErr'); if (!el) return;
+    let r; try { r = await pedir('erroresApp', { max: 200 }, true); }
+    catch (e) { el.innerHTML = '<span class="muted">' + esc(e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message || '') ? 'Se activa con el servidor 248.' : e.message) + '</span>'; return; }
+    S.errLista = r.lista || [];
+    const hoy = hoyISO().split('-').reverse().join('/'), deHoy = S.errLista.filter(x => x.fecha.slice(0, 10) === hoy).length;
+    el.innerHTML = !S.errLista.length ? '<p class="ok-txt" style="margin:0">✔ Sin errores registrados.</p>' :
+      `<p style="margin:0 0 6px"><b>${nf(r.total)}</b> registrados${deHoy ? ' · <b class="error">' + deHoy + ' hoy</b>' : ''}. Los más recientes:</p>
+      ${tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Quién', h: x => esc(x.usuario) }, { t: 'Pantalla', h: x => esc(x.vista) }, { t: 'Error', h: x => `<small>${esc(x.msg.slice(0, 120))}</small>` }], S.errLista.slice(0, 5))}
+      <div class="fila" style="margin-top:8px"><button class="btn fijo" onclick="App.verErroresApp()">Ver todos</button><button class="btn fijo" onclick="App.copiarErroresApp()">📋 Copiar para soporte</button></div>`;
+  }
+  function errTexto(l) { return l.map(x => [x.fecha, x.usuario + (x.rol ? ' (' + x.rol + ')' : ''), 'v' + x.ver, x.vista, (x.veces > 1 ? x.veces + '× ' : '') + x.msg, x.det, x.equipo].join(' | ')).join('\n'); }
+  function verErroresApp() {
+    const l = S.errLista || [];
+    modal('🐞 Errores de la app', `<p class="muted" style="margin-top:0">Lo que ha fallado en los equipos de tu personal. Cópialo y mándamelo para corregirlo; después puedes vaciar la lista.</p>
+      <div class="tabla-cont" style="max-height:55vh">${tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Quién', h: x => esc(x.usuario) + `<br><small class="muted">${esc(x.rol)}</small>` }, { t: 'Versión', h: x => 'v' + esc(x.ver) },
+        { t: 'Pantalla', h: x => esc(x.vista) }, { t: 'Error', h: x => `<b>${x.veces > 1 ? x.veces + '× ' : ''}</b>${esc(x.msg)}<br><small class="muted">${esc(x.det.slice(0, 300))}</small>` }], l, { vacio: 'Sin errores' })}</div>
+      <div class="acciones"><button class="btn peligro" onclick="App.vaciarErroresApp()">🧹 Vaciar lista</button><button class="btn" onclick="App.copiarErroresApp()">📋 Copiar para soporte</button><button class="btn primario" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  async function copiarErroresApp() {
+    const t = errTexto(S.errLista || []); if (!t) return toast('No hay errores que copiar');
+    try { await navigator.clipboard.writeText(t); toast('📋 Copiado: pégalo en el chat de soporte'); }
+    catch (e) { modal('📋 Errores', `<textarea style="width:100%;height:50vh" readonly>${esc(t)}</textarea>`); }
+  }
+  async function vaciarErroresApp() {
+    if (!confirm('¿Vaciar la lista de errores? Hazlo después de copiarla y mandarla.')) return;
+    try { await pedir('vaciarErroresApp', {}); S.errLista = []; cerrarModal(); cargarErroresCfg(); toast('🧹 Lista vaciada'); } catch (e) {}
+  }
+
+  /* =====================================================================================
+   *  ✨ NOVEDADES: después de cada actualización, un aviso corto con lo que cambió (una sola vez por equipo).
+   *  p: permiso necesario para ver ese punto (sin p: todos).
+   * ===================================================================================== */
+  const NOVEDADES = [
+    { v: 316, f: '13/11/2026', t: [{ x: 'Este aviso: después de cada actualización verás aquí lo nuevo de la app.' },
+      { x: 'La app anota sola los errores que ocurran en cualquier equipo, para corregirlos más rápido. Los ves en Configuración › 🐞 Errores de la app.', p: 'dueno' },
+      { x: 'Reclamaciones: los enlaces a la nota de venta y a la orden de compra vuelven a abrir.' }] },
+    { v: 315, f: '13/11/2026', t: [{ x: 'Inicio: el panel de periodos vuelve a su lugar normal (ya no se queda fijo al bajar).', p: 'dashboard' }] },
+    { v: 314, f: '13/11/2026', t: [{ x: 'Inicio › ¿Qué cambió?: nuevo bloque de proveedores (compras a cada proveedor y ventas por laboratorio).', p: 'dashboard' }] },
+    { v: 313, f: '13/11/2026', t: [{ x: 'Inicio: la presentación de cada producto aparece debajo de su nombre en “Qué productos explican la diferencia”.', p: 'dashboard' }] },
+    { v: 312, f: '13/11/2026', t: [{ x: 'Inicio: compara “⏱ Hasta hoy” (mismos días) o “📅 Año completo”.', p: 'dashboard' }] },
+    { v: 311, f: '13/11/2026', t: [{ x: 'Inicio renovado: compara los años que elijas, mapa de meses, lectura rápida, diferencia mes a mes y qué productos y clientes explican el cambio. Las caducidades pasan al final.', p: 'dashboard' }] },
+    { v: 310, f: '13/11/2026', t: [{ x: 'Inicio: elige años, semestres, trimestres y meses y el tablero cambia al instante, sin esperar.', p: 'dashboard' }] }
+  ];
+  const novVisibles = desde => NOVEDADES.filter(n => n.v > desde).map(n => Object.assign({}, n, { t: n.t.filter(i => !i.p || puede(i.p)) })).filter(n => n.t.length);
+  const novHtml = l => l.map(n => `<div class="nov-v"><b>Versión ${n.v}</b> <small class="muted">· ${esc(n.f)}</small><ul>${n.t.map(i => '<li>' + esc(i.x) + '</li>').join('')}</ul></div>`).join('');
+  function novedadesAuto(intento) {
+    try {
+      const ult = NOVEDADES[0].v, vista = LS.get('novVista', 315);
+      if (vista >= ult) return;
+      if (document.body.classList.contains('con-bienv') || !$('#modal').classList.contains('oculto')) { if ((intento || 0) < 90) setTimeout(() => novedadesAuto((intento || 0) + 1), 2000); return; }
+      const l = novVisibles(vista).slice(0, 5); LS.set('novVista', ult);
+      if (!l.length) return;
+      modal('✨ Novedades de la app', novHtml(l) + '<div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Entendido</button></div>');
+    } catch (e) {}
+  }
+  function verNovedades() { modal('✨ Novedades de la app', (novHtml(novVisibles(0).slice(0, 12)) || '<p class="muted">Sin novedades.</p>') + '<div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Cerrar</button></div>'); }
   /** Baja de nuevo los archivos de la app (no toca la sesión ni lo pendiente de enviar). */
   function actualizarApp() {
     if (navigator.onLine === false) return toast('Necesitas señal para actualizar la app', true);
@@ -1044,6 +1139,7 @@ const App = (() => {
     marcarRed(S.online); pintarCola(); ir(regreso ? volver.v : S.vista, !!regreso); setTimeout(() => contarAnotaciones(), 5000); setTimeout(() => contarAutorizaciones(), 6000);
     botonBienvenida(); if (!abrirDesdeQR() && !regreso) bienvenida();
     if (regreso) setTimeout(() => toast('✨ App actualizada' + (S.ver && S.ver.act ? ' · versión ' + (textoVersion(S.ver.act).n || '') : '')), 1500);   // al abrir la app (o desde el QR de una tarjeta: directo a la venta): siempre la pantalla de bienvenida con el menú (celular, iPad y Mac)
+    setTimeout(() => novedadesAuto(0), 3000); setTimeout(errEnviar, 20000);
     revisarVersionApp(); revisarVersion(); if (!S.verTimer) { S.verTimer = setInterval(() => { revisarVersion(); revisarVersionApp(); }, 15 * 60000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { revisarVersion(); revisarVersionApp(); } }); }
     // logotipos de sucursal guardados con fondo blanco: el administrador los deja sin fondo (una vez, en segundo plano)
     if (U().rol === 'Administrador' && LS.get('minisSucRev', '') !== hoyISO()) setTimeout(() => { try { LS.set('minisSucRev', hoyISO()); repararMinisSuc(D().sucursales || []); } catch (e) {} }, 30000);
@@ -14748,11 +14844,12 @@ const App = (() => {
   }
   V.config = async () => {
     const u = U();
-    setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) { cargarSucsCfg(); cargarRespaldos(); } }, 0);
+    setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) { cargarSucsCfg(); cargarRespaldos(); cargarErroresCfg(); } }, 0);
     $('#vista').innerHTML = `<div class="tarjeta"><h3>Mi sesión</h3><p>${esc(u.nombre)} · <b>${esc(u.rolNombre || u.rol)}</b> · ${esc(u.correo)}<br>Sucursal: ${esc(sucNom(u.sucursal))} · Acceso: ${u.todasSucursales ? 'todas las sucursales' : 'solo su sucursal'}</p>
       <p class="muted">Datos guardados en este dispositivo: ${(D().productos || []).length} productos, ${(D().clientes || []).length} clientes, ${(D().stock || []).length} lotes. Última actualización: ${D().servidor ? new Date(D().servidor).toLocaleString('es-MX') : '—'}</p>
-      <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}${puede('seguimiento') ? '<button class="btn fijo" onclick="App.formPlantillas()">📲 Mensajes de WhatsApp</button>' : ''}${puede('ventas') || puede('dueno') ? '<button class="btn fijo" onclick="App.formCumple()">🎂 Regalo de cumpleaños</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
+      <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button><button class="btn fijo" onclick="App.verNovedades()">✨ Novedades</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}${puede('seguimiento') ? '<button class="btn fijo" onclick="App.formPlantillas()">📲 Mensajes de WhatsApp</button>' : ''}${puede('ventas') || puede('dueno') ? '<button class="btn fijo" onclick="App.formCumple()">🎂 Regalo de cumpleaños</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
       ${puede('dueno') ? '<div class="tarjeta"><h3>🛟 Respaldos automáticos</h3><div id="cfResp"><span class="muted">Revisando…</span></div></div>' : ''}
+      ${puede('dueno') ? '<div class="tarjeta"><h3>🐞 Errores de la app</h3><p class="muted" style="margin-top:0">Lo que ha fallado en los equipos de tu personal (errores del programa, no avisos normales). Cópialo y mándalo a soporte para corregirlo.</p><div id="cfErr"><span class="muted">Revisando…</span></div></div>' : ''}
       ${puede('dueno') || u.rol === 'Contador' ? `<div class="tarjeta"><h3>🔐 Cierre de mes</h3><p class="muted">${puede('dueno') ? 'Revisa los pendientes del mes y ciérralo: después, cualquier cambio que altere sus cifras necesita tu autorización y queda registrado.' : 'Meses cerrados por el dueño, sus cifras al cerrar y los cambios posteriores.'}</p><div class="acciones" style="justify-content:flex-start"><button class="btn primario" onclick="App.cierreMes()">📅 Ver meses</button></div></div>` : ''}
       <div class="tarjeta"><h3>Operaciones pendientes de sincronizar (${S.cola.length})</h3>${tabla([{ t: 'Capturada', k: 'creado' }, { t: 'Operación', k: 'desc' }, { t: 'Error', h: o => o.error ? `<span class="error">${esc(o.error)}</span>` : 'En espera' },
         { t: '', h: o => `<button class="btn chico peligro" onclick="App.descartarOp('${o.opId}')">Descartar</button>` }], S.cola.slice().reverse(), { vacio: 'Todo sincronizado ✔' })}
@@ -15116,7 +15213,7 @@ const App = (() => {
     el.innerHTML = `<div class="tarjeta"><div class="un-cab"><div style="min-width:0">
         <h3 style="margin:0">📣 ${esc(d.folio)} ${rclEtq(d.estado)}</h3>
         <p class="muted" style="margin:4px 0 0">${cli ? 'Reclamación de cliente' : 'Reclamación a proveedor'} · ${esc(d.fecha)} ${esc(d.hora || '')} · ${esc(sucNom(d.suc))} · capturó ${esc(d.usuario || '')}</p>
-        <p style="margin:6px 0 0"><b>${esc(cli ? d.cliente : d.proveedor)}</b> · ${cli ? (d.idVenta ? `Nota <a href="#" onclick="event.preventDefault();App.verVenta('${esc(d.idVenta)}')">${esc(d.nota)}</a>` : esc(d.nota || '')) : (d.idOC && puede('compras') ? `Orden <a href="#" onclick="event.preventDefault();App.verCompra('${esc(d.idOC)}')">${esc(d.orden)}</a>` : esc(d.orden || ''))}${(cli ? d.factura : d.facturaProv) ? ' · Factura ' + esc(cli ? d.factura : d.facturaProv) : ''}
+        <p style="margin:6px 0 0"><b>${esc(cli ? d.cliente : d.proveedor)}</b> · ${cli ? (d.idVenta ? `Nota <a href="#" onclick="event.preventDefault();App.verVentaId('${esc(d.idVenta)}')">${esc(d.nota)}</a>` : esc(d.nota || '')) : (d.idOC && puede('compras') ? `Orden <a href="#" onclick="event.preventDefault();App.abrirCompraId('${esc(d.idOC)}')">${esc(d.orden)}</a>` : esc(d.orden || ''))}${(cli ? d.factura : d.facturaProv) ? ' · Factura ' + esc(cli ? d.factura : d.facturaProv) : ''}
           ${d.notaSaldo !== undefined && cli ? ` · saldo de la nota ${$$(d.notaSaldo)}` : ''}${d.ocSaldo !== undefined && !cli ? ` · saldo de la orden ${$$(d.ocSaldo)}` : ''}</p>
         ${d.folioOrigen ? `<p style="margin:4px 0 0">↩️ Viene de la reclamación de cliente <a href="#" onclick="event.preventDefault();App.rclAbrir('${esc(d.idOrigen)}')">${esc(d.folioOrigen)}</a></p>` : ''}
         ${d.folioDerivada ? `<p style="margin:4px 0 0">🏭 Se reclamó al proveedor en <a href="#" onclick="event.preventDefault();App.rclAbrir('${esc(d.idDerivada)}')">${esc(d.folioDerivada)}</a></p>` : ''}
@@ -15469,7 +15566,7 @@ const App = (() => {
     invCambiarVal, formCumple, guardarCumple, cbCumple, agregarLineaVenta, usarMonedero, verMonedero, verMonederoI, monederoWa, monederoPdf, monederoPng,
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
-    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos,
+    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
