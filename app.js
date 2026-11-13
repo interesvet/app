@@ -469,7 +469,7 @@ const App = (() => {
   async function pedir(accion, params, silencioso) {
     if (!silencioso) cargando(true);
     try {
-      try { return await call(accion, params); }
+      try { return await callTope(accion, params, silencioso); }
       catch (e) {   // inventarios y solicitud de factura: el servidor pide la contraseña de quien lo hace
         const m = String(e.message || ''); if (m.indexOf('CLAVE_REQUERIDA::') !== 0) throw e;
         let msg = m.slice(17);
@@ -485,6 +485,38 @@ const App = (() => {
     }
     catch (e) { if (!silencioso && String(e.message || '').indexOf('LIMITE_CREDITO::') !== 0) toast(e.message, true); throw e; }
     finally { if (!silencioso) cargando(false); }
+  }
+  /** 📄 Tope del convenio rebasado: solo el dueño lo autoriza; el monto autorizado es el nuevo tope. */
+  async function callTope(accion, params, silencioso) {
+    try { return await call(accion, params); }
+    catch (e) {
+      const m = String(e.message || ''); if (m.indexOf('TOPE_CONVENIO::') !== 0) throw e;
+      let info = {}; try { info = JSON.parse(m.slice(15)); } catch (x) {}
+      if (!silencioso) cargando(false);
+      const n = await pedirTope(info);
+      if (!n) { const x = new Error('No se guardó: no se autorizó rebasar el tope del convenio'); x.cancelada = true; throw x; }
+      if (!silencioso) cargando(true);
+      return await call(accion, Object.assign({}, params || {}, { __topeAutorizado: n }));
+    }
+  }
+  function pedirTope(i) {
+    return new Promise(res => {
+      const sug = Math.ceil((i.total || 0) / 1000) * 1000, d = document.createElement('div'); d.className = 'modal clave-modal';
+      d.innerHTML = `<div class="modal-caja" style="max-width:440px"><div class="modal-cab"><h3>⛔ Tope del convenio · ${esc(i.nombre || '')}</h3></div><div class="modal-cuerpo">
+        <p style="margin-top:0">Con este traspaso, la mercancía de la sucursal rebasaría el monto máximo de su convenio.</p>
+        <table class="tabla-mini"><tr><td>Mercancía actual <small class="muted">(a su precio de lista, con lo que va en tránsito)</small></td><td class="num">${$$(i.actual)}</td></tr>
+          <tr><td>Este traspaso</td><td class="num">+ ${$$(i.traspaso)}</td></tr><tr><td><b>Quedaría con</b></td><td class="num"><b>${$$(i.total)}</b></td></tr>
+          <tr><td>Tope del convenio</td><td class="num">${$$(i.tope)}</td></tr></table>
+        <label style="margin-top:10px">Nuevo tope que autorizas<input type="number" id="tpN" min="${i.total}" step="1000" value="${sug}"></label>
+        <p class="muted peq">El nuevo tope <b>reemplaza al anterior</b> y se usa desde ahora. El convenio firmado dice ${$$(i.tope)}; si quieres que quede por escrito, genera la nueva versión del convenio y fírmenla.</p>
+        <p class="error" id="tpE" style="display:none"></p>
+        <div class="acciones"><button class="btn" data-a="no">Cancelar</button><button class="btn primario" data-a="si">Autorizar y guardar</button></div></div></div>`;
+      document.body.appendChild(d);
+      const fin = v => { d.remove(); res(v); }, inp = d.querySelector('#tpN');
+      d.querySelector('[data-a="no"]').onclick = () => fin(0);
+      d.querySelector('[data-a="si"]').onclick = () => { const v = Number(inp.value); if (!(v >= i.total)) { const e = d.querySelector('#tpE'); e.style.display = ''; e.textContent = 'El nuevo tope debe ser al menos ' + $$(i.total); return; } fin(v); };
+      setTimeout(() => { inp.focus(); inp.select(); }, 50);
+    });
   }
   /** Ventana encima de todo (también de otra ventana abierta) para confirmar con la contraseña. → texto | null */
   function pedirClave(msg) {
@@ -4258,11 +4290,12 @@ const App = (() => {
     modal('📄 Convenios con sucursales', `<p class="muted peq">Aquí ves qué sucursales tienen convenio y cuándo vence. Toca una para elaborarlo, ajustarlo o renovarlo. Las cláusulas que cambies en una sucursal <b>solo aplican a ella</b>; la <b>plantilla base</b> es el punto de partida de los convenios nuevos.</p>
       <div class="acciones" style="justify-content:flex-start;margin:4px 0 8px"><button class="btn" onclick="App.convBase()">✏️ Editar plantilla base</button></div>
       ${tabla([{ t: 'Sucursal', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo || '')}${x.consignatario ? ' · ' + esc(x.consignatario) : ''}</small>` },
-        { t: 'Convenio', h: x => convEtq(x) + (convVenceTxt(x) ? `<br><small class="muted">${esc(convVenceTxt(x))}</small>` : '') }], l, { clic: 'App.convAbrir', vacio: 'Sin sucursales activas' })}
+        { t: 'Convenio', h: x => convEtq(x) + (convVenceTxt(x) ? `<br><small class="muted">${esc(convVenceTxt(x))}</small>` : '') + convUsoTxt(x.uso) }], l, { clic: 'App.convAbrir', vacio: 'Sin sucursales activas' })}
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
     S.convOrden = l;
   }
   function convBienv() { bienvIr('config'); setTimeout(convenios, 400); }
+  function convUsoTxt(u) { return u ? `<br><small class="${u.pct >= 100 ? 'error' : u.pct >= 90 ? 'aviso-txt' : 'muted'}">📦 Mercancía ${$$(u.valor)} de ${$$(u.tope)} (${u.pct}% del tope)</small>` : ''; }
   function convAbrir(i) { const x = (S.convOrden || [])[i]; if (x) convenioForm(x.id); }
   function convMapa(l) { S.convEst = {}; (l || []).forEach(x => S.convEst[x.id] = x); document.querySelectorAll('[data-conv]').forEach(el => el.innerHTML = convEtq(S.convEst[el.dataset.conv])); }
   /** Estado de los convenios para la lista de Config › Sucursales y el aviso de la bienvenida. */
@@ -4277,6 +4310,7 @@ const App = (() => {
   function convAvisoTxt() {
     const r = S.convRes; if (!r) return ''; const p = [];
     if (r.vencidos) p.push(r.vencidos + ' vencido' + (r.vencidos === 1 ? '' : 's')); if (r.porVencer) p.push(r.porVencer + ' por vencer');
+    (r.topes || []).forEach(t => p.push(esc(t.nombre) + ' al ' + t.pct + '% del tope'));
     return p.length ? `<button class="bienv-vac" onclick="App.convBienv()">📄 Convenios: <b>${p.join(' · ')}</b> ›</button>` : '';
   }
   function convClHtml(l) {
@@ -4331,7 +4365,7 @@ const App = (() => {
       <div class="rejilla"><label>Nombre completo<input id="cvNom" value="${v(d.nombre)}"></label><label>RFC<input id="cvRfc" value="${v(d.rfc)}" style="text-transform:uppercase"></label>
         <label>Identificación (opcional)<input id="cvIde" value="${v(d.identificacion)}" placeholder="INE núm. …"></label><label>Domicilio<input id="cvDom" value="${v(d.domicilio)}"></label>
         <label>Fecha del convenio<input type="date" id="cvFec" value="${v(renovar ? hoyISO() : d.fecha)}"></label><label>Vigencia (meses; 0 = indefinida)<input type="number" id="cvVig" min="0" value="${v(d.vigencia)}"></label>
-        <label>Monto máximo de mercancía (opcional)<input type="number" id="cvTope" min="0" step="1000" value="${v(d.tope)}" placeholder="sin tope"></label>
+        <label>Monto máximo de mercancía (opcional)<input type="number" id="cvTope" min="0" step="1000" value="${v(d.tope)}" placeholder="sin tope">${r.uso ? `<small class="${r.uso.pct >= 90 ? 'aviso-txt' : 'muted'}">Hoy tiene ${$$(r.uso.valor)} (${r.uso.pct}%)</small>` : ''}${(r.topes || []).length ? `<small class="muted">Último cambio: ${esc(fechaCorta(r.topes[r.topes.length - 1].fecha))}, antes ${$$(r.topes[r.topes.length - 1].anterior)}</small>` : ''}</label>
         <label>Testigo 1 (opcional)<input id="cvT1" value="${v(d.testigo1)}"></label><label>Testigo 2 (opcional)<input id="cvT2" value="${v(d.testigo2)}"></label></div>
       <label class="check"><input type="checkbox" id="cvRen" ${d.renovacion ? 'checked' : ''}> Renovación automática por periodos iguales</label>
       <label class="check"><input type="checkbox" id="cvPag" ${d.pagare ? 'checked' : ''} onchange="document.getElementById('cvPagM').style.display=this.checked?'':'none'"> Incluir pagaré como garantía</label>
@@ -5771,7 +5805,7 @@ const App = (() => {
     try {
       const r = await pedir('guardarTraspaso', { Sucursal_Origen: t.ori, Sucursal_Destino: t.des, Recibio: t.recibio, Comentarios: t.com,
         ID_Flete: t.paq, No_Guia: t.guia, Costo_flete: t.flete, Sucursal_Paga_Flete: t.pagaFlete === false ? 'NO' : 'SI', Entregado: !!t.entregado, ID_Requisicion: t.req ? t.req.id : '', lineas: t.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, lote: l.lote, Precio: l.precio !== undefined && l.precio !== '' ? l.precio : '' })) });
-      toast('✔ Traspaso ' + r.folio + (r.estatus === 'En tránsito' ? ' registrado en tránsito (márcalo Entregado al recibirlo)' : ' registrado y entregado') + (r.requisicion ? ' · requisición ' + r.requisicion.folio + ': ' + r.requisicion.estado.toLowerCase() + (r.requisicion.nueva ? '; lo pendiente (' + nf(r.requisicion.nueva.piezas) + ' pzs) pasó a la ' + r.requisicion.nueva.folio : '') : '')); S.tr = null; refrescarStock(); S.tabTr = 'lista'; V.traspasos('lista');
+      toast('✔ Traspaso ' + r.folio + (r.estatus === 'En tránsito' ? ' registrado en tránsito (márcalo Entregado al recibirlo)' : ' registrado y entregado') + (r.requisicion ? ' · requisición ' + r.requisicion.folio + ': ' + r.requisicion.estado.toLowerCase() + (r.requisicion.nueva ? '; lo pendiente (' + nf(r.requisicion.nueva.piezas) + ' pzs) pasó a la ' + r.requisicion.nueva.folio : '') : '') + (r.tope ? (r.tope.autorizado ? ' · nuevo tope del convenio: ' + $$(r.tope.tope) : ' · ⚠️ la sucursal ya usa el ' + r.tope.pct + '% del tope de su convenio (' + $$(r.tope.total) + ' de ' + $$(r.tope.tope) + ')') : '')); S.tr = null; refrescarStock(); S.tabTr = 'lista'; V.traspasos('lista');
     } catch (e) {}
   }
   async function verTraspaso(folio) {

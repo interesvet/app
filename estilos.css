@@ -1072,6 +1072,8 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
 .conv-firma-img .muted { color: #8a8f86; }
 .conv-firma-dat { flex: 1; min-width: 120px; }
 .conv-firma-acc { display: flex; gap: 6px; flex-wrap: wrap; }
+.clave-modal .tabla-mini { width: 100%; border-collapse: collapse; font-size: 14px; }
+.clave-modal .tabla-mini td { padding: 5px 2px; border-bottom: 1px solid var(--borde); }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
