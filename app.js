@@ -666,8 +666,8 @@ const App = (() => {
       ${rt ? `<span>🧭 Preparado para ruta <b>${haceTxt(rt.t)}</b> · ${nf((rt.listas || 0) + (rt.detalles || 0))} consultas guardadas</span>` : ''}
       ${n ? `<span>⟳ <b>${n}</b> por sincronizar${S.sincronizando ? ' (enviando…)' : ' · se envían solas con buena señal'}</span>` : '<span>✔ Todo sincronizado</span>'}
       <button onclick="App.prepararRuta()">📥 Actualizar para ruta</button>
-      ${S.vacRes && S.vacRes.semana ? `<button class="bienv-vac" onclick="App.bienvIr('revacunas')">💉 Revacunaciones: <b>${S.vacRes.semana}</b> ganadero${S.vacRes.semana === 1 ? '' : 's'} por avisar esta semana ›</button>` : ''}${convAvisoTxt()}${cmAvisoTxt()}`;
-    resumenVacunas(); resumenConvenios(); resumenCierreMes();
+      ${S.vacRes && S.vacRes.semana ? `<button class="bienv-vac" onclick="App.bienvIr('revacunas')">💉 Revacunaciones: <b>${S.vacRes.semana}</b> ganadero${S.vacRes.semana === 1 ? '' : 's'} por avisar esta semana ›</button>` : ''}${convAvisoTxt()}${cmAvisoTxt()}${evAvisoTxt()}`;
+    resumenVacunas(); resumenConvenios(); resumenCierreMes(); resumenEventos();
   }
   /** 💉 Aviso semanal de revacunaciones (dueño, Administrador y gerentes): se consulta una vez al día. */
   async function resumenVacunas() {
@@ -12369,6 +12369,279 @@ const App = (() => {
   }
 
   /* ----- Visitas ----- */
+  /* ---------------- 🤝 CREAR REUNIÓN (fecha fija, invitados, confirmación e invitación en imagen) ---------------- */
+  const EV_PLAT = ['Google Meet', 'Zoom', 'Microsoft Teams', 'Videollamada de WhatsApp', 'Otra'];
+  const EV_RESP = { 'Asiste': ['ok', '✅ Asiste'], 'No asiste': ['mal', '❌ No asiste'], 'Pendiente': ['', '⏳ Pendiente'] };
+  const evDia = iso => { const d = new Date(String(iso).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); };
+  const evHora = iso => String(iso || '').slice(11, 16);
+  const evLugar = e => e.tipo === 'Virtual' ? '💻 Virtual · ' + (e.plataforma || '') : '📍 ' + [e.sede, e.direccion].filter(Boolean).join(' · ');
+  async function evProximas(sel) {
+    const el = $(sel); if (!el) return;
+    let r; try { r = await pedir('eventos', {}, true); } catch (e) { el.innerHTML = /desconocida/i.test(e.message || '') ? '<div class="tarjeta muted peq">🤝 Crear reunión se activa con el servidor 239.</div>' : ''; return; }
+    S.evLista = r.eventos || [];
+    el.innerHTML = S.evLista.length ? `<div class="tarjeta"><h3 style="margin:0 0 6px">🤝 Próximas reuniones</h3>${S.evLista.map((e, i) => `<div class="ev-fila" onclick="App.verEvento('${esc(e.id)}')">
+        <div class="ev-fecha"><b>${esc(String(new Date(e.inicio).getDate()))}</b><small>${esc(new Date(e.inicio).toLocaleDateString('es-MX', { month: 'short' }))}</small></div>
+        <div style="flex:1;min-width:0"><b>${esc(e.tema)}</b><br><small class="muted">${esc(evDia(e.inicio))} · ${esc(evHora(e.inicio))}–${esc(e.horaFin)} h · ${esc(evLugar(e))}</small></div>
+        <div class="ev-cnt"><span class="etq ok">✅ ${e.asisten}</span> <span class="etq">⏳ ${e.pendientes}</span>${e.noAsisten ? ` <span class="etq mal">❌ ${e.noAsisten}</span>` : ''}</div></div>`).join('')}</div>` : '';
+  }
+  async function evPasadas() {
+    let r; try { r = await pedir('eventos', { pasadas: 1 }); } catch (e) { return; }
+    modal('🗂️ Reuniones anteriores', tabla([{ t: 'Reunión', h: e => `<b>${esc(e.tema)}</b><br><small class="muted">${esc(evDia(e.inicio))} · ${esc(evHora(e.inicio))} h</small>` },
+      { t: 'Asistencia', h: e => e.estado === 'Cancelada' ? '<span class="etq mal">Cancelada</span>' : `✅ ${e.asisten} · ❌ ${e.noAsisten} · ⏳ ${e.pendientes}` }], r.eventos, { clic: 'App.evPasadaVer', vacio: 'Todavía no hay reuniones anteriores' }) + '<div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>');
+    S.evPas = r.eventos;
+  }
+  function evPasadaVer(i) { const e = (S.evPas || [])[i]; if (e) verEvento(e.id); }
+  /** Formulario: crear o editar. */
+  function formEvento(ed) {
+    const e = ed || {}, hoy = hoyISO(), u = U(), jefe = puede('dueno') || u.rol === 'Administrador';
+    S.evInv = { suc: {}, emp: {}, cli: [], ext: [] }; S.evEd = e.id || '';
+    const sucs = (D().sucursales || []).filter(x => !x.cerrada && (jefe || x.id === u.sucursal));
+    const emps = (D().vendedores || []).filter(v => jefe || v.suc === u.sucursal).sort((a, b) => String(a.nombre).localeCompare(b.nombre));
+    const sn = id => (sucs.find(x => x.id === id) || {}).nombre || sucNom(id) || '';
+    modal(e.id ? '✏️ Editar reunión' : '🤝 Crear reunión', `<div class="ev-form">
+      <label>Tema de la reunión<input id="evTema" maxlength="160" value="${esc(e.tema || '')}" placeholder="Ej. Lanzamiento de la línea de biológicos 2027"></label>
+      <div class="ev-seg"><button type="button" data-t="Presencial" class="${e.tipo !== 'Virtual' ? 'on' : ''}" onclick="App.evTipo('Presencial')">📍 Presencial</button><button type="button" data-t="Virtual" class="${e.tipo === 'Virtual' ? 'on' : ''}" onclick="App.evTipo('Virtual')">💻 Virtual</button></div>
+      <div class="rejilla"><label>Fecha<input type="date" id="evFecha" min="${hoy}" value="${esc(e.inicio ? e.inicio.slice(0, 10) : '')}"></label><label>Hora<input type="time" id="evHora" value="${esc(e.inicio ? evHora(e.inicio) : '10:00')}"></label>
+        <label>Duración<select id="evDur">${opts([[30, '30 min'], [60, '1 hora'], [90, '1 h 30 min'], [120, '2 horas'], [180, '3 horas'], [240, '4 horas'], [360, '6 horas'], [480, 'Todo el día (8 h)']], String(e.duracion || 60))}</select></label></div>
+      <div id="evPres" style="${e.tipo === 'Virtual' ? 'display:none' : ''}"><div class="rejilla"><label>Sede<input id="evSede" list="evSedes" value="${esc(e.sede || '')}" placeholder="Ej. Matriz, salón, rancho…"><datalist id="evSedes">${(D().sucursales || []).filter(x => !x.cerrada).map(x => `<option value="${esc(x.nombre)}">`).join('')}</datalist></label>
+        <label>Dirección<input id="evDir" value="${esc(e.direccion || '')}" placeholder="Calle, número, colonia, ciudad"></label></div>
+        <label>Enlace de Google Maps (opcional)<input id="evMapa" value="${esc(e.mapa || '')}" placeholder="Pega aquí la ubicación compartida"></label></div>
+      <div id="evVirt" style="${e.tipo === 'Virtual' ? '' : 'display:none'}"><div class="rejilla"><label>Plataforma<select id="evPlat">${opts(EV_PLAT.map(x => [x, x]), e.plataforma || 'Google Meet')}</select></label>
+        <label>Liga para entrar<input id="evLiga" value="${esc(e.liga || '')}" placeholder="meet.google.com/… · zoom.us/j/…"></label></div></div>
+      <label>Agenda o descripción (opcional)<textarea id="evDesc" rows="3" maxlength="1500" placeholder="Puntos a tratar, qué traer, ponente…">${esc(e.descripcion || '')}</textarea></label>
+      <h4 style="margin:12px 0 4px">🎤 Ponente(s) <small class="muted">(opcional)</small></h4><div id="evPons"></div>
+      <div class="acciones izq"><button type="button" class="btn chico" onclick="App.evPonAgregar()">➕ Agregar ponente</button></div>
+      <h4 style="margin:12px 0 4px">🏢 Organizan</h4><p class="muted peq" style="margin:0 0 4px">Interés Veterinario® siempre aparece. Marca si hay coorganizadores; sus logotipos salen en la invitación.</p>
+      <div id="evOrgs" class="ev-chips"><span class="muted peq">Cargando…</span></div>
+      <details class="ev-grupo" id="evOrgNuevo"><summary>➕ Nuevo coorganizador</summary><div class="rejilla"><label>Nombre<input id="evOrgN" placeholder="Ej. Laboratorio Bayer"></label><label>Logotipo (PNG o JPG)<input type="file" id="evOrgL" accept="image/png,image/jpeg,image/webp"></label></div>
+        <div class="acciones izq"><button type="button" class="btn" id="evOrgBtn" onclick="App.evOrgGuardar()">💾 Guardar coorganizador</button></div></details>
+      <h4 style="margin:12px 0 4px">${e.id ? 'Invitar a más personas' : 'Invitar a'}</h4>
+      <details class="ev-grupo" open><summary>🏬 Sucursales completas <small class="muted">(gerente y vendedores)</small></summary><div class="ev-chips">${sucs.map(x => `<label class="ev-chip"><input type="checkbox" data-evsuc="${esc(x.id)}" onchange="App.evCuenta()"> ${esc(x.nombre)}</label>`).join('') || '<span class="muted">—</span>'}</div></details>
+      <details class="ev-grupo"><summary>👥 Personas del equipo</summary><input id="evEmpQ" placeholder="Buscar por nombre" oninput="App.evFiltrarEmp(this.value)"><div class="ev-lista" id="evEmps">${emps.map(v => `<label class="ev-item" data-n="${esc(String(v.nombre).toLowerCase())}"><input type="checkbox" data-evemp="${esc(v.id)}" onchange="App.evCuenta()"> ${esc(v.nombre)} <small class="muted">${esc(sn(v.suc))}${v.rol ? ' · ' + esc(v.rol) : ''}</small></label>`).join('')}</div></details>
+      <details class="ev-grupo"><summary>🐄 Clientes</summary><input id="evCliQ" placeholder="Buscar cliente por nombre o razón social" oninput="App.evBuscarCli(this.value)"><div id="evCliRes" class="ev-lista"></div><div id="evCliSel" class="ev-chips"></div></details>
+      <details class="ev-grupo"><summary>✉️ Invitados externos <small class="muted">(proveedores, laboratorios, ponentes)</small></summary>
+        <div class="rejilla"><label>Nombre<input id="evExN"></label><label>Empresa (opcional)<input id="evExE"></label><label>Celular<input id="evExC" inputmode="tel"></label><label>Correo<input id="evExM" type="email"></label></div>
+        <div class="acciones izq"><button type="button" class="btn" onclick="App.evAgregarExt()">➕ Agregar invitado</button></div><div id="evExtSel" class="ev-chips"></div></details>
+      <p id="evCuenta" class="muted peq" style="margin:6px 0"></p>
+      <label class="check"><input type="checkbox" id="evCal" ${e.id ? (e.calendario ? 'checked' : '') : 'checked'}> Enviar invitación de Google Calendar a quienes tengan correo</label>
+      <label class="check"><input type="checkbox" id="evAviso" checked> Avisar en la app a las personas de mi equipo invitadas</label></div>
+      <div class="acciones"><button class="btn" onclick="${e.id ? `App.verEvento('${esc(e.id)}')` : 'App.cerrarModal()'}">Cancelar</button><button class="btn primario" id="evBtn" onclick="App.guardarEvento()">${e.id ? '💾 Guardar cambios' : '🤝 Crear reunión'}</button></div>`);
+    S.evPon = (e.ponentes || []).map(x => Object.assign({}, x)); S.evOrgSel = (e.organizadores || []).map(x => x.id); evPonPintar(); evOrgCargar();
+    evCuenta();
+  }
+  function evPonLeer() { document.querySelectorAll('[data-pn]').forEach(i => { const k = +i.dataset.pn; if (S.evPon[k]) S.evPon[k][i.dataset.c] = i.value; }); }
+  function evPonPintar() {
+    const el = $('#evPons'); if (!el) return;
+    el.innerHTML = S.evPon.map((x, i) => `<div class="rejilla ev-pon"><label>Nombre<input data-pn="${i}" data-c="nombre" value="${esc(x.nombre || '')}" placeholder="Ej. MVZ Karla Méndez"></label><label>Cargo o empresa<input data-pn="${i}" data-c="cargo" value="${esc(x.cargo || '')}" placeholder="Ej. Gerente técnico, Bayer"></label><button type="button" class="btn fijo" onclick="App.evPonQuitar(${i})">🗑️</button></div>`).join('');
+  }
+  function evPonAgregar() { evPonLeer(); if (S.evPon.length >= 4) return toast('Máximo 4 ponentes', true); S.evPon.push({ nombre: '', cargo: '' }); evPonPintar(); }
+  function evPonQuitar(i) { evPonLeer(); S.evPon.splice(i, 1); evPonPintar(); }
+  async function evOrgCargar(forzar) {
+    if (!S.evOrgs || forzar) { try { S.evOrgs = (await pedir('organizadores', {}, true)).organizadores || []; } catch (x) { S.evOrgs = []; } }
+    const el = $('#evOrgs'); if (!el) return;
+    el.innerHTML = S.evOrgs.length ? S.evOrgs.map(o => `<label class="ev-chip ev-org ${S.evOrgSel.indexOf(o.id) >= 0 ? 'on' : ''}"><input type="checkbox" ${S.evOrgSel.indexOf(o.id) >= 0 ? 'checked' : ''} onchange="App.evOrgMarcar('${esc(o.id)}', this.checked)">${o.logo ? `<img src="${o.logo}" alt="">` : ''} ${esc(o.nombre)}</label>`).join('') : '<span class="muted peq">Aún no hay coorganizadores guardados.</span>';
+  }
+  function evOrgMarcar(id, v) {
+    S.evOrgSel = S.evOrgSel.filter(x => x !== id); if (v) { if (S.evOrgSel.length >= 3) { toast('Máximo 3 coorganizadores', true); evOrgCargar(); return; } S.evOrgSel.push(id); }
+    evOrgCargar();
+  }
+  /** Reduce el logotipo a 500 px (conserva la transparencia del PNG). */
+  function evLogoReducido(file) {
+    return new Promise((ok, no) => { const r = new FileReader(); r.onload = () => { const i = new Image(); i.onload = () => { const k = Math.min(1, 500 / Math.max(i.width, i.height)), c = document.createElement('canvas');
+      c.width = Math.round(i.width * k); c.height = Math.round(i.height * k); c.getContext('2d').drawImage(i, 0, 0, c.width, c.height); ok(c.toDataURL('image/png')); }; i.onerror = no; i.src = r.result; }; r.onerror = no; r.readAsDataURL(file); });
+  }
+  async function evOrgGuardar() {
+    const n = $('#evOrgN').value.trim(), f = ($('#evOrgL').files || [])[0];
+    if (!n) return toast('Escribe el nombre del coorganizador', true); if (!f) return toast('Elige su logotipo', true);
+    $('#evOrgBtn').disabled = true;
+    try { const logo = await evLogoReducido(f), r = await pedir('guardarOrganizador', { nombre: n, logo: logo }); S.evOrgs = (S.evOrgs || []).concat([r]); if (S.evOrgSel.length < 3) S.evOrgSel.push(r.id);
+      $('#evOrgN').value = ''; $('#evOrgL').value = ''; $('#evOrgNuevo').open = false; evOrgCargar(); toast('✔ Coorganizador guardado'); } catch (x) {} finally { const b = $('#evOrgBtn'); if (b) b.disabled = false; }
+  }
+  function evTipo(t) { document.querySelectorAll('.ev-seg button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $('#evPres').style.display = t === 'Virtual' ? 'none' : ''; $('#evVirt').style.display = t === 'Virtual' ? '' : 'none'; }
+  function evFiltrarEmp(q) { q = String(q || '').toLowerCase(); document.querySelectorAll('#evEmps .ev-item').forEach(x => x.style.display = !q || x.dataset.n.indexOf(q) >= 0 ? '' : 'none'); }
+  function evBuscarCli(q) {
+    q = String(q || '').trim().toLowerCase(); const el = $('#evCliRes'); if (!el) return;
+    if (q.length < 2) { el.innerHTML = ''; return; }
+    const l = (D().clientes || []).filter(c => (String(c.razon || '') + ' ' + String(c.nombre || '')).toLowerCase().indexOf(q) >= 0).slice(0, 12);
+    el.innerHTML = l.map(c => `<div class="ev-item" onclick="App.evAgregarCli('${esc(c.id)}')">➕ ${esc(c.razon || c.nombre)} <small class="muted">${c.cel ? '📱' : ''}${c.email ? ' ✉️' : ''}</small></div>`).join('') || '<div class="muted peq">Sin resultados</div>';
+  }
+  function evAgregarCli(id) {
+    const c = (D().clientes || []).find(x => String(x.id) === String(id)); if (!c || S.evInv.cli.some(x => x.id === c.id)) return;
+    S.evInv.cli.push({ id: c.id, nombre: c.razon || c.nombre }); $('#evCliQ').value = ''; $('#evCliRes').innerHTML = ''; evPintarSel();
+  }
+  function evAgregarExt() {
+    const n = $('#evExN').value.trim(); if (!n) return toast('Escribe el nombre del invitado', true);
+    const cel = $('#evExC').value.replace(/\D/g, ''), m = $('#evExM').value.trim();
+    if (!cel && !m) return toast('Escribe su celular o su correo para mandarle la invitación', true);
+    S.evInv.ext.push({ nombre: n, empresa: $('#evExE').value.trim(), cel: cel, correo: m });
+    ['evExN', 'evExE', 'evExC', 'evExM'].forEach(i => $('#' + i).value = ''); evPintarSel();
+  }
+  function evQuitar(t, i) { S.evInv[t].splice(i, 1); evPintarSel(); }
+  function evPintarSel() {
+    $('#evCliSel').innerHTML = S.evInv.cli.map((c, i) => `<span class="ev-chip on">${esc(c.nombre)} <button type="button" onclick="App.evQuitar('cli',${i})">✕</button></span>`).join('');
+    $('#evExtSel').innerHTML = S.evInv.ext.map((c, i) => `<span class="ev-chip on">${esc(c.nombre)}${c.empresa ? ' · ' + esc(c.empresa) : ''} <button type="button" onclick="App.evQuitar('ext',${i})">✕</button></span>`).join('');
+    evCuenta();
+  }
+  function evSeleccion() {
+    const l = [];
+    document.querySelectorAll('[data-evsuc]:checked').forEach(x => l.push({ t: 'suc', id: x.dataset.evsuc }));
+    document.querySelectorAll('[data-evemp]:checked').forEach(x => l.push({ t: 'emp', id: x.dataset.evemp }));
+    (S.evInv.cli || []).forEach(c => l.push({ t: 'cli', id: c.id }));
+    (S.evInv.ext || []).forEach(c => l.push(Object.assign({ t: 'ext' }, c)));
+    return l;
+  }
+  function evCuenta() {
+    const el = $('#evCuenta'); if (!el) return;
+    const s = document.querySelectorAll('[data-evsuc]:checked').length, e = document.querySelectorAll('[data-evemp]:checked').length, c = (S.evInv.cli || []).length, x = (S.evInv.ext || []).length;
+    el.textContent = s + e + c + x ? 'Seleccionados: ' + [s ? s + ' sucursal(es)' : '', e ? e + ' del equipo' : '', c ? c + ' cliente(s)' : '', x ? x + ' externo(s)' : ''].filter(Boolean).join(' · ') : 'Aún no eliges invitados.';
+  }
+  async function guardarEvento() {
+    const virt = $('#evVirt').style.display !== 'none', inv = evSeleccion();
+    const p = { id: S.evEd || undefined, tema: $('#evTema').value.trim(), tipo: virt ? 'Virtual' : 'Presencial', fecha: $('#evFecha').value, hora: $('#evHora').value, duracion: +$('#evDur').value,
+      plataforma: $('#evPlat').value, liga: $('#evLiga').value.trim(), sede: $('#evSede').value.trim(), direccion: $('#evDir').value.trim(), mapa: $('#evMapa').value.trim(),
+      descripcion: $('#evDesc').value.trim(), invitados: inv, calendario: $('#evCal').checked, avisoApp: $('#evAviso').checked,
+      ponentes: (evPonLeer(), S.evPon.filter(x => String(x.nombre || '').trim())), organizadores: S.evOrgSel.slice() };
+    if (!p.tema) return toast('Escribe el tema de la reunión', true);
+    if (!p.fecha || !p.hora) return toast('Indica la fecha y la hora', true);
+    if (!S.evEd && !inv.length) return toast('Elige al menos un invitado', true);
+    $('#evBtn').disabled = true;
+    try {
+      const r = await pedir('crearEvento', p);
+      toast('✔ Reunión ' + (S.evEd ? 'actualizada' : 'creada') + (r.nuevos ? ' · ' + r.nuevos + ' invitado(s)' : '') + (r.errorCalendario ? ' · ⚠️ Calendar: ' + r.errorCalendario : ''));
+      S.evDet = r; pintarEvento(r); evProximas('#evProx');
+    } catch (e) { const b = $('#evBtn'); if (b) b.disabled = false; }
+  }
+  async function verEvento(id) { let r; try { r = await pedir('evento', { id: id }); } catch (e) { return; } S.evDet = r; pintarEvento(r); }
+  function evMsg(e, x) {
+    const n = x ? String(x.nombre || '').split(' ')[0] : '';
+    return (n ? 'Hola ' + n + ', ' : 'Hola, ') + 'te invitamos a nuestra reunión:\n\n🤝 *' + e.tema + '*\n📅 ' + evDia(e.inicio) + '\n🕙 ' + evHora(e.inicio) + ' a ' + e.horaFin + ' h\n' +
+      (e.tipo === 'Virtual' ? '💻 Virtual por ' + e.plataforma : '📍 ' + [e.sede, e.direccion].filter(Boolean).join(', ')) +
+      ((e.ponentes || []).length ? '\n🎤 ' + (e.ponentes.length > 1 ? 'Ponentes: ' : 'Ponente: ') + e.ponentes.map(p => p.nombre + (p.cargo ? ' (' + p.cargo + ')' : '')).join(', ') : '') +
+      ((e.organizadores || []).length ? '\n🏢 Organizan: Interés Veterinario® · ' + e.organizadores.map(o => o.nombre).join(' · ') : '') + (e.descripcion ? '\n\n' + e.descripcion : '') +
+      (x && x.url ? '\n\nConfirma tu asistencia aquí:\n' + x.url : '') + '\n\nInterés Veterinario®';
+  }
+  function pintarEvento(e) {
+    const pend = e.lista.filter(x => x.respuesta === 'Pendiente').length;
+    modal('🤝 ' + e.tema, `<div class="ev-cab ${e.estado === 'Cancelada' ? 'cancelada' : ''}">${e.estado === 'Cancelada' ? '<span class="etq mal">Cancelada</span> ' : ''}<b>${esc(evDia(e.inicio))}</b> · ${esc(evHora(e.inicio))} a ${esc(e.horaFin)} h<br>${esc(evLugar(e))}
+        ${e.tipo === 'Virtual' && e.liga ? `<br><a href="${esc(e.liga)}" target="_blank" rel="noopener">${esc(e.liga)}</a>` : ''}
+        ${(e.ponentes || []).length ? `<br>🎤 ${e.ponentes.map(p => `<b>${esc(p.nombre)}</b>${p.cargo ? ' · ' + esc(p.cargo) : ''}`).join(', ')}` : ''}
+        ${(e.organizadores || []).length ? `<br>🏢 Organizan: Interés Veterinario® · ${e.organizadores.map(o => esc(o.nombre)).join(' · ')}` : ''}${e.descripcion ? `<p class="muted" style="white-space:pre-line;margin:6px 0 0">${esc(e.descripcion)}</p>` : ''}</div>
+      <div class="kpis" style="margin:8px 0"><div class="kpi"><small>Asisten</small><b>${e.asisten}</b></div><div class="kpi"><small>Pendientes</small><b>${e.pendientes}</b></div><div class="kpi"><small>No asisten</small><b>${e.noAsisten}</b></div></div>
+      ${e.estado !== 'Cancelada' ? `<div class="acciones izq quedar"><button class="btn primario" onclick="App.evImagen()">🎨 Invitación en imagen</button><button class="btn" onclick="App.evCopiar()">📋 Copiar mensaje</button>${e.pasada ? '' : `<button class="btn" onclick="App.evEditar()">✏️ Editar / invitar a más</button><button class="btn" onclick="App.evCancelar()">🚫 Cancelar reunión</button>`}</div>` : ''}
+      <h4 style="margin:12px 0 4px">Invitados (${e.lista.length})${pend && e.estado !== 'Cancelada' ? ` <small class="muted">· toca 💬 para mandar a cada uno su invitación con enlace para confirmar</small>` : ''}</h4>
+      ${tabla([{ t: 'Invitado', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo)}${x.origen ? ' · ' + esc(x.origen) : ''}</small>${x.comentario ? `<br><small>💬 ${esc(x.comentario)}</small>` : ''}` },
+        { t: 'Respuesta', h: x => `<span class="etq ${EV_RESP[x.respuesta] ? EV_RESP[x.respuesta][0] : ''}">${EV_RESP[x.respuesta] ? EV_RESP[x.respuesta][1] : esc(x.respuesta)}</span>${x.fechaResp ? `<br><small class="muted">${esc(x.fechaResp)}</small>` : ''}` },
+        { t: '', h: (x, i) => e.estado === 'Cancelada' ? '' : (x.cel ? `<button class="btn fijo ${x.enviado ? '' : 'primario'}" onclick="event.stopPropagation();App.evWA(${e.lista.indexOf(x)})">💬 ${x.enviado ? 'Reenviar' : 'Enviar'}</button>` : `<button class="btn fijo" onclick="event.stopPropagation();App.evLiga(${e.lista.indexOf(x)})">🔗 Enlace</button>`) }], e.lista, { vacio: 'Sin invitados' })}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+    try { $('#modalCuerpo').scrollTop = 0; const c = $('#modal .modal-caja'); if (c) c.scrollTop = 0; } catch (x) {}
+  }
+  function evWA(i) {
+    const e = S.evDet, x = e.lista[i]; if (!x) return;
+    window.open(WA_BASE + '52' + x.cel.slice(-10) + '?text=' + encodeURIComponent(evMsg(e, x)), '_blank');
+    if (!x.enviado) { x.enviado = true; pedir('marcarEnviadoEvento', { idInv: x.id }, true).catch(() => {}); setTimeout(() => pintarEvento(e), 600); }
+  }
+  async function evLiga(i) { const x = S.evDet.lista[i]; try { await navigator.clipboard.writeText(evMsg(S.evDet, x)); toast('📋 Invitación con su enlace copiada: pégala en un correo o mensaje'); } catch (e) { prompt('Copia el enlace:', x.url); } }
+  async function evCopiar() { try { await navigator.clipboard.writeText(evMsg(S.evDet)); toast('📋 Mensaje copiado (sin enlace personal): úsalo para grupos o redes'); } catch (e) { toast('No se pudo copiar', true); } }
+  function evEditar() { formEvento(S.evDet); }
+  async function evCancelar() {
+    const m = prompt('¿Por qué se cancela? (lo verán los invitados al abrir su enlace)'); if (m === null) return;
+    try { await pedir('cancelarEvento', { id: S.evDet.id, motivo: m.trim() }); toast('🚫 Reunión cancelada. Avisa a los invitados que ya habían confirmado.'); verEvento(S.evDet.id); evProximas('#evProx'); } catch (e) {}
+  }
+  /* ---- 🎨 Invitación en imagen (post 1080×1080 · historia/estado 1080×1920) ---- */
+  const EV_ESTILOS = {
+    noche: { n: 'Noche azul', fondo: ['#0b1528', '#17325e'], texto: '#ffffff', suave: '#bccadf', acento: '#e7b04a', chip: '#6fcf6a', chipTxt: '#0b1528' },
+    clasico: { n: 'Clásico', fondo: ['#fbfaf6', '#efece2'], texto: '#1b1d18', suave: '#50544a', acento: '#1f6f4a', chip: '#1f6f4a', chipTxt: '#ffffff', banda: '#1f6f4a' },
+    campo: { n: 'Campo', fondo: ['#2a8a5e', '#0f3d28'], texto: '#ffffff', suave: '#d6eadd', acento: '#f2c94c', chip: '#f2c94c', chipTxt: '#0f3d28' }
+  };
+  function evImagen() {
+    S.evImg = S.evImg || { estilo: 'noche', formato: 'post' };
+    modal('🎨 Invitación en imagen', `<div class="fila"><label>Estilo<select id="eiEst" onchange="App.evDibujar()">${opts(Object.keys(EV_ESTILOS).map(k => [k, EV_ESTILOS[k].n]), S.evImg.estilo)}</select></label>
+        <label>Formato<select id="eiFmt" onchange="App.evDibujar()">${opts([['post', 'Publicación (cuadrada) · Facebook / Instagram / WhatsApp'], ['historia', 'Historia / estado (vertical)']], S.evImg.formato)}</select></label></div>
+      <div class="ev-lienzo"><canvas id="eiCv"></canvas></div>
+      <p class="muted peq">Con <b>📤 Compartir</b> eliges WhatsApp, Facebook o Instagram. Para que cada invitado confirme, mándale también su enlace con 💬 en la lista de invitados.</p>
+      <div class="acciones"><button class="btn" onclick="App.verEvento('${esc(S.evDet.id)}')">← Volver</button><button class="btn" onclick="App.evCopiar()">📋 Copiar texto</button><button class="btn" onclick="App.evDescargar()">⬇️ Descargar</button>${navigator.share ? '<button class="btn primario" onclick="App.evCompartir()">📤 Compartir</button>' : ''}</div>`);
+    evDibujar();
+  }
+  function evLineas(x, t, max) { const p = String(t || '').split(/\s+/), l = []; let a = ''; p.forEach(w => { const b = a ? a + ' ' + w : w; if (x.measureText(b).width > max && a) { l.push(a); a = w; } else a = b; }); if (a) l.push(a); return l; }
+  async function evDibujar() {
+    const e = S.evDet, est = $('#eiEst').value, fmt = $('#eiFmt').value; S.evImg = { estilo: est, formato: fmt };
+    const T = EV_ESTILOS[est], W = 1080, H = fmt === 'historia' ? 1920 : 1080, cv = $('#eiCv'); if (!cv) return;
+    cv.width = W; cv.height = H; const x = cv.getContext('2d'), F = 'system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif', M = 90, story = fmt === 'historia';
+    // logos: el tuyo y los de los coorganizadores (se cargan una vez)
+    const carga = src => new Promise(ok => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
+    if ((e.organizadores || []).length && !S.evOrgs) { try { S.evOrgs = (await pedir('organizadores', {}, true)).organizadores || []; } catch (er) { S.evOrgs = []; } }
+    const orgL = (e.organizadores || []).map(o => (S.evOrgs || []).find(z => z.id === o.id)).filter(Boolean);
+    const imgs = (await Promise.all([carga(logoHD())].concat(orgL.map(o => carga(o.logo))))).filter(Boolean);
+    const rr = (a, b, w, h, r) => { x.beginPath(); if (x.roundRect) x.roundRect(a, b, w, h, r); else x.rect(a, b, w, h); x.fill(); };
+    const pieH = story ? 230 : 165, limite = H - pieH;
+    const pinta = k => {
+      const z = n => Math.round(n * k);
+      const g = x.createLinearGradient(0, 0, W * 0.4, H); g.addColorStop(0, T.fondo[0]); g.addColorStop(1, T.fondo[1]); x.fillStyle = g; x.fillRect(0, 0, W, H);
+      x.globalAlpha = est === 'clasico' ? 0.07 : 0.10; x.fillStyle = T.acento; x.beginPath(); x.arc(W + 60, -40, 360, 0, 7); x.fill(); x.beginPath(); x.arc(-120, H + 80, 420, 0, 7); x.fill(); x.globalAlpha = 1;
+      if (T.banda) { x.fillStyle = T.banda; x.fillRect(0, 0, W, 14); x.fillRect(0, H - 14, W, 14); }
+      let y = z(story ? 160 : 76);
+      if (imgs.length) {
+        const varios = imgs.length > 1, lh = z(story ? (varios ? 150 : 190) : (varios ? 100 : 130)), gap = 24, pad = 20;
+        const ws = imgs.map(i => Math.min(i.width * lh / i.height, varios ? (W - M * 2 - gap * (imgs.length - 1)) / imgs.length - pad * 2 : 600));
+        let lx = (W - (ws.reduce((a, b) => a + b + pad * 2, 0) + gap * (imgs.length - 1))) / 2;
+        imgs.forEach((i, n) => { const w = ws[n], h = Math.min(lh, i.height * w / i.width);
+          if (est !== 'clasico' || varios) { x.fillStyle = 'rgba(255,255,255,.95)'; rr(lx, y - 16, w + pad * 2, lh + 32, 22); }
+          x.drawImage(i, lx + pad, y + (lh - h) / 2, w, h); lx += w + pad * 2 + gap; });
+        y += lh + z(story ? 96 : 66);
+      } else y += 40;
+      x.textAlign = 'center'; x.fillStyle = T.acento; x.font = `700 ${z(story ? 40 : 32)}px ${F}`; x.fillText('I N V I T A C I Ó N', W / 2, y); y += z(story ? 36 : 26);
+      x.fillRect(W / 2 - 60, y, 120, 5); y += z(story ? 90 : 66);
+      x.fillStyle = T.texto; let fs = z(story ? 84 : 68); x.font = `800 ${fs}px ${F}`; let ls = evLineas(x, e.tema, W - M * 2);
+      while (ls.length > 3 && fs > 40) { fs -= 6; x.font = `800 ${fs}px ${F}`; ls = evLineas(x, e.tema, W - M * 2); }
+      ls.slice(0, 4).forEach(l => { x.fillText(l, W / 2, y); y += fs * 1.16; }); y += z(story ? 46 : 20);
+      const chip = e.tipo === 'Virtual' ? 'REUNIÓN VIRTUAL' : 'REUNIÓN PRESENCIAL'; x.font = `800 ${z(story ? 32 : 26)}px ${F}`;
+      const cw = x.measureText(chip).width + 56, chh = z(story ? 62 : 50); x.fillStyle = T.chip; rr((W - cw) / 2, y - chh * 0.7, cw, chh, chh / 2);
+      x.fillStyle = T.chipTxt; x.fillText(chip, W / 2, y + 2); y += z(story ? 116 : 80);
+      const fila = (ico, t1, t2) => { x.fillStyle = T.texto; x.font = `700 ${z(story ? 50 : 40)}px ${F}`; evLineas(x, (ico ? ico + '  ' : '') + t1, W - M * 2).slice(0, 2).forEach(l => { x.fillText(l, W / 2, y); y += z(story ? 60 : 48); });
+        if (t2) { x.fillStyle = T.suave; x.font = `500 ${z(story ? 38 : 31)}px ${F}`; evLineas(x, t2, W - M * 2).slice(0, 2).forEach(l => { x.fillText(l, W / 2, y); y += z(story ? 50 : 40); }); }
+        y += z(story ? 38 : 20); };
+      const dia = evDia(e.inicio); fila('📅', dia.charAt(0).toUpperCase() + dia.slice(1)); fila('🕙', evHora(e.inicio) + ' a ' + e.horaFin + ' h');
+      if (e.tipo === 'Virtual') fila('💻', e.plataforma || 'Videollamada', 'Te enviamos la liga para entrar'); else fila('📍', e.sede || 'Sede', e.direccion);
+      const pon = e.ponentes || [];
+      if (pon.length && (story || pon.length === 1)) pon.slice(0, 4).forEach((p, n) => fila(n ? '' : '🎤', p.nombre, p.cargo));
+      else if (pon.length) fila('🎤', pon.map(p => p.nombre).join(' · '), pon.map(p => p.cargo).filter(Boolean).join(' · '));
+      if (story && e.descripcion) { x.fillStyle = T.suave; x.font = `italic 500 ${z(36)}px ${F}`; evLineas(x, e.descripcion.replace(/\s+/g, ' '), W - M * 2).slice(0, 4).forEach(l => { x.fillText(l, W / 2, y); y += z(48); }); }
+      return y;
+    };
+    let k = 1, y = pinta(k);
+    for (let n = 0; n < 8 && y > limite; n++) { k *= 0.92; y = pinta(k); }
+    // pie
+    x.fillStyle = T.acento; x.fillRect(M, H - pieH + (story ? 20 : 15), W - M * 2, 3);
+    x.fillStyle = T.texto; x.font = `800 ${story ? 44 : 36}px ${F}`; x.fillText('Interés Veterinario®', W / 2, H - (story ? 140 : 92));
+    x.fillStyle = T.suave; x.font = `500 ${story ? 32 : 27}px ${F}`;
+    x.fillText(orgL.length ? 'Organizan junto con ' + orgL.map(o => o.nombre).join(' y ') : '¡Te esperamos! Confirma tu asistencia', W / 2, H - (story ? 90 : 52));
+  }
+  function evBlob() { return new Promise(r => $('#eiCv').toBlob(r, 'image/png')); }
+  const evArchivo = () => 'Invitacion-' + String(S.evDet.tema).replace(/[^\wáéíóúñ ]/gi, '').trim().replace(/\s+/g, '-').slice(0, 40) + (S.evImg.formato === 'historia' ? '-historia' : '') + '.png';
+  async function evCompartir() {
+    const b = await evBlob(), f = new File([b], evArchivo(), { type: 'image/png' });
+    try { if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f], text: evMsg(S.evDet) }); else evDescargar(); } catch (e) {}
+  }
+  async function evDescargar() { const b = await evBlob(), a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = evArchivo(); document.body.appendChild(a); a.click(); a.remove(); }
+  /* ---- aviso en la pantalla de inicio (equipo invitado) ---- */
+  async function resumenEventos() {
+    const u = U() || {}; if (navigator.onLine === false || S.evPid) return;
+    const k = 'evres_' + (u.id || ''), c = LS.get(k, null);
+    if (c && Date.now() - c.t < 1800000) { if (!S.evMios) { S.evMios = c.r; pintarBienvEstado(); } return; }
+    S.evPid = true;
+    try { const r = await pedir('misEventos', {}, true); S.evMios = r.eventos || []; LS.set(k, { t: Date.now(), r: S.evMios }); pintarBienvEstado(); } catch (e) {} finally { S.evPid = false; }
+  }
+  function evAvisoTxt() { return (S.evMios || []).map((e, i) => `<button class="bienv-vac" onclick="App.evMio(${i})">🤝 ${esc(e.tema)} · ${esc(evDia(e.inicio).replace(/ de \d{4}$/, ''))} ${esc(evHora(e.inicio))} h${e.respuesta === 'Pendiente' ? ' · <b>¿asistes?</b>' : e.respuesta === 'Asiste' ? ' · ✅' : ' · ❌'} ›</button>`).join(''); }
+  function evMio(i) {
+    const e = (S.evMios || [])[i]; if (!e) return;
+    modal('🤝 ' + e.tema, `<div class="ev-cab"><b>${esc(evDia(e.inicio))}</b> · ${esc(evHora(e.inicio))} a ${esc(e.horaFin)} h<br>${esc(evLugar(e))}${e.tipo === 'Virtual' && e.liga ? `<br><a href="${esc(e.liga)}" target="_blank" rel="noopener">💻 Entrar a la reunión</a>` : ''}
+      ${e.descripcion ? `<p class="muted" style="white-space:pre-line;margin:6px 0 0">${esc(e.descripcion)}</p>` : ''}<p class="muted peq" style="margin:6px 0 0">Organiza: ${esc(e.creador)}</p></div>
+      <p>Tu respuesta: <span class="etq ${EV_RESP[e.respuesta][0]}">${EV_RESP[e.respuesta][1]}</span></p>
+      <div class="acciones"><button class="btn" onclick="App.evResponder(${i},'no')">❌ No podré asistir</button><button class="btn primario" onclick="App.evResponder(${i},'si')">✅ Sí asistiré</button></div>`);
+  }
+  async function evResponder(i, r) {
+    const e = S.evMios[i]; try { const x = await pedir('responderEvento', { idInv: e.idInv, resp: r }); e.respuesta = x.respuesta; LS.set('evres_' + (U().id || ''), { t: Date.now(), r: S.evMios }); cerrarModal(); toast(r === 'si' ? '✅ Confirmaste tu asistencia' : 'Avisaste que no asistirás'); pintarBienvEstado(); } catch (x) {}
+  }
   /* ---------------- 📅 REUNIONES CON CLIENTES (dueño, Administrador y Gerentes) ---------------- */
   const puedeReunion = () => { const u = U() || {}; return !!(u.permisos || {}).dueno || u.rol === 'Administrador' || u.rol === 'Gerente'; };
   const MEET_NUEVA = 'https:' + '\/\/meet.google.com/new';
@@ -12437,6 +12710,7 @@ const App = (() => {
       <label>Estado<select id="reuEst">${opts([['', 'Todas'], ['activas', 'Pendientes y confirmadas']].concat(Object.keys(REU_TXT).map(k => [k, REU_TXT[k]])), S.fReu.est)}</select></label>
       <button class="btn fijo" onclick="App.cargarReuniones(true)">⟳ Actualizar</button></div>
       <p class="muted peq" style="margin:4px 0 0">Para invitar a un cliente abre su ficha (Clientes) y toca <b>📅 Invitar a reunión</b>.${puede('dueno') || U().rol === 'Administrador' ? ' Para reunirte con una sucursal: <button class="btn chico" onclick="App.formReunionSuc()">🏬 Invitar a una sucursal</button>' : ''}</p></div><div id="reuRes"><div class="vacio">Cargando…</div></div>`;
+    $('#vista').insertAdjacentHTML('afterbegin', '<div class="acciones izq" style="margin:0 0 8px"><button class="btn primario" onclick="App.formEvento()">🤝 Crear reunión</button><button class="btn" onclick="App.evPasadas()">🗂️ Reuniones anteriores</button></div><div id="evProx"></div>'); evProximas('#evProx');
     $('#reuQ').oninput = e => { S.fReu.q = e.target.value; pintarReuniones(); };
     $('#reuEst').onchange = e => { S.fReu.est = e.target.value; pintarReuniones(); };
     cargarReuniones();
@@ -12594,9 +12868,10 @@ const App = (() => {
         ${esJefe() ? `<label>Vendedor<select id="vsVend">${opts((D().vendedores || []).filter(v => U().todasSucursales || v.suc === U().sucursal).map(v => [v.id, v.nombre]), f.vend, 'Todos')}</select></label>` : ''}
         <label>Estado<select id="vsEst">${opts([['Programada', 'Programadas'], ['Vencida', 'Vencidas (no se hicieron)'], ['Realizada', 'Realizadas'], ['Cancelada', 'Canceladas']], f.estado, 'Todas')}</select></label>
         <button class="btn primario fijo" onclick="App.cargarVisitas()">Buscar</button></div>
-        <div class="acciones izq" style="margin-top:10px"><button class="btn primario" onclick="App.formVisita({})">📅 Programar visita</button><button class="btn" onclick="App.formVisita({realizada:1})">✅ Registrar visita</button>${U().rol === 'Administrador' ? '<button class="btn" onclick="App.sincronizarCalendario()">🗓️ Pasar agenda a Google Calendar</button>' : ''}<button class="btn" onclick="App.suscribirCalendario()">🍏 Ver en el Calendario de mi Mac / iPhone</button></div></div>
+        <div class="acciones izq" style="margin-top:10px"><button class="btn primario" onclick="App.formVisita({})">📅 Programar visita</button>${puedeReunion() ? '<button class="btn primario" onclick="App.formEvento()">🤝 Crear reunión</button>' : ''}<button class="btn" onclick="App.formVisita({realizada:1})">✅ Registrar visita</button>${U().rol === 'Administrador' ? '<button class="btn" onclick="App.sincronizarCalendario()">🗓️ Pasar agenda a Google Calendar</button>' : ''}<button class="btn" onclick="App.suscribirCalendario()">🍏 Ver en el Calendario de mi Mac / iPhone</button></div></div>
       <div id="vsRes"><div class="vacio">Cargando…</div></div>`;
     ['vsDesde', 'vsHasta', 'vsVend', 'vsEst'].forEach(id => { const e = $('#' + id); if (e) e.onchange = cargarVisitas; });
+    if (puedeReunion()) { const t = $('#vista .tarjeta'); if (t) t.insertAdjacentHTML('afterend', '<div id="evProx"></div>'); evProximas('#evProx'); }
     cargarVisitas();
   };
   async function cargarVisitas() {
@@ -14362,7 +14637,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
