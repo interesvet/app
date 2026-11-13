@@ -1135,6 +1135,36 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
 #dEstado { margin-top: 6px; min-height: 1em; }
 .dash-rango { margin-top: 10px; }
 .dash-rango summary { cursor: pointer; color: var(--texto-2); font-size: 13px; }
+.dtit { margin: 22px 2px 8px; font-size: 12.5px; letter-spacing: 1px; color: var(--texto-3); font-weight: 700; text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
+.dtit small { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.dtit:after { content: ''; flex: 1; height: 1px; background: var(--borde); }
+.dtit-cad { color: var(--aviso); }
+.dbarra { height: 5px; background: var(--superficie-2); border-radius: 3px; margin-top: 4px; }
+.dbarra i { display: block; height: 5px; border-radius: 3px; background: var(--s1); }
+.cmp-vs { width: auto; display: inline-block; padding: 4px 8px; font-size: 13.5px; margin-left: 4px; }
+.cx-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; margin-top: 10px; }
+.cx-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cx-kpis .cmp-kpi { margin: 0; }
+.cx-lectura { background: var(--superficie-2); border-left: 4px solid var(--s1); border-radius: 10px; padding: 10px 14px; font-size: 14px; line-height: 1.5; }
+.cx-lectura ul { margin: 4px 0 0; padding-left: 18px; }
+.cx-bloque { margin-top: 14px; }
+.cx-mapa-cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cx-mapa-cab h4, .cx-graf h4 { margin: 0; }
+.cx-seg { display: inline-flex; background: var(--superficie-2); border-radius: 8px; padding: 2px; }
+.cx-seg button { border: 0; background: none; color: var(--texto-2); font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+.cx-seg button.on { background: var(--s1); color: #fff; font-weight: 700; }
+.cx-mapa { width: 100%; border-collapse: separate; border-spacing: 2px; font-size: 12.5px; min-width: 640px; }
+.cx-mapa th, .cx-mapa td { text-align: center; padding: 7px 4px; border-radius: 4px; white-space: nowrap; }
+.cx-mapa tbody th { text-align: left; padding-right: 8px; }
+.cx-mapa tr.cx-a th { color: var(--s1); }
+.cx-mapa tr.cx-cambio td, .cx-mapa tr.cx-cambio th { background: none; font-weight: 400; }
+.cx-graf { margin-top: 14px; }
+.cx-graf > div { min-width: 0; }
+.cx-graf p.peq { margin: 2px 0 6px; }
+@media (max-width: 760px) { .cx-top { grid-template-columns: 1fr; } }
+.rejilla-2.d2 { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.rejilla-2.d2 > .tarjeta { margin: 0; }
+@media (max-width: 760px) { .rejilla-2.d2 { grid-template-columns: 1fr; } }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;

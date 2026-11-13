@@ -1246,12 +1246,12 @@ const App = (() => {
   function dashTog(g, v) {
     const s = S.dashSel;
     if (g === 'todo') { s.sem = []; s.tri = []; s.mes = []; }
-    else { const l = s[g], i = l.indexOf(v); if (i >= 0) l.splice(i, 1); else l.push(v); if (g === 'anios' && !l.length) l.push(v); }
+    else { const l = s[g], i = l.indexOf(v); if (i >= 0) l.splice(i, 1); else l.push(v); if (g === 'anios' && !l.length) l.push(v); if (g === 'anios') S.dashVs = null; }
     S.dashModo = 'rapido'; dashChips(); dashArmar();
   }
   function dashAtajo(t) {
     const h = hoyISO(), y = +h.slice(0, 4), m = +h.slice(5, 7), s = S.dashSel; s.sem = []; s.tri = [];
-    if (t === 'mes') { s.anios = [y]; s.mes = [m]; } if (t === 'mesAnt') { s.anios = [m === 1 ? y - 1 : y]; s.mes = [m === 1 ? 12 : m - 1]; }
+    S.dashVs = null; if (t === 'mes') { s.anios = [y]; s.mes = [m]; } if (t === 'mesAnt') { s.anios = [m === 1 ? y - 1 : y]; s.mes = [m === 1 ? 12 : m - 1]; }
     if (t === 'anio') { s.anios = [y]; s.mes = []; } if (t === 'anioAnt') { s.anios = [y - 1]; s.mes = []; }
     S.dashModo = 'rapido'; dashChips(); dashArmar();
   }
@@ -1269,7 +1269,7 @@ const App = (() => {
     const kc = 'cubo_' + (U().id || '') + '_' + (suc || 'todas');
     if (!S.cubo[suc]) { const g = await KV.get(kc); if (g && g.d) S.cubo[suc] = g; }
     if (S.cubo[suc]) { dashChips(); dashArmar(); }
-    const viejo = !S.cubo[suc] || forzar || Date.now() - new Date(S.cubo[suc].generado).getTime() > 20 * 60000;
+    const viejo = !S.cubo[suc] || forzar || !S.cubo[suc].parcial || Date.now() - new Date(S.cubo[suc].generado).getTime() > 20 * 60000;
     const est = $('#dEstado'); if (est && viejo) est.textContent = S.cubo[suc] ? '⟳ actualizando datos…' : '⟳ preparando tus datos (solo la primera vez tarda)…';
     const tSnap = (!S.dashSnap[suc] || forzar) ? pedir('dashboard', { desde: hoyISO().slice(0, 8) + '01', hasta: hoyISO(), sucursal: suc }, true).then(r => { S.dashSnap[suc] = r; }).catch(() => {}) : Promise.resolve();
     const tCubo = viejo ? pedir('dashboardCubo', { sucursal: suc }, true).then(r => { S.cubo[suc] = r; KV.set(kc, r); }).catch(e => { if (!S.cubo[suc]) { const el = $('#dash'); if (el) el.innerHTML = `<div class="vacio">${/desconocida/i.test(e.message || '') ? 'El tablero rápido se activa con el servidor 245.' : e.red ? 'El tablero requiere conexión la primera vez.' : esc(e.message)}</div>`; } }) : Promise.resolve();
@@ -1280,17 +1280,40 @@ const App = (() => {
   function dashSucCambio() { S.dashModo = 'rapido'; dashIniciar(); }
   function dashRefrescar() { if (S.dashModo === 'rango') return cargarDashboard(); dashIniciar(true); }
   /** Suma los meses elegidos del cubo. */
-  function dashSuma(cub, claves) {
+  /** Un mes del resumen: completo o, si es el mes en curso de un año anterior, solo hasta el mismo día (comparación justa). */
+  function dashMes(cub, k, justo) {
+    if (justo && cub.parcial && cub.parcial[k]) {
+      const g = cub.gastos && cub.gastos[k], dm = new Date(+k.slice(0, 4), +k.slice(5, 7), 0).getDate(), f = Math.min(1, (cub.dia || dm) / dm);
+      return { m: cub.parcial[k], g: g ? g.map(x => x * f) : null };
+    }
+    return { m: cub.d[k], g: cub.gastos ? cub.gastos[k] : null };
+  }
+  function dashSumaObjs(objs) {
     const t = { v: 0, vi: 0, n: 0, cob: 0, mer: 0, cos: 0, cmp: 0, ord: 0, suc: {}, ven: {}, cli: {}, cat: {}, pr: {}, g: [0, 0, 0, 0] };
-    const ad = (a, b) => Object.keys(b).forEach(k => a[k] = (a[k] || 0) + b[k]);
-    claves.forEach(k => { const m = cub.d[k]; if (!m) return; t.v += m.v; t.vi += m.vi; t.n += m.n; t.cob += m.cob; t.mer += m.mer; t.cos += m.cos || 0; t.cmp += m.cmp || 0; t.ord += m.ord || 0;
+    const ad = (a, b) => Object.keys(b || {}).forEach(k => a[k] = (a[k] || 0) + b[k]);
+    objs.forEach(o => { const m = o.m; if (m) { t.v += m.v; t.vi += m.vi; t.n += m.n; t.cob += m.cob; t.mer += m.mer; t.cos += m.cos || 0; t.cmp += m.cmp || 0; t.ord += m.ord || 0;
       ad(t.suc, m.suc); ad(t.ven, m.ven); ad(t.cli, m.cli); ad(t.cat, m.cat);
-      Object.keys(m.pr).forEach(id => { const a = t.pr[id] || (t.pr[id] = [0, 0, 0]), b = m.pr[id]; a[0] += b[0]; a[1] += b[1]; a[2] += b[2] || 0; });
-      const g = cub.gastos && cub.gastos[k]; if (g) g.forEach((x, i) => t.g[i] += x); });
+      Object.keys(m.pr || {}).forEach(id => { const a = t.pr[id] || (t.pr[id] = [0, 0, 0]), b = m.pr[id]; a[0] += b[0]; a[1] += b[1]; a[2] += b[2] || 0; }); }
+      if (o.g) o.g.forEach((x, i) => t.g[i] += x || 0); });
     return t;
   }
+  function dashSuma(cub, claves) { return dashSumaObjs(claves.map(k => dashMes(cub, k))); }
   const dr2 = x => Math.round(x * 100) / 100;
   const dashTop = (o, n) => Object.keys(o).map(k => ({ nombre: k, valor: dr2(o[k]) })).sort((a, b) => b.valor - a.valor).slice(0, n);
+  const dKey = (y, m) => y + '-' + String(m).padStart(2, '0');
+  /** Año principal (el más reciente elegido) y año contra el que se compara (el otro elegido, o el anterior si solo hay uno). */
+  function dashAB(cub) {
+    const s = S.dashSel, h = hoyISO(), hY = +h.slice(0, 4), hM = +h.slice(5, 7);
+    const ys = s.anios.slice().sort((a, b) => a - b), A = ys[ys.length - 1];
+    const disp = Array.from(new Set(cub.meses.map(k => +k.slice(0, 4)).concat([A - 1]))).filter(y => y < A).sort((a, b) => b - a);
+    const B = S.dashVs && disp.includes(S.dashVs) ? S.dashVs : (ys.length > 1 ? ys[ys.length - 2] : A - 1);
+    const set = new Set(); s.sem.forEach(x => DSEM[x - 1].forEach(m => set.add(m))); s.tri.forEach(x => DTRI[x - 1].forEach(m => set.add(m))); s.mes.forEach(m => set.add(m));
+    const ms = set.size ? Array.from(set).sort((a, b) => a - b) : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const ok = ms.filter(m => A < hY || m <= hM), justo = A === hY;
+    const filas = Array.from(new Set(ys.concat([B]))).sort((a, b) => a - b);
+    const obj = (y, m) => dashMes(cub, dKey(y, m), justo && y < hY && m === hM);
+    return { A: A, B: B, disp: disp, ms: ms, ok: ok, filas: filas, obj: obj, dia: justo && ok.includes(hM) ? (cub.dia || +h.slice(8, 10)) : 0, hM: hM };
+  }
   function dashArmar() {
     const suc = dashSuc(), cub = (S.cubo || {})[suc], snap = (S.dashSnap || {})[suc];
     if (!cub || !$('#dash')) return;
@@ -1306,29 +1329,36 @@ const App = (() => {
     if (cu) { kpi.costoVentas = dr2(T.cos); kpi.utilidad = dr2(T.v - T.cos); kpi.margen = T.v ? dr2((T.v - T.cos) / T.v * 100) : 0; kpi.utilidadNeta = dr2(T.v - T.cos - T.mer); kpi.fletePct = cub.fletePct; }
     else { delete kpi.utilidad; delete kpi.costoVentas; delete kpi.margen; delete kpi.utilidadNeta; }
     if (cub.valLista) kpi.valLista = cub.valLista;
-    /* serie: si es un solo mes, los 12 meses que terminan en él; si son varios, los elegidos */
-    let serie = claves; if (claves.length === 1) { serie = []; const y = +fin.slice(0, 4), m = +fin.slice(5, 7); for (let i = 11; i >= 0; i--) { const d = new Date(y, m - 1 - i, 1); serie.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); } }
+    /* año principal contra año de comparación, mismos meses */
+    const X = dashAB(cub), TA = dashSumaObjs(X.ok.map(m => X.obj(X.A, m))), TB = dashSumaObjs(X.ok.map(m => X.obj(X.B, m))), hayB = TB.v > 0 || TB.n > 0;
+    /* evolución: los meses elegidos del año principal (si es uno solo, los 12 que terminan en él); referencia: las ventas del año de comparación */
+    let serie = X.ok.map(m => dKey(X.A, m));
+    if (serie.length <= 1) { const y = X.A, m = X.ok[0] || X.ms[0]; serie = []; for (let i = 11; i >= 0; i--) { const d = new Date(y, m - 1 - i, 1); serie.push(dKey(d.getFullYear(), d.getMonth() + 1)); } }
     const meses = serie.map(k => { const m = cub.d[k] || { v: 0, cmp: 0, mer: 0, cos: 0 }, g = cub.gastos ? cub.gastos[k] || [0, 0, 0, 0] : null, u = cu ? m.v - (m.cos || 0) : null;
       return { clave: k, etiqueta: dashEtq(k), ventas: dr2(m.v), compras: cub.verCompras ? dr2(m.cmp || 0) : null, mermas: dr2(m.mer), utilidad: cu ? dr2(u) : null,
         gastosOp: g ? g[0] : null, utilidadNeta: g && cu ? dr2(u - m.mer - g[3] - g[0] - g[1] - g[2]) : null }; });
+    const dy = X.A - X.B, refSerie = hayB ? serie.map(k => { const y = +k.slice(0, 4) - dy, mm = +k.slice(5, 7), o = X.obj(y, mm); return o.m ? dr2(o.m.v) : 0; }) : null;
     const nom = cub.nombres || {};
-    const prods = Object.keys(T.pr).map(id => ({ id: id, nombre: nom[id] || id, cant: dr2(T.pr[id][0]), importe: dr2(T.pr[id][1]), utilidad: cu ? dr2(T.pr[id][2]) : null })).sort((a, b) => b.importe - a.importe);
+    const prods = Object.keys(TA.pr).map(id => ({ id: id, nombre: nom[id] || id, cant: dr2(TA.pr[id][0]), importe: dr2(TA.pr[id][1]), utilidad: cu ? dr2(TA.pr[id][2]) : null, b: hayB ? dr2((TB.pr[id] || [0, 0])[1]) : null })).sort((a, b) => b.importe - a.importe);
+    const par = (a, b, fn) => Object.keys(Object.assign({}, a, b)).map(n => ({ nombre: fn ? fn(n) : n, a: dr2(a[n] || 0), b: dr2(b[n] || 0) })).sort((x, y) => y.a - x.a || y.b - x.b);
     const r = Object.assign({}, snap || { caducados: [], porCaducar: [] }, { periodo: { desde: fechaCorta(desde), hasta: fechaCorta(hasta) }, kpi: kpi, meses: meses,
-      porSucursal: dashTop(T.suc, 20), porVendedor: dashTop(T.ven, 15), topClientes: dashTop(T.cli, 10), porCategoria: dashTop(T.cat, 12), topProductos: prods.slice(0, 15),
-      resultados: null, gastosRapido: cub.gastos ? { op: dr2(T.g[0]), fin: dr2(T.g[1]), com: dr2(T.g[2]) } : null, serieTitulo: claves.length === 1 ? '📈 Últimos 12 meses' : '📈 Mes por mes del periodo elegido' });
+      porSucursal: dashTop(TA.suc, 20), porVendedor: dashTop(TA.ven, 15), topClientes: par(TA.cli, hayB ? TB.cli : {}).filter(x => x.a > 0).slice(0, 10).map(x => ({ nombre: x.nombre, valor: x.a, b: hayB ? x.b : null })),
+      porCategoria: dashTop(TA.cat, 12), topProductos: prods.slice(0, 15), resultados: null, gastosRapido: cub.gastos ? { op: dr2(T.g[0]), fin: dr2(T.g[1]), com: dr2(T.g[2]) } : null,
+      serieTitulo: '📈 Ventas, compras, utilidad y gastos por mes · ' + (serie.length === 12 && X.ok.length <= 1 ? 'últimos 12 meses' : X.A), mesesRef: refSerie, yA: X.A, yB: hayB ? X.B : null,
+      par: hayB ? { suc: par(TA.suc, TB.suc).slice(0, 12), cat: par(TA.cat, TB.cat).slice(0, 12), ven: par(TA.ven, TB.ven).slice(0, 12) } : null });
     const p = { desde: desde, hasta: hasta, sucursal: suc, claves: claves };
     S.dashModo = 'rapido';
-    pintarDash(r, p, dashComparar(cub, claves, T, prods, desde, hasta));
+    pintarDash(r, p, dashComparar(cub, X, TA, TB, hayB));
     dashDetalle(p);
   }
-  /** Comparativo instantáneo: los mismos meses del año anterior. */
-  function dashComparar(cub, claves, A, prodsA, desde, hasta) {
-    const atras = claves.map(k => (+k.slice(0, 4) - 1) + k.slice(4)), B = dashSuma(cub, atras), cu = cub.conUtil, nom = cub.nombres || {};
+  /** Comparativo instantáneo: año principal contra el año de comparación, en los mismos meses (y el mes en curso hasta el mismo día). */
+  function dashComparar(cub, X, A, B, hayB) {
+    const cu = cub.conUtil, nom = cub.nombres || {}, gT = t => t.g.reduce((s, x) => s + x, 0);
     const kpi = [], add = (k, t, a, b, tipo, mal) => { if (a === null || a === undefined) return; kpi.push({ k: k, t: t, a: dr2(a), b: dr2(b || 0), tipo: tipo || '$', malSiSube: !!mal }); };
     add('ventas', 'Ventas netas (sin IVA)', A.v, B.v);
     if (cu) { add('utilidad', 'Utilidad bruta', A.v - A.cos, B.v - B.cos); add('margen', 'Margen bruto', A.v ? (A.v - A.cos) / A.v * 100 : 0, B.v ? (B.v - B.cos) / B.v * 100 : 0, '%'); }
     if (cub.gastos) { add('gastos', 'Gastos', A.g[0] + A.g[1], B.g[0] + B.g[1], '$', true); if (A.g[2] || B.g[2]) add('comisiones', 'Comisiones', A.g[2], B.g[2], '$', true);
-      if (cu) add('utilidadNeta', 'Utilidad neta', A.v - A.cos - A.mer - A.g.reduce((s, x) => s + x, 0), B.v - B.cos - B.mer - B.g.reduce((s, x) => s + x, 0)); }
+      if (cu) add('utilidadNeta', 'Utilidad neta', A.v - A.cos - A.mer - gT(A), B.v - B.cos - B.mer - gT(B)); }
     add('notas', 'Notas de venta', A.n, B.n, 'n'); add('ticket', 'Ticket promedio', A.n ? A.v / A.n : 0, B.n ? B.v / B.n : 0);
     add('clientes', 'Clientes que compraron', Object.keys(A.cli).length, Object.keys(B.cli).length, 'n'); add('cobrado', 'Cobrado', A.cob, B.cob);
     if (cub.verCompras) add('compras', 'Compras', A.cmp, B.cmp, '$', true); add('mermas', 'Mermas', A.mer, B.mer, '$', true);
@@ -1340,12 +1370,105 @@ const App = (() => {
     const cm = {}; Object.keys(A.cli).forEach(n => cm[n] = { nombre: n, a: dr2(A.cli[n]), b: 0 }); Object.keys(B.cli).forEach(n => { (cm[n] = cm[n] || { nombre: n, a: 0, b: 0 }).b = dr2(B.cli[n]); });
     const clis = Object.keys(cm).map(k => cm[k]); const ca = rk(clis, x => x.a, x => x.nombre), cbk = rk(clis, x => x.b, x => x.nombre); clis.forEach(x => { x.rA = ca[x.nombre] || null; x.rB = cbk[x.nombre] || null; });
     const top = (l, f, n) => l.filter(x => f(x) > 0).sort((x, y) => f(y) - f(x)).slice(0, n);
-    const dB = (+desde.slice(0, 4) - 1) + desde.slice(4), hB = (+hasta.slice(0, 4) - 1) + hasta.slice(4);
-    return { periodo: { actual: { desde: fechaCorta(desde), hasta: fechaCorta(hasta) }, anterior: { desde: fechaCorta(dB), hasta: fechaCorta(hB) } }, kpi: kpi,
-      meses: claves.map((k, i) => ({ etiqueta: dashEtq(k), ventas: dr2((cub.d[k] || {}).v || 0), ventasAnt: dr2((cub.d[atras[i]] || {}).v || 0) })),
-      productos: prods, topProductos: top(prods, x => x.impA, 10), topProductosAnt: top(prods, x => x.impB, 10), topClientes: top(clis, x => x.a, 10), topClientesAnt: top(clis, x => x.b, 10),
+    const ult = X.ok[X.ok.length - 1] || X.ms[X.ms.length - 1], pri = X.ok[0] || X.ms[0], dd = n => String(n).padStart(2, '0');
+    const finDe = y => (X.dia && ult === X.hM ? dd(X.dia) : dd(new Date(y, ult, 0).getDate())) + '/' + dd(ult) + '/' + y;
+    const mesesX = X.ok.map(m => { const a = X.obj(X.A, m).m || {}, b = X.obj(X.B, m).m || {}; return { mes: m, etiqueta: DM[m - 1], ventas: dr2(a.v || 0), ventasAnt: dr2(b.v || 0) }; });
+    return { periodo: { actual: { desde: '01/' + dd(pri) + '/' + X.A, hasta: finDe(X.A) }, anterior: { desde: '01/' + dd(pri) + '/' + X.B, hasta: finDe(X.B) } }, kpi: kpi,
+      meses: mesesX, productos: prods, topProductos: top(prods, x => x.impA, 10), topProductosAnt: top(prods, x => x.impB, 10), topClientes: top(clis, x => x.a, 10), topClientesAnt: top(clis, x => x.b, 10),
       nuevos: prods.filter(x => x.impA > 0 && !(x.impB > 0)).length, perdidos: prods.filter(x => x.impB > 0 && !(x.impA > 0)).length,
-      clientesNuevos: clis.filter(x => x.a > 0 && !(x.b > 0)).length, clientesPerdidos: clis.filter(x => x.b > 0 && !(x.a > 0)).length, mesesSinGastos: [], huecosGastos: [], verUtil: !!cu };
+      clientesNuevos: clis.filter(x => x.a > 0 && !(x.b > 0)).length, clientesPerdidos: clis.filter(x => x.b > 0 && !(x.a > 0)).length, mesesSinGastos: [], huecosGastos: [], verUtil: !!cu,
+      x: { A: X.A, B: X.B, hayB: hayB, disp: X.disp, ms: X.ms, ok: X.ok, filas: X.filas, dia: X.dia, hM: X.hM, cu: !!cu, gastos: !!cub.gastos, verCompras: !!cub.verCompras, TA: A, TB: B, clis: clis, obj: X.obj } };
+  }
+  /** 📅 Sección "¿Qué cambió?": tarjetas, lectura rápida, mapa de meses, diferencia mes a mes, curvas y quién explica el cambio. */
+  function pintarCompX() {
+    const r = S.comp, el = $('#dashComp'); if (!r || !r.x || !el) return;
+    const x = r.x, A = x.A, B = x.B, TA = x.TA, TB = x.TB, gT = t => t.g.reduce((s, v) => s + v, 0);
+    const rango = x.ok.length ? (x.ok.length === 12 ? 'Todo el año' : x.ok.length > 2 && x.ok.every((m, i) => !i || m === x.ok[i - 1] + 1) ? DM[x.ok[0] - 1] + ' – ' + DM[x.ok[x.ok.length - 1] - 1] : x.ok.map(m => DM[m - 1]).join(', ')) : '—';
+    const justo = x.dia ? ` · ${DM[x.hM - 1].toLowerCase()} comparado con los mismos ${x.dia} días` : '';
+    const selVs = `<select class="cmp-vs" onchange="App.dashVs(this.value)" title="Año contra el que se compara">${x.disp.map(y => `<option value="${y}" ${y === B ? 'selected' : ''}>${y}</option>`).join('')}</select>`;
+    const tarj = [['Ventas netas', TA.v, TB.v]];
+    if (x.cu) tarj.push(['Utilidad bruta', TA.v - TA.cos, TB.v - TB.cos]); else tarj.push(['Notas de venta', TA.n, TB.n, 'n']);
+    if (x.cu && x.gastos) tarj.push(['Utilidad neta', TA.v - TA.cos - TA.mer - gT(TA), TB.v - TB.cos - TB.mer - gT(TB)]); else tarj.push(['Ticket promedio', TA.n ? TA.v / TA.n : 0, TB.n ? TB.v / TB.n : 0]);
+    tarj.push(['Clientes que compraron', Object.keys(TA.cli).length, Object.keys(TB.cli).length, 'n']);
+    const dif = x.ok.map(m => { const a = x.obj(A, m).m, b = x.obj(B, m).m; return { m: m, a: a ? a.v : 0, b: b ? b.v : 0, d: (a ? a.v : 0) - (b ? b.v : 0) }; });
+    el.innerHTML = `<div class="cmp-cab"><h3 style="margin:0">📅 ¿Qué cambió de ${B} a ${A}? <small class="muted" style="font-weight:400">Comparar contra</small> ${selVs}</h3><small class="muted">${esc(rango)} en ambos años${justo}</small></div>
+      ${!x.hayB ? `<div class="vacio">No hay ventas en ${B} en esos meses para comparar. Elige otro año en “Comparar contra”.</div>` : `
+      <div class="cx-top"><div class="cx-kpis">${tarj.map(t => `<div class="cmp-kpi"><small>${esc(t[0])}</small><b>${fmtK(dr2(t[1]), t[3])}</b><span>${chipDelta(t[1], t[2], false, t[3])} <em>${B}: ${fmtK(dr2(t[2]), t[3])}</em></span></div>`).join('')}</div>
+        <div class="cx-lectura">${cxLectura(x, dif)}</div></div>
+      <div class="cx-bloque"><div class="cx-mapa-cab"><h4>Mapa de meses</h4><span class="cx-seg" id="cxSeg"></span></div><p class="muted peq" style="margin:2px 0 6px">Más intenso = más alto · última fila: cambio de ${A} contra ${B}</p><div class="tabla-cont" id="cxMapa"></div></div>
+      <div class="rejilla-2 d2 cx-graf">
+        <div><h4>Diferencia mes a mes</h4><p class="muted peq">Verde: ${A} vendió más que ${B} · rojo: vendió menos</p><div class="grafica" style="height:260px"><canvas id="gDif"></canvas></div></div>
+        <div><h4>Las curvas de cada año</h4><p class="muted peq">Mismos meses, una línea por año</p><div class="grafica" style="height:260px"><canvas id="gCurvas"></canvas></div></div>
+        <div><h4>Qué productos explican la diferencia</h4><p class="muted peq">Lo que ganaste o perdiste en cada uno contra ${B}</p><div class="grafica" id="gxP" style="height:300px"><canvas id="gExpP"></canvas></div></div>
+        <div><h4>Qué clientes explican la diferencia</h4><p class="muted peq">Crecieron o dejaron de comprar</p><div class="grafica" id="gxC" style="height:300px"><canvas id="gExpC"></canvas></div></div>
+      </div>
+      <div class="acciones izq" style="margin-top:10px"><button class="btn primario" onclick="App.compProductos()">📋 Producto por producto (${nf(r.productos.length)})</button>
+        <span class="muted peq">✨ ${nf(r.nuevos)} productos nuevos · ${nf(r.perdidos)} que se vendieron en ${B} y no en ${A} · ${nf(r.clientesNuevos)} clientes nuevos · ${nf(r.clientesPerdidos)} que compraron en ${B} y no en ${A}</span></div>`}`;
+    if (!x.hayB) return;
+    cxMapa();
+    const ok = css('--ok') || '#3fb950', mal = css('--peligro') || '#f07a71', cA = css('--s1'), cB = css('--texto-3') || '#999';
+    const ejeM = { ticks: { callback: v => (v > 0 ? '+' : '') + tickMoneda(v) }, grid: { color: css('--borde') } };
+    grafica('gDif', { type: 'bar', data: { labels: dif.map(d => DM[d.m - 1]), datasets: [{ data: dif.map(d => dr2(d.d)), backgroundColor: dif.map(d => d.d >= 0 ? ok : mal), borderRadius: 4, maxBarThickness: 40 }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => { const d = dif[c.dataIndex]; return [(d.d >= 0 ? '+' : '') + $$(d.d), A + ': ' + $$(d.a), B + ': ' + $$(d.b)]; } } } },
+        scales: { y: ejeM, x: { grid: { display: false } } } } });
+    const pal = ['#e7b04a', '#b07cd8', '#3fbfb0', '#e0703a'];
+    grafica('gCurvas', { type: 'line', data: { labels: x.ms.map(m => DM[m - 1]), datasets: x.filas.slice().reverse().map((y, i) => ({ label: String(y),
+        data: x.ms.map(m => (y === A && !x.ok.includes(m)) ? null : (x.obj(y, m).m || { v: 0 }).v), borderColor: y === A ? cA : y === B ? cB : pal[i % pal.length], backgroundColor: y === A ? cA : y === B ? cB : pal[i % pal.length],
+        borderDash: y === B ? [6, 4] : [], borderWidth: y === A ? 3 : 2, pointRadius: y === A ? 3 : 2, tension: .3 })) },
+      options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + $$(c.raw) } } },
+        scales: { y: { ticks: { callback: tickMoneda }, grid: { color: css('--borde') } }, x: { grid: { display: false } } } } });
+    const explica = (id, caja, lista) => {
+      const l = lista.filter(o => Math.abs(o.d) >= 1).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 10).sort((a, b) => b.d - a.d);
+      if ($('#' + caja)) $('#' + caja).style.height = Math.max(200, l.length * 30 + 50) + 'px';
+      grafica(id, { type: 'bar', data: { labels: l.map(o => o.n), datasets: [{ data: l.map(o => dr2(o.d)), backgroundColor: l.map(o => o.d >= 0 ? ok : mal), borderRadius: 4, maxBarThickness: 22 }] },
+        options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => { const o = l[c.dataIndex]; return [(o.d >= 0 ? '+' : '') + $$(o.d), A + ': ' + $$(o.a), B + ': ' + $$(o.b)]; } } } },
+          scales: { x: ejeM, y: { grid: { display: false }, ticks: { autoSkip: false, font: { size: 11 }, callback: function (v) { const t = this.getLabelForValue(v); return t.length > 30 ? t.slice(0, 29) + '…' : t; } } } } } });
+    };
+    explica('gExpP', 'gxP', r.productos.map(o => ({ n: rdCorto(o.nombre), a: o.impA, b: o.impB, d: o.impA - o.impB })));
+    explica('gExpC', 'gxC', x.clis.map(o => ({ n: o.nombre, a: o.a, b: o.b, d: o.a - o.b })));
+  }
+  /** Lectura rápida: lo importante en palabras. */
+  function cxLectura(x, dif) {
+    const A = x.A, B = x.B, TA = x.TA, TB = x.TB, d = TA.v - TB.v, curso = A === +hoyISO().slice(0, 4), l = [];
+    const p = TB.v ? (d / TB.v * 100).toFixed(1) + '%' : '';
+    l.push(`${A} ${curso ? 'lleva' : 'vendió'} <b>${$$(Math.abs(d))} ${d >= 0 ? 'más' : 'menos'}</b> que ${B}${p ? ' (' + (d >= 0 ? '+' : '−') + p.replace('-', '') + ')' : ''}.`);
+    const abajo = dif.filter(o => o.d < 0), arriba = dif.filter(o => o.d > 0);
+    if (dif.length > 1) l.push(abajo.length ? (abajo.length === dif.length ? `Todos los meses quedaron abajo de ${B}.` : `Quedaron abajo: <b>${abajo.map(o => DM[o.m - 1]).join(', ')}</b> (${abajo.length} de ${dif.length} meses).`) : `Todos los meses quedaron arriba de ${B}.`);
+    if (dif.length > 1 && arriba.length) { const mx = arriba.reduce((a, b) => b.d > a.d ? b : a); l.push(`<b>${DM[mx.m - 1]}</b> fue el mes que más aportó (+${$$(mx.d)}).`); }
+    if (dif.length > 1 && abajo.length) { const mn = abajo.reduce((a, b) => b.d < a.d ? b : a); l.push(`<b>${DM[mn.m - 1]}</b> fue el que más restó (${$$(mn.d)}).`); }
+    const cs = x.clis.map(o => ({ n: o.nombre, d: o.a - o.b })).sort((a, b) => d >= 0 ? b.d - a.d : a.d - b.d).filter(o => d >= 0 ? o.d > 0 : o.d < 0).slice(0, 2);
+    if (cs.length) l.push(`${d >= 0 ? 'El crecimiento viene sobre todo de' : 'La caída viene sobre todo de'} <b>${cs.map(o => esc(o.n)).join('</b> y <b>')}</b> (${cs.map(o => (o.d >= 0 ? '+' : '') + $$(o.d)).join(' y ')}).`);
+    if (x.cu && TA.v && TB.v) { const ma = (TA.v - TA.cos) / TA.v * 100, mb = (TB.v - TB.cos) / TB.v * 100, dm = ma - mb; l.push(`Margen bruto <b>${ma.toFixed(1)}%</b> contra ${mb.toFixed(1)}% (${dm >= 0 ? '+' : '−'}${Math.abs(dm).toFixed(1)} pts).`); }
+    if (x.gastos) { const ga = TA.g[0] + TA.g[1], gb = TB.g[0] + TB.g[1]; if (gb) { const pg = (ga - gb) / gb * 100, pv = TB.v ? d / TB.v * 100 : 0;
+      l.push(`Los gastos ${pg >= 0 ? 'subieron' : 'bajaron'} <b>${Math.abs(pg).toFixed(1)}%</b> y las ventas ${pv >= 0 ? 'subieron' : 'bajaron'} ${Math.abs(pv).toFixed(1)}%${pg > pv + 2 ? ': <b>los gastos crecen más rápido que las ventas</b>' : ''}.`); } }
+    return '<b>Lectura rápida</b><ul>' + l.map(t => '<li>' + t + '</li>').join('') + '</ul>';
+  }
+  /** Mapa de meses (se vuelve a pintar solo él al cambiar Ventas / Utilidad / Compras / Notas). */
+  function cxMapa() {
+    const r = S.comp; if (!r || !r.x || !$('#cxMapa')) return; const x = r.x;
+    const mets = [['v', 'Ventas']].concat(x.cu ? [['u', 'Utilidad']] : []).concat(x.verCompras ? [['c', 'Compras']] : []).concat([['n', 'Notas']]);
+    if (!mets.some(m => m[0] === S.dashMet)) S.dashMet = 'v';
+    const met = S.dashMet, val = m => !m ? null : met === 'v' ? m.v : met === 'u' ? m.v - (m.cos || 0) : met === 'c' ? (m.cmp || 0) : m.n;
+    const fmt = v => met === 'n' ? nf(v) : tickMoneda(Math.round(v)), fmtT = v => met === 'n' ? nf(v) : $$(v);
+    $('#cxSeg').innerHTML = mets.map(m => `<button type="button" class="${m[0] === met ? 'on' : ''}" onclick="App.dashMet('${m[0]}')">${m[1]}</button>`).join('');
+    const celda = (y, mm) => (y === x.A && !x.ok.includes(mm)) ? null : val(x.obj(y, mm).m);
+    const vals = []; x.filas.forEach(y => x.ms.forEach(mm => { const v = celda(y, mm); if (v) vals.push(Math.abs(v)); }));
+    const mx = Math.max(1, ...vals);
+    const td = (v, ast) => v === null ? '<td class="muted">—</td>' : `<td style="background:rgba(66,133,224,${(Math.max(0, v) / mx * .8 + .06).toFixed(2)});${v / mx > .55 ? 'color:#fff;' : ''}font-weight:600">${fmt(v)}${ast ? '*' : ''}</td>`;
+    const tot = y => x.ok.reduce((s, mm) => s + (val(x.obj(y, mm).m) || 0), 0);
+    $('#cxMapa').innerHTML = `<table class="cx-mapa"><thead><tr><th></th>${x.ms.map(mm => `<th>${DM[mm - 1]}</th>`).join('')}<th>Total</th></tr></thead><tbody>
+      ${x.filas.map(y => `<tr class="${y === x.A ? 'cx-a' : y === x.B ? 'cx-b' : ''}"><th>${y}</th>${x.ms.map(mm => td(celda(y, mm), x.dia && y !== x.A && mm === x.hM)).join('')}<td><b>${fmtT(dr2(tot(y)))}</b></td></tr>`).join('')}
+      <tr class="cx-cambio"><th>Cambio</th>${x.ms.map(mm => x.ok.includes(mm) ? `<td>${chipDelta(celda(x.A, mm) || 0, celda(x.B, mm) || 0, met === 'c')}</td>` : '<td></td>').join('')}<td>${chipDelta(tot(x.A), tot(x.B), met === 'c')}</td></tr></tbody></table>${x.dia ? `<p class="muted peq" style="margin:4px 0 0">* ${DM[x.hM - 1]}: del 1 al ${x.dia} en los años anteriores, para compararlo justo contra lo que va del mes.</p>` : ''}`;
+  }
+  function dashMet(m) { S.dashMet = m; cxMapa(); }
+  function dashVs(y) { S.dashVs = +y; dashArmar(); }
+  /** Barras horizontales de dos años lado a lado. */
+  function barrasPar(id, items, yA, yB) {
+    const caja = document.getElementById(id) && document.getElementById(id).parentNode; if (caja) caja.style.height = Math.max(220, items.length * 42 + 60) + 'px';
+    grafica(id, { type: 'bar', data: { labels: items.map(o => o.nombre), datasets: [{ label: String(yB), data: items.map(o => o.b), backgroundColor: css('--texto-3') || '#999', borderRadius: 3, maxBarThickness: 14 },
+        { label: String(yA), data: items.map(o => o.a), backgroundColor: css('--s1'), borderRadius: 3, maxBarThickness: 14 }] },
+      options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + $$(c.raw), footer: it => { const o = items[it[0].dataIndex], d = delta(o.a, o.b); return d === null ? 'nuevo' : (d > 0 ? '▲ ' : d < 0 ? '▼ ' : '') + Math.abs(d) + '%'; } } } },
+        scales: { x: { ticks: { callback: tickMoneda }, grid: { color: css('--borde') } }, y: { grid: { display: false }, ticks: { autoSkip: false, callback: function (v) { const t = this.getLabelForValue(v); return t.length > 22 ? t.slice(0, 21) + '…' : t; } } } } } });
   }
   /** Detalle que no cabe en el resumen por mes (estado de resultados y compras pagadas/por recibir): se trae en segundo plano
    *  solo cuando los meses elegidos van seguidos; mientras, el tablero ya está a la vista. */
@@ -1395,41 +1518,46 @@ const App = (() => {
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
         'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (r.resultados.comisiones ? ' · comisiones aparte ' + $$(r.resultados.comisiones) : '') + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
       </div>
-      <div class="tarjeta cmp" id="dashComp"><div class="vacio">📅 Comparando con el mismo periodo del año anterior…</div></div>
-      ${r.caducados.length ? `<div class="tarjeta"><h3>⚠️ Caducados con existencia</h3>${tablaCaducidad(r.caducados)}</div>` : ''}
-      <div class="tarjeta"><h3>⏳ Por caducar (≤ ${(D().config || {}).diasCaducidad || 120} días)</h3>${tablaCaducidad(r.porCaducar)}</div>
-      ${htmlCompras}
-      <div class="tarjeta"><h3>🔥 Productos más vendidos</h3>${tabla([{ t: 'Producto', k: 'nombre' }, { t: 'Cantidad', num: 1, h: x => nf(x.cant) },
-        { t: 'Venta neta', num: 1, h: x => $$(x.importe) }].concat(c ? [{ t: 'Utilidad', num: 1, h: x => $$(x.utilidad) }, { t: 'Margen', num: 1, h: x => x.importe ? (x.utilidad / x.importe * 100).toFixed(1) + '%' : '—' }] : []), r.topProductos)}</div>
-      <div class="tarjeta"><h3>${r.serieTitulo || '📈 Últimos 12 meses'}</h3><div class="grafica"><canvas id="gMeses"></canvas></div></div>
-      <div class="espacio"></div>
-      <div class="rejilla-2">
-        <div class="tarjeta"><h3>Ventas por vendedor</h3><div class="grafica"><canvas id="gVend"></canvas></div></div>
-        <div class="tarjeta"><h3>Mejores clientes</h3>${tabla([{ t: 'Cliente', k: 'nombre' }, { t: 'Venta neta', num: 1, h: x => $$(x.valor) }], r.topClientes)}</div>
+      <div class="tarjeta cmp" id="dashComp"><div class="vacio">📅 Comparando con el año anterior…</div></div>
+      <div class="dtit">📈 Evolución del periodo</div>
+      <div class="tarjeta"><h3>${r.serieTitulo || '📈 Últimos 12 meses'}</h3>${r.mesesRef ? `<p class="muted peq" style="margin:-4px 0 6px">Línea punteada gris: ventas de ${r.yB} en los mismos meses</p>` : ''}<div class="grafica" style="height:300px"><canvas id="gMeses"></canvas></div></div>
+      <div class="dtit">🏪 ¿Dónde y con quién se vende?${r.par ? ` <small>${r.yA} contra ${r.yB}</small>` : ''}</div>
+      <div class="rejilla-2 d2">
         <div class="tarjeta"><h3>Ventas por sucursal</h3><div class="grafica"><canvas id="gSuc"></canvas></div></div>
         <div class="tarjeta"><h3>Ventas por categoría</h3><div class="grafica"><canvas id="gCat"></canvas></div></div>
+        <div class="tarjeta"><h3>Ventas por vendedor</h3><div class="grafica"><canvas id="gVend"></canvas></div></div>
+        <div class="tarjeta"><h3>Mejores clientes</h3>${(() => { const mx = Math.max(1, ...r.topClientes.map(x => x.valor)); return tabla([{ t: 'Cliente', h: x => `${esc(x.nombre)}<div class="dbarra"><i style="width:${(x.valor / mx * 100).toFixed(1)}%"></i></div>` }, { t: 'Venta neta', num: 1, h: x => $$(x.valor) }]
+          .concat(r.yB ? [{ t: 'vs ' + r.yB, num: 1, h: x => chipDelta(x.valor, x.b || 0) }] : []), r.topClientes); })()}</div>
       </div>
-      <div class="espacio"></div>
+      <div class="dtit">🔥 Productos</div>
+      <div class="tarjeta"><h3>🔥 Productos más vendidos</h3>${tabla([{ t: 'Producto', k: 'nombre' }, { t: 'Cantidad', num: 1, h: x => nf(x.cant) },
+        { t: 'Venta neta', num: 1, h: x => $$(x.importe) }].concat(c ? [{ t: 'Utilidad', num: 1, h: x => $$(x.utilidad) }, { t: 'Margen', num: 1, h: x => x.importe ? (x.utilidad / x.importe * 100).toFixed(1) + '%' : '—' }] : [])
+        .concat(r.yB ? [{ t: 'vs ' + r.yB, num: 1, h: x => chipDelta(x.importe, x.b || 0) }] : []), r.topProductos)}</div>
+      ${htmlCompras ? '<div class="dtit">📦 Compras y cuentas por pagar</div>' + htmlCompras : ''}
+      ${r.resultados || r.gastosRapido ? '<div class="dtit">🔒 Resultados</div>' : ''}
       ${r.resultados && !r.resultados.error ? htmlUtilNeta(r.resultados) : ''}
-      ${r.resultados ? htmlResultados(r.resultados) : r.gastosRapido && p.claves && p.claves.length ? `<p class="muted peq">${p.claves.every((x, i) => !i || x > p.claves[i - 1]) && S.dashDetT ? '📑 El estado de resultados detallado aparece en un momento…' : ''}</p>` : ''}<div id="miPlan"></div>`;
+      ${r.resultados ? htmlResultados(r.resultados) : r.gastosRapido && p.claves && p.claves.length ? `<p class="muted peq">${p.claves.every((x, i) => !i || x > p.claves[i - 1]) && S.dashDetT ? '📑 El estado de resultados detallado aparece en un momento…' : ''}</p>` : ''}<div id="miPlan"></div>
+      <div class="dtit dtit-cad">⚠️ Caducidades</div>
+      ${r.caducados.length ? `<div class="tarjeta"><h3>⚠️ Caducados con existencia</h3>${tablaCaducidad(r.caducados)}</div>` : ''}
+      <div class="tarjeta"><h3>⏳ Por caducar (≤ ${(D().config || {}).diasCaducidad || 120} días)</h3>${tablaCaducidad(r.porCaducar)}</div>`;
     if (!puede('dueno') && !esContador()) cargarMiPlan();
     if (U().rol === 'Gerente') cargarSocAviso();
-    const ds = [{ label: 'Ventas', data: r.meses.map(m => m.ventas), borderColor: css('--s1'), backgroundColor: css('--s1') }];
-    if (k.compras !== null && k.compras !== undefined) ds.push({ label: 'Compras', data: r.meses.map(m => m.compras), borderColor: css('--s2'), backgroundColor: css('--s2') });
+    const ds = [{ type: 'bar', label: 'Ventas', data: r.meses.map(m => m.ventas), borderColor: css('--s1'), backgroundColor: css('--s1'), order: 3, borderRadius: 3, maxBarThickness: 30 }];
+    if (k.compras !== null && k.compras !== undefined) ds.push({ type: 'bar', label: 'Compras', data: r.meses.map(m => m.compras), borderColor: css('--s2'), backgroundColor: css('--s2'), order: 4, borderRadius: 3, maxBarThickness: 30 });
     if (c) ds.push({ label: 'Utilidad', data: r.meses.map(m => m.utilidad), borderColor: css('--s3'), backgroundColor: css('--s3') });
     if ((r.resultados && !r.resultados.error) || r.meses.some(m => m.gastosOp !== null && m.gastosOp !== undefined)) {
       ds.push({ label: 'Gastos de operación', data: r.meses.map(m => m.gastosOp), borderColor: css('--aviso'), backgroundColor: css('--aviso') });
       ds.push({ label: 'Utilidad neta', data: r.meses.map(m => m.utilidadNeta), borderColor: css('--texto'), backgroundColor: css('--texto'), borderDash: [5, 4] });
     }
-    ds.forEach(d => { d.borderWidth = 2; d.pointRadius = 3; d.tension = .25; });
-    grafica('gMeses', { type: 'line', data: { labels: r.meses.map(m => m.etiqueta), datasets: ds },
+    if (r.mesesRef) ds.push({ label: 'Ventas ' + r.yB, data: r.mesesRef, borderColor: css('--texto-3') || '#999', backgroundColor: css('--texto-3') || '#999', borderDash: [6, 4], pointRadius: 0 });
+    ds.forEach(d => { if (d.type === 'bar') return; d.type = 'line'; d.order = 1; d.borderWidth = d.borderWidth || 2; if (d.pointRadius === undefined) d.pointRadius = 3; d.tension = .25; });
+    grafica('gMeses', { type: 'bar', data: { labels: r.meses.map(m => m.etiqueta), datasets: ds },
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
         plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: x => x.dataset.label + ': ' + $$(x.raw) } } },
         scales: { y: { ticks: { callback: tickMoneda } }, x: { grid: { display: false } } } } });
-    barras('gSuc', r.porSucursal.map(x => ({ nombre: sucNom(x.nombre), valor: x.valor })), null, true);
-    if (comp) { S.comp = comp; pintarComparativo(); } else cargarComparativo(p);
-    barras('gCat', r.porCategoria, null, true);
-    barras('gVend', r.porVendedor, null, true);
+    if (r.par) { barrasPar('gSuc', r.par.suc.map(x => Object.assign({}, x, { nombre: sucNom(x.nombre) })), r.yA, r.yB); barrasPar('gCat', r.par.cat, r.yA, r.yB); barrasPar('gVend', r.par.ven, r.yA, r.yB); }
+    else { barras('gSuc', r.porSucursal.map(x => ({ nombre: sucNom(x.nombre), valor: x.valor })), null, true); barras('gCat', r.porCategoria, null, true); barras('gVend', r.porVendedor, null, true); }
+    if (comp) { S.comp = comp; if (comp.x) pintarCompX(); else pintarComparativo(); } else cargarComparativo(p);
     if (r.resultados && !r.resultados.error && $('#gGastos')) {
       const op = r.resultados.porCategoria.filter(x => x.grupo === 'Operación');
       barras('gGastos', op.map(x => ({ nombre: x.cat, valor: x.monto })), css('--aviso'), true);
@@ -15326,7 +15454,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
