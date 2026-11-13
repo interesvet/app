@@ -488,16 +488,40 @@ const App = (() => {
   }
   /** 📄 Tope del convenio rebasado: solo el dueño lo autoriza; el monto autorizado es el nuevo tope. */
   async function callTope(accion, params, silencioso) {
-    try { return await call(accion, params); }
-    catch (e) {
-      const m = String(e.message || ''); if (m.indexOf('TOPE_CONVENIO::') !== 0) throw e;
-      let info = {}; try { info = JSON.parse(m.slice(15)); } catch (x) {}
-      if (!silencioso) cargando(false);
-      const n = await pedirTope(info);
-      if (!n) { const x = new Error('No se guardó: no se autorizó rebasar el tope del convenio'); x.cancelada = true; throw x; }
-      if (!silencioso) cargando(true);
-      return await call(accion, Object.assign({}, params || {}, { __topeAutorizado: n }));
+    let p = Object.assign({}, params || {});
+    for (let i = 0; i < 3; i++) {
+      try { return await call(accion, p); }
+      catch (e) {
+        const m = String(e.message || ''), tope = m.indexOf('TOPE_CONVENIO::') === 0, cierre = m.indexOf('PERIODO_CERRADO::') === 0;
+        if (!tope && !cierre) throw e;
+        let info = {}; try { info = JSON.parse(m.slice(tope ? 15 : 17)); } catch (x) {}
+        if (!silencioso) cargando(false);
+        if (tope) {
+          const n = await pedirTope(info);
+          if (!n) { const x = new Error('No se guardó: no se autorizó rebasar el tope del convenio'); x.cancelada = true; throw x; }
+          p.__topeAutorizado = n;
+        } else {
+          const ok = await pedirCierreOk(info);
+          if (!ok) { const x = new Error('No se guardó: ' + (info.mes || 'el mes') + ' está cerrado'); x.cancelada = true; throw x; }
+          p.__cierreOk = true;
+        }
+        if (!silencioso) cargando(true);
+      }
     }
+    return await call(accion, p);
+  }
+  /** 🔐 Cambio en un mes cerrado: el dueño confirma; queda en la bitácora del cierre. */
+  function pedirCierreOk(i) {
+    return new Promise(res => {
+      const d = document.createElement('div'); d.className = 'modal clave-modal';
+      d.innerHTML = `<div class="modal-caja" style="max-width:420px"><div class="modal-cab"><h3>🔐 ${esc(String(i.mes || '').replace(/^./, c => c.toUpperCase()))} está cerrado</h3></div><div class="modal-cuerpo">
+        <p style="margin-top:0"><b>${esc(i.accion || '')}</b> · ${esc(i.doc || '')}</p>
+        <p class="muted">Este cambio modifica las cifras de un mes que ya cerraste. Si lo autorizas, se hace y queda anotado en la bitácora del cierre (lo verás en <b>Configuración › 🔐 Cierre de mes</b>, comparando las cifras al cerrar contra las de hoy).</p>
+        <div class="acciones"><button class="btn" data-a="no">Cancelar</button><button class="btn primario" data-a="si">Autorizar el cambio</button></div></div></div>`;
+      document.body.appendChild(d);
+      d.querySelector('[data-a="no"]').onclick = () => { d.remove(); res(false); };
+      d.querySelector('[data-a="si"]').onclick = () => { d.remove(); res(true); };
+    });
   }
   function pedirTope(i) {
     return new Promise(res => {
@@ -642,8 +666,8 @@ const App = (() => {
       ${rt ? `<span>🧭 Preparado para ruta <b>${haceTxt(rt.t)}</b> · ${nf((rt.listas || 0) + (rt.detalles || 0))} consultas guardadas</span>` : ''}
       ${n ? `<span>⟳ <b>${n}</b> por sincronizar${S.sincronizando ? ' (enviando…)' : ' · se envían solas con buena señal'}</span>` : '<span>✔ Todo sincronizado</span>'}
       <button onclick="App.prepararRuta()">📥 Actualizar para ruta</button>
-      ${S.vacRes && S.vacRes.semana ? `<button class="bienv-vac" onclick="App.bienvIr('revacunas')">💉 Revacunaciones: <b>${S.vacRes.semana}</b> ganadero${S.vacRes.semana === 1 ? '' : 's'} por avisar esta semana ›</button>` : ''}${convAvisoTxt()}`;
-    resumenVacunas(); resumenConvenios();
+      ${S.vacRes && S.vacRes.semana ? `<button class="bienv-vac" onclick="App.bienvIr('revacunas')">💉 Revacunaciones: <b>${S.vacRes.semana}</b> ganadero${S.vacRes.semana === 1 ? '' : 's'} por avisar esta semana ›</button>` : ''}${convAvisoTxt()}${cmAvisoTxt()}`;
+    resumenVacunas(); resumenConvenios(); resumenCierreMes();
   }
   /** 💉 Aviso semanal de revacunaciones (dueño, Administrador y gerentes): se consulta una vez al día. */
   async function resumenVacunas() {
@@ -4432,6 +4456,65 @@ const App = (() => {
     generarPdf('convenioConsig', p, { titulo: 'Convenio de consignación', texto: 'Convenio de consignación · ' + r.suc.nombre, asunto: 'Convenio de consignación ' + r.suc.nombre, volver: `App.convenioForm('${esc(r.suc.id)}')` });
     setTimeout(() => { S.convRes = null; LS.del('convres_' + (U().id || '')); resumenConvenios(); convEstados(); }, 4000);
   }
+  /* ---------- 🔐 CIERRE DE MES (toda la empresa) ---------- */
+  const CM_CIFRAS = [['ventas', 'Ventas', 1], ['notas', 'Número de notas', 0], ['cobrado', 'Cobrado', 1], ['devoluciones', 'Devoluciones', 1], ['compras', 'Compras', 1], ['ordenes', 'Órdenes de compra', 0], ['pagosProv', 'Pagos a proveedores', 1], ['mermas', 'Mermas', 1], ['traspasos', 'Traspasos', 0]];
+  const cmMes = t => String(t || '').replace(/^./, c => c.toUpperCase());
+  async function cierreMes() {
+    let r; try { r = await pedir('cierresMes', {}); } catch (e) { return toast(/desconocida/i.test(e.message || '') ? 'Se activa con el servidor 238.' : e.message, true); }
+    S.cm = r;
+    modal('🔐 Cierre de mes', `<p class="muted peq">Un mes cerrado ya no cambia sin tu autorización: editar, cancelar o devolver notas, cobros con fecha de ese mes, y editar o cancelar compras y traspasos de ese mes. Lo que se capturó <b>sin conexión</b> antes del cierre sí entra al sincronizar, y queda anotado.</p>
+      ${tabla([{ t: 'Mes', h: x => `<b>${esc(cmMes(x.mes))}</b>` },
+        { t: 'Estado', h: x => (x.estado === 'Cerrado' ? `<span class="etq ok">🔐 Cerrado</span><br><small class="muted">${esc(x.fecha)} · ${esc(x.por)}</small>` : `<span class="etq av">Abierto</span>${x.reabierto ? ' <small class="muted">· reabierto</small>' : ''}`)
+          + (x.cambios ? `<br><small class="aviso-txt">${x.cambios} cambio${x.cambios === 1 ? '' : 's'} después del cierre</small>` : '') },
+        { t: '', h: x => `<span class="${r.puede && x.estado !== 'Cerrado' ? 'cm-ir primario' : 'cm-ir'}">${r.puede && x.estado !== 'Cerrado' ? 'Revisar y cerrar ›' : 'Ver cifras ›'}</span>` }], r.meses, { clic: 'App.cmAbrir', vacio: 'Sin meses' })}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  function cmAbrir(i) { const x = (S.cm.meses || [])[i]; if (!x) return; if (S.cm.puede && x.estado !== 'Cerrado') cmRevisar(x.periodo); else cmCifras(x.periodo); }
+  function cmTablaCifras(a, b) {
+    return `<div style="overflow-x:auto"><table class="tabla-mini cm-cifras"><thead><tr><th></th>${b ? '<th class="num">Al cerrar</th><th class="num">Hoy</th><th class="num">Diferencia</th>' : '<th class="num">Total</th>'}</tr></thead><tbody>${CM_CIFRAS.map(([k, t, m]) => {
+      const f = v => v === undefined || v === null ? '—' : m ? $$(v) : nf(v);
+      if (!b) return `<tr><td>${t}</td><td class="num">${f(a[k])}</td></tr>`;
+      const d = Math.round(((b[k] || 0) - (a[k] || 0)) * 100) / 100;
+      return `<tr${d ? ' class="cm-dif"' : ''}><td>${t}</td><td class="num">${f(a[k])}</td><td class="num">${f(b[k])}</td><td class="num">${d ? (d > 0 ? '+' : '') + f(d) : '<span class="muted">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>`;
+  }
+  async function cmRevisar(k) {
+    let r; try { r = await pedir('revisarCierre', { periodo: k }); } catch (e) { return; }
+    const pend = r.pendientes.filter(x => x.lista.length).length;
+    modal('🔐 Cerrar ' + r.mes, `<h4 style="margin:0 0 4px">1. Pendientes</h4>
+      ${r.pendientes.map(x => `<div class="cm-pend ${x.lista.length ? 'hay' : ''}"><b>${x.lista.length ? '⚠️' : '✅'} ${esc(x.titulo)}${x.lista.length ? ' (' + x.lista.length + ')' : ''}</b>
+        ${x.lista.length ? `<p class="muted peq" style="margin:2px 0">${esc(x.ayuda)}</p><ul>${x.lista.slice(0, 15).map(l => `<li>${esc(l)}</li>`).join('')}${x.lista.length > 15 ? `<li class="muted">… y ${x.lista.length - 15} más</li>` : ''}</ul>` : ''}</div>`).join('')}
+      <p class="muted peq">Antes de cerrar, pide que <b>todos los equipos se conecten</b> para que suban lo que hayan capturado sin señal.</p>
+      <h4 style="margin:12px 0 4px">2. Cifras de ${esc(r.mes)}</h4>${cmTablaCifras(r.cifras)}
+      <p class="muted peq">Estas cifras se guardan al cerrar. Después podrás compararlas contra las de hoy para ver si algo cambió.</p>
+      <label>Nota del cierre (opcional)<input id="cmNota" placeholder="Ej. revisado con la contadora"></label>
+      <div class="acciones"><button class="btn" onclick="App.cierreMes()">Volver</button><button class="btn primario" onclick="App.cmCerrar('${k}', ${pend})">🔐 Cerrar ${esc(r.mes)}</button></div>`);
+  }
+  async function cmCerrar(k, pend) {
+    if (pend && !confirm('Hay ' + pend + ' tipo(s) de pendiente sin resolver. ¿Cerrar el mes de todos modos?')) return;
+    try { const r = await pedir('cerrarMes', { periodo: k, nota: ($('#cmNota') || {}).value || '' }); toast('🔐 ' + cmMes(r.mes) + ' quedó cerrado'); LS.del('cmres_' + (U().id || '')); S.cmRes = null; pintarBienvEstado(); cierreMes(); } catch (e) {}
+  }
+  async function cmCifras(k) {
+    let r; try { r = await pedir('cifrasCierre', { periodo: k }); } catch (e) { return; }
+    modal('📅 ' + cmMes(r.mes), `${r.estado === 'Cerrado' ? `<p><span class="etq ok">🔐 Cerrado</span> <small class="muted">${esc(r.fecha)} · ${esc(r.por)}${r.nota ? ' · ' + esc(r.nota) : ''}</small></p>` : '<p><span class="etq av">Abierto</span></p>'}
+      ${r.alCerrar ? cmTablaCifras(r.alCerrar, r.hoy) : cmTablaCifras(r.hoy)}
+      <h4 style="margin:12px 0 4px">Cambios después del cierre (${r.cambios.length})</h4>
+      ${r.cambios.length ? tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Cambio', h: x => `<b>${esc(x.accion)}</b><br><small class="muted">${esc(x.doc)}${x.detalle ? ' · ' + esc(x.detalle) : ''}</small>` }, { t: 'Quién', h: x => esc(x.usuario) + `<br><small class="muted">${esc(x.tipo)}</small>` }], r.cambios) : '<p class="muted">Ninguno.</p>'}
+      ${r.reabierto.length ? `<p class="muted peq">Reaperturas: ${r.reabierto.map(x => esc(x.fecha + ' · ' + x.por + ' · ' + x.motivo)).join('<br>')}</p>` : ''}
+      <div class="acciones"><button class="btn" onclick="App.cierreMes()">Volver</button>${S.cm && S.cm.puede && r.estado === 'Cerrado' ? `<button class="btn" onclick="App.cmReabrir('${k}')">🔓 Reabrir mes</button>` : ''}</div>`);
+  }
+  async function cmReabrir(k) {
+    const m = prompt('¿Por qué reabres el mes? (queda registrado)'); if (!m || !m.trim()) return;
+    try { await pedir('reabrirMes', { periodo: k, motivo: m.trim() }); toast('🔓 Mes reabierto'); cierreMes(); } catch (e) {}
+  }
+  async function resumenCierreMes() {
+    const u = U() || {}; if (!(u.permisos || {}).dueno || navigator.onLine === false || S.cmPidiendo) return;
+    const k = 'cmres_' + (u.id || ''), c = LS.get(k, null), hoy = hoyISO();
+    if (c && c.d === hoy) { if (!S.cmRes) { S.cmRes = c.r; pintarBienvEstado(); } return; }
+    S.cmPidiendo = true;
+    try { const r = await pedir('cierresMes', { resumen: 1 }, true); S.cmRes = r; LS.set(k, { d: hoy, r: r }); pintarBienvEstado(); } catch (e) {} finally { S.cmPidiendo = false; }
+  }
+  function cmAvisoTxt() { const r = S.cmRes; return r && r.pendiente && r.dia >= 3 ? `<button class="bienv-vac" onclick="App.cmBienv()">🔐 ${esc(cmMes(r.mes))} aún no está cerrado ›</button>` : ''; }
+  function cmBienv() { bienvIr('config'); setTimeout(cierreMes, 400); }
   /* ---------- 🔚 CIERRE DE SUCURSAL (solo el dueño): lista de revisión, guía paso a paso, acta y reapertura ---------- */
   const CIERRE_GUIA = {
     existencia: { como: 'Primero haz un 📋 Conteo físico en la sucursal para que el sistema cuadre con lo que hay de verdad. Después, en 🚚 Traspasos, crea un traspaso con <b>origen</b> esta sucursal y <b>destino</b> Matriz (u otra sucursal) con todas las piezas. Cuando se reciba, la existencia queda en cero.', ir: 'traspasos', boton: '🚚 Ir a Traspasos' },
@@ -13559,6 +13642,7 @@ const App = (() => {
       <p class="muted">Datos guardados en este dispositivo: ${(D().productos || []).length} productos, ${(D().clientes || []).length} clientes, ${(D().stock || []).length} lotes. Última actualización: ${D().servidor ? new Date(D().servidor).toLocaleString('es-MX') : '—'}</p>
       <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}${puede('seguimiento') ? '<button class="btn fijo" onclick="App.formPlantillas()">📲 Mensajes de WhatsApp</button>' : ''}${puede('ventas') || puede('dueno') ? '<button class="btn fijo" onclick="App.formCumple()">🎂 Regalo de cumpleaños</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
       ${puede('dueno') ? '<div class="tarjeta"><h3>🛟 Respaldos automáticos</h3><div id="cfResp"><span class="muted">Revisando…</span></div></div>' : ''}
+      ${puede('dueno') || u.rol === 'Contador' ? `<div class="tarjeta"><h3>🔐 Cierre de mes</h3><p class="muted">${puede('dueno') ? 'Revisa los pendientes del mes y ciérralo: después, cualquier cambio que altere sus cifras necesita tu autorización y queda registrado.' : 'Meses cerrados por el dueño, sus cifras al cerrar y los cambios posteriores.'}</p><div class="acciones" style="justify-content:flex-start"><button class="btn primario" onclick="App.cierreMes()">📅 Ver meses</button></div></div>` : ''}
       <div class="tarjeta"><h3>Operaciones pendientes de sincronizar (${S.cola.length})</h3>${tabla([{ t: 'Capturada', k: 'creado' }, { t: 'Operación', k: 'desc' }, { t: 'Error', h: o => o.error ? `<span class="error">${esc(o.error)}</span>` : 'En espera' },
         { t: '', h: o => `<button class="btn chico peligro" onclick="App.descartarOp('${o.opId}')">Descartar</button>` }], S.cola.slice().reverse(), { vacio: 'Todo sincronizado ✔' })}
       ${S.cola.length ? '<div class="acciones"><button class="btn primario" onclick="App.sincronizar(true)">Sincronizar ahora</button></div>' : ''}</div>
@@ -14278,7 +14362,7 @@ const App = (() => {
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
-    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
+    bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
