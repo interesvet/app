@@ -1292,7 +1292,7 @@ const App = (() => {
     const kc = 'cubo_' + (U().id || '') + '_' + (suc || 'todas');
     if (!S.cubo[suc]) { const g = await KV.get(kc); if (g && g.d) S.cubo[suc] = g; }
     if (S.cubo[suc]) { dashChips(); dashArmar(); }
-    const viejo = !S.cubo[suc] || forzar || !S.cubo[suc].parcial || Date.now() - new Date(S.cubo[suc].generado).getTime() > 20 * 60000;
+    const viejo = !S.cubo[suc] || forzar || !S.cubo[suc].parcial || (S.cubo[suc].ver || 0) < 2 || Date.now() - new Date(S.cubo[suc].generado).getTime() > 20 * 60000;
     const est = $('#dEstado'); if (est && viejo) est.textContent = S.cubo[suc] ? '⟳ actualizando datos…' : '⟳ preparando tus datos (solo la primera vez tarda)…';
     const tSnap = (!S.dashSnap[suc] || forzar) ? pedir('dashboard', { desde: hoyISO().slice(0, 8) + '01', hasta: hoyISO(), sucursal: suc }, true).then(r => { S.dashSnap[suc] = r; }).catch(() => {}) : Promise.resolve();
     const tCubo = viejo ? pedir('dashboardCubo', { sucursal: suc }, true).then(r => { S.cubo[suc] = r; KV.set(kc, r); }).catch(e => { if (!S.cubo[suc]) { const el = $('#dash'); if (el) el.innerHTML = `<div class="vacio">${/desconocida/i.test(e.message || '') ? 'El tablero rápido se activa con el servidor 245.' : e.red ? 'El tablero requiere conexión la primera vez.' : esc(e.message)}</div>`; } }) : Promise.resolve();
@@ -1312,10 +1312,10 @@ const App = (() => {
     return { m: cub.d[k], g: cub.gastos ? cub.gastos[k] : null };
   }
   function dashSumaObjs(objs) {
-    const t = { v: 0, vi: 0, n: 0, cob: 0, mer: 0, cos: 0, cmp: 0, ord: 0, suc: {}, ven: {}, cli: {}, cat: {}, pr: {}, g: [0, 0, 0, 0] };
+    const t = { v: 0, vi: 0, n: 0, cob: 0, mer: 0, cos: 0, cmp: 0, ord: 0, suc: {}, ven: {}, cli: {}, cat: {}, pr: {}, lab: {}, prv: {}, g: [0, 0, 0, 0] };
     const ad = (a, b) => Object.keys(b || {}).forEach(k => a[k] = (a[k] || 0) + b[k]);
     objs.forEach(o => { const m = o.m; if (m) { t.v += m.v; t.vi += m.vi; t.n += m.n; t.cob += m.cob; t.mer += m.mer; t.cos += m.cos || 0; t.cmp += m.cmp || 0; t.ord += m.ord || 0;
-      ad(t.suc, m.suc); ad(t.ven, m.ven); ad(t.cli, m.cli); ad(t.cat, m.cat);
+      ad(t.suc, m.suc); ad(t.ven, m.ven); ad(t.cli, m.cli); ad(t.cat, m.cat); ad(t.lab, m.lab); ad(t.prv, m.prv);
       Object.keys(m.pr || {}).forEach(id => { const a = t.pr[id] || (t.pr[id] = [0, 0, 0]), b = m.pr[id]; a[0] += b[0]; a[1] += b[1]; a[2] += b[2] || 0; }); }
       if (o.g) o.g.forEach((x, i) => t.g[i] += x || 0); });
     return t;
@@ -1424,6 +1424,9 @@ const App = (() => {
         <div><h4>Las curvas de cada año</h4><p class="muted peq">Mismos meses, una línea por año</p><div class="grafica" style="height:260px"><canvas id="gCurvas"></canvas></div></div>
         <div><h4>Qué productos explican la diferencia</h4><p class="muted peq">Lo que ganaste o perdiste en cada uno contra ${B}</p><div class="cx-exp" id="gxP"></div></div>
         <div><h4>Qué clientes explican la diferencia</h4><p class="muted peq">Crecieron o dejaron de comprar</p><div class="cx-exp" id="gxC"></div></div>
+        <div class="cx-prov"><h4>Qué proveedores explican la diferencia</h4><div class="rejilla-2 d2">
+          ${x.verCompras ? `<div><h5>🛒 Compras a cada proveedor</h5><p class="muted peq">Órdenes con factura o nota · cuánto más o menos le compraste que en ${B}</p><div class="cx-exp" id="gxPv"></div></div>` : ''}
+          <div><h5>🧪 Ventas de los productos de cada laboratorio</h5><p class="muted peq">Lo que vendiste de sus productos contra ${B}</p><div class="cx-exp" id="gxLb"></div></div></div></div>
       </div>
       <div class="acciones izq" style="margin-top:10px"><button class="btn primario" onclick="App.compProductos()">📋 Producto por producto (${nf(r.productos.length)})</button>
         <span class="muted peq">✨ ${nf(r.nuevos)} productos nuevos · ${nf(r.perdidos)} que se vendieron en ${B} y no en ${A} · ${nf(r.clientesNuevos)} clientes nuevos · ${nf(r.clientesPerdidos)} que compraron en ${B} y no en ${A}</span></div>`}`;
@@ -1441,18 +1444,21 @@ const App = (() => {
       options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + $$(c.raw) } } },
         scales: { y: { ticks: { callback: tickMoneda }, grid: { color: css('--borde') } }, x: { grid: { display: false } } } } });
     /* barras de diferencia en HTML: nombre y, abajo y más chico, la presentación del producto */
-    const explica = (caja, lista) => {
+    const explica = (caja, lista, neutro) => {
       const l = lista.filter(o => Math.abs(o.d) >= 1).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 10).sort((a, b) => b.d - a.d), el = $('#' + caja); if (!el) return;
       if (!l.length) { el.innerHTML = '<div class="vacio">Sin diferencias</div>'; return; }
       const neg = Math.max(0, ...l.map(o => -o.d)), pos = Math.max(0, ...l.map(o => o.d)), tot = neg + pos || 1, cero = neg / tot * 100;
       el.innerHTML = l.map(o => { const w = Math.abs(o.d) / tot * 100;
         return `<div class="cx-fila" title="${esc(o.n)}${o.p ? ', ' + esc(o.p) : ''} · ${A}: ${$$(o.a)} · ${B}: ${$$(o.b)}"><div class="cx-nom"><span>${esc(o.n)}</span>${o.p ? `<small>${esc(o.p)}</small>` : ''}</div>
-          <div class="cx-pista"><i class="cx-cero" style="left:${cero.toFixed(2)}%"></i><i class="cx-bar ${o.d >= 0 ? 'sube' : 'baja'}" style="left:${(o.d >= 0 ? cero : cero - w).toFixed(2)}%;width:${Math.max(w, .6).toFixed(2)}%"></i></div>
-          <div class="cx-val ${o.d >= 0 ? 'ok-txt' : 'error'}">${o.d >= 0 ? '+' : '−'}${tickMoneda(Math.round(Math.abs(o.d)))}</div></div>`; }).join('');
+          <div class="cx-pista"><i class="cx-cero" style="left:${cero.toFixed(2)}%"></i><i class="cx-bar ${neutro ? (o.d >= 0 ? 'neu-s' : 'neu-b') : o.d >= 0 ? 'sube' : 'baja'}" style="left:${(o.d >= 0 ? cero : cero - w).toFixed(2)}%;width:${Math.max(w, .6).toFixed(2)}%"></i></div>
+          <div class="cx-val ${neutro ? '' : o.d >= 0 ? 'ok-txt' : 'error'}">${o.d >= 0 ? '+' : '−'}${tickMoneda(Math.round(Math.abs(o.d)))}</div></div>`; }).join('');
     };
     const pres = n => { const t = String(n || ''), i = t.indexOf(','); return i < 0 ? [t.trim(), ''] : [t.slice(0, i).trim(), t.slice(i + 1).trim()]; };
     explica('gxP', r.productos.map(o => { const q = pres(o.nombre); return { n: q[0], p: q[1], a: o.impA, b: o.impB, d: o.impA - o.impB }; }));
     explica('gxC', x.clis.map(o => ({ n: o.nombre, a: o.a, b: o.b, d: o.a - o.b })));
+    const dif2 = (a, b) => Object.keys(Object.assign({}, a, b)).map(n => ({ n: n, a: a[n] || 0, b: b[n] || 0, d: (a[n] || 0) - (b[n] || 0) }));
+    if (x.verCompras) explica('gxPv', dif2(TA.prv || {}, TB.prv || {}), true);
+    explica('gxLb', dif2(TA.lab || {}, TB.lab || {}));
   }
   /** Lectura rápida: lo importante en palabras. */
   function cxLectura(x, dif) {
