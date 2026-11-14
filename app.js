@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 322, f: '13/11/2026', t: [{ x: '💳 Facturación › Complementos de pago: los abonos de tus facturas PPD que aún no tienen complemento salen solos; tímbralos con un clic (uno por uno o todos).', p: 'facturacion' }] },
     { v: 321, f: '13/11/2026', t: [{ x: '🔒 En las sucursales la sección de facturación de la nota es solo de consulta: ligar, subir o quitar facturas lo hace Matriz.', p: 'facturacion' }] },
     { v: 320, f: '13/11/2026', t: [{ x: '🧾 Las facturas las hace Matriz. Las sucursales las piden con “Solicitar factura” en la nota, y solo procede si la ficha del cliente tiene RFC, razón social, C.P., régimen, uso de CFDI, correo y su constancia de situación fiscal.', p: 'ventas' },
       { x: '📨 Las solicitudes de factura llegan a “Por autorizar” con el botón “Timbrar ahora”: se abre la factura con lo que pidió la sucursal y, al timbrarla, la solicitud queda atendida sola.', p: 'facturacion' }] },
@@ -3781,8 +3782,8 @@ const App = (() => {
     const h = hoyISO(), ini = h.slice(0, 8) + '01';
     S.tabFact = S.tabFact || 'facturas';
     const sb = (id, n) => `<button class="${S.tabFact === id ? 'activo' : ''}" onclick="App.subFact('${id}')">${n}</button>`;
-    $('#vista').innerHTML = barra + `<div class="pestanas">${sb('facturas', 'Facturas')}${sb('pend', 'Por facturar')}${sb('piezas', '🔢 Piezas sin facturar')}${sb('revisar', 'Marcadas SI sin factura')}</div>
-      <div class="tarjeta no-imprimir"><div class="fila">
+    $('#vista').innerHTML = barra + `<div class="pestanas">${sb('facturas', 'Facturas')}${sb('pend', 'Por facturar')}${sb('piezas', '🔢 Piezas sin facturar')}${sb('revisar', 'Marcadas SI sin factura')}${facM() ? sb('rep', '💳 Complementos de pago') : ''}</div>
+      <div class="tarjeta no-imprimir" ${S.tabFact === 'rep' ? 'style="display:none"' : ''}><div class="fila">
       <label>Desde<input type="date" id="fDesde" value="${ini}"></label><label>Hasta<input type="date" id="fHasta" value="${h}"></label>
       ${U().todasSucursales ? `<label>Sucursal<select id="fSuc">${optsSuc('', false, 'Todas')}</select></label>` : ''}
       <label>Buscar<input id="fTxt" placeholder="Factura, nota, RFC o cliente"></label>
@@ -3797,9 +3798,63 @@ const App = (() => {
     cargarFacturacion();
   }
   function subFact(t) { S.tabFact = t; V.ventas('fact'); }
+  /* ---------- 💳 COMPLEMENTOS DE PAGO (facturas PPD) ---------- */
+  async function cargarComplementos() {
+    const el = $('#lFact'); if (!el) return;
+    let r; try { [r] = await Promise.all([pedir('complementosPend', {}, true), timbEstado()]); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message)}</div>`; return; }
+    S.rep = r; const hoy = hoyISO(), tb = S.timb && S.timb.activo, cat = D().catalogos || {};
+    const fOpts = sel => opts((cat.formasPago || []).filter(o => String(Array.isArray(o) ? o[0] : o.id) !== '99').map(u => Array.isArray(u) ? u : [u.id, u.id + ' · ' + u.nombre]), sel ? String(Number(sel)) : '', 'Elegir…');
+    el.innerHTML = `<div class="kpis"><div class="kpi"><small>Abonos sin complemento</small><b>${nf(r.pendientes.length)}</b><span>${$$(r.monto)}</span></div>
+        <div class="kpi ${r.vencidos ? 'mal' : ''}"><small>Fuera de plazo</small><b>${nf(r.vencidos)}</b><span>el plazo es el día 5 del mes siguiente al abono</span></div>
+        <div class="kpi"><small>Siguiente folio</small><b>${esc(r.siguiente)}</b><span>${timbEtq(r.amb)}</span></div></div>
+      <div class="tarjeta"><p class="muted peq" style="margin:0 0 8px">Cada abono a una factura <b>PPD</b> (a crédito) necesita su <b>complemento de pago</b>, timbrado a más tardar el <b>día 5 del mes siguiente</b> al abono. Aquí salen solos los abonos que ya registraste en Cobranza y que aún no lo tienen.</p>
+      ${tabla([{ t: 'Abono', h: x => `<b>${esc(x.fecha)}</b><br><small class="${x.venceISO < hoy ? 'error' : 'muted'}">${x.venceISO < hoy ? '⚠️ venció' : 'vence'} ${esc(x.vence)}</small>` },
+        { t: 'Cliente', h: x => `${esc(x.cliente)}<br><small class="muted">${esc(x.rfc)}</small>` },
+        { t: 'Factura', h: x => `<b>${esc(x.sf)}</b><br><small class="muted">${esc(x.nota)} · total ${$$(x.totalFac)}</small>` },
+        { t: 'Parcialidad', num: 1, h: x => '#' + x.parc },
+        { t: 'Saldo anterior → insoluto', num: 1, cls: 'ocultar-movil', h: x => `${$$(x.saldoAnt)} → <b>${$$(x.insoluto)}</b>` },
+        { t: 'Forma de pago', h: x => `<select id="rpF${r.pendientes.indexOf(x)}" style="max-width:170px">${fOpts(x.forma)}</select>` },
+        { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` },
+        { t: '', h: x => !x.xml ? '<span class="etq mal" title="Sube el XML de la factura en Facturación">falta XML</span>' : tb ? `<button class="btn primario chico" onclick="App.timbrarRep(${r.pendientes.indexOf(x)})">💳 Timbrar</button>` : '' }], r.pendientes, { vacio: 'Todos los abonos de tus facturas PPD tienen su complemento ✔' })}
+      ${tb && r.pendientes.filter(x => x.xml).length > 1 ? `<div class="acciones izq"><button class="btn" onclick="App.timbrarRepTodos()">💳 Timbrar los ${r.pendientes.filter(x => x.xml).length}</button></div>` : ''}</div>
+      <div class="tarjeta"><h4 style="margin:0 0 6px">Timbrados desde la app</h4>
+      ${tabla([{ t: 'Complemento', h: x => `<b>${esc(x.sf)}</b>${x.cancelado ? ' <span class="etq mal">Cancelado</span>' : ''}<br><small class="muted">${esc(x.alta)}</small>` }, { t: 'Factura', h: x => esc(x.factura) + ' <small class="muted">#' + esc(x.parc) + '</small>' },
+        { t: 'Abono', h: x => esc(x.fecha) }, { t: 'Monto', num: 1, h: x => x.cancelado ? '<s class="muted">' + esc(x.estado.replace(/^Cancelado \(era |\)$/g, '')) + '</s>' : $$(x.monto) },
+        { t: '', h: x => `${x.pdf ? `<a class="btn chico" target="_blank" href="${esc(x.pdf)}">📄 PDF</a>` : ''}${x.xml ? ` <a class="btn chico" target="_blank" href="${esc(x.xml)}">🧾 XML</a>` : ''}${!x.cancelado && tb ? ` <button class="btn chico peligro" onclick="App.cancelarRep('${esc(x.id)}','${esc(x.sf)}')">🚫 Cancelar</button>` : ''}` }], r.historial, { vacio: 'Todavía no hay complementos timbrados desde la app.' })}</div>`;
+  }
+  async function timbrarRep(i, sinPreguntar) {
+    const x = S.rep.pendientes[i]; if (!x) return false; const forma = ($('#rpF' + i) || {}).value;
+    if (!forma) { toast('Elige la forma de pago del abono de ' + x.sf, true); return false; }
+    const prod = S.timb.amb === 'produccion';
+    if (!sinPreguntar && !confirm((prod ? '¿Timbrar el complemento de pago ante el SAT?' : '¿Timbrar un complemento DE PRUEBA (sin validez)?') + '\n\n' + x.cliente + '\nFactura ' + x.sf + ' · parcialidad ' + x.parc + '\nAbono del ' + x.fecha + ' por ' + $$(x.monto) + ' · forma ' + forma + '\nSaldo ' + $$(x.saldoAnt) + ' → ' + $$(x.insoluto))) return false;
+    let r; try { r = await pedir('timbrarComplemento', { idCobro: x.idCobro, idFactura: x.idFactura, forma: forma }); } catch (e) { return false; }
+    if (r.prueba) {
+      if (!sinPreguntar) modal('✅ Complemento de prueba timbrado', `<div class="aviso-cand" style="border-color:var(--ok)">🧪 <b>Prueba sin validez ante el SAT</b> · no se registró.</div>
+        <p><b>${esc(r.sf)}</b> · factura ${esc(r.factura)} · ${$$(r.monto)}<br><small class="muted">Folio fiscal de prueba: ${esc(r.uuid)}</small></p>
+        <div class="acciones izq">${r.urlPdf ? `<a class="btn" href="${esc(r.urlPdf)}" target="_blank">📄 Ver PDF</a>` : ''}<a class="btn" href="${esc(r.urlXml)}" target="_blank">🧾 Ver XML</a><button class="btn peligro" onclick="App.cancelarRepPrueba('${esc(r.fmId)}')">Cancelar esta prueba</button></div>
+        <div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Listo</button></div>`);
+    } else if (!sinPreguntar) toast('✅ Complemento ' + r.sf + ' timbrado (' + r.factura + ')');
+    if (!sinPreguntar) cargarComplementos();
+    return true;
+  }
+  async function timbrarRepTodos() {
+    const l = S.rep.pendientes.map((x, i) => ({ x: x, i: i })).filter(o => o.x.xml);
+    if (l.some(o => !($('#rpF' + o.i) || {}).value)) return toast('Elige la forma de pago de todos los abonos', true);
+    if (!confirm('¿Timbrar ' + l.length + ' complementos de pago' + (S.timb.amb === 'produccion' ? ' ante el SAT' : ' DE PRUEBA') + ' por ' + $$(l.reduce((s, o) => s + o.x.monto, 0)) + '?')) return;
+    let ok = 0; for (const o of l) { if (await timbrarRep(o.i, true)) ok++; else break; }
+    toast('✅ ' + ok + ' de ' + l.length + ' complementos timbrados', ok < l.length); cargarComplementos();
+  }
+  async function cancelarRep(id, sf) {
+    const m = prompt('Cancelar el complemento ' + sf + ' ante el SAT.\nMotivo: 02 = con errores sin relación · 01 = lo sustituye otro · 03 = no se llevó a cabo', '02'); if (m === null) return;
+    if (!confirm('¿Cancelar ' + sf + ' ante el SAT? No se puede deshacer.')) return;
+    try { const r = await pedir('cancelarComplemento', { id: id, motivo: m.trim() }); toast(r.estado === 'cancelado' ? '🚫 Complemento cancelado: el abono vuelve a quedar pendiente' : '⏳ Cancelación ' + r.estado); cargarComplementos(); } catch (e) {}
+  }
+  function irComplementos() { S.tabFact = 'rep'; S.tabVen = 'fact'; ir('ventas', true); }
+  async function cancelarRepPrueba(fmId) { try { const r = await pedir('cancelarComplemento', { fmId: fmId, motivo: '02' }); toast('Prueba: ' + (r.estado || 'enviada')); cerrarModal(); } catch (e) {} }
   async function cargarFacturacion() {
     const p = { desde: $('#fDesde').value, hasta: $('#fHasta').value, sucursal: $('#fSuc') ? $('#fSuc').value : '', texto: $('#fTxt').value, cuadre: $('#fCuadre') ? $('#fCuadre').value : '' };
     $('#lFact').innerHTML = '<div class="vacio">Cargando…</div>';
+    if (S.tabFact === 'rep') return cargarComplementos();
     if (S.tabFact === 'facturas') {
       let r; try { r = await pedir('facturas', p); } catch (e) { if ($('#lFact')) $('#lFact').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
       if (!$('#lFact')) return;
@@ -8596,9 +8651,11 @@ const App = (() => {
   }
   function pintarAut() {
     const r = S.aut, el = $('#auRes'); if (!r || !el) return;
-    const l = r.solicitudes;
-    if (!l.length) { el.innerHTML = '<div class="tarjeta"><div class="vacio">No hay solicitudes con ese filtro.</div></div>'; return; }
-    el.innerHTML = l.map(x => {
+    const l = r.solicitudes, rp = r.rep && r.rep.n ? `<div class="tarjeta aut-card aut-pend" style="border-left-color:${r.rep.vencidos ? 'var(--peligro)' : 'var(--aviso)'}"><div class="fila" style="justify-content:space-between;align-items:center">
+      <div>💳 <b>${nf(r.rep.n)} abono${r.rep.n > 1 ? 's' : ''} de facturas PPD sin complemento de pago</b> · ${$$(r.rep.monto)}${r.rep.vencidos ? ` · <b class="error">${nf(r.rep.vencidos)} fuera de plazo</b>` : r.rep.proximo ? ` · <small class="muted">el más próximo vence el ${esc(r.rep.proximo)}</small>` : ''}</div>
+      <button class="btn primario fijo" onclick="App.irComplementos()">Ver y timbrar</button></div></div>` : '';
+    if (!l.length) { el.innerHTML = rp + (rp ? '' : '<div class="tarjeta"><div class="vacio">No hay solicitudes con ese filtro.</div></div>'); return; }
+    el.innerHTML = rp + l.map(x => {
       const D2 = x.datos || {}, pend = x.estado === 'Pendiente';
       let det = '';
       if (x.tipo === 'FACTURA') { const c = D2.cliente || {};
@@ -8688,6 +8745,9 @@ const App = (() => {
       <p class="muted peq" style="margin:0 0 4px">Si solo factura Matriz, llena solo Matriz y deja vacías las demás: <b>todas las notas se facturan con la serie de Matriz</b>. Si usas la misma serie que en el portal del SAT, pon en “Siguiente folio” tu último folio + 1 y ya no factures con esa serie en el portal. Las facturas de prueba llevan su propio contador y no gastan tus folios.</p>
       ${tabla([{ t: 'Sucursal', k: 'nombre' }, { t: 'Serie', h: x => `<input id="tcSe${c.sucs.indexOf(x)}" value="${esc(x.serie)}" style="max-width:120px;text-transform:uppercase">` }, { t: 'C.P.', h: x => `<input id="tcCp${c.sucs.indexOf(x)}" value="${esc(x.cp)}" inputmode="numeric" maxlength="5" style="max-width:90px">` },
         { t: 'Siguiente folio', h: x => `<input id="tcFo${c.sucs.indexOf(x)}" type="number" min="1" value="${x.folio}" style="max-width:100px">` }], c.sucs)}
+      <h4 style="margin:12px 0 4px">💳 Complementos de pago</h4>
+      <div class="fila"><label>Serie<input id="tcSeP" value="${esc(c.serieP || 'CP')}" style="max-width:120px;text-transform:uppercase"></label><label>Siguiente folio<input id="tcFoP" type="number" min="1" value="${c.folioP || 1}" style="max-width:100px"></label>
+        <p class="muted peq" style="flex:3 1 260px;align-self:end;margin:0">Serie propia para los complementos (distinta a la de facturas). Si ya hacías complementos en el portal del SAT con una serie, pon esa serie y tu último folio + 1.</p></div>
       <div class="acciones izq"><button class="btn" onclick="App.timbProbar()">🔌 Probar conexión</button><button class="btn primario" onclick="App.timbGuardar()">Guardar</button> <span id="tcMsg" class="peq"></span></div>
       <p class="muted peq">La contraseña se guarda en el servidor y nadie la puede ver después. Tu certificado de sello digital (CSD) se sube en tu cuenta de Facturama, no aquí.</p>`;
   }
@@ -8700,7 +8760,8 @@ const App = (() => {
     const c = S.timbCfg; if (!c) return;
     if (c.amb === 'produccion' && !confirm('¿Cambiar a PRODUCCIÓN? Las facturas que timbres valdrán ante el SAT y gastarán folios.')) return;
     const p = { amb: c.amb, usuario: $('#tcUsr').value.trim(), pass: $('#tcPass').value, emisor: { rfc: $('#tcRfc').value.trim(), nombre: $('#tcNom').value.trim(), regimen: $('#tcReg').value },
-      sucs: c.sucs.map((s, i) => ({ id: s.id, nombre: s.nombre, serie: (($('#tcSe' + i) || {}).value || '').trim(), cp: (($('#tcCp' + i) || {}).value || '').trim(), folio: ($('#tcFo' + i) || {}).value })) };
+      sucs: c.sucs.map((s, i) => ({ id: s.id, nombre: s.nombre, serie: (($('#tcSe' + i) || {}).value || '').trim(), cp: (($('#tcCp' + i) || {}).value || '').trim(), folio: ($('#tcFo' + i) || {}).value })),
+      serieP: $('#tcSeP') ? $('#tcSeP').value.trim() : undefined, folioP: $('#tcFoP') ? $('#tcFoP').value : undefined };
     try { await pedir('guardarTimbradoCfg', p); toast('✔ Timbrado guardado'); S.timb = null; cargarTimbCfg(); } catch (e) {}
   }
   async function timbProbar() {
@@ -15786,7 +15847,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
