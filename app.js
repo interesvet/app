@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 323, f: '13/11/2026', t: [{ x: '🧾 Timbrado: al tocar 🧪 Pruebas o ✅ Producción el cambio se guarda en ese momento, cada ambiente recuerda su propio usuario y contraseña de Facturama, y antes de timbrar la app avisa claramente si es real.', p: 'facturacion' }] },
     { v: 322, f: '13/11/2026', t: [{ x: '💳 Facturación › Complementos de pago: los abonos de tus facturas PPD que aún no tienen complemento salen solos; tímbralos con un clic (uno por uno o todos).', p: 'facturacion' }] },
     { v: 321, f: '13/11/2026', t: [{ x: '🔒 En las sucursales la sección de facturación de la nota es solo de consulta: ligar, subir o quitar facturas lo hace Matriz.', p: 'facturacion' }] },
     { v: 320, f: '13/11/2026', t: [{ x: '🧾 Las facturas las hace Matriz. Las sucursales las piden con “Solicitar factura” en la nota, y solo procede si la ficha del cliente tiene RFC, razón social, C.P., régimen, uso de CFDI, correo y su constancia de situación fiscal.', p: 'ventas' },
@@ -3826,7 +3827,7 @@ const App = (() => {
     const x = S.rep.pendientes[i]; if (!x) return false; const forma = ($('#rpF' + i) || {}).value;
     if (!forma) { toast('Elige la forma de pago del abono de ' + x.sf, true); return false; }
     const prod = S.timb.amb === 'produccion';
-    if (!sinPreguntar && !confirm((prod ? '¿Timbrar el complemento de pago ante el SAT?' : '¿Timbrar un complemento DE PRUEBA (sin validez)?') + '\n\n' + x.cliente + '\nFactura ' + x.sf + ' · parcialidad ' + x.parc + '\nAbono del ' + x.fecha + ' por ' + $$(x.monto) + ' · forma ' + forma + '\nSaldo ' + $$(x.saldoAnt) + ' → ' + $$(x.insoluto))) return false;
+    if (!sinPreguntar && !confirm((prod ? '⚠️ PRODUCCIÓN · ES REAL ANTE EL SAT\n¿Timbrar el complemento de pago?' : '🧪 PRUEBAS · sin validez\n¿Timbrar un complemento de prueba?') + '\n\n' + x.cliente + '\nFactura ' + x.sf + ' · parcialidad ' + x.parc + '\nAbono del ' + x.fecha + ' por ' + $$(x.monto) + ' · forma ' + forma + '\nSaldo ' + $$(x.saldoAnt) + ' → ' + $$(x.insoluto))) return false;
     let r; try { r = await pedir('timbrarComplemento', { idCobro: x.idCobro, idFactura: x.idFactura, forma: forma }); } catch (e) { return false; }
     if (r.prueba) {
       if (!sinPreguntar) modal('✅ Complemento de prueba timbrado', `<div class="aviso-cand" style="border-color:var(--ok)">🧪 <b>Prueba sin validez ante el SAT</b> · no se registró.</div>
@@ -5407,7 +5408,7 @@ const App = (() => {
   async function timbrarGlobal() {
     const r = S.agR; if (!r) return; const t = agTotales(); if (!t.conceptos) return toast('No hay notas marcadas', true);
     const per = $('#agPer').value, mes = $('#agMes').value, anio = $('#agAnio').value, forma = $('#agForma').value, prod = S.timb.amb === 'produccion';
-    if (!confirm((prod ? '¿Timbrar la factura GLOBAL ante el SAT?' : '¿Timbrar una global DE PRUEBA (sin validez)?') + '\n\nPUBLICO EN GENERAL · ' + t.notas + ' notas · ' + t.conceptos + ' renglones\nTotal ' + $$(t.total) + ' · forma ' + forma + ' · ' + $('#agPer').selectedOptions[0].text + ' ' + $('#agMes').selectedOptions[0].text + ' ' + anio)) return;
+    if (!confirm((prod ? '⚠️ PRODUCCIÓN · ES REAL ANTE EL SAT\n¿Timbrar la factura GLOBAL?' : '🧪 PRUEBAS · sin validez\n¿Timbrar una global de prueba?') + '\n\nPUBLICO EN GENERAL · ' + t.notas + ' notas · ' + t.conceptos + ' renglones\nTotal ' + $$(t.total) + ' · forma ' + forma + ' · ' + $('#agPer').selectedOptions[0].text + ' ' + $('#agMes').selectedOptions[0].text + ' ' + anio)) return;
     let x; try { x = await pedir('timbrarGlobal', { desde: S.ag.desde, hasta: S.ag.hasta, sucursal: S.ag.suc, excluir: agExcluidos(), total: t.total, periodicidad: per, mes: mes, anio: anio, forma: forma }); } catch (e) { return; }
     S.timbUlt = x;
     if (x.prueba) {
@@ -8736,8 +8737,8 @@ const App = (() => {
     el.innerHTML = `<div class="fila" style="align-items:center;margin-bottom:6px"><span class="muted">Ambiente:</span>
         <span class="cx-seg"><button type="button" class="${c.amb !== 'produccion' ? 'on' : ''}" onclick="App.timbAmb('pruebas')">🧪 Pruebas</button><button type="button" class="${c.amb === 'produccion' ? 'on' : ''}" onclick="App.timbAmb('produccion')">✅ Producción</button></span>
         <small class="muted" id="tcAmbTxt">${c.amb === 'produccion' ? 'Las facturas valen ante el SAT y gastan folios.' : 'Las facturas de pruebas no valen ante el SAT ni gastan folios; no se ligan a las notas.'}</small></div>
-      <div class="rejilla"><label>Usuario de Facturama<input id="tcUsr" value="${esc(c.usuario)}" autocomplete="off"></label>
-        <label>Contraseña de Facturama<input id="tcPass" type="password" autocomplete="new-password" placeholder="${c.tienePass ? '●●●●●●●● (guardada; escribe solo para cambiarla)' : 'Escríbela'}"></label></div>
+      <div class="rejilla"><label>Usuario de Facturama ${c.amb === 'produccion' ? '<b>(producción)</b>' : '<b>(pruebas)</b>'}<input id="tcUsr" value="${esc(c.usuario)}" autocomplete="off"></label>
+        <label>Contraseña ${c.amb === 'produccion' ? '(producción)' : '(pruebas)'}<input id="tcPass" type="password" autocomplete="new-password" placeholder="${c.tienePass ? '●●●●●●●● (guardada; escribe solo para cambiarla)' : 'Escríbela'}"></label></div>
       <h4 style="margin:12px 0 4px">Emisor</h4>
       <div class="rejilla"><label>RFC<input id="tcRfc" value="${esc(c.emisor.rfc || '')}" style="text-transform:uppercase"></label><label>Razón social (como en tu constancia)<input id="tcNom" value="${esc(c.emisor.nombre || '')}" style="text-transform:uppercase"></label>
         <label>Régimen fiscal<select id="tcReg">${catOpts(cat.regimen, c.emisor.regimen || '', 'Elegir…')}</select></label></div>
@@ -8754,11 +8755,17 @@ const App = (() => {
   function timbAmb(a) {
     if (!S.timbCfg) return; S.timbCfg.amb = a;
     document.querySelectorAll('#cfTimb .cx-seg button').forEach((b, i) => b.classList.toggle('on', (i === 1) === (a === 'produccion')));
-    const t = $('#tcAmbTxt'); if (t) t.textContent = a === 'produccion' ? '⚠️ Producción: las facturas valen ante el SAT y gastan folios. Guarda para aplicar.' : 'Las facturas de pruebas no valen ante el SAT ni gastan folios; no se ligan a las notas. Guarda para aplicar.';
+    const t = $('#tcAmbTxt'); if (t) t.textContent = a === 'produccion' ? '⚠️ Producción: las facturas valen ante el SAT y gastan folios.' : 'Las facturas de pruebas no valen ante el SAT ni gastan folios; no se ligan a las notas.';
+    timbCambiarAmb(a);   // el cambio de ambiente se aplica en ese momento (antes había que dar Guardar y era fácil olvidarlo)
+  }
+  /** Cambia de ambiente y lo guarda ya; cada ambiente tiene su propio usuario y contraseña de Facturama. */
+  async function timbCambiarAmb(a) {
+    if (a === 'produccion' && !confirm('⚠️ ¿Cambiar a PRODUCCIÓN?\nTodo lo que timbres valdrá ante el SAT y gastará folios.')) { cargarTimbCfg(); return; }
+    try { await pedir('guardarTimbradoCfg', { amb: a, soloAmb: true }); toast(a === 'produccion' ? '✅ Ahora estás en PRODUCCIÓN (real)' : '🧪 Ahora estás en PRUEBAS'); } catch (e) {}
+    S.timb = null; cargarTimbCfg();
   }
   async function timbGuardar() {
     const c = S.timbCfg; if (!c) return;
-    if (c.amb === 'produccion' && !confirm('¿Cambiar a PRODUCCIÓN? Las facturas que timbres valdrán ante el SAT y gastarán folios.')) return;
     const p = { amb: c.amb, usuario: $('#tcUsr').value.trim(), pass: $('#tcPass').value, emisor: { rfc: $('#tcRfc').value.trim(), nombre: $('#tcNom').value.trim(), regimen: $('#tcReg').value },
       sucs: c.sucs.map((s, i) => ({ id: s.id, nombre: s.nombre, serie: (($('#tcSe' + i) || {}).value || '').trim(), cp: (($('#tcCp' + i) || {}).value || '').trim(), folio: ($('#tcFo' + i) || {}).value })),
       serieP: $('#tcSeP') ? $('#tcSeP').value.trim() : undefined, folioP: $('#tcFoP') ? $('#tcFoP').value : undefined };
@@ -8843,7 +8850,7 @@ const App = (() => {
     const r = S.timbP; if (!r) return;
     const rec = { rfc: $('#tfRfc').value.trim(), nombre: $('#tfNom').value.trim(), cp: $('#tfCp').value.trim(), regimen: $('#tfReg').value, uso: $('#tfUso').value, email: $('#tfMail').value.trim() };
     const met = $('#tfMet').value, forma = $('#tfForma').value;
-    if (!confirm((r.amb === 'produccion' ? '¿Timbrar la factura ante el SAT?' : '¿Timbrar una factura DE PRUEBA (sin validez)?') + '\n\n' + rec.nombre + ' · ' + rec.rfc + '\nTotal ' + $$(r.totales.total) + ' · ' + met)) return;
+    if (!confirm((r.amb === 'produccion' ? '⚠️ PRODUCCIÓN · ES REAL ANTE EL SAT\n¿Timbrar la factura?' : '🧪 PRUEBAS · sin validez\n¿Timbrar una factura de prueba?') + '\n\n' + rec.nombre + ' · ' + rec.rfc + '\nTotal ' + $$(r.totales.total) + ' · ' + met)) return;
     let x; try { x = await pedir('timbrarNota', { ID_Venta: r.id, receptor: rec, metodo: met, forma: forma, guardarCliente: $('#tfGuardar').checked }); } catch (e) { return; }
     S.timbUlt = x;
     if (x.prueba) {
