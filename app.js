@@ -776,7 +776,7 @@ const App = (() => {
     { id: 'inicio', t: 'Inicio', i: '🏠' },
     { id: 'tablero', t: 'Dashboard', i: '📊', p: 'dashboard' },
     { id: 'resumen', t: 'Resumen del día', i: '📋', p: 'dueno' },
-    { id: 'autorizar', t: 'Por autorizar', i: '🔐', p: ['dueno', 'ventas', 'ajustes', 'mermas', 'inventario_fisico'] },
+    { id: 'autorizar', t: 'Por autorizar', i: '🔐', p: ['dueno', 'ventas', 'ajustes', 'mermas', 'inventario_fisico', 'facturacion'] },
     { id: 'venta', t: 'Nueva venta', i: '🛒', p: 'ventas' },
     { id: 'pos', t: 'Venta rápida', i: '⚡', p: 'ventas' },
     { id: 'ventas', t: 'Ventas', i: '🧾', p: ['ventas', 'cobranza'] },
@@ -837,7 +837,7 @@ const App = (() => {
     const u = U();
     $('#menu').innerHTML = `<div class="cab">${logoPantalla() || '<b>🐾 Interés Veterinario®</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
       <nav>${menuOrdenado().map(m => { if (m.tit) return `<div class="menu-tit">${esc(m.tit)}</div>`; const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
-        return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(m.id === 'autorizar' && !puede('dueno') ? 'Mis solicitudes' : e.t)}${m.id === 'anotaciones' && S.obsNuevas ? `<b class="menu-num">${S.obsNuevas}</b>` : ''}${m.id === 'autorizar' && S.autN ? `<b class="menu-num">${S.autN}</b>` : ''}</button>`; }).join('')}</nav>
+        return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(m.id === 'autorizar' && !puede('dueno') ? (facM() ? 'Solicitudes de factura' : 'Mis solicitudes') : e.t)}${m.id === 'anotaciones' && S.obsNuevas ? `<b class="menu-num">${S.obsNuevas}</b>` : ''}${m.id === 'autorizar' && S.autN ? `<b class="menu-num">${S.autN}</b>` : ''}</button>`; }).join('')}</nav>
       <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
       <div class="fila" style="gap:6px"><button class="btn chico" onclick="App.ir('config')">${puede('dueno') ? '⚙️ Configuración' : '👤 Mi cuenta y sincronización'}</button><button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div><div class="ver-app"></div></div>`;
     cargarAvatares($('#menu')); pintarVersion();
@@ -910,7 +910,7 @@ const App = (() => {
     $('#vista').innerHTML = ''; quitarAvisoCache();
     (V[m.id] || V.inicio)();
     if (m.id === 'config' && !puede('dueno')) $('#titulo').textContent = 'Mi cuenta';
-    if (m.id === 'autorizar' && !puede('dueno')) $('#titulo').textContent = 'Mis solicitudes';
+    if (m.id === 'autorizar' && !puede('dueno')) $('#titulo').textContent = facM() ? 'Solicitudes de factura' : 'Mis solicitudes';
     pintarFab(m.id); botonObservaciones();
     window.scrollTo(0, 0);
   }
@@ -1104,6 +1104,8 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 320, f: '13/11/2026', t: [{ x: '🧾 Las facturas las hace Matriz. Las sucursales las piden con “Solicitar factura” en la nota, y solo procede si la ficha del cliente tiene RFC, razón social, C.P., régimen, uso de CFDI, correo y su constancia de situación fiscal.', p: 'ventas' },
+      { x: '📨 Las solicitudes de factura llegan a “Por autorizar” con el botón “Timbrar ahora”: se abre la factura con lo que pidió la sucursal y, al timbrarla, la solicitud queda atendida sola.', p: 'facturacion' }] },
     { v: 319, f: '13/11/2026', t: [{ x: '🧾 Factura global: en Facturación › “Armar global del mes” ya puedes timbrarla directo con Facturama; queda registrada y sus abonos se ligan solos.', p: 'facturacion' },
       { x: '👥 Al timbrar una nota, escribe el RFC XAXX010101000 y se factura al público en general con los datos que pide el SAT.', p: 'facturacion' }] },
     { v: 317, f: '13/11/2026', t: [{ x: '🧾 Timbrado de facturas con Facturama (por ahora en modo de pruebas): botón “Timbrar factura” en la nota.', p: 'facturacion' },
@@ -3727,7 +3729,7 @@ const App = (() => {
       ${r.facturas.map(fila).join('') || '<p class="muted">Sin factura ligada.</p>'}
       ${r.piezas && r.piezas.length ? `<details style="margin-top:6px" ${r.piezas.some(x => x.pendientes > 0) && r.facturas.length ? 'open' : ''}><summary>🔢 Piezas facturadas: ${nf(r.piezas.reduce((a, x) => a + x.facturadas, 0))} de ${nf(r.piezas.reduce((a, x) => a + x.vendidas, 0))}${r.piezas.some(x => x.pendientes > 0) ? ' · <b class="txt-mal">faltan ' + nf(r.piezas.reduce((a, x) => a + x.pendientes, 0)) + '</b>' : ' ✔'}</summary>
         ${tabla([{ t: 'Producto', h: x => esc(x.nombre) }, { t: 'Vendidas', num: 1, h: x => nf(x.vendidas) }, { t: 'Facturadas', num: 1, h: x => nf(x.facturadas) }, { t: 'Sin facturar', num: 1, h: x => x.pendientes ? `<b class="txt-mal">${nf(x.pendientes)}</b>` : '✔' }, { t: 'Facturas', h: x => esc(x.facturas) }], r.piezas)}</details>` : ''}`;
-    if (!form && S.timb && S.timb.activo && (r.porFacturar === null || r.porFacturar === undefined || r.porFacturar > 0.009)) h += `<div class="acciones izq" style="margin-top:6px"><button class="btn primario" onclick="App.timbrarNotaForm('${esc(r.id)}')">🧾 Timbrar factura</button> ${timbEtq(S.timb.amb)}</div>`;
+    if (!form && S.timb && S.timb.activo && facM() && (r.porFacturar === null || r.porFacturar === undefined || r.porFacturar > 0.009)) h += `<div class="acciones izq" style="margin-top:6px"><button class="btn primario" onclick="App.timbrarNotaForm('${esc(r.id)}')">🧾 Timbrar factura</button> ${timbEtq(S.timb.amb)}</div>`;
     if (form === 'asignar') {
       h += `<div class="tarjeta" style="margin-top:8px"><div class="rejilla">
         <label>Factura<select id="nfSel">${r.sugeridas.map(f => `<option value="${f.id}">${esc(f.sf)} · ${esc(f.fecha)}${f.global ? ' · GLOBAL' : ''}${f.libre !== null ? ' · libre ' + $$(f.libre) : ''}</option>`).join('')}<option value="">Otra: escribir serie-folio…</option></select></label>
@@ -8565,8 +8567,10 @@ const App = (() => {
   };
   /* ---------- 🔐 POR AUTORIZAR (dueño) / MIS SOLICITUDES (sucursales): facturas, ajustes, mermas y conteos ---------- */
   const esMatrizU = () => !!(U().todasSucursales || U().sucursal === 'SUC_MAT_1');
+  /** Hace las facturas: dueño, contador o administración de Matriz con permiso de facturación. */
+  const facM = () => esMatrizU() && (puede('dueno') || puede('facturacion'));
   async function contarAutorizaciones() {
-    if (!puede('dueno') || navigator.onLine === false) return;
+    if (!facM() || navigator.onLine === false) return;
     try { const r = await pedir('porAutorizar', {}, true); if (S.autN !== r.n) { S.autN = r.n || 0; pintarMenu(); } } catch (e) {}
   }
   const AUT_EST = { Pendiente: 'av', Aprobada: 'ok', Atendida: 'ok', Rechazada: 'mal' };
@@ -8584,9 +8588,9 @@ const App = (() => {
   };
   async function cargarAut() {
     const f = S.fAut || {}, el = $('#auRes'); if (!el) return;
-    try { S.aut = await pedir('solicitudes', { estado: f.est === 'Resueltas' ? 'resueltas' : f.est, tipo: f.tipo }, true); }
+    try { [S.aut] = await Promise.all([pedir('solicitudes', { estado: f.est === 'Resueltas' ? 'resueltas' : f.est, tipo: f.tipo }, true), facM() ? timbEstado() : null]); }
     catch (e) { el.innerHTML = `<div class="vacio">${e.red ? 'Necesitas conexión para ver las solicitudes.' : esc(e.message)}</div>`; return; }
-    if (S.aut.dueno && S.autN !== S.aut.pendientes) { S.autN = S.aut.pendientes; pintarMenu(); }
+    if ((S.aut.dueno || S.aut.factura) && S.autN !== S.aut.pendientes) { S.autN = S.aut.pendientes; pintarMenu(); }
     pintarAut();
   }
   function pintarAut() {
@@ -8618,8 +8622,8 @@ const App = (() => {
           ${D2.motivo ? `<div class="muted">💬 ${esc(D2.motivo)}</div>` : ''}
           ${editar ? `<details><summary>✏️ Ajustar antes de autorizar</summary><div class="rejilla"><label>Sueldo mensual<input type="number" id="${pre}Sueldo" min="0" step="100" value="${D2.sueldo !== null && D2.sueldo !== undefined ? D2.sueldo : ''}"></label></div>${eqMetaCampos(m, pre)}</details>` : ''}</div>`; }
       const arch = x.archivo ? `<button class="btn chico fijo" onclick="App.verArchAut('${esc(x.id)}')">${x.tipo === 'CONTEO' ? '✍️ Ver firma' : '📄 Constancia fiscal'}</button>` : '';
-      const acc = r.dueno && pend ? (x.tipo === 'FACTURA'
-        ? `<button class="btn primario" onclick="App.resolverAut('${esc(x.id)}','atendida')">✔ Ya la facturé</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`
+      const acc = (r.dueno || r.factura && x.tipo === 'FACTURA') && pend ? (x.tipo === 'FACTURA'
+        ? `${S.timb && S.timb.activo ? (D2.ventas || []).map(v => `<button class="btn primario" onclick="App.timbSolicitud('${esc(x.id)}','${esc(v.id)}')">🧾 Timbrar ${(D2.ventas || []).length > 1 ? esc(v.folio) : 'ahora'}</button>`).join('') : ''}<button class="btn${S.timb && S.timb.activo ? '' : ' primario'}" onclick="App.resolverAut('${esc(x.id)}','atendida')">✔ Ya la facturé</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`
         : `<button class="btn primario" onclick="App.resolverAut('${esc(x.id)}','aprobar')">✔ ${x.tipo === 'EMPLEADO' ? (D2.accion === 'alta' ? 'Autorizar alta' : 'Autorizar cambio') : 'Aprobar' + (x.tipo === 'CONTEO' ? ' y aplicar ajustes' : ' y mover inventario')}</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`) : '';
       return `<div class="tarjeta aut-card ${pend ? 'aut-pend' : ''}"><div class="fila" style="justify-content:space-between;align-items:flex-start">
           <div><b>${esc(x.tipoTxt)}</b> <span class="etq ${AUT_EST[x.estado] || ''}">${esc(x.estado)}</span><br><small class="muted">${esc(x.sucNombre)} · ${esc(x.usuario)} · ${esc(x.fecha)}</small></div>
@@ -8768,7 +8772,9 @@ const App = (() => {
       ${r.conceptos.some(x => !x.clave) ? `<div class="acciones izq"><button class="btn" onclick="App.clavesSat('${esc(r.id)}')">🏷️ Asignar claves del SAT</button></div>` : ''}
       <p style="text-align:right;margin:8px 0 0">Subtotal <b>${$$(t.sub)}</b>${t.desc ? ' · Descuento <b>' + $$(t.desc) + '</b>' : ''} · IVA <b>${$$(t.iva)}</b> · Total <b class="ok-txt" style="font-size:1.15em">${$$(t.total)}</b></p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" ${r.puede ? '' : 'disabled title="Corrige los avisos primero"'} onclick="App.timbrarNota()">🧾 ${r.amb === 'produccion' ? 'Timbrar factura' : 'Timbrar de prueba'}</button></div>`);
-    timbMet();
+    const so = S.timbSol; S.timbSol = null;
+    if (so) { if (so.uso && $('#tfUso')) $('#tfUso').value = so.uso; if (so.metodo && $('#tfMet')) $('#tfMet').value = so.metodo; timbMet(); if (so.forma && $('#tfForma') && so.metodo !== 'PPD') $('#tfForma').value = String(Number(so.forma)); S.timbDeSol = so.id; return; }
+    S.timbDeSol = null; timbMet();
   }
   function timbMet() { const m = $('#tfMet'), f = $('#tfForma'); if (!m || !f) return; if (m.value === 'PPD') { f.value = '99'; f.disabled = true; } else { f.disabled = false; if (f.value === '99') f.value = String(Number(S.timbP.metodo === 'PUE' ? S.timbP.forma : 3)); } }
   async function timbrarNota() {
@@ -8786,7 +8792,8 @@ const App = (() => {
         <div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Listo</button></div>`);
       return;
     }
-    toast('✅ Factura ' + x.sf + ' timbrada'); if (x.idFactura) verFactura(x.idFactura); if (S.vista === 'ventas') refrescarVentasVista();
+    toast('✅ Factura ' + x.sf + ' timbrada' + (x.solicitudes ? ' · solicitud atendida' : '')); if (x.idFactura) verFactura(x.idFactura); if (S.vista === 'ventas') refrescarVentasVista();
+    if (S.vista === 'autorizar') cargarAut(); contarAutorizaciones();
   }
   async function timbCancelarPrueba() {
     const x = S.timbUlt; if (!x || !x.fmId) return;
@@ -8803,27 +8810,44 @@ const App = (() => {
     if (!confirm('¿Cancelar esta factura ante el SAT? No se puede deshacer.')) return;
     try { const r = await pedir('cancelarTimbrada', { id: idFac, motivo: m, uuidSust: u.trim() }); toast(r.estadoSat === 'pendiente' ? '⏳ Cancelación solicitada: falta que el cliente la acepte' : '🚫 Factura cancelada ante el SAT'); verFactura(idFac); if (S.vista === 'ventas') refrescarVentasVista(); } catch (e) {}
   }
-  function formSolFactura(id) {
+  /** Sucursal: pedir a Matriz la factura. Procede solo si la ficha del cliente tiene completos sus datos fiscales y su constancia. */
+  async function formSolFactura(id) {
     const d = S.ultimaVenta && S.ultimaVenta.id === id ? S.ultimaVenta : null; if (!d) return;
     const cat = D().catalogos || {};
-    modal('🧾 Solicitar factura · nota ' + d.folio, `<p>Se le envía al dueño para que haga la factura de <b>${esc(d.razon || d.cliente || '')}</b> por <b>${$$(d.total)}</b>. Te avisará en "Mis solicitudes".</p>
-      <label>Constancia de situación fiscal del SAT * <small class="muted">(PDF o foto, vigente)</small><input type="file" id="sfCsf" accept="application/pdf,image/*"></label>
-      <div class="rejilla"><label>Uso de CFDI<select id="sfUso">${opts((cat.usoCfdi || []).map(u => [u.id, u.id + ' · ' + u.nombre]), d.uso || '', 'Elegir…')}</select></label>
-        <label>Método de pago<select id="sfMet">${opts([['PUE', 'PUE · una sola exhibición'], ['PPD', 'PPD · parcialidades o diferido']], d.saldo > 0.009 ? 'PPD' : 'PUE')}</select></label>
-        <label>Forma de pago<select id="sfForma">${opts((cat.formasPago || []).map(u => [u.id, u.id + ' · ' + u.nombre]), '', 'Elegir…')}</select></label></div>
-      <label>Comentario para Matriz<input id="sfCom" maxlength="300" placeholder="Ej. el cliente la necesita hoy; enviar a su correo"></label>
-      <p class="muted peq">Se te pedirá tu contraseña para enviar la solicitud.</p>
-      <div class="acciones"><button class="btn" onclick="App.verVentaId('${esc(id)}')">Volver</button><button class="btn primario" id="sfBtn" onclick="App.enviarSolFactura('${esc(id)}')">📨 Enviar solicitud</button></div>`);
+    let c = {}; try { c = await pedir('registro', { tabla: 'cliente', id: d.idCliente }, true) || {}; } catch (e) { return toast('Se necesita conexión para pedir la factura', true); }
+    const nomCat = (l, v) => { const x = (l || []).find(u => String(u.id) === String(v)); return x ? v + ' · ' + x.nombre : v; };
+    const rfc = String(c.RFC || '').trim().toUpperCase(), csf = !!String(c.Const_Sit_Fiscal || '').trim();
+    const req = [['RFC', rfc, /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(rfc)], ['Razón social', c.Razon_social, !!String(c.Razon_social || '').trim()], ['C.P. fiscal', c['C.P.'], /^\d{5}$/.test(String(c['C.P.'] || '').trim())],
+      ['Régimen fiscal', nomCat(cat.regimen, c.Regimen_Fiscal), /^\d{3}$/.test(String(c.Regimen_Fiscal || '').trim())], ['Uso de CFDI', nomCat(cat.usoCfdi, c.Uso_CFDI), !!String(c.Uso_CFDI || '').trim()],
+      ['Correo', c['e-mail'], /@/.test(String(c['e-mail'] || ''))], ['Constancia de situación fiscal', csf ? 'En el expediente' : '', csf]];
+    const faltan = req.filter(x => !x[2]), ok = !faltan.length;
+    S.solCli = d.idCliente;
+    modal('🧾 Solicitar factura · nota ' + d.folio, `<p style="margin-top:0">Matriz hará la factura de <b>${esc(c.Razon_social || d.razon || d.cliente || '')}</b> por <b>${$$(d.total)}</b> con los datos de la ficha del cliente. Te avisará en "Mis solicitudes".</p>
+      <div class="sol-fisc">${req.map(x => `<div class="${x[2] ? '' : 'falta'}"><small>${x[2] ? '✅' : '❌'} ${esc(x[0])}</small><b>${esc(x[1] || 'Falta')}</b></div>`).join('')}</div>
+      ${ok ? '' : `<div class="tarjeta" style="border-color:var(--peligro);margin-top:10px">⛔ <b>No procede la factura todavía.</b> Pide al cliente su <b>constancia de situación fiscal</b> y captura en su ficha: ${esc(faltan.map(x => x[0]).join(', '))}.
+        <div class="acciones izq" style="margin-top:6px">${puede('clientes_editar') ? `<button class="btn primario" onclick="App.solEditarCli()">✏️ Completar datos del cliente</button>` : '<span class="muted">Pide al gerente que complete la ficha.</span>'}</div></div>`}
+      ${ok ? `<div class="rejilla" style="margin-top:10px"><label>Método de pago<select id="sfMet">${opts([['PUE', 'PUE · una sola exhibición (pagada)'], ['PPD', 'PPD · parcialidades o a crédito']], d.saldo > 0.009 ? 'PPD' : 'PUE')}</select></label>
+        <label>Forma de pago<select id="sfForma">${opts((cat.formasPago || []).map(u => Array.isArray(u) ? u : [u.id, u.id + ' · ' + u.nombre]), '', 'Elegir…')}</select></label></div>
+      <label>Comentario para Matriz<input id="sfCom" maxlength="300" placeholder="Ej. el cliente la necesita hoy"></label>
+      <p class="muted peq">Se te pedirá tu contraseña para enviar la solicitud.</p>` : ''}
+      <div class="acciones"><button class="btn" onclick="App.verVentaId('${esc(id)}')">Volver</button>${ok ? `<button class="btn primario" id="sfBtn" onclick="App.enviarSolFactura('${esc(id)}')">📨 Enviar solicitud</button>` : ''}</div>`);
+  }
+  function solEditarCli() {
+    const c = (D().clientes || []).find(x => x.id === S.solCli); if (!c) return toast('Abre el cliente desde Clientes', true);
+    S.lista = [c]; formCliente(0);
   }
   async function enviarSolFactura(id) {
-    const f = $('#sfCsf').files[0]; if (!f) return toast('Sube la constancia de situación fiscal del cliente', true);
-    if (f.size > 8 * 1024 * 1024) return toast('El archivo es muy grande (máx. 8 MB)', true);
-    if (!$('#sfUso').value) return toast('Elige el uso de CFDI', true);
+    if (!$('#sfForma').value) return toast('Elige la forma de pago', true);
     const b = $('#sfBtn'); b.disabled = true; b.textContent = 'Enviando…';
-    try { const csf = await leerArchivo(f);
-      await pedir('solicitarFactura', { notas: [id], csf: csf, uso: $('#sfUso').value, metodo: $('#sfMet').value, forma: $('#sfForma').value, comentario: $('#sfCom').value });
-      cerrarModal(); toast('📨 Solicitud de factura enviada al dueño'); }
+    try { await pedir('solicitarFactura', { notas: [id], metodo: $('#sfMet').value, forma: $('#sfForma').value, comentario: $('#sfCom').value });
+      cerrarModal(); toast('📨 Solicitud de factura enviada a Matriz'); }
     catch (e) { if (b) { b.disabled = false; b.textContent = '📨 Enviar solicitud'; } }
+  }
+  /** Matriz: timbrar la nota de una solicitud con lo que pidió la sucursal (uso, método y forma). */
+  function timbSolicitud(idSol, idVenta) {
+    const x = (S.aut.solicitudes || []).find(s => s.id === idSol); if (!x) return;
+    S.timbSol = { id: idSol, uso: x.datos.uso, metodo: x.datos.metodo, forma: x.datos.forma };
+    timbrarNotaForm(idVenta);
   }
   /** Número de anotaciones nuevas en el menú del dueño (para que no se pierdan de vista). */
   async function contarAnotaciones() {
@@ -15761,7 +15785,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
