@@ -1104,6 +1104,8 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 327, f: '14/11/2026', t: [{ x: '📎 Ahora puedes adjuntar archivos (PDF o foto) a las interacciones con el cliente, por ejemplo un cuadro comparativo enviado por WhatsApp.', p: 'clientes' },
+      { x: '🔄 Nuevo tipo de interacción “Producto que no manejo”: registra qué pidió el cliente, qué le ofreciste y cómo terminó. Reporte en Seguimiento › Prospectos › 🔄 Lo que nos piden.', p: 'seguimiento' }] },
     { v: 326, f: '13/11/2026', t: [{ x: '💳 Complementos de pago: botón “Ignorar” para quitar un abono de la lista y de los avisos (se puede regresar desde “Ignorados”).', p: 'facturacion' }] },
     { v: 325, f: '13/11/2026', t: [{ x: '🏷️ Claves del SAT: primero le pones la clave a cada categoría y luego entras a “Revisar productos” para cambiar los que lleven otra; pasas de una categoría a la siguiente con las flechas.', p: 'productos_editar' }] },
     { v: 323, f: '13/11/2026', t: [{ x: '🧾 Timbrado: al tocar 🧪 Pruebas o ✅ Producción el cambio se guarda en ese momento, cada ambiente recuerda su propio usuario y contraseña de Facturama, y antes de timbrar la app avisa claramente si es real.', p: 'facturacion' }] },
@@ -14507,6 +14509,7 @@ const App = (() => {
       ${e.paciente ? `<div>🐄 ${esc(e.paciente)}</div>` : ''}${e.diagnostico || e.motivo ? `<div>🩺 ${esc(e.diagnostico || e.motivo)}</div>` : ''}
       ${e.tratamientos && e.tratamientos.length ? `<div class="muted">℞ ${esc(e.tratamientos.slice(0, 3).join(' · ').slice(0, 220))}</div>` : ''}
       ${e.detalle ? `<div class="muted" style="white-space:pre-wrap">${esc(String(e.detalle).slice(0, 300))}</div>` : ''}
+      ${e.tipo === 'interaccion' ? (e.estado ? `<span class="etq ${/Compró|conseguimos/.test(e.estado) ? 'ok' : /No le/.test(e.estado) ? 'mal' : 'av'}">${esc(e.estado)}</span>` : '') + intArch(e.archivos) : ''}
       <div class="hc-ligas">${e.recetas && e.recetas.length ? '💊 ' + esc(e.recetas.join(', ')) + ' ' : ''}${e.venta ? '🧾 ' + esc(e.venta) + ' ' : ''}${e.surtir ? '🏬 Surtir en ' + esc(e.surtir) + ' ' : ''}${e.vendedor ? '👤 ' + esc(e.vendedor) : ''}${e.elaboro ? '👤 ' + esc(e.elaboro) : ''}</div></div></div>`).join('')}</div>`;
   }
 
@@ -15683,16 +15686,45 @@ const App = (() => {
   const CRM_ETAPAS = ['Interesado', 'Contactado', 'Cotizado', 'En negociación', 'Ganado', 'Perdido'];
   const CRM_COL = { 'Interesado': '#64748b', 'Contactado': '#2a78d6', 'Cotizado': '#7c5cd6', 'En negociación': '#c79a00', 'Ganado': '#1f7a3a', 'Perdido': '#c23b32' };
   const CRM_ORIGENES = ['Recomendación', 'Redes sociales', 'WhatsApp', 'Visita en campo', 'Página web', 'Llamada', 'Mostrador / sucursal', 'Expo o evento', 'Distribuidor / laboratorio', 'Otro'];
-  const CRM_TIPOS_INT = ['📞 Llamada', '💬 WhatsApp', '✉️ Correo', '🤝 Visita', '📝 Cotización enviada', '🗒️ Nota'];
+  const CRM_TIPOS_INT = ['📞 Llamada', '💬 WhatsApp', '✉️ Correo', '🤝 Visita', '📝 Cotización enviada', '🔄 Producto que no manejo', '🗒️ Nota'];
+  const CRM_SUST = '🔄 Producto que no manejo', CRM_RES = ['✅ Compró el sustituto', '🤔 Lo va a pensar', '🛒 Se lo conseguimos', '❌ No le interesó'];
   V.prospectos = (tab) => {
     const f = S.fCrm = S.fCrm || { tab: 'embudo', texto: '', vend: '', ver: 'abiertos' };
     if (tab) f.tab = tab;
     const t = (id, n) => `<button class="${f.tab === id ? 'activo' : ''}" onclick="App.crmTab('${id}')">${n}</button>`;
-    $('#vista').innerHTML = `<div class="pestanas">${t('embudo', '🧲 Embudo')}${t('lista', '📋 Prospectos')}${t('origen', '📈 Origen de clientes')}</div><div id="crmCont"><div class="vacio">Cargando…</div></div>`;
+    $('#vista').innerHTML = `<div class="pestanas">${t('embudo', '🧲 Embudo')}${t('lista', '📋 Prospectos')}${t('origen', '📈 Origen de clientes')}${t('nomanejo', '🔄 Lo que nos piden')}</div><div id="crmCont"><div class="vacio">Cargando…</div></div>`;
     if (f.tab === 'origen') return crmOrigen();
+    if (f.tab === 'nomanejo') return crmNoManejo();
     crmCargar();
   };
   function crmTab(t) { S.fCrm.tab = t; V.prospectos(); }
+  /** 🔄 Productos que piden los clientes y no manejamos (para decidir qué comprar). */
+  function crmNoManejo() {
+    const el = $('#crmCont'), h = new Date(), d0 = new Date(h.getFullYear(), h.getMonth() - 5, 1);
+    el.innerHTML = `<div class="tarjeta"><div class="fila"><label>Desde<input type="date" id="nmDesde" value="${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-01"></label><label>Hasta<input type="date" id="nmHasta" value="${hoyISO()}"></label>
+      <button class="btn primario fijo" style="align-self:end" onclick="App.crmNoManejoCargar()">Ver</button></div>
+      <p class="muted peq" style="margin:6px 0 0">Sale de las interacciones tipo <b>🔄 Producto que no manejo</b>. Ordenado por cuántos clientes distintos lo han pedido.</p></div><div id="nmRes"><div class="vacio">Cargando…</div></div>`;
+    crmNoManejoCargar();
+  }
+  async function crmNoManejoCargar() {
+    const el = $('#nmRes'); let r;
+    try { r = await pedir('reporteNoManejados', { desde: $('#nmDesde').value, hasta: $('#nmHasta').value }, true); } catch (e) { el.innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    S.nm = r;
+    const tg = r.lista.reduce((t, x) => t + x.ganados, 0);
+    el.innerHTML = `<div class="kpis"><div class="kpi"><small>Veces que pidieron algo que no tienes</small><b>${nf(r.total)}</b></div><div class="kpi"><small>Productos distintos</small><b>${nf(r.lista.length)}</b></div>
+      <div class="kpi"><small>Ventas salvadas con un sustituto</small><b>${nf(tg)}</b><span>${r.total ? Math.round(tg / r.total * 100) : 0}% de las veces</span></div></div>
+      <div class="tarjeta">${tabla([{ t: 'Producto que pidieron', h: x => `<b>${esc(x.pedido)}</b><br><small class="muted">último: ${esc(x.ultimo)}</small>` },
+        { t: 'Clientes', num: 1, h: x => `<b>${nf(x.clientes)}</b>` }, { t: 'Veces', num: 1, h: x => nf(x.veces) },
+        { t: 'Lo que les ofreciste', h: x => x.ofrecidos.map(o => `${esc(o.nombre)} <small class="muted">×${o.veces}</small>`).join('<br>') || '<span class="muted">—</span>' },
+        { t: 'Resultado', h: x => Object.keys(x.resultados).map(k => `<small>${esc(k)} ${x.resultados[k]}</small>`).join('<br>') },
+        { t: '', h: x => `<button class="btn chico" onclick="App.crmNoManejoVer(${r.lista.indexOf(x)})">Ver quién</button>` }], r.lista, { vacio: 'Todavía no hay registros. Usa “🔄 Producto que no manejo” al registrar una interacción con el cliente.' })}</div>`;
+  }
+  function crmNoManejoVer(i) {
+    const x = S.nm.lista[i]; if (!x) return;
+    modal('🔄 ' + x.pedido, `<p style="margin-top:0">${nf(x.clientes)} clientes · ${nf(x.veces)} veces · último ${esc(x.ultimo)}</p>${tabla([{ t: 'Fecha', h: d => esc(d.fecha) }, { t: 'Cliente', h: d => esc(d.cliente) },
+      { t: 'Se le ofreció', h: d => esc(d.ofrecido) }, { t: 'Resultado', h: d => esc(d.resultado) }, { t: 'Registró', h: d => esc(d.usuario) }], x.detalle)}
+      <div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
   async function crmCargar(forzar) {
     const f = S.fCrm;
     if (forzar || !S.crm || Date.now() - S.crm._t > 120000) {
@@ -15819,8 +15851,11 @@ const App = (() => {
     try { const l = await pedir('interacciones', { idProspecto: id }, true); const el = $('#crmInt'); if (el) el.innerHTML = htmlInteracciones(l); } catch (e) { const el = $('#crmInt'); if (el) el.innerHTML = '<span class="muted">Requiere conexión.</span>'; }
   }
   const htmlInteracciones = l => !l.length ? '<div class="muted">Sin interacciones todavía.</div>' : `<div class="hc-linea">${l.map(x => `<div class="hc-ev hc-interaccion"><div class="hc-ico">${esc((x.tipo || '🗒️').split(' ')[0])}</div><div class="hc-cuerpo">
-      <div class="hc-tit"><b>${esc((x.tipo || '').replace(/^\S+\s/, ''))}</b><span class="hc-fecha">${esc(x.fecha)} ${esc(x.hora || '')}</span></div><div style="white-space:pre-wrap">${esc(x.resumen)}</div>
-      ${x.proximo ? `<div class="muted">➡️ ${esc(x.proximo)}${x.fechaProx ? ' (' + esc(x.fechaProx) + ')' : ''}</div>` : ''}<div class="hc-ligas">👤 ${esc(x.usuario)}</div></div></div>`).join('')}</div>`;
+      <div class="hc-tit"><b>${esc((x.tipo || '').replace(/^\S+\s/, ''))}</b><span class="hc-fecha">${esc(x.fecha)} ${esc(x.hora || '')}</span></div>${intSust(x)}<div style="white-space:pre-wrap">${esc(x.resumen)}</div>
+      ${x.proximo ? `<div class="muted">➡️ ${esc(x.proximo)}${x.fechaProx ? ' (' + esc(x.fechaProx) + ')' : ''}</div>` : ''}${intArch(x.archivos)}<div class="hc-ligas">👤 ${esc(x.usuario)}</div></div></div>`).join('')}</div>`;
+  /** Bloque "pidió → se le ofreció → resultado" y archivos adjuntos de una interacción. */
+  const intSust = x => x.pedido ? `<div class="int-sust"><span>🙋 Pidió <b>${esc(x.pedido)}</b></span>${x.ofrecido ? `<span>➜ Se le ofreció <b>${esc(x.ofrecido)}</b></span>` : ''}${x.resultado ? `<span class="etq ${/Compró|conseguimos/.test(x.resultado) ? 'ok' : /No le/.test(x.resultado) ? 'mal' : 'av'}">${esc(x.resultado)}</span>` : ''}</div>` : '';
+  const intArch = l => l && l.length ? `<div class="int-arch">${l.map(a => `<a class="btn chico" target="_blank" rel="noopener" href="${esc(a.url)}">📎 ${esc(a.nombre)}</a>`).join('')}</div>` : '';
   async function crmConvertir(id) {
     const x = ((S.crm || {}).lista || []).find(y => y.id === id); if (!x) return;
     if (!confirm('¿Dar de alta a ' + x.nombre + ' como cliente (con origen "' + (x.origen || 'sin dato') + '") y marcarlo Ganado?')) return;
@@ -15828,21 +15863,47 @@ const App = (() => {
   }
   /** Llamada, WhatsApp, correo o nota de un cliente o de un prospecto, con su próximo paso. o: { idCliente | idProspecto, nombre } */
   function formInteraccion(o) {
-    S.intDe = o;
-    modal('➕ Interacción · ' + (o.nombre || ''), `<label>Tipo<select id="inTipo">${opts(CRM_TIPOS_INT, CRM_TIPOS_INT[0])}</select></label>
-      <label>¿Qué pasó? *<textarea id="inRes" rows="3" placeholder="Ej. Se le llamó el lunes; pidió que le marquemos el viernes para cotizar 200 dosis"></textarea></label>
-      <div class="fila"><label style="flex:2 1 200px">Próximo paso<input id="inProx" placeholder="Ej. llamar para cerrar pedido"></label><label>Fecha<input type="date" id="inFec"></label></div>
+    S.intDe = o; S.intArch = []; S.intOf = null;
+    modal('➕ Interacción · ' + (o.nombre || ''), `<label>Tipo<select id="inTipo" onchange="App.intTipo()">${opts(CRM_TIPOS_INT, o.tipo || CRM_TIPOS_INT[0])}</select></label>
+      <div id="inSust" class="int-caja oculto"><b>🔄 Producto que no manejas</b>
+        <label>¿Qué producto pidió? *<input id="inPed" placeholder="Ej. Catosal 100 ml (Bayer)"></label>
+        <label>¿Qué le ofreciste en su lugar?<input id="inOf" placeholder="Busca en tu catálogo…" autocomplete="off"></label>
+        <div class="muted peq" id="inOfSel"></div>
+        <label>¿Cómo terminó?</label><div class="ichips" id="inRes2">${CRM_RES.map((r, i) => `<button type="button" class="ichip" data-r="${i}" onclick="App.intRes(${i})">${esc(r)}</button>`).join('')}</div></div>
+      <label>¿Qué pasó? <span id="inResObl">*</span><textarea id="inRes" rows="3" placeholder="Ej. Se le mandó por WhatsApp el cuadro comparativo; dijo que lo prueba en 10 vacas"></textarea></label>
+      <label>📎 Adjuntar archivos <small class="muted">(PDF o foto, hasta 3 · requiere conexión)</small><input type="file" id="inArch" accept="application/pdf,image/*" multiple onchange="App.intArchivos(this)"></label>
+      <div id="inArchL" class="int-arch"></div>
+      <div class="fila"><label style="flex:2 1 200px">Próximo paso<input id="inProx" placeholder="Ej. llamar en 15 días para ver cómo le fue"></label><label>Fecha<input type="date" id="inFec"></label></div>
       <label>Fecha de la interacción<input type="date" id="inCuando" value="${hoyISO()}"></label>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="inBtn" onclick="App.guardarInteraccion()">Guardar</button></div>`);
-    setTimeout(() => $('#inRes') && $('#inRes').focus(), 50);
+    buscador($('#inOf'), { fuente: fuenteProductos(null, null, true), alElegir: x => { S.intOf = { id: x.id, nombre: x.t }; $('#inOf').value = x.t; $('#inOfSel').textContent = '✔ ' + x.t; } });
+    intTipo(); setTimeout(() => $('#inRes') && $('#inRes').focus(), 50);
   }
+  function intTipo() { const s = $('#inTipo').value === CRM_SUST; $('#inSust').classList.toggle('oculto', !s); $('#inResObl').textContent = s ? '' : '*'; }
+  function intRes(i) { S.intRes = CRM_RES[i]; document.querySelectorAll('#inRes2 .ichip').forEach(b => b.classList.toggle('activo', Number(b.dataset.r) === i)); }
+  async function intArchivos(inp) {
+    const fs = Array.from(inp.files || []); inp.value = '';
+    for (const f of fs) {
+      if (S.intArch.length >= 3) { toast('Máximo 3 archivos', true); break; }
+      if (!/^(application\/pdf|image\/)/.test(f.type)) { toast(f.name + ': solo PDF o imágenes', true); continue; }
+      if (f.size > 8 * 1024 * 1024) { toast(f.name + ' pesa más de 8 MB', true); continue; }
+      const b64 = await new Promise((ok, mal) => { const r = new FileReader(); r.onerror = mal; r.onload = () => ok(String(r.result)); r.readAsDataURL(f); });
+      S.intArch.push({ nombre: f.name, b64: b64 });
+    }
+    $('#inArchL').innerHTML = S.intArch.map((a, i) => `<span class="ichip">📎 ${esc(a.nombre)} <a href="javascript:void(0)" onclick="App.intQuitarArch(${i})">✕</a></span>`).join('');
+  }
+  function intQuitarArch(i) { S.intArch.splice(i, 1); $('#inArchL').innerHTML = S.intArch.map((a, k) => `<span class="ichip">📎 ${esc(a.nombre)} <a href="javascript:void(0)" onclick="App.intQuitarArch(${k})">✕</a></span>`).join(''); }
   async function guardarInteraccion() {
     const o = S.intDe || {}, p = { idNuevo: uid(), idCliente: o.idCliente || '', idProspecto: o.idProspecto || '', tipo: $('#inTipo').value, resumen: $('#inRes').value.trim(), proximo: $('#inProx').value.trim(), fechaProx: $('#inFec').value, fecha: $('#inCuando').value };
-    if (!p.resumen) return toast('Escribe qué pasó', true);
+    const sust = p.tipo === CRM_SUST;
+    if (sust) { p.pedido = $('#inPed').value.trim(); if (!p.pedido) return toast('Escribe qué producto pidió', true); p.ofrecido = S.intOf && $('#inOf').value.trim() === S.intOf.nombre ? S.intOf : ($('#inOf').value.trim() ? { id: '', nombre: $('#inOf').value.trim() } : null); p.resultado = S.intRes || ''; }
+    else if (!p.resumen) return toast('Escribe qué pasó', true);
+    if ((S.intArch || []).length) { if (navigator.onLine === false) return toast('Para adjuntar archivos se necesita conexión', true); p.archivos = S.intArch; }
     $('#inBtn').disabled = true;
     try { await pedir('guardarInteraccion', p); toast('✔ Interacción registrada'); cerrarModal();
       if (o.idProspecto) { await crmCargar(true); crmVer(o.idProspecto); } else if (o.idCliente) historiaCliente(o.idCliente); }
-    catch (e) { if (e.red) { encolar('guardarInteraccion', p, 'Interacción ' + (o.nombre || '')); toast('📴 Guardada en el dispositivo; se envía al volver la conexión'); cerrarModal(); } else if ($('#inBtn')) $('#inBtn').disabled = false; }
+    catch (e) { if (e.red && !p.archivos) { encolar('guardarInteraccion', p, 'Interacción ' + (o.nombre || '')); toast('📴 Guardada en el dispositivo; se envía al volver la conexión'); cerrarModal(); } else if ($('#inBtn')) $('#inBtn').disabled = false; }
+    S.intRes = null;
   }
   async function crmOrigen() {
     const el = $('#crmCont'); if (!el) return;
@@ -15882,7 +15943,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,

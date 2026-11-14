@@ -1189,6 +1189,11 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
 .sol-fisc>div b{overflow-wrap:anywhere}
 .sol-fisc>div.falta{border-color:var(--peligro);background:color-mix(in srgb,var(--peligro) 10%,transparent)}
 .sol-fisc>div.falta b{color:var(--peligro)}
+.int-caja{border:1px dashed var(--borde);border-radius:12px;padding:10px 12px;margin:8px 0}.int-caja>b{display:block;margin-bottom:4px}
+.int-sust{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:4px 0;padding:6px 8px;border-radius:8px;background:color-mix(in srgb,var(--ok) 8%,transparent)}
+.int-arch{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+#inRes2 .ichip.activo{background:var(--primario,#1f7a4c);color:#fff;border-color:transparent}
+.ichips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}.ichip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--borde);border-radius:20px;padding:5px 10px;background:transparent;color:inherit;font:inherit;cursor:pointer}
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
