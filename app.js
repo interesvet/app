@@ -1613,13 +1613,13 @@ const App = (() => {
   }
   async function cargarDashboard() {   /* 📅 rango exacto de fechas: lo calcula el servidor */
     const p = { desde: $('#dDesde').value, hasta: $('#dHasta').value, sucursal: dashSuc() };
-    let r; try { r = await pedir('dashboard', p); } catch (e) { $('#dash').innerHTML = '<div class="vacio">El tablero requiere conexión.</div>'; return; }
+    let r; try { r = await pedir('dashboard', p); } catch (e) { if ($('#dash')) $('#dash').innerHTML = '<div class="vacio">El tablero requiere conexión.</div>'; return; }
     S.dashModo = 'rango'; const est = $('#dEstado'); if (est) est.textContent = 'Rango exacto: ' + fechaCorta(p.desde) + ' – ' + fechaCorta(p.hasta);
     document.querySelectorAll('#dChips .dchip.on').forEach(b => b.classList.remove('on'));
     pintarDash(r, p);
   }
   function pintarDash(r, p, comp) {
-
+    if (!$('#dash')) return;   /* el usuario ya se fue a otra pantalla mientras cargaba */
     S.charts.forEach(c => c.destroy()); S.charts = [];
     S.dash = { r: r, p: p };
     const k = r.kpi, c = k.utilidad !== undefined;
