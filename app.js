@@ -1104,6 +1104,8 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 319, f: '13/11/2026', t: [{ x: '🧾 Factura global: en Facturación › “Armar global del mes” ya puedes timbrarla directo con Facturama; queda registrada y sus abonos se ligan solos.', p: 'facturacion' },
+      { x: '👥 Al timbrar una nota, escribe el RFC XAXX010101000 y se factura al público en general con los datos que pide el SAT.', p: 'facturacion' }] },
     { v: 317, f: '13/11/2026', t: [{ x: '🧾 Timbrado de facturas con Facturama (por ahora en modo de pruebas): botón “Timbrar factura” en la nota.', p: 'facturacion' },
       { x: '🏷️ Productos › Claves del SAT: asigna la clave de cada producto por categoría o uno por uno.', p: 'productos_editar' }] },
     { v: 316, f: '13/11/2026', t: [{ x: 'Este aviso: después de cada actualización verás aquí lo nuevo de la app.' },
@@ -5310,6 +5312,7 @@ const App = (() => {
     const el = $('#agRes'); el.innerHTML = '<div class="vacio">Juntando cobros…</div>';
     let r; try { r = await pedir('armarGlobal', { desde: S.ag.desde, hasta: S.ag.hasta, sucursal: S.ag.suc }, true); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message)}</div>`; return; }
     S.agR = r; if (r.desdeISO && r.desdeISO !== S.ag.desde) { S.ag.desde = r.desdeISO; $('#agD').value = r.desdeISO; }
+    await timbEstado(); const tb = S.timb && S.timb.activo && puede('facturacion') && r.conceptos.length;
     const pc = x => (x * 100).toFixed(0) + ' %', primero = {};
     el.innerHTML = `<div class="kpis" id="agKpi"></div>
       ${r.yaFacturadas.length ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)">ℹ️ <b>${r.yaFacturadas.length} notas ya estaban facturadas en parte o completas</b>: de ellas solo entra a la global lo que les faltaba facturar. Si alguna se facturó <b>a crédito (PPD)</b>, sus abonos no van en la global: llevan complemento de pago.
@@ -5319,12 +5322,45 @@ const App = (() => {
       ${tabla([{ t: '', h: x => { if (primero[x.idVenta]) return ''; primero[x.idVenta] = 1; return `<input type="checkbox" data-ag="${esc(x.idVenta)}" checked>`; } },
         { t: 'No. identificación', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', cls: 'ocultar-movil', h: x => esc(x.cliente) + (x.rfc ? ` <span class="etq">RFC ${esc(x.rfc)}</span>` : '') }, { t: 'Cobrado el', cls: 'ocultar-movil', h: x => esc(x.fechas) },
         { t: 'IVA', h: x => pc(x.tasa) }, { t: 'Valor unitario (sin IVA)', num: 1, h: x => $$(x.base) }, { t: 'IVA $', num: 1, h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], r.conceptos, { vacio: 'No hay cobros por facturar en el periodo' })}
+      ${tb ? `<div class="tarjeta" id="agTimb" style="margin-top:10px;border-color:var(--ok)"><b>🧾 Timbrar la global desde la app</b> ${timbEtq(S.timb.amb)} <span id="agSf" class="muted"></span>
+        <p class="muted peq" style="margin:4px 0">Se timbra con Facturama a <b>PUBLICO EN GENERAL</b> (XAXX010101000, régimen 616, uso S01, C.P. de Matriz), PUE, un renglón por nota marcada. Al terminar queda registrada en Facturación y sus abonos se ligan solos.</p>
+        <div class="fila"><label>Periodicidad<select id="agPer">${opts([['01', 'Diaria'], ['02', 'Semanal'], ['03', 'Quincenal'], ['04', 'Mensual'], ['05', 'Bimestral']], '04')}</select></label>
+          <label>Mes<select id="agMes">${opts(['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map((m, i) => [('0' + (i + 1)).slice(-2), m]), S.ag.hasta.slice(5, 7))}</select></label>
+          <label>Año<input id="agAnio" type="number" value="${S.ag.hasta.slice(0, 4)}" style="max-width:90px"></label>
+          <label>Forma de pago<select id="agForma">${opts(((D().catalogos || {}).formasPago || []).filter(o => String(Array.isArray(o) ? o[0] : o.id) !== '99'), '1')}</select></label>
+          <button class="btn primario fijo" style="align-self:end" onclick="App.timbrarGlobal()">🧾 ${S.timb.amb === 'produccion' ? 'Timbrar global' : 'Timbrar global de prueba'}</button></div>
+        <small class="muted" id="agFormaTxt"></small></div>` : ''}
       ${r.conceptos.length ? `<div class="acciones izq"><button class="btn" onclick="App.excelGlobal()">📊 Excel para capturar</button></div>
       <div class="tarjeta" style="margin-top:10px"><b>Cuando la timbres:</b> súbela en Facturación → "⬆️ Subir facturas" y sus renglones se ligan solos a estos abonos (el No. identificación debe ser el folio de la nota). O lígala aquí:
         <div class="fila" style="margin-top:6px"><label>XML de la global<input type="file" id="agX" accept=".xml,text/xml"></label><span class="muted fijo" style="align-self:end">o</span>
           <label>Serie-folio<input id="agSF" placeholder="IV-300" style="max-width:120px"></label><button class="btn primario fijo" id="agLigar" style="align-self:end" onclick="App.ligarArmada()"></button></div></div>` : ''}`;
     el.onchange = e => { const id = e.target.dataset && e.target.dataset.ag; if (!id) return; S.agEx[id] = !e.target.checked; pintarAgTot(); };
     pintarAgTot();
+    if (tb) agPrepTimb();
+  }
+  /** Forma de pago sugerida (la de más dinero) y el folio que le tocará. */
+  async function agPrepTimb() {
+    let x; try { x = await pedir('prepararGlobal', { desde: S.ag.desde, hasta: S.ag.hasta, sucursal: S.ag.suc, excluir: agExcluidos() }, true); } catch (e) { return; }
+    const f = $('#agForma'); if (f && x.forma) f.value = String(Number(x.forma));
+    const sf = $('#agSf'); if (sf && x.sf) sf.textContent = '· le toca ' + x.sf + (x.amb !== 'produccion' ? ' (folio de prueba)' : '') + ' · C.P. ' + x.cpExp;
+    const ft = $('#agFormaTxt'); if (ft) { const fs = Object.keys(x.porForma || {}); ft.textContent = fs.length > 1 ? 'Cobros por forma: ' + fs.map(k => k + ' ' + $$(x.porForma[k])).join(' · ') + '. El SAT pide la forma con la que se cobró más dinero.' : ''; }
+  }
+  const agExcluidos = () => Object.keys(S.agEx || {}).filter(k => S.agEx[k]);
+  async function timbrarGlobal() {
+    const r = S.agR; if (!r) return; const t = agTotales(); if (!t.conceptos) return toast('No hay notas marcadas', true);
+    const per = $('#agPer').value, mes = $('#agMes').value, anio = $('#agAnio').value, forma = $('#agForma').value, prod = S.timb.amb === 'produccion';
+    if (!confirm((prod ? '¿Timbrar la factura GLOBAL ante el SAT?' : '¿Timbrar una global DE PRUEBA (sin validez)?') + '\n\nPUBLICO EN GENERAL · ' + t.notas + ' notas · ' + t.conceptos + ' renglones\nTotal ' + $$(t.total) + ' · forma ' + forma + ' · ' + $('#agPer').selectedOptions[0].text + ' ' + $('#agMes').selectedOptions[0].text + ' ' + anio)) return;
+    let x; try { x = await pedir('timbrarGlobal', { desde: S.ag.desde, hasta: S.ag.hasta, sucursal: S.ag.suc, excluir: agExcluidos(), total: t.total, periodicidad: per, mes: mes, anio: anio, forma: forma }); } catch (e) { return; }
+    S.timbUlt = x;
+    if (x.prueba) {
+      modal('✅ Global de prueba timbrada', `<div class="aviso-cand" style="border-color:var(--ok)">🧪 <b>Prueba sin validez ante el SAT</b> · no se registró ni se ligaron abonos.</div>
+        <p><b>${esc(x.sf)}</b> · ${x.notas} notas · Total ${$$(x.total)}<br><small class="muted">Folio fiscal de prueba: ${esc(x.uuid)}</small></p>
+        <div class="acciones izq">${x.urlPdf ? `<a class="btn" href="${esc(x.urlPdf)}" target="_blank">📄 Ver PDF</a>` : ''}<a class="btn" href="${esc(x.urlXml)}" target="_blank">🧾 Ver XML</a><button class="btn peligro" onclick="App.timbCancelarPrueba()">Cancelar esta prueba</button></div>
+        <div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Listo</button></div>`);
+      return;
+    }
+    toast('✅ Global ' + x.sf + ' timbrada · ' + x.ligados + ' abonos ligados' + (x.avisoLig ? ' · ' + x.avisoLig : ''), !!x.avisoLig);
+    if (x.idFactura) verFactura(x.idFactura);
   }
   async function ligarArmada() {
     const r = S.agR; if (!r) return; const inc = agIncluidos(); if (!inc.cobros.length) return toast('No hay notas marcadas', true);
@@ -15713,7 +15749,7 @@ const App = (() => {
 
   /* ---------------- API pública (para onclick) ---------------- */
   return {
-    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, rxSurtElegir, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
+    formArmarGlobal, armarGlobal, ligarArmada, excelGlobal, timbrarGlobal, cargarContable, tabContable, zipEstadosContable, excelContable, ctCatGasto, ctCobrosFactura, abrirFicha, fqOtra, verFicha, bnPrevios, bnPreviosLeer, bnPreviosGuardar, rxSurtTipo, rxSurtElegir, pcTab, pcFiltro, pcVerRx, guardarRespObs, copiarAnotClaude, excelAnot, pdfFicha, fichaLab,
     resumenDia, resumenCfg, resumenCorreo, resumenWhats, cargarResumen,
     invCambiarVal, formCumple, guardarCumple, cbCumple, agregarLineaVenta, usarMonedero, verMonedero, verMonederoI, monederoWa, monederoPdf, monederoPng,
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
