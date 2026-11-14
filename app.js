@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 321, f: '13/11/2026', t: [{ x: '🔒 En las sucursales la sección de facturación de la nota es solo de consulta: ligar, subir o quitar facturas lo hace Matriz.', p: 'facturacion' }] },
     { v: 320, f: '13/11/2026', t: [{ x: '🧾 Las facturas las hace Matriz. Las sucursales las piden con “Solicitar factura” en la nota, y solo procede si la ficha del cliente tiene RFC, razón social, C.P., régimen, uso de CFDI, correo y su constancia de situación fiscal.', p: 'ventas' },
       { x: '📨 Las solicitudes de factura llegan a “Por autorizar” con el botón “Timbrar ahora”: se abre la factura con lo que pidió la sucursal y, al timbrarla, la solicitud queda atendida sola.', p: 'facturacion' }] },
     { v: 319, f: '13/11/2026', t: [{ x: '🧾 Factura global: en Facturación › “Armar global del mes” ya puedes timbrarla directo con Facturama; queda registrada y sus abonos se ligan solos.', p: 'facturacion' },
@@ -3723,7 +3724,7 @@ const App = (() => {
     const fila = f => f.estado === 'Cancelada' ? `<div class="fact-fila"><s>${esc(f.sf)}</s> <span class="etq mal">Cancelada</span> <small class="muted">ya no cuenta; ${f.monto === null ? '' : $$(f.monto) + ' · '}<a href="#" onclick="event.preventDefault();App.verFactura('${esc(f.id)}')">ver factura</a></small></div>` : `<div class="fact-fila"><b>${esc(f.sf)}</b> <span class="muted">${esc(f.fecha || '')}</span> · ${f.monto === null ? '<span class="etq av">monto por definir</span>' : $$(f.monto)}${f.total !== null ? ' <small class="muted">de ' + $$(f.total) + '</small>' : ''}
       ${f.urlPdf ? `<a href="${esc(f.urlPdf)}" target="_blank">PDF</a>` : ''} ${f.urlXml ? `<a href="${esc(f.urlXml)}" target="_blank">XML</a>` : ''}
       ${f.urlPdf || f.urlXml ? `<button class="btn chico" onclick="App.enviarFactCli('${esc(f.id)}')">📤 Enviar al cliente</button>` : ''}
-      <button class="icono" title="Cambiar monto" onclick="App.montoFactNota('${f.rel}', ${f.monto === null ? "''" : f.monto})">✏️</button><button class="icono" title="Quitar" onclick="App.quitarFactNota('${f.rel}', '${esc(f.sf)}')">✕</button></div>`;
+      ${facM() ? `<button class="icono" title="Cambiar monto" onclick="App.montoFactNota('${f.rel}', ${f.monto === null ? "''" : f.monto})">✏️</button><button class="icono" title="Quitar" onclick="App.quitarFactNota('${f.rel}', '${esc(f.sf)}')">✕</button>` : ''}</div>`;
     let h = `<h4>🧾 Facturación ${etqFact(r.estado)}</h4>
       <p class="muted">Total de la nota ${$$(r.total)}${r.nc ? ` · nota de crédito −${$$(r.nc)} → <b>a facturar ${$$(r.facturable)}</b>` : ''} · facturado ${$$(r.facturado)}${r.porFacturar ? ' · por facturar <b>' + $$(r.porFacturar) + '</b>' : ''}${!r.facturas.length && r.anotacion ? ' · anotación: ' + esc(r.anotacion) : ''}</p>
       ${r.facturas.map(fila).join('') || '<p class="muted">Sin factura ligada.</p>'}
@@ -3743,9 +3744,9 @@ const App = (() => {
         <label>PDF (opcional)<input type="file" id="nfPdf" accept="application/pdf,.pdf"></label>
         <label>Monto de esta nota $<input type="number" step="0.01" id="nfMontoX" value="${r.porFacturar !== null && r.porFacturar !== undefined && r.porFacturar > 0 ? r.porFacturar : (r.facturable !== undefined ? r.facturable : r.total)}"></label></div>
         <div class="acciones"><button class="btn" onclick="App.pintarFactNota()">Cancelar</button><button class="btn primario" onclick="App.subirXmlNota('${r.id}')">Subir y asignar</button></div></div>`;
-    } else {
+    } else if (facM()) {
       h += `<div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.pintarFactNota('asignar')">🧾 Asignar factura</button><button class="btn" onclick="App.pintarFactNota('xml')">⬆️ Subir XML de la factura</button></div>`;
-    }
+    } else h += '<p class="muted peq" style="margin:6px 0 0">Las facturas las hace y liga Matriz. Si el cliente la necesita, usa “🧾 Solicitar factura”.</p>';
     el.innerHTML = h;
     if (form === 'asignar') { const sel = $('#nfSel'), sf = $('#nfSF'); const t = () => { sf.parentElement.style.display = sel.value ? 'none' : ''; }; sel.onchange = t; t(); }
   }
