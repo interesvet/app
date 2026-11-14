@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 325, f: '13/11/2026', t: [{ x: '🏷️ Claves del SAT: primero le pones la clave a cada categoría y luego entras a “Revisar productos” para cambiar los que lleven otra; pasas de una categoría a la siguiente con las flechas.', p: 'productos_editar' }] },
     { v: 323, f: '13/11/2026', t: [{ x: '🧾 Timbrado: al tocar 🧪 Pruebas o ✅ Producción el cambio se guarda en ese momento, cada ambiente recuerda su propio usuario y contraseña de Facturama, y antes de timbrar la app avisa claramente si es real.', p: 'facturacion' }] },
     { v: 322, f: '13/11/2026', t: [{ x: '💳 Facturación › Complementos de pago: los abonos de tus facturas PPD que aún no tienen complemento salen solos; tímbralos con un clic (uno por uno o todos).', p: 'facturacion' }] },
     { v: 321, f: '13/11/2026', t: [{ x: '🔒 En las sucursales la sección de facturación de la nota es solo de consulta: ligar, subir o quitar facturas lo hace Matriz.', p: 'facturacion' }] },
@@ -8779,32 +8780,44 @@ const App = (() => {
 
   /* ---------- 🏷️ Claves del SAT de los productos ---------- */
   async function clavesSat(volverA) {
-    S.satVolver = volverA || null;
+    S.satVolver = volverA || null; S.satCat = null;
     let r; try { r = await pedir('clavesSat', {}); } catch (e) { if (/desconocida/i.test(e.message || '')) toast('Se activa con el servidor 249', true); return; }
     S.sat = r; pintarClavesSat();
   }
   function pintarClavesSat() {
+    if (S.satCat !== undefined && S.satCat !== null && S.sat.categorias[S.satCat]) return pintarSatCat();
     const r = S.sat, ed = puede('productos_editar') || puede('dueno'), uni = r.unidades;
+    r.categorias.forEach(c => { c.distintos = r.productos.filter(p => p.cat === c.cat && p.clave && (p.clave !== c.clave || (p.unidad || 'H87') !== (c.unidad || 'H87'))).length; });
     const satUrl = 'http:' + '\/\/pys.sat.gob.mx/PyS/catPyS.aspx';
-    modal('🏷️ Claves del SAT de tus productos', `<p class="muted" style="margin-top:0">Cada producto necesita su <b>clave de producto o servicio</b> (8 números) y su <b>unidad</b> para poder facturarlo. Asígnalas por categoría de un jalón y corrige las que haga falta. Confírmalas con tu contador; las puedes buscar en el <a href="${satUrl}" target="_blank" rel="noopener">catálogo oficial del SAT</a>.</p>
+    modal('🏷️ Claves del SAT de tus productos', `<p class="muted" style="margin-top:0">Cada producto necesita su <b>clave de producto o servicio</b> (8 números) y su <b>unidad</b> para poder facturarlo. <b>1)</b> Ponle la clave a cada categoría. <b>2)</b> Entra a <b>Revisar productos</b> y cambia los que lleven otra. Puedes buscar claves en el <a href="${satUrl}" target="_blank" rel="noopener">catálogo oficial del SAT</a>.</p>
       ${r.sin ? `<div class="aviso-cand">⚠️ <b>${nf(r.sin)} productos</b> sin clave del SAT.</div>` : '<p class="ok-txt">✔ Todos los productos activos tienen clave del SAT.</p>'}
-      <h4 style="margin:10px 0 4px">Por categoría</h4>
-      <div class="tabla-cont">${tabla([{ t: 'Categoría', k: 'cat' }, { t: 'Productos', num: 1, h: x => nf(x.n) + (x.sin ? `<br><small class="error">${nf(x.sin)} sin clave</small>` : '') },
+      <div class="tabla-cont">${tabla([{ t: 'Categoría', h: x => `<b>${esc(x.cat)}</b><br><small class="muted">${nf(x.n)} productos</small>${x.sin ? `<br><small class="error">${nf(x.sin)} sin clave</small>` : x.distintos ? `<br><small class="muted">${nf(x.distintos)} con otra clave</small>` : '<br><small class="ok-txt">✔ completa</small>'}` },
         { t: 'Clave producto/servicio', h: x => `<input id="scC${r.categorias.indexOf(x)}" value="${esc(x.clave)}" inputmode="numeric" maxlength="8" placeholder="8 números" style="max-width:130px" ${ed ? '' : 'disabled'}>` },
         { t: 'Unidad', h: x => `<select id="scU${r.categorias.indexOf(x)}" ${ed ? '' : 'disabled'}>${opts(uni, x.unidad || 'H87')}</select>` },
-        { t: '', h: x => { const i = r.categorias.indexOf(x); return ed ? `<button class="btn chico" onclick="App.satAplicarCat(${i}, true)" title="Solo a los que no tienen">Aplicar a los que faltan</button> <button class="btn chico" onclick="App.satAplicarCat(${i}, false)">A todos</button>` : ''; } }], r.categorias)}</div>
-      <details style="margin-top:10px"><summary><b>Producto por producto</b> (${nf(r.productos.length)})</summary>
-        <label style="margin:8px 0">Buscar<input id="spQ" oninput="App.satFiltrar()" placeholder="Nombre, clave o categoría"></label><div id="spRes"></div>
-        ${ed ? '<div class="acciones izq"><button class="btn primario" onclick="App.satGuardarProds()">Guardar cambios de productos</button></div>' : ''}</details>
+        { t: '', h: x => { const i = r.categorias.indexOf(x); return (ed ? `<button class="btn chico primario" onclick="App.satAplicarCat(${i}, true)" title="Solo a los que no tienen">Aplicar a los que faltan</button> <button class="btn chico" onclick="App.satAplicarCat(${i}, false)">A todos</button> ` : '') + `<button class="btn chico" onclick="App.satVerCat(${i})">Revisar productos ›</button>`; } }], r.categorias)}</div>
       <div class="acciones">${S.satVolver ? `<button class="btn primario" onclick="App.timbrarNotaForm('${esc(S.satVolver)}')">← Volver a la factura</button>` : '<button class="btn" onclick="App.cerrarModal()">Cerrar</button>'}</div>`);
-    satFiltrar();
   }
+  /** Productos de una categoría: se revisan y se cambian los que lleven otra clave. */
+  function pintarSatCat() {
+    const r = S.sat, i = S.satCat, c = r.categorias[i], ed = puede('productos_editar') || puede('dueno');
+    const l = r.productos.filter(p => p.cat === c.cat), nAnt = i > 0 ? r.categorias[i - 1] : null, nSig = r.categorias[i + 1];
+    const est = p => !p.clave ? '<span class="etq mal">sin clave</span>' : c.clave && (p.clave !== c.clave || (p.unidad || 'H87') !== (c.unidad || 'H87')) ? '<span class="etq av">distinta a la categoría</span>' : '<span class="etq ok">✔</span>';
+    modal('🏷️ ' + c.cat, `<div class="acciones izq" style="margin-top:0"><button class="btn" onclick="App.satVerCat(null)">← Todas las categorías</button></div>
+      <p style="margin:6px 0">Clave de la categoría: <b>${c.clave ? esc(c.clave) + ' · ' + esc(c.unidad || 'H87') : 'sin asignar'}</b> · ${nf(l.length)} productos${c.sin ? ` · <span class="error">${nf(c.sin)} sin clave</span>` : ''}</p>
+      <p class="muted peq" style="margin:0 0 6px">Cambia la clave o la unidad de los productos que lleven otra y dale <b>Guardar cambios</b>. Los que digan <b>distinta a la categoría</b> ya tienen otra clave: revisa que esté bien.</p>
+      <label style="margin:0 0 6px">Buscar en ${esc(c.cat)}<input id="spQ" oninput="App.satFiltrar()" placeholder="Nombre o clave"></label>
+      <div id="spRes"></div>
+      <div class="acciones">${nAnt ? `<button class="btn" onclick="App.satVerCat(${i - 1})">‹ ${esc(nAnt.cat)}</button>` : ''}${ed ? '<button class="btn primario" onclick="App.satGuardarProds()">Guardar cambios</button>' : ''}${nSig ? `<button class="btn" onclick="App.satVerCat(${i + 1})">${esc(nSig.cat)} ›</button>` : ''}</div>`);
+    S.satEst = est; satFiltrar();
+  }
+  function satVerCat(i) { S.satCat = i; pintarClavesSat(); }
   function satFiltrar() {
-    const q = ($('#spQ') || {}).value || '', ed = puede('productos_editar') || puede('dueno');
-    const l = S.sat.productos.filter(p => !q || coincide(p.id + ' ' + p.nombre + ' ' + p.cat + ' ' + p.clave, q)).slice(0, 150);
-    $('#spRes').innerHTML = tabla([{ t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.id)} · ${esc(x.cat)}</small>` },
-      { t: 'Clave', h: x => `<input class="spC" data-id="${esc(x.id)}" value="${esc(x.clave)}" maxlength="8" inputmode="numeric" style="max-width:120px" ${ed ? '' : 'disabled'}>` },
-      { t: 'Unidad', h: x => `<select class="spU" data-id="${esc(x.id)}" ${ed ? '' : 'disabled'}>${opts(S.sat.unidades, x.unidad || 'H87')}</select>` }], l, { vacio: 'Sin productos' }) + (l.length >= 150 ? '<p class="muted peq">Se muestran 150; usa el buscador.</p>' : '');
+    const q = ($('#spQ') || {}).value || '', ed = puede('productos_editar') || puede('dueno'), c = S.sat.categorias[S.satCat];
+    const l = S.sat.productos.filter(p => (!c || p.cat === c.cat) && (!q || coincide(p.id + ' ' + p.nombre + ' ' + p.clave, q)));
+    $('#spRes').innerHTML = tabla([{ t: 'Producto', h: x => `<b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.id)}</small>` },
+      { t: 'Clave', h: x => `<input class="spC" data-id="${esc(x.id)}" value="${esc(x.clave)}" maxlength="8" inputmode="numeric" placeholder="${esc(c && c.clave || '8 números')}" style="max-width:120px" ${ed ? '' : 'disabled'}>` },
+      { t: 'Unidad', h: x => `<select class="spU" data-id="${esc(x.id)}" ${ed ? '' : 'disabled'}>${opts(S.sat.unidades, x.unidad || (c && c.unidad) || 'H87')}</select>` },
+      { t: '', h: x => S.satEst ? S.satEst(x) : '' }], l, { vacio: 'Sin productos' });
   }
   async function satAplicarCat(i, soloVacios) {
     const x = S.sat.categorias[i], clave = $('#scC' + i).value.trim(), unidad = $('#scU' + i).value;
@@ -8817,7 +8830,8 @@ const App = (() => {
     const lista = []; document.querySelectorAll('#spRes .spC').forEach(inp => { const id = inp.dataset.id, u = document.querySelector('#spRes .spU[data-id="' + CSS.escape(id) + '"]').value, c = inp.value.trim();
       if (orig[id] && (orig[id].clave !== c || (orig[id].unidad || 'H87') !== u)) lista.push({ id: id, clave: c, unidad: u }); });
     if (!lista.length) return toast('No hay cambios');
-    try { const r = await pedir('guardarClavesSat', { lista: lista }); S.sat = r; toast('✔ ' + nf(r.cambiados) + ' productos actualizados'); pintarClavesSat(); } catch (e) {}
+    const cat = S.satCat !== null && S.satCat !== undefined ? S.sat.categorias[S.satCat].cat : null;
+    try { const r = await pedir('guardarClavesSat', { lista: lista }); S.sat = r; if (cat) { const k = r.categorias.findIndex(x => x.cat === cat); S.satCat = k >= 0 ? k : null; } toast('✔ ' + nf(r.cambiados) + ' productos actualizados'); pintarClavesSat(); } catch (e) {}
   }
 
   /* ---------- 🧾 Timbrar la factura de una nota ---------- */
@@ -15847,7 +15861,7 @@ const App = (() => {
     invCambiarVal, formCumple, guardarCumple, cbCumple, agregarLineaVenta, usarMonedero, verMonedero, verMonederoI, monederoWa, monederoPdf, monederoPng,
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
-    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, clavesSat, satFiltrar, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
+    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, clavesSat, satFiltrar, satVerCat, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
