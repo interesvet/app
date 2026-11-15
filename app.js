@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 329, f: '14/11/2026', t: [{ x: '🛎️ Factura de servicio: ya se ve la lista al buscar a quién facturar, y si escribes el nombre completo o el RFC se toma solo.', p: 'facturacion' }] },
     { v: 328, f: '14/11/2026', t: [{ x: '🛎️ Facturación › Servicios: factura servicios sin nota de venta (por ejemplo, a un proveedor), con retención de ISR o IVA, plantillas para “Facturar de nuevo” y control de cobrado / por cobrar.', p: 'facturacion' }] },
     { v: 327, f: '14/11/2026', t: [{ x: '📎 Ahora puedes adjuntar archivos (PDF o foto) a las interacciones con el cliente, por ejemplo un cuadro comparativo enviado por WhatsApp.', p: 'clientes' },
       { x: '🔄 Nuevo tipo de interacción “Producto que no manejo”: registra qué pidió el cliente, qué le ofreciste y cómo terminó. Reporte en Seguimiento › Prospectos › 🔄 Lo que nos piden.', p: 'seguimiento' }] },
@@ -3830,7 +3831,7 @@ const App = (() => {
     S.sv = pl ? { pl: pl.id, nombrePl: pl.nombre, rec: Object.assign({}, pl.receptor), con: pl.conceptos.map(x => Object.assign({}, x)), retIsr: pl.retIsr, retIva: pl.retIva, metodo: pl.metodo, forma: pl.forma }
       : { rec: null, con: [{ desc: '', clave: '', unidad: 'E48', cant: 1, precio: '', iva: 'exento' }], retIsr: false, retIva: false, metodo: 'PUE', forma: '3' };
     const fOpts = opts((cat.formasPago || []).filter(o => String(Array.isArray(o) ? o[0] : o.id) !== '99').map(u => Array.isArray(u) ? u : [u.id, u.id + ' · ' + u.nombre]), String(Number(S.sv.forma) || ''), 'Elegir…');
-    modal('🛎️ ' + (pl ? pl.nombre : 'Nueva factura de servicio'), `<div class="fila"><label style="flex:2 1 260px">Facturar a (proveedor o cliente)<input id="svRec" placeholder="Busca por nombre o RFC…" autocomplete="off" value="${esc(S.sv.rec ? S.sv.rec.nombre : '')}"></label></div>
+    modal('🛎️ ' + (pl ? pl.nombre : 'Nueva factura de servicio'), `<div class="fila" style="position:relative;z-index:6"><label style="flex:2 1 260px">Facturar a (proveedor o cliente)<input id="svRec" placeholder="Busca por nombre o RFC…" autocomplete="off" value="${esc(S.sv.rec ? S.sv.rec.nombre : '')}"></label></div>
       <div id="svRecDat"></div>
       <div id="svCon"></div>
       <div class="acciones izq" style="margin-top:4px"><button class="btn chico" onclick="App.svAgregar()">➕ Agregar concepto</button></div>
@@ -3842,9 +3843,14 @@ const App = (() => {
       <p class="muted peq">Las retenciones normalmente aplican cuando facturas un servicio a una persona moral (RFC de 12 caracteres). Confírmalo con tu contadora.</p>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn" onclick="App.svGuardarPl()">💾 ${pl ? 'Actualizar plantilla' : 'Guardar como plantilla'}</button><button class="btn primario" id="svBtn" onclick="App.timbrarServicio()">🧾 ${S.timb.amb === 'produccion' ? 'Timbrar' : 'Timbrar de prueba'}</button></div>`);
     buscador($('#svRec'), { fuente: q => rankear(r.receptores.filter(x => coincide(x.nombre + ' ' + x.rfc, q)), q, x => x.nombre, x => x.id).map(x => ({ id: x.tipo + ':' + x.id, t: (x.tipo === 'P' ? '🏭 ' : '👤 ') + x.nombre, s: x.rfc + (x.tipo === 'P' ? ' · proveedor' : ' · cliente') })),
-      alElegir: o => { const [t, id] = o.id.split(':'), x = r.receptores.find(y => y.tipo === t && y.id === id); S.sv.rec = Object.assign({}, x); if (!S.sv.rec.uso) S.sv.rec.uso = 'G03'; if (x.rfc.length === 12) { $('#svIsr').checked = true; } $('#svRec').value = x.nombre; svPintarRec(); svPintarTot(); } });
+      alElegir: o => { const [t, id] = o.id.split(':'); svElegirRec(r.receptores.find(y => y.tipo === t && y.id === id)); } });
+    /* si escribió el nombre completo (o el RFC) y no tocó la sugerencia, se toma solo */
+    $('#svRec').addEventListener('change', () => { if (S.sv.rec && S.sv.rec.nombre === $('#svRec').value) return; const q = norm($('#svRec').value).trim(); if (!q) return;
+      const l = r.receptores.filter(x => norm(x.nombre) === q || norm(x.rfc) === q); const c = l.length ? l : r.receptores.filter(x => coincide(x.nombre + ' ' + x.rfc, $('#svRec').value));
+      if (c.length === 1) svElegirRec(c[0]); else if (!c.length) toast('No encontré a ese proveedor o cliente con RFC; revisa su ficha', true); });
     svPintarRec(); svPintarCon(); svPintarTot();
   }
+  function svElegirRec(x) { if (!x) return; S.sv.rec = Object.assign({}, x); if (!S.sv.rec.uso) S.sv.rec.uso = 'G03'; if (x.rfc.length === 12) $('#svIsr').checked = true; $('#svRec').value = x.nombre; svPintarRec(); svPintarTot(); }
   function svPintarRec() {
     const x = S.sv.rec, cat = D().catalogos || {}, el = $('#svRecDat'); if (!el) return;
     if (!x) { el.innerHTML = ''; return; }
