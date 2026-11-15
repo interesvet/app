@@ -56,6 +56,9 @@ a { color: var(--marca); }
 .principal { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .barra { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: color-mix(in srgb, var(--fondo) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--borde); }
 .barra h2 { font-size: 18px; flex: 1; }
+/* iPad con la app instalada: espacio para los controles de ventana de iPadOS (tapan la esquina superior izquierda) */
+.ipad-app .menu .cab { padding-top: 48px; }
+@media (max-width: 900px) { .ipad-app .barra { padding-left: calc(84px + env(safe-area-inset-left)); } }
 .barra-der { display: flex; gap: 8px; align-items: center; }
 .vista { padding: 20px; max-width: 1400px; width: 100%; }
 .subnav { padding: 16px 20px 0; max-width: 1400px; width: 100%; }

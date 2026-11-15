@@ -62,6 +62,11 @@
   <div id="toast" class="toast"></div>
   <div id="cargando" class="cargando oculto"><div class="spinner"></div></div>
 
+  <script>
+    /* iPad con la app instalada: los controles de ventana de iPadOS flotan sobre la esquina
+       superior izquierda y tapan el menú; se le da espacio a la barra solo en ese caso. */
+    try { if (navigator.standalone && navigator.maxTouchPoints > 1 && /Mac|iPad/.test(navigator.platform)) document.documentElement.classList.add('ipad-app'); } catch (e) {}
+  </script>
   <script src="config.js"></script>
   <script src="shim.js"></script>
   <script src="app.js"></script>
