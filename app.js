@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 335, f: '15/11/2026', t: [{ x: '🏬 Sucursales: ya no ven botones de facturación que solo puede usar Matriz (cancelar ante el SAT, factura global, claves del SAT).', p: 'facturacion' }] },
     { v: 334, f: '14/11/2026', t: [{ x: '👥 Al timbrar una nota: botón “Público en general” que llena solo el RFC genérico del SAT (para notas que te pagaron sin pedir factura).', p: 'facturacion' }, { x: '⚠️ Configuración › Timbrado avisa cuando al ambiente elegido (Pruebas o Producción) le falta su usuario o contraseña de Facturama.', p: 'dueno' }] },
     { v: 331, f: '14/11/2026', t: [{ x: '🧾 Proveedores: ya puedes adjuntar su constancia de situación fiscal (foto o PDF) en su ficha. Los que la tienen muestran 🧾 en la lista.', p: 'proveedores' }] },
     { v: 330, f: '14/11/2026', t: [{ x: '🎨 Tus facturas salen con tu propio diseño: logo, tu asesor con su WhatsApp, lotes y caducidades, e Instrucciones para pago con tus dos cuentas. Los datos se cambian en Configuración › 🧾 Datos de mis facturas.', p: 'facturacion' }, { x: '🎨 En cualquier factura timbrada: botón “PDF con mi diseño” para verla o regenerarla con el diseño nuevo.', p: 'facturacion' }] },
@@ -1351,7 +1352,7 @@ const App = (() => {
   function dashCorte(v) { S.dashCorte = v; dashChips(); dashArmar(); }
   function dashChips() {
     const el = $('#dChips'); if (!el) return; const s = S.dashSel, cub = (S.cubo || {})[dashSuc()];
-    const hoyY = +hoyISO().slice(0, 4), anios = cub && cub.meses.length ? Array.from(new Set(cub.meses.map(k => +k.slice(0, 4)).concat([hoyY]))).sort() : [hoyY - 2, hoyY - 1, hoyY];
+    const hoyY = +hoyISO().slice(0, 4), anios = cub && cub.meses && cub.meses.length ? Array.from(new Set(cub.meses.map(k => +k.slice(0, 4)).concat([hoyY]))).sort() : [hoyY - 2, hoyY - 1, hoyY];
     const ch = (g, v, t, on) => `<button type="button" class="dchip ${on ? 'on' : ''}" onclick="App.dashTog('${g}',${v})">${t}</button>`;
     el.innerHTML = `<div class="dgrupo"><b>Años</b>${anios.map(a => ch('anios', a, a, s.anios.includes(a))).join('')}</div>
       <div class="dgrupo"><b>Semestres</b>${ch('sem', 1, '1er semestre', s.sem.includes(1))}${ch('sem', 2, '2º semestre', s.sem.includes(2))}</div>
@@ -4075,7 +4076,7 @@ const App = (() => {
         ${d.sustituidaPor ? `Sustituida por <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituidaPor)}')"><b>${esc(d.sustituidaPor)}</b></a>: sus notas pasaron a esa factura.` : `Sus notas quedaron <b>por facturar</b> hasta que subas la factura nueva.<div class="acciones" style="justify-content:flex-start;margin-top:6px"><button class="btn primario" onclick="App.formSustituir('${d.id}')">🔁 Subir la factura que la sustituye</button></div>`}</div>` : ''}
       ${d.sustituye ? `<p class="muted peq">🔁 Sustituye a <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituye)}')">${esc(d.sustituye)}</a> (cancelada).</p>` : ''}${d.avisoSust ? `<div class="aviso-cand">⚠️ ${esc(d.avisoSust)}</div>` : ''}
       <p>${esc(d.receptor || '')} ${d.rfc ? '· RFC ' + esc(d.rfc) : ''}${d.uuid ? '<br><small class="muted">UUID ' + esc(d.uuid) + '</small>' : ''}${d.comentarios ? '<br><small class="muted">' + esc(d.comentarios) + '</small>' : ''}</p>
-      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.ctCobrosFactura('${d.id}')">💵 Cobros y comprobantes</button>${d.estado !== 'Cancelada' && d.origen === 'Timbrada en la app' && puede('facturacion') ? `<button class="btn peligro" onclick="App.timbCancelarForm('${esc(d.id)}','${esc(d.sf)}')">🚫 Cancelar ante el SAT</button>` : ''}${d.estado !== 'Cancelada' && (d.urlPdf || d.urlXml) ? `<button class="btn" onclick="App.enviarFactCli('${esc(d.id)}')">📤 Enviar al cliente</button>` : ''}${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.estado !== 'Cancelada' && d.urlXml && verDatosFac() ? `<button class="btn" onclick="App.pdfDisenoForm('${esc(d.id)}','${esc(d.sf)}')">🎨 PDF con mi diseño</button>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.ctCobrosFactura('${d.id}')">💵 Cobros y comprobantes</button>${d.estado !== 'Cancelada' && d.origen === 'Timbrada en la app' && facM() ? `<button class="btn peligro" onclick="App.timbCancelarForm('${esc(d.id)}','${esc(d.sf)}')">🚫 Cancelar ante el SAT</button>` : ''}${d.estado !== 'Cancelada' && (d.urlPdf || d.urlXml) ? `<button class="btn" onclick="App.enviarFactCli('${esc(d.id)}')">📤 Enviar al cliente</button>` : ''}${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.estado !== 'Cancelada' && d.urlXml && verDatosFac() ? `<button class="btn" onclick="App.pdfDisenoForm('${esc(d.id)}','${esc(d.sf)}')">🎨 PDF con mi diseño</button>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
       ${tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', h: x => esc(x.cliente) },
         { t: 'Total nota', num: 1, h: x => $$(x.totalNota) + (x.nc ? `<br><small class="muted">N/C −${$$(x.nc)} → a facturar ${$$(x.facturable)}</small>` : '') }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
         { t: 'Otras facturas', h: x => esc(x.otras.join(', ')) },
@@ -4502,6 +4503,7 @@ const App = (() => {
       html += `<div class="tarjeta"><h3>Proveedores de gastos del periodo</h3>` + tabla([{ t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` },
         { t: 'Categorías', k: 'cats', cls: 'ocultar-movil' }, { t: 'Grupo', k: 'grupo' }, { t: 'Facturas', num: 1, h: x => nf(x.n) }, { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }], r.emisores) + '</div>';
     }
+    if (!$('#gRes')) return;   /* el usuario ya se fue a otra pantalla mientras cargaba */
     $('#gRes').innerHTML = html;
     if ($('#gAviso')) $('#gAviso').innerHTML = r.porClasificar ? `<div class="tarjeta aviso-cl" style="border-left:4px solid var(--aviso);margin-top:8px">🏷️ Hay <b>${nf(r.porClasificar)}</b> factura(s) <b>POR CLASIFICAR</b> (llegaron de un proveedor nuevo). <button class="btn chico" onclick="App.vistaGastos('clasificar')">Clasificar</button></div>` : '';
     if (tab === 'resumen') {
@@ -5418,7 +5420,7 @@ const App = (() => {
       <label>Forma de pago<select id="cForma">${opts((D().catalogos || {}).formasPago || [], '', 'Todas')}</select></label>
       <label>Facturación<select id="cFact">${opts([['facturado', '✔ Ya facturado'], ['pendiente', '⚠️ Por reportar (sin factura)'], ['parcial', '◐ Facturado en parte'], ['nc', 'Notas de crédito (no se facturan)']], '', 'Todo')}</select></label>
       <label>Buscar<input id="cTxt" placeholder="Cliente o folio"></label><button class="btn primario fijo" onclick="App.buscarCobros()">Buscar</button>
-      <button class="btn fijo" onclick="App.excelCobros()">📊 Excel para cierre</button>${puede('facturacion') ? '<button class="btn fijo" onclick="App.formGlobal()">🧾 Ligar a factura global</button>' : ''}</div>
+      <button class="btn fijo" onclick="App.excelCobros()">📊 Excel para cierre</button>${facM() ? '<button class="btn fijo" onclick="App.formGlobal()">🧾 Ligar a factura global</button>' : ''}</div>
       <p class="muted" style="margin:10px 0 0;font-size:12.5px">Para el cierre fiscal del mes: cada cobro dice si su nota ya tiene factura. Lo <b>por reportar</b> es lo cobrado sin factura (va en tu factura global o falta facturarlo). Los cobros de facturas <b>PPD</b> necesitan su complemento de pago. Para ver lo que falta cobrar usa Notas de venta › “Cuentas por cobrar”.${puede('facturacion') ? ' Con <b>🧾 Ligar a factura global</b> amparas lo cobrado a público en general (aunque sea solo un abono de la nota) con tu factura global.' : ''}</p></div>
       <div class="espacio"></div><div id="lCob"></div>`;
     agregarMesAnio('cDesde', 'cHasta', buscarCobros); $('#cFact').onchange = buscarCobros;
@@ -5490,7 +5492,7 @@ const App = (() => {
     const el = $('#agRes'); el.innerHTML = '<div class="vacio">Juntando cobros…</div>';
     let r; try { r = await pedir('armarGlobal', { desde: S.ag.desde, hasta: S.ag.hasta, sucursal: S.ag.suc }, true); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message)}</div>`; return; }
     S.agR = r; if (r.desdeISO && r.desdeISO !== S.ag.desde) { S.ag.desde = r.desdeISO; $('#agD').value = r.desdeISO; }
-    await timbEstado(); const tb = S.timb && S.timb.activo && puede('facturacion') && r.conceptos.length;
+    await timbEstado(); const tb = S.timb && S.timb.activo && facM() && r.conceptos.length;
     const pc = x => (x * 100).toFixed(0) + ' %', primero = {};
     el.innerHTML = `<div class="kpis" id="agKpi"></div>
       ${r.yaFacturadas.length ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)">ℹ️ <b>${r.yaFacturadas.length} notas ya estaban facturadas en parte o completas</b>: de ellas solo entra a la global lo que les faltaba facturar. Si alguna se facturó <b>a crédito (PPD)</b>, sus abonos no van en la global: llevan complemento de pago.
@@ -7761,7 +7763,7 @@ const App = (() => {
   }
   const enlazarFiltros = fn => ['#pfTxt', '#pfCat', '#pfLab', '#pfAct', '#pfLista'].forEach(s => enlazarFiltro(s, fn));
   function prodCatalogo() {
-    $('#pCont').innerHTML = filtrosProd((puede('productos_editar') ? '<button class="btn primario fijo" onclick="App.formProducto(null)">+ Nuevo producto</button>' : '') + (puede('productos_editar') || puede('facturacion') ? '<button class="btn fijo" onclick="App.clavesSat()">🏷️ Claves del SAT</button>' : '')) + '<div id="pRes"></div>';
+    $('#pCont').innerHTML = filtrosProd((puede('productos_editar') ? '<button class="btn primario fijo" onclick="App.formProducto(null)">+ Nuevo producto</button>' : '') + (puede('productos_editar') || facM() ? '<button class="btn fijo" onclick="App.clavesSat()">🏷️ Claves del SAT</button>' : '')) + '<div id="pRes"></div>';
     const pintar = () => { const l = prodFiltrados(); S.lista = l; const suc = sucFiltro();
       $('#pRes').innerHTML = `<p class="muted">${l.length} productos</p>` + tabla([{ t: '', h: p => imgMini(p) }, { t: 'Clave', k: 'id' }, { t: 'Producto', h: p => `<b>${esc(p.nombre)}</b>` }, { t: 'Unidad', k: 'unidad', cls: 'ocultar-movil' },
         { t: 'Categoría', k: 'categoria', cls: 'ocultar-movil' }, { t: 'Laboratorio', k: 'lab', cls: 'ocultar-movil' }, { t: 'P. Público', num: 1, h: p => $$(p.precios.Publico) },
