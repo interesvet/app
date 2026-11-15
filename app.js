@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 334, f: '14/11/2026', t: [{ x: '👥 Al timbrar una nota: botón “Público en general” que llena solo el RFC genérico del SAT (para notas que te pagaron sin pedir factura).', p: 'facturacion' }, { x: '⚠️ Configuración › Timbrado avisa cuando al ambiente elegido (Pruebas o Producción) le falta su usuario o contraseña de Facturama.', p: 'dueno' }] },
     { v: 331, f: '14/11/2026', t: [{ x: '🧾 Proveedores: ya puedes adjuntar su constancia de situación fiscal (foto o PDF) en su ficha. Los que la tienen muestran 🧾 en la lista.', p: 'proveedores' }] },
     { v: 330, f: '14/11/2026', t: [{ x: '🎨 Tus facturas salen con tu propio diseño: logo, tu asesor con su WhatsApp, lotes y caducidades, e Instrucciones para pago con tus dos cuentas. Los datos se cambian en Configuración › 🧾 Datos de mis facturas.', p: 'facturacion' }, { x: '🎨 En cualquier factura timbrada: botón “PDF con mi diseño” para verla o regenerarla con el diseño nuevo.', p: 'facturacion' }] },
     { v: 329, f: '14/11/2026', t: [{ x: '🛎️ Factura de servicio: ya se ve la lista al buscar a quién facturar, y si escribes el nombre completo o el RFC se toma solo.', p: 'facturacion' }] },
@@ -8855,6 +8856,7 @@ const App = (() => {
     el.innerHTML = `<div class="fila" style="align-items:center;margin-bottom:6px"><span class="muted">Ambiente:</span>
         <span class="cx-seg"><button type="button" class="${c.amb !== 'produccion' ? 'on' : ''}" onclick="App.timbAmb('pruebas')">🧪 Pruebas</button><button type="button" class="${c.amb === 'produccion' ? 'on' : ''}" onclick="App.timbAmb('produccion')">✅ Producción</button></span>
         <small class="muted" id="tcAmbTxt">${c.amb === 'produccion' ? 'Las facturas valen ante el SAT y gastan folios.' : 'Las facturas de pruebas no valen ante el SAT ni gastan folios; no se ligan a las notas.'}</small></div>
+      ${timbSinCuenta(c)}
       <div class="rejilla"><label>Usuario de Facturama ${c.amb === 'produccion' ? '<b>(producción)</b>' : '<b>(pruebas)</b>'}<input id="tcUsr" value="${esc(c.usuario)}" autocomplete="off"></label>
         <label>Contraseña ${c.amb === 'produccion' ? '(producción)' : '(pruebas)'}<input id="tcPass" type="password" autocomplete="new-password" placeholder="${c.tienePass ? '●●●●●●●● (guardada; escribe solo para cambiarla)' : 'Escríbela'}"></label></div>
       <h4 style="margin:12px 0 4px">Emisor</h4>
@@ -8870,6 +8872,13 @@ const App = (() => {
       <div class="acciones izq"><button class="btn" onclick="App.timbProbar()">🔌 Probar conexión</button><button class="btn primario" onclick="App.timbGuardar()">Guardar</button> <span id="tcMsg" class="peq"></span></div>
       <p class="muted peq">La contraseña se guarda en el servidor y nadie la puede ver después. Tu certificado de sello digital (CSD) se sube en tu cuenta de Facturama, no aquí.</p>`;
   }
+  /** Aviso cuando al ambiente elegido le falta el usuario o la contraseña de Facturama. */
+  function timbSinCuenta(c) {
+    const ps = c.passes || {}, amb = c.amb === 'produccion' ? 'produccion' : 'pruebas';
+    const usr = (c.usuarios || {})[amb] || '', pass = c.passes ? !!ps[amb] : c.tienePass;
+    if (usr && pass) return '';
+    return `<div class="aviso-cand">⚠️ El ambiente <b>${amb === 'produccion' ? '✅ Producción' : '🧪 Pruebas'}</b> no tiene ${!usr ? 'usuario' : 'contraseña'} de Facturama guardado${!usr && !pass ? ' ni contraseña' : ''}: captúralo abajo y dale <b>Guardar</b>, o no se podrá timbrar en este ambiente.</div>`;
+  }
   function timbAmb(a) {
     if (!S.timbCfg) return; S.timbCfg.amb = a;
     document.querySelectorAll('#cfTimb .cx-seg button').forEach((b, i) => b.classList.toggle('on', (i === 1) === (a === 'produccion')));
@@ -8879,7 +8888,9 @@ const App = (() => {
   /** Cambia de ambiente y lo guarda ya; cada ambiente tiene su propio usuario y contraseña de Facturama. */
   async function timbCambiarAmb(a) {
     if (a === 'produccion' && !confirm('⚠️ ¿Cambiar a PRODUCCIÓN?\nTodo lo que timbres valdrá ante el SAT y gastará folios.')) { cargarTimbCfg(); return; }
-    try { await pedir('guardarTimbradoCfg', { amb: a, soloAmb: true }); toast(a === 'produccion' ? '✅ Ahora estás en PRODUCCIÓN (real)' : '🧪 Ahora estás en PRUEBAS'); } catch (e) {}
+    try { const r = await pedir('guardarTimbradoCfg', { amb: a, soloAmb: true }); toast(a === 'produccion' ? '✅ Ahora estás en PRODUCCIÓN (real)' : '🧪 Ahora estás en PRUEBAS');
+      const ps = r.passes || {}, usr = (r.usuarios || {})[r.amb] || '';
+      if (!usr || (r.passes && !ps[r.amb])) toast('⚠️ Este ambiente no tiene ' + (!usr ? 'usuario' : 'contraseña') + ' de Facturama: captúralo en Configuración › 🧾 Timbrado antes de timbrar', true); } catch (e) {}
     S.timb = null; cargarTimbCfg();
   }
   async function timbGuardar() {
@@ -8902,6 +8913,7 @@ const App = (() => {
   async function cargarDatosFac() {
     const el = $('#cfDatFac'); if (!el) return;
     let c; try { c = await pedir('datosFactura', {}, true); } catch (e) { el.innerHTML = '<span class="muted">' + esc(e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message || '') ? 'Se activa con el servidor 259.' : e.message) + '</span>'; return; }
+    c.cuentas = [0, 1].map(i => Object.assign({ banco: '', cuenta: '', clabe: '', suc: '' }, (c.cuentas || [])[i] || {}));
     const cta = (x, i) => `<div class="dfac-cta"><h4>🏦 Cuenta ${i + 1}${i ? ' <small class="muted">(opcional: si la dejas vacía solo sale la cuenta 1)</small>' : ''}</h4><div class="rejilla">
         <label>Banco<input id="dfB${i}" value="${esc(x.banco)}" placeholder="${i ? 'Banorte' : 'BBVA'}"></label>
         <label>No. de cuenta<input id="dfN${i}" value="${esc(x.cuenta)}" inputmode="numeric"></label>
@@ -9005,7 +9017,7 @@ const App = (() => {
     S.timbP = r; const cat = D().catalogos || {}, rc = r.receptor, t = r.totales;
     modal('🧾 Factura de la nota ' + r.nota, `<p style="margin-top:0">${timbEtq(r.amb)} ${r.sf ? '· Serie-folio <b>' + esc(r.sf) + '</b>' + (r.amb !== 'produccion' ? ' <small class="muted">(folio de prueba)</small>' : '') : ''} ${r.cpExp ? '· Expedida en C.P. ' + esc(r.cpExp) : ''}</p>
       ${r.avisos.map(a => `<div class="aviso-cand">⚠️ ${esc(a)}</div>`).join('')}
-      <h4 style="margin:10px 0 4px">Cliente</h4>
+      <div class="fila" style="align-items:center;margin:10px 0 4px"><h4 style="margin:0;flex:1">Cliente</h4><button class="btn chico fijo" onclick="App.timbPubGral()" title="Nota que pagaron sin pedir factura: se timbra al RFC genérico XAXX010101000 como venta al público">👥 Público en general</button></div>
       <div class="rejilla"><label>RFC<input id="tfRfc" value="${esc(rc.rfc)}" style="text-transform:uppercase"></label><label>Razón social (como en su constancia, sin "S.A. de C.V.")<input id="tfNom" value="${esc(rc.nombre)}" style="text-transform:uppercase"></label>
         <label>C.P. fiscal<input id="tfCp" value="${esc(rc.cp)}" maxlength="5" inputmode="numeric"></label><label>Régimen fiscal<select id="tfReg">${catOpts(cat.regimen, rc.regimen, 'Elegir…')}</select></label>
         <label>Uso del CFDI<select id="tfUso">${catOpts(cat.usoCfdi, rc.uso, 'Elegir…')}</select></label><label>Correo para enviarla (opcional)<input id="tfMail" type="email" value="${esc(rc.email)}"></label></div>
@@ -9023,6 +9035,17 @@ const App = (() => {
     const so = S.timbSol; S.timbSol = null;
     if (so) { if (so.uso && $('#tfUso')) $('#tfUso').value = so.uso; if (so.metodo && $('#tfMet')) $('#tfMet').value = so.metodo; timbMet(); if (so.forma && $('#tfForma') && so.metodo !== 'PPD') $('#tfForma').value = String(Number(so.forma)); S.timbDeSol = so.id; return; }
     S.timbDeSol = null; timbMet();
+  }
+  /** Llena el formulario para timbrar al público en general (RFC genérico del SAT). */
+  function timbPubGral() {
+    const r = S.timbP; if (!r) return;
+    const pon = (id, v) => { const e = $(id); if (e) e.value = v; };
+    const asegura = (id, v, t) => { const s = $(id); if (!s) return; if (!Array.from(s.options).some(o => o.value === v)) s.add(new Option(t, v)); s.value = v; };
+    pon('#tfRfc', 'XAXX010101000'); pon('#tfNom', 'PUBLICO EN GENERAL'); pon('#tfCp', r.cpExp || '');
+    asegura('#tfReg', '616', '616 · Sin obligaciones fiscales'); asegura('#tfUso', 'S01', 'S01 · Sin efectos fiscales');
+    const g = $('#tfGuardar'); if (g) g.checked = false;
+    const m = $('#tfMet'); if (m && m.value !== 'PUE') { m.value = 'PUE'; timbMet(); }
+    toast('👥 Al público en general: PUE, C.P. de expedición y RFC genérico. La app le pone la información global del SAT.');
   }
   function timbMet() { const m = $('#tfMet'), f = $('#tfForma'); if (!m || !f) return; if (m.value === 'PPD') { f.value = '99'; f.disabled = true; } else { f.disabled = false; if (f.value === '99') f.value = String(Number(S.timbP.metodo === 'PUE' ? S.timbP.forma : 3)); } }
   async function timbrarNota() {
@@ -16086,7 +16109,7 @@ const App = (() => {
     invCambiarVal, formCumple, guardarCumple, cbCumple, agregarLineaVenta, usarMonedero, verMonedero, verMonederoI, monederoWa, monederoPdf, monederoPng,
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
-    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, cargarDatosFac, dfClabe, guardarDatosFac, pdfDisenoForm, pdfDiseno, clavesSat, satFiltrar, satVerCat, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
+    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, timbPubGral, cargarDatosFac, dfClabe, guardarDatosFac, pdfDisenoForm, pdfDiseno, clavesSat, satFiltrar, satVerCat, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
