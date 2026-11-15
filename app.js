@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 331, f: '14/11/2026', t: [{ x: '🧾 Proveedores: ya puedes adjuntar su constancia de situación fiscal (foto o PDF) en su ficha. Los que la tienen muestran 🧾 en la lista.', p: 'proveedores' }] },
     { v: 330, f: '14/11/2026', t: [{ x: '🎨 Tus facturas salen con tu propio diseño: logo, tu asesor con su WhatsApp, lotes y caducidades, e Instrucciones para pago con tus dos cuentas. Los datos se cambian en Configuración › 🧾 Datos de mis facturas.', p: 'facturacion' }, { x: '🎨 En cualquier factura timbrada: botón “PDF con mi diseño” para verla o regenerarla con el diseño nuevo.', p: 'facturacion' }] },
     { v: 329, f: '14/11/2026', t: [{ x: '🛎️ Factura de servicio: ya se ve la lista al buscar a quién facturar, y si escribes el nombre completo o el RFC se toma solo.', p: 'facturacion' }] },
     { v: 328, f: '14/11/2026', t: [{ x: '🛎️ Facturación › Servicios: factura servicios sin nota de venta (por ejemplo, a un proveedor), con retención de ISR o IVA, plantillas para “Facturar de nuevo” y control de cobrado / por cobrar.', p: 'facturacion' }] },
@@ -2714,7 +2715,7 @@ const App = (() => {
   }
   const verAdjCob = (id, f) => verAdj('cobro', id, f), subirAdjCob = (id, i) => subirAdj('cobro', id, i), quitarAdjCob = (id, f) => quitarAdj('cobro', id, f);
   /* ---------- FOTOS Y DOCUMENTOS: clientes, ventas, compras, vendedores, proveedores ---------- */
-  const ARCH_TIT = { cliFoto: '📷 Foto del cliente', cliCsf: '🧾 Constancia de situación fiscal', ventaGuia: '📦 Guía de envío', ventaRx: '💊 Receta del MVZ (foto o PDF)', ocGuia: '📦 Guía de envío', trGuia: '📦 Guía de envío', vendFoto: '📷 Foto del vendedor', provLogo: '🏷️ Logotipo del proveedor',
+  const ARCH_TIT = { cliFoto: '📷 Foto del cliente', cliCsf: '🧾 Constancia de situación fiscal', ventaGuia: '📦 Guía de envío', ventaRx: '💊 Receta del MVZ (foto o PDF)', ocGuia: '📦 Guía de envío', trGuia: '📦 Guía de envío', vendFoto: '📷 Foto del vendedor', provLogo: '🏷️ Logotipo del proveedor', provCsf: '🧾 Constancia de situación fiscal',
     visFoto: '📷 Fotos de la visita', recFirma: '✍️ Firma', recPdf: '📄 Receta anterior (AppSheet)', sucFoto: '🏬 Foto de la sucursal', liqComp: '🧾 Comprobante de pago (transferencia)',
     ocFactura: '🧾 Factura del proveedor (PDF y XML)', ocNota: '📝 Nota de venta / cotización del proveedor (foto o PDF)', prodFicha: '📑 Ficha técnica (PDF)', ventaFirma: '✍️ Firma de recibido', ocFirma: '✍️ Firma de recepción', trFirma: '✍️ Firma de recibido', devDoc: '🧾 Documento fiscal de cancelación (XML y PDF)' };
   const ARCH_ACEPTA = { devDoc: 'application/pdf,.xml,text/xml,application/xml', ocFactura: 'application/pdf,.xml,text/xml,application/xml', prodFicha: 'application/pdf' };
@@ -2780,9 +2781,9 @@ const App = (() => {
     if (S.minis && S.minis[tipo]) delete S.minis[tipo][id];
     if (tipo === 'sucFoto') { const m = LS.get('minisSuc', {}); delete m[id]; LS.set('minisSuc', m); }
     if (tipo === 'prodFicha') { const pr = prod(id); if (pr) { pr.ficha = 1; LS.set('datos', S.datos); } }
-    const arr = tipo === 'cliFoto' || tipo === 'cliCsf' ? D().clientes : tipo === 'provLogo' ? D().proveedores : tipo === 'vendFoto' ? D().vendedores : tipo === 'sucFoto' ? D().sucursales : null;
+    const arr = tipo === 'cliFoto' || tipo === 'cliCsf' ? D().clientes : tipo === 'provLogo' || tipo === 'provCsf' ? D().proveedores : tipo === 'vendFoto' ? D().vendedores : tipo === 'sucFoto' ? D().sucursales : null;
     const x = arr && arr.find(o => String(o.id) === String(id));
-    if (x) { x[tipo === 'provLogo' ? 'logo' : tipo === 'cliCsf' ? 'csf' : 'foto'] = 1; LS.set('datos', S.datos); }
+    if (x) { x[tipo === 'provLogo' ? 'logo' : tipo === 'cliCsf' || tipo === 'provCsf' ? 'csf' : 'foto'] = 1; LS.set('datos', S.datos); }
   }
   async function subirArch(tipo, id, input) {
     const f = input.files && input.files[0]; if (!f) return;
@@ -15239,7 +15240,7 @@ const App = (() => {
       <button class="btn primario fijo" onclick="App.formProveedor(null)">+ Nuevo proveedor</button></div>
       ${nIn ? `<p class="muted" style="margin:8px 0 0;font-size:13px">Hay ${nIn} ${nIn === 1 ? 'proveedor inactivo' : 'proveedores inactivos'}: no aparecen en compras ni en los documentos. Para volver a usar uno, elige <b>Inactivos</b> y tócale <b>Activar</b>.</p>` : ''}</div><div class="espacio"></div><div id="pvRes"></div>`;
     const pintar = () => { const t = $('#pvTxt').value, est = $('#pvEst').value; const l = (D().proveedores || []).filter(p => (!est || (est === 'SI') === !!p.activo) && (!t || coincide(p.nombre + ' ' + p.razon + ' ' + p.rfc, t))); S.lista = l;
-      $('#pvRes').innerHTML = tabla([{ t: 'Proveedor', h: p => `<div class="con-avatar">${avatar('provLogo', p.id, p.logo, p.nombre)}<b>${esc(p.nombre)}</b></div>` }, { t: 'RFC', k: 'rfc' }, { t: 'Contacto', k: 'contacto' }, { t: 'Teléfono', k: 'tel' }, { t: 'Crédito', num: 1, h: p => p.credito + ' d' },
+      $('#pvRes').innerHTML = tabla([{ t: 'Proveedor', h: p => `<div class="con-avatar">${avatar('provLogo', p.id, p.logo, p.nombre)}<b>${esc(p.nombre)}</b>${p.csf ? ' <span title="Tiene constancia de situación fiscal">🧾</span>' : ''}</div>` }, { t: 'RFC', k: 'rfc' }, { t: 'Contacto', k: 'contacto' }, { t: 'Teléfono', k: 'tel' }, { t: 'Crédito', num: 1, h: p => p.credito + ' d' },
         { t: 'Estado', h: p => p.activo ? '<span class="etq ok">Activo</span>' : `<span class="etq mal">Inactivo</span>${puede('proveedores') ? ` <button class="btn chico" onclick="event.stopPropagation();App.activarProveedor('${esc(p.id)}')">✅ Activar</button>` : ''}` }], l, { clic: 'App.abrirProveedor', vacio: $('#pvEst').value === 'NO' ? 'No hay proveedores inactivos' : 'Sin proveedores' }); cargarAvatares($('#pvRes')); };
     $('#pvTxt').oninput = pintar; $('#pvEst').onchange = pintar; pintar();
   };
@@ -15253,7 +15254,7 @@ const App = (() => {
       { k: 'C.P.', t: 'C.P.' }, { k: 'Localidad', t: 'Localidad' }, { k: 'Estado', t: 'Estado' }, { k: 'Banco', t: 'Banco' }, { k: 'CLABE', t: 'CLABE' }, { k: 'No_CTA.', t: 'No. cuenta' },
       { k: 'Activo', t: 'Estado', tipo: 'select', ops: [['SI', 'Activo'], ['NO', 'Inactivo (no se muestra en compras ni documentos)']] }];
     S.formIni = p ? full : { Activo: 'SI', D_Credito: 0 };
-    modal(p ? p.nombre : 'Nuevo proveedor', `<div class="arch-par">${p ? bloqueArch('provLogo', p.id) : bloqueArchNuevo('provLogo', 'provLogoN')}</div><div id="fProv">${formulario(campos, S.formIni)}</div><div class="acciones">${p && puede('compras') ? `<button class="btn" onclick="App.comprasDeProveedor('${esc(p.id)}','${esc(String(p.nombre || '').replace(/'/g, ''))}')">📦 Ver sus compras</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarProveedor()">Guardar</button></div>`);
+    modal(p ? p.nombre : 'Nuevo proveedor', `<div class="arch-par">${p ? bloqueArch('provLogo', p.id) + bloqueArch('provCsf', p.id) : bloqueArchNuevo('provLogo', 'provLogoN') + bloqueArchNuevo('provCsf', 'provCsfN')}</div><div id="fProv">${formulario(campos, S.formIni)}</div><div class="acciones">${p && puede('compras') ? `<button class="btn" onclick="App.comprasDeProveedor('${esc(p.id)}','${esc(String(p.nombre || '').replace(/'/g, ''))}')">📦 Ver sus compras</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarProveedor()">Guardar</button></div>`);
   }
   async function activarProveedor(id) {
     const p = (D().proveedores || []).find(x => x.id === id); if (!p) return;
@@ -15264,7 +15265,7 @@ const App = (() => {
     const f = leerForm($('#fProv')), ini = S.formIni;
     const datos = ini.ID_Proveedor ? soloCambios(ini, f) : f;
     datos.ID_Proveedor = ini.ID_Proveedor;
-    try { const r = await pedir('guardarProveedor', datos); toast('✔ Proveedor guardado' + (!ini.ID_Proveedor && r && r.ID_Proveedor ? await subirArchNuevos([['provLogo', '#provLogoN']], r.ID_Proveedor) : '')); cerrarModal(); D().proveedores = await pedir('listarProveedores', {}, true); LS.set('datos', S.datos); V.proveedores(); } catch (e) {}
+    try { const r = await pedir('guardarProveedor', datos); toast('✔ Proveedor guardado' + (!ini.ID_Proveedor && r && r.ID_Proveedor ? await subirArchNuevos([['provLogo', '#provLogoN'], ['provCsf', '#provCsfN']], r.ID_Proveedor) : '')); cerrarModal(); D().proveedores = await pedir('listarProveedores', {}, true); LS.set('datos', S.datos); V.proveedores(); } catch (e) {}
   }
 
   /* ---------- CONFIGURACIÓN ---------- */
