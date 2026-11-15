@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 330, f: '14/11/2026', t: [{ x: '🎨 Tus facturas salen con tu propio diseño: logo, tu asesor con su WhatsApp, lotes y caducidades, e Instrucciones para pago con tus dos cuentas. Los datos se cambian en Configuración › 🧾 Datos de mis facturas.', p: 'facturacion' }, { x: '🎨 En cualquier factura timbrada: botón “PDF con mi diseño” para verla o regenerarla con el diseño nuevo.', p: 'facturacion' }] },
     { v: 329, f: '14/11/2026', t: [{ x: '🛎️ Factura de servicio: ya se ve la lista al buscar a quién facturar, y si escribes el nombre completo o el RFC se toma solo.', p: 'facturacion' }] },
     { v: 328, f: '14/11/2026', t: [{ x: '🛎️ Facturación › Servicios: factura servicios sin nota de venta (por ejemplo, a un proveedor), con retención de ISR o IVA, plantillas para “Facturar de nuevo” y control de cobrado / por cobrar.', p: 'facturacion' }] },
     { v: 327, f: '14/11/2026', t: [{ x: '📎 Ahora puedes adjuntar archivos (PDF o foto) a las interacciones con el cliente, por ejemplo un cuadro comparativo enviado por WhatsApp.', p: 'clientes' },
@@ -4072,7 +4073,7 @@ const App = (() => {
         ${d.sustituidaPor ? `Sustituida por <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituidaPor)}')"><b>${esc(d.sustituidaPor)}</b></a>: sus notas pasaron a esa factura.` : `Sus notas quedaron <b>por facturar</b> hasta que subas la factura nueva.<div class="acciones" style="justify-content:flex-start;margin-top:6px"><button class="btn primario" onclick="App.formSustituir('${d.id}')">🔁 Subir la factura que la sustituye</button></div>`}</div>` : ''}
       ${d.sustituye ? `<p class="muted peq">🔁 Sustituye a <a href="#" onclick="event.preventDefault();App.verFactura('${esc(d.idSustituye)}')">${esc(d.sustituye)}</a> (cancelada).</p>` : ''}${d.avisoSust ? `<div class="aviso-cand">⚠️ ${esc(d.avisoSust)}</div>` : ''}
       <p>${esc(d.receptor || '')} ${d.rfc ? '· RFC ' + esc(d.rfc) : ''}${d.uuid ? '<br><small class="muted">UUID ' + esc(d.uuid) + '</small>' : ''}${d.comentarios ? '<br><small class="muted">' + esc(d.comentarios) + '</small>' : ''}</p>
-      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.ctCobrosFactura('${d.id}')">💵 Cobros y comprobantes</button>${d.estado !== 'Cancelada' && d.origen === 'Timbrada en la app' && puede('facturacion') ? `<button class="btn peligro" onclick="App.timbCancelarForm('${esc(d.id)}','${esc(d.sf)}')">🚫 Cancelar ante el SAT</button>` : ''}${d.estado !== 'Cancelada' && (d.urlPdf || d.urlXml) ? `<button class="btn" onclick="App.enviarFactCli('${esc(d.id)}')">📤 Enviar al cliente</button>` : ''}${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.ctCobrosFactura('${d.id}')">💵 Cobros y comprobantes</button>${d.estado !== 'Cancelada' && d.origen === 'Timbrada en la app' && puede('facturacion') ? `<button class="btn peligro" onclick="App.timbCancelarForm('${esc(d.id)}','${esc(d.sf)}')">🚫 Cancelar ante el SAT</button>` : ''}${d.estado !== 'Cancelada' && (d.urlPdf || d.urlXml) ? `<button class="btn" onclick="App.enviarFactCli('${esc(d.id)}')">📤 Enviar al cliente</button>` : ''}${d.urlPdf ? `<a class="btn" target="_blank" href="${esc(d.urlPdf)}">📄 PDF</a>` : ''}${d.urlXml ? `<a class="btn" target="_blank" href="${esc(d.urlXml)}">🧾 XML</a>` : ''}${d.estado !== 'Cancelada' && d.urlXml && verDatosFac() ? `<button class="btn" onclick="App.pdfDisenoForm('${esc(d.id)}','${esc(d.sf)}')">🎨 PDF con mi diseño</button>` : ''}${d.global || d.rfc === 'XAXX010101000' ? `<button class="btn primario" onclick="App.formGlobal('${d.id}', '${esc((d.fechaISO || '').slice(0, 8))}01', '${esc(d.fechaISO || '')}')">➕ Agregar abonos cobrados</button>` : ''}${d.estado !== 'Cancelada' ? `<button class="btn" onclick="App.formCancelarFactura('${d.id}')">🚫 Se canceló (acuse del SAT)</button>` : ''}</div>
       ${tabla([{ t: 'Nota', h: x => `<b>${esc(x.folio)}</b><br><small class="muted">${esc(x.fecha)}</small>` }, { t: 'Cliente', h: x => esc(x.cliente) },
         { t: 'Total nota', num: 1, h: x => $$(x.totalNota) + (x.nc ? `<br><small class="muted">N/C −${$$(x.nc)} → a facturar ${$$(x.facturable)}</small>` : '') }, { t: 'Monto en esta factura', num: 1, h: x => (x.monto === null ? '<span class="etq av">por definir</span>' : $$(x.monto)) + (x.cobros ? `<br><small class="muted">${x.cobros} abono(s)</small>` : '') },
         { t: 'Otras facturas', h: x => esc(x.otras.join(', ')) },
@@ -8891,6 +8892,54 @@ const App = (() => {
     const m = $('#tcMsg'); if (m) m.textContent = 'Probando…';
     try { const r = await pedir('probarTimbrado', {}); if (m) { m.className = 'peq ok-txt'; m.textContent = '✔ Conectado a Facturama (' + (r.amb === 'produccion' ? 'producción' : 'pruebas') + ')'; } }
     catch (e) { if (m) { m.className = 'peq error'; m.textContent = '✕ ' + (e.message || e); } }
+  }
+
+
+  /* ---------- Configuración › 🧾 Datos de mis facturas (cuentas y contacto que salen en el PDF) ---------- */
+  const verDatosFac = () => (puede('dueno') || puede('facturacion')) && esMatrizU();
+  const clabeOk = c => { if (!/^\d{18}$/.test(c)) return false; const w = [3, 7, 1]; let t = 0; for (let i = 0; i < 17; i++) t += (Number(c[i]) * w[i % 3]) % 10; return (10 - t % 10) % 10 === Number(c[17]); };
+  async function cargarDatosFac() {
+    const el = $('#cfDatFac'); if (!el) return;
+    let c; try { c = await pedir('datosFactura', {}, true); } catch (e) { el.innerHTML = '<span class="muted">' + esc(e.red ? 'Requiere conexión.' : /desconocida/i.test(e.message || '') ? 'Se activa con el servidor 259.' : e.message) + '</span>'; return; }
+    const cta = (x, i) => `<div class="dfac-cta"><h4>🏦 Cuenta ${i + 1}${i ? ' <small class="muted">(opcional: si la dejas vacía solo sale la cuenta 1)</small>' : ''}</h4><div class="rejilla">
+        <label>Banco<input id="dfB${i}" value="${esc(x.banco)}" placeholder="${i ? 'Banorte' : 'BBVA'}"></label>
+        <label>No. de cuenta<input id="dfN${i}" value="${esc(x.cuenta)}" inputmode="numeric"></label>
+        <label>CLABE (18 números)<input id="dfC${i}" value="${esc(x.clabe)}" inputmode="numeric" maxlength="22" oninput="App.dfClabe(${i})"><small id="dfCm${i}" class="peq"></small></label>
+        <label>Sucursal (si aplica)<input id="dfS${i}" value="${esc(x.suc)}"></label></div></div>`;
+    el.innerHTML = `<p class="muted" style="margin-top:0">Así salen en el PDF de tus facturas, en <b>Instrucciones para pago</b>. Cámbialos cuando quieras: aplica a las facturas que timbres después (y a las que regeneres con 🎨 PDF con mi diseño).</p>
+      ${c.cuentas.map(cta).join('')}
+      <div class="dfac-cta"><h4>👤 Titular y contacto</h4><div class="rejilla">
+        <label>A nombre de (titular)<input id="dfTit" value="${esc(c.titular)}" placeholder="Nombre completo o razón social"></label>
+        <label>Teléfono / WhatsApp para comprobantes<input id="dfTel" value="${esc(c.tel)}" inputmode="tel"></label>
+        <label>Correo para comprobantes<input id="dfMail" type="email" value="${esc(c.correo)}"></label>
+        <label>Domicilio (opcional, bajo tu RFC)<input id="dfDom" value="${esc(c.domicilio)}"></label></div></div>
+      <label class="check" style="margin-top:6px"><input type="checkbox" id="dfUsar" ${c.usar ? 'checked' : ''}> Usar mi diseño en las facturas nuevas <small class="muted">(si lo quitas, sale el PDF de Facturama)</small></label>
+      <div class="acciones izq"><button class="btn primario" onclick="App.guardarDatosFac()">Guardar</button><button class="btn" onclick="App.pdfDiseno('', false)">👁 Ver cómo queda (última factura)</button> <span id="dfMsg" class="peq"></span></div>
+      <p class="muted peq">El nombre, RFC y régimen del encabezado salen del XML timbrado. El recuadro amarillo muestra al vendedor de la nota (nombre y celular de su ficha); en facturas globales y de servicio muestra este teléfono.</p>`;
+    [0, 1].forEach(dfClabe);
+  }
+  function dfClabe(i) {
+    const d = (($('#dfC' + i) || {}).value || '').replace(/\D/g, ''), m = $('#dfCm' + i); if (!m) return;
+    if (!d) { m.textContent = ''; return; }
+    m.className = 'peq ' + (d.length === 18 && clabeOk(d) ? 'ok-txt' : 'error');
+    m.textContent = d.length !== 18 ? d.length + ' de 18 números' : clabeOk(d) ? '✔ CLABE válida' : '✕ El último dígito no cuadra: revísala';
+  }
+  async function guardarDatosFac() {
+    const v = id => (($(id) || {}).value || '').trim();
+    const p = { cuentas: [0, 1].map(i => ({ banco: v('#dfB' + i), cuenta: v('#dfN' + i), clabe: v('#dfC' + i), suc: v('#dfS' + i) })), titular: v('#dfTit'), tel: v('#dfTel'), correo: v('#dfMail'), domicilio: v('#dfDom'), usar: !!($('#dfUsar') || {}).checked };
+    try { await pedir('guardarDatosFactura', p); toast('✔ Datos de tus facturas guardados'); cargarDatosFac(); } catch (e) {}
+  }
+  function pdfDisenoForm(id, sf) {
+    modal('🎨 PDF con mi diseño · ' + sf, `<p style="margin-top:0">Arma el PDF de esta factura con tu diseño, usando su XML timbrado y los datos de <b>Configuración › 🧾 Datos de mis facturas</b>.</p>
+      <p class="muted peq">La factura ante el SAT no cambia: solo es otra forma de imprimirla. Si la usas, el PDF anterior se queda guardado en Drive.</p>
+      <div class="acciones"><button class="btn" onclick="App.pdfDiseno('${esc(id)}', false)">👁 Vista previa</button><button class="btn primario" onclick="App.pdfDiseno('${esc(id)}', true)">✅ Usar en esta factura</button></div>`);
+  }
+  async function pdfDiseno(id, guardar) {
+    if (guardar && !confirm('¿Reemplazar el PDF de esta factura por el de tu diseño?\nEl anterior se queda guardado en Drive.')) return;
+    toast('Armando el PDF… (unos segundos)');
+    let r; try { r = await pedir('pdfDiseno', { id: id, guardar: !!guardar }); } catch (e) { return; }
+    modal(guardar ? '✅ PDF actualizado · ' + r.sf : '👁 Vista previa · ' + r.sf, `<p style="margin-top:0">${guardar ? 'La factura <b>' + esc(r.sf) + '</b> ya tiene el PDF con tu diseño; es el que se envía al cliente.' : 'Esta es una vista previa: la factura conserva su PDF actual.'}</p>
+      <div class="acciones izq"><a class="btn primario" href="${esc(r.url)}" target="_blank" rel="noopener">📄 Abrir PDF</a>${guardar && r.id ? `<button class="btn" onclick="App.verFactura('${esc(r.id)}')">← Volver a la factura</button>` : ''}</div>`);
   }
 
   /* ---------- 🏷️ Claves del SAT de los productos ---------- */
@@ -15254,12 +15303,13 @@ const App = (() => {
   }
   V.config = async () => {
     const u = U();
-    setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) { cargarSucsCfg(); cargarRespaldos(); cargarErroresCfg(); cargarTimbCfg(); } }, 0);
+    setTimeout(() => { CQ.contar().then(n => { const x = $('#cqNum'); if (x) x.textContent = n || 0; }); if (puede('dueno')) { cargarSucsCfg(); cargarRespaldos(); cargarErroresCfg(); cargarTimbCfg(); } if (verDatosFac()) cargarDatosFac(); }, 0);
     $('#vista').innerHTML = `<div class="tarjeta"><h3>Mi sesión</h3><p>${esc(u.nombre)} · <b>${esc(u.rolNombre || u.rol)}</b> · ${esc(u.correo)}<br>Sucursal: ${esc(sucNom(u.sucursal))} · Acceso: ${u.todasSucursales ? 'todas las sucursales' : 'solo su sucursal'}</p>
       <p class="muted">Datos guardados en este dispositivo: ${(D().productos || []).length} productos, ${(D().clientes || []).length} clientes, ${(D().stock || []).length} lotes. Última actualización: ${D().servidor ? new Date(D().servidor).toLocaleString('es-MX') : '—'}</p>
       <div class="fila"><button class="btn fijo" onclick="App.recargar()">⟳ Recargar datos del servidor</button><button class="btn fijo" onclick="App.formMiClave()">🔑 Cambiar mi contraseña</button><button class="btn fijo" onclick="App.verNovedades()">✨ Novedades</button>${puede('dueno') ? '<button class="btn fijo" onclick="App.formRestablecerClave()">🔑 Contraseña de otro usuario</button>' : ''}${puede('seguimiento') ? '<button class="btn fijo" onclick="App.formPlantillas()">📲 Mensajes de WhatsApp</button>' : ''}${puede('ventas') || puede('dueno') ? '<button class="btn fijo" onclick="App.formCumple()">🎂 Regalo de cumpleaños</button>' : ''}<button class="btn fijo" onclick="App.salir()">Cerrar sesión</button></div></div>
       ${puede('dueno') ? '<div class="tarjeta"><h3>🛟 Respaldos automáticos</h3><div id="cfResp"><span class="muted">Revisando…</span></div></div>' : ''}
       ${puede('dueno') ? '<div class="tarjeta"><h3>🧾 Timbrado de facturas (Facturama)</h3><div id="cfTimb"><span class="muted">Revisando…</span></div></div>' : ''}
+      ${verDatosFac() ? '<div class="tarjeta"><h3>🧾 Datos de mis facturas</h3><div id="cfDatFac"><span class="muted">Revisando…</span></div></div>' : ''}
       ${puede('dueno') ? '<div class="tarjeta"><h3>🐞 Errores de la app</h3><p class="muted" style="margin-top:0">Lo que ha fallado en los equipos de tu personal (errores del programa, no avisos normales). Cópialo y mándalo a soporte para corregirlo.</p><div id="cfErr"><span class="muted">Revisando…</span></div></div>' : ''}
       ${puede('dueno') || u.rol === 'Contador' ? `<div class="tarjeta"><h3>🔐 Cierre de mes</h3><p class="muted">${puede('dueno') ? 'Revisa los pendientes del mes y ciérralo: después, cualquier cambio que altere sus cifras necesita tu autorización y queda registrado.' : 'Meses cerrados por el dueño, sus cifras al cerrar y los cambios posteriores.'}</p><div class="acciones" style="justify-content:flex-start"><button class="btn primario" onclick="App.cierreMes()">📅 Ver meses</button></div></div>` : ''}
       <div class="tarjeta"><h3>Operaciones pendientes de sincronizar (${S.cola.length})</h3>${tabla([{ t: 'Capturada', k: 'creado' }, { t: 'Operación', k: 'desc' }, { t: 'Error', h: o => o.error ? `<span class="error">${esc(o.error)}</span>` : 'En espera' },
@@ -16035,7 +16085,7 @@ const App = (() => {
     invCambiarVal, formCumple, guardarCumple, cbCumple, agregarLineaVenta, usarMonedero, verMonedero, verMonederoI, monederoWa, monederoPdf, monederoPng,
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
-    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, clavesSat, satFiltrar, satVerCat, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
+    formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, cargarDatosFac, dfClabe, guardarDatosFac, pdfDisenoForm, pdfDiseno, clavesSat, satFiltrar, satVerCat, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
     escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
