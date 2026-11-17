@@ -37,7 +37,7 @@ assert '<?' not in h, 'Quedó una etiqueta de plantilla de Apps Script en Index.
 open(os.path.join(RAIZ, 'index.html'), 'w', encoding='utf-8').write(h)
 
 # versión = huella de todos los archivos que se guardan en el teléfono
-ARCH = ['index.html', 'estilos.css', 'app.js', 'config.js', 'shim.js', 'pwa.js', 'manifest.webmanifest', 'logo.png', 'logo-hd.webp',
+ARCH = ['index.html', 'estilos.css', 'app.js', 'config.js', 'shim.js', 'pwa.js', 'manifest.webmanifest', 'logo.png', 'logo-hd.webp', 'pie_cotizacion.jpg',
         'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.png']
 hsh = hashlib.sha1()
 for a in ARCH: hsh.update(open(os.path.join(RAIZ, a), 'rb').read())

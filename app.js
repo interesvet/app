@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 336, f: '16/11/2026', t: [{ x: '🎨 Cotizaciones con diseño nuevo: recuadro verde de COTIZACIÓN, el logo de cada sucursal con su nombre, la tabla en verde, el total resaltado y el pie con ondas. Con o sin señal salen igual.', p: 'cotizaciones' }] },
     { v: 335, f: '15/11/2026', t: [{ x: '🏬 Sucursales: ya no ven botones de facturación que solo puede usar Matriz (cancelar ante el SAT, factura global, claves del SAT).', p: 'facturacion' }] },
     { v: 334, f: '14/11/2026', t: [{ x: '👥 Al timbrar una nota: botón “Público en general” que llena solo el RFC genérico del SAT (para notas que te pagaron sin pedir factura).', p: 'facturacion' }, { x: '⚠️ Configuración › Timbrado avisa cuando al ambiente elegido (Pruebas o Producción) le falta su usuario o contraseña de Facturama.', p: 'dueno' }] },
     { v: 331, f: '14/11/2026', t: [{ x: '🧾 Proveedores: ya puedes adjuntar su constancia de situación fiscal (foto o PDF) en su ficha. Los que la tienen muestran 🧾 en la lista.', p: 'proveedores' }] },
@@ -9670,7 +9671,98 @@ const App = (() => {
    * { titulo, folio, fecha, extra:[líneas], suc:{id,nombre,direccion,tel,email}, izq:[líneas (1a en negritas)], der:[líneas],
    *   cols:[{t, w (fracción), num}], filas:[[celdas]], suma:[celdas] | null, totales:[[etiqueta, valor, negritas]], letras, notas:[líneas], firmas:[títulos], archivo }
    */
+  /** 🎨 Cotización sin señal con el mismo diseño del servidor (verde, recuadro COTIZACIÓN, pie de ondas). sp.cot = detalle de la cotización. */
+  async function pdfCotLocal(sp) {
+    const d = sp.cot, { jsPDF } = await libLocal('jspdf');
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+    const W = 612, H = 792, M = 24, AN = W - 2 * M, V = [31, 107, 58], V2 = [230, 242, 227], V3 = [243, 248, 241], GRS = [242, 244, 241], TX = [29, 43, 34], GR = [95, 107, 98];
+    const color = c => pdf.setTextColor(c[0], c[1], c[2]), relleno = c => pdf.setFillColor(c[0], c[1], c[2]);
+    const fuente = (t, n) => { pdf.setFont('helvetica', t || 'normal'); pdf.setFontSize(n || 9); };
+    const s = d.sucursal || {}, ls = d.lineas || [], conLote = ls.some(l => l.lote || l.cad), conDesc = ls.some(l => l.desc);
+    const fs = s.id ? await fotoSucDatos(s.id) : null, logo = fs || await logoDoc();
+    let pie = null; try { pie = await imgDatos('pie_cotizacion.jpg'); } catch (e) {}
+    const PIE_H = pie ? AN / pie.w * pie.h * (W / AN) : 0;   // el pie va de orilla a orilla
+    let y = 20;
+    // --- encabezado: logo + plaquita · datos de la sucursal · recuadro COTIZACIÓN
+    if (logo) { const mw = 105, mh = 68, k = Math.min(mw / logo.w, mh / logo.h); pdf.addImage(logo.data, 'PNG', M + (110 - logo.w * k) / 2, y, logo.w * k, logo.h * k); }
+    const plq = txtPdf(String(s.nombre || 'Matriz').toUpperCase()); fuente('bold', 9); const pw = pdf.getTextWidth(plq) + 22;
+    relleno([253, 243, 215]); pdf.setDrawColor(201, 162, 74); pdf.setLineWidth(1.4); pdf.roundedRect(M + 55 - pw / 2, y + 72, pw, 17, 7, 7, 'FD'); color([13, 59, 102]); pdf.text(plq, M + 55, y + 84, { align: 'center' });
+    relleno(V); pdf.rect(M + 122, y + 6, 2.2, 78, 'F');
+    const xD = M + 134, anD = 230; let yd = y + 22;
+    const pto = () => { relleno(V); pdf.circle(xD + 2.5, yd - 3, 2.2, 'F'); };
+    if (s.direccion) { fuente('bold', 8); color(TX); pdf.splitTextToSize(txtPdf(s.direccion), anD - 10).forEach((l, i) => { if (!i) pto(); pdf.text(l, xD + 9, yd); yd += 10; }); yd += 3; }
+    if (s.tel) { pto(); fuente('bold', 10); color(TX); pdf.text(txtPdf(s.tel), xD + 9, yd); yd += 13; }
+    if (s.email) { pto(); fuente('normal', 8); color(TX); pdf.text(txtPdf(s.email), xD + 9, yd); }
+    const xB = W - M - 168, anB = 168;
+    relleno(V); pdf.roundedRect(xB, y, anB, 34, 7, 7, 'F'); pdf.rect(xB, y + 20, anB, 14, 'F');
+    fuente('bold', 17); color([255, 255, 255]); pdf.text('COTIZACIÓN', xB + anB / 2, y + 23, { align: 'center' });
+    relleno(GRS); pdf.roundedRect(xB, y + 34, anB, 58, 7, 7, 'F'); pdf.rect(xB, y + 34, anB, 10, 'F');
+    fuente('bold', 10); color(TX); pdf.text(txtPdf(d.folio || ''), xB + 9, y + 50);
+    fuente('normal', 8.5); pdf.text(txtPdf('Fecha: ' + (d.fecha || '')), xB + 9, y + 64);
+    const est = { Abierta: [[251, 231, 198], [154, 91, 0]], Vencida: [[248, 215, 211], [161, 44, 31]], Vendida: [[216, 239, 217], V], Cancelada: [[228, 230, 227], [85, 85, 85]] }[d.estado] || [[228, 230, 227], [85, 85, 85]];
+    if (d.estado) { fuente('bold', 7.5); const ew = pdf.getTextWidth(txtPdf(d.estado)) + 12; relleno(est[0]); pdf.roundedRect(xB + anB - ew - 9, y + 56, ew, 11, 5, 5, 'F'); color(est[1]); pdf.text(txtPdf(d.estado), xB + anB - 9 - ew / 2, y + 64, { align: 'center' }); }
+    fuente('normal', 8.5); color(TX); pdf.text('Vigente hasta: ', xB + 9, y + 78); fuente('bold', 8.5); pdf.text(txtPdf(d.vigencia || ''), xB + 9 + pdf.getTextWidth('Vigente hasta: '), y + 78);
+    if (d.venta) { fuente('normal', 8); pdf.text(txtPdf('Venta: ' + d.venta.folio), xB + 9, y + 89); }
+    y += 100; relleno(V); pdf.rect(M, y, AN, 2.4, 'F'); y += 12;
+    // --- cliente
+    const f = d.fiscal || {}, et = (c, t) => !t ? c : String(t).indexOf(c) === 0 ? t : c + ' - ' + t;
+    const fis = [f.cp ? 'C.P. ' + f.cp : '', f.regimen ? 'Régimen fiscal: ' + et(f.regimen, f.regimenTxt) : '', f.uso ? 'Uso de CFDI: ' + et(f.uso, f.usoTxt) : ''].filter(Boolean).join(' · ');
+    const cl = [[d.razon || d.cliente, 1]].concat(d.razon && d.razon !== d.cliente ? [[d.cliente]] : []).concat([[[d.rfc ? 'RFC ' + d.rfc : '', d.domicilio].filter(Boolean).join(' · ')], [fis]]).filter(x => x[0]);
+    const clL = []; cl.forEach(x => { fuente(x[1] ? 'bold' : 'normal', x[1] ? 11 : 8); pdf.splitTextToSize(txtPdf(x[0]), AN - 24).forEach(t => clL.push([t, x[1]])); });
+    const hC = 14 + clL.reduce((a, x) => a + (x[1] ? 14 : 10.5), 0);
+    relleno(V2); pdf.roundedRect(M, y, AN, hC, 8, 8, 'F'); let yc = y + 17;
+    clL.forEach(x => { fuente(x[1] ? 'bold' : 'normal', x[1] ? 11 : 8); color(x[1] ? TX : GR); pdf.text(x[0], M + 12, yc); yc += x[1] ? 14 : 10.5; });
+    y += hC + 14; fuente('normal', 8.5); color(TX); pdf.text('Por medio de la presente, ponemos a su consideración la siguiente cotización de productos veterinarios:', M + 2, y); y += 10;
+    // --- tabla
+    const cols = [{ t: 'Cant.', w: 0.55, al: 'center' }, { t: 'Producto', w: conLote ? 2.7 : 3.6 }].concat(conLote ? [{ t: 'Lote', w: 0.85, al: 'center' }, { t: 'Cad.', w: 0.85, al: 'center' }] : [])
+      .concat([{ t: 'Precio unit.', w: 0.95, al: 'right' }]).concat(conDesc ? [{ t: 'Descuento', w: 0.9, al: 'right' }] : []).concat([{ t: 'Importe', w: 0.95, al: 'right' }, { t: 'IVA $', w: 0.75, al: 'right' }, { t: 'Total', w: 0.95, al: 'right' }]);
+    const tf = cols.reduce((a, c) => a + c.w, 0), an = cols.map(c => AN * c.w / tf), xs = an.map((w, i) => M + an.slice(0, i).reduce((a, b) => a + b, 0));
+    const tx = (t, i, yy) => { const c = cols[i]; pdf.text(t, c.al === 'right' ? xs[i] + an[i] - 5 : c.al === 'center' ? xs[i] + an[i] / 2 : xs[i] + 5, yy, { align: c.al || 'left' }); };
+    const encab = () => { relleno(V); pdf.rect(M, y, AN, 19, 'F'); fuente('bold', 8); color([255, 255, 255]); cols.forEach((c, i) => tx(txtPdf(c.t), i, y + 12.5)); y += 19; };
+    const limite = H - Math.max(PIE_H, 30) - 10;
+    encab();
+    let sI = 0, sV = 0, sD = 0;
+    ls.forEach(l => {
+      sI += l.importe; sV += l.ivaMonto; sD += l.desc || 0;
+      fuente('bold', 8.5); const nom = pdf.splitTextToSize(txtPdf(l.nombre + (l.unidad ? ' (' + l.unidad + ')' : '')), an[1] - 10), h = nom.length * 10 + 9;
+      if (y + h > limite) { pdf.addPage(); y = M; encab(); }
+      relleno(V3); pdf.rect(xs[cols.length - 1], y, an[cols.length - 1], h, 'F');
+      color(TX); fuente('normal', 8.5); tx(nf(l.cant), 0, y + 12); fuente('bold', 8.5); nom.forEach((t, k) => pdf.text(t, xs[1] + 5, y + 12 + k * 10)); fuente('normal', 8.5);
+      let i = 2; if (conLote) { tx(txtPdf(l.lote || ''), i++, y + 12); tx(txtPdf(l.cad || ''), i++, y + 12); }
+      tx($$(l.precioLista), i++, y + 12); if (conDesc) tx(l.desc ? '-' + $$(l.desc) : '-', i++, y + 12);
+      tx($$(l.importe), i++, y + 12); tx($$(l.ivaMonto), i++, y + 12); fuente('bold', 8.5); tx($$(r2c(l.importe + l.ivaMonto)), i, y + 12);
+      y += h; pdf.setDrawColor(223, 232, 220); pdf.setLineWidth(0.6); pdf.line(M, y, W - M, y);
+    });
+    if (y + 20 > limite) { pdf.addPage(); y = M; }
+    relleno(V2); pdf.rect(M, y, AN, 20, 'F'); fuente('bold', 8.5); color(TX);
+    let k = 2 + (conLote ? 2 : 0); pdf.text('Suma de los productos', xs[k] + an[k] - 5, y + 13, { align: 'right' }); k++;
+    if (conDesc) tx(sD ? '-' + $$(sD) : '-', k++, y + 13); tx($$(sI), k++, y + 13); tx($$(sV), k++, y + 13); tx($$(r2c(sI + sV)), k, y + 13);
+    pdf.setDrawColor(207, 220, 203); pdf.setLineWidth(0.8); pdf.rect(M, y - 0, AN, 20); y += 32;
+    // --- atendió / observaciones (izquierda) y totales (derecha)
+    if (y + 110 > limite) { pdf.addPage(); y = M; }
+    const xT = W - M - 190, y0 = y;
+    relleno(GRS); pdf.roundedRect(M, y, xT - M - 18, 40, 8, 8, 'F'); fuente('bold', 8.5); color(V); pdf.text('Atendió:', M + 10, y + 14); fuente('bold', 10.5); color(TX); pdf.text(txtPdf(d.vendedor || ''), M + 10, y + 30);
+    let yo = y + 54; if (d.obs) { fuente('normal', 8); color(GR); pdf.splitTextToSize(txtPdf('Observaciones: ' + d.obs), xT - M - 22).forEach(t => { pdf.text(t, M + 2, yo); yo += 10; }); }
+    let yt = y + 8; const fila = (a, b) => { fuente('normal', 9); color(TX); pdf.text(txtPdf(a), xT, yt); pdf.text(txtPdf(b), W - M, yt, { align: 'right' }); yt += 14; };
+    fila('Subtotal', $$(d.sub)); if (d.desc) fila('Descuento', '-' + $$(d.desc)); fila('IVA (suma de los productos)', $$(d.iva));
+    yt -= 4; relleno(V2); pdf.roundedRect(xT, yt, 190, 28, 8, 8, 'F'); relleno(V); pdf.roundedRect(xT + 70, yt, 120, 28, 8, 8, 'F'); pdf.rect(xT + 70, yt, 12, 28, 'F');
+    fuente('bold', 12.5); color(V); pdf.text('Total:', xT + 10, yt + 18.5); fuente('bold', 14); color([255, 255, 255]); pdf.text($$(d.total), W - M - 10, yt + 19, { align: 'right' });
+    y = Math.max(yt + 40, yo + 6, y0 + 50);
+    if (d.letras) { fuente('normal', 8.5); color(TX); pdf.text(txtPdf('(' + d.letras + ')'), W / 2, y, { align: 'center' }); y += 12; }
+    relleno(V); pdf.rect(M, y, AN, 1.8, 'F'); y += 16;
+    const cond = ['Cotización válida por ' + (d.vigenciaDias || 15) + ' días' + (d.vigencia ? ' (hasta el ' + d.vigencia + ')' : '') + '.', 'Precios en pesos mexicanos; sujetos a existencias y a cambio sin previo aviso después de la vigencia.'];
+    if (y + 40 > limite) { pdf.addPage(); y = M; }
+    fuente('bold', 10.5); color(V); pdf.text('Condiciones:', M, y); y += 13; fuente('normal', 8.5); color(TX);
+    cond.forEach(c => { pdf.splitTextToSize(txtPdf(c), AN - 16).forEach((t, i) => { if (!i) { relleno(TX); pdf.circle(M + 6, y - 3, 1.3, 'F'); } pdf.text(t, M + 14, y); y += 11; }); });
+    // --- pie de ondas al fondo de la última hoja + pie de página
+    if (pie) pdf.addImage(pie.data, 'PNG', 0, H - PIE_H, W, PIE_H);
+    const n = pdf.getNumberOfPages();
+    if (sp.pie || n > 1) for (let i = 1; i <= n; i++) { pdf.setPage(i); fuente('normal', 7); color(i === n && pie ? [255, 255, 255] : [140, 146, 136]); pdf.text(txtPdf((sp.pie ? sp.pie + ' · ' : '') + (n > 1 ? 'Página ' + i + ' de ' + n : '')), M, H - 8); }
+    pdf.setProperties({ title: txtPdf('COTIZACIÓN ' + (d.folio || '')), author: 'Interés Veterinario®' });
+    return new Uint8Array(pdf.output('arraybuffer'));
+  }
   async function pdfLocal(sp) {
+    if (sp.cot) return pdfCotLocal(sp);
     const { jsPDF } = await libLocal('jspdf');
     const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
     const W = 612, H = 792, M = 36, AN = W - 2 * M, VERDE = [31, 111, 74], GRIS = [92, 98, 88], LINEA = [214, 220, 210];
@@ -9786,7 +9878,7 @@ const App = (() => {
         izq: [d.razon || d.cliente, d.razon && d.razon !== d.cliente ? d.cliente : '', d.rfc ? 'RFC ' + d.rfc : '', d.domicilio, fiscalTxt(d.fiscal)], der: ['Atendió: ' + (d.vendedor || '')],
         totales: [['Subtotal', d.sub], d.desc ? ['Descuento', '-' + $$(d.desc)] : null, ['IVA (suma de los productos)', d.iva], ['Total', d.total, true]], letras: d.letras,
         notas: [d.obs, 'Cotización válida por ' + (d.vigenciaDias || 15) + ' días' + (d.vigencia ? ' (hasta el ' + d.vigencia + ')' : '') + '. Precios en pesos mexicanos; sujetos a existencias y a cambio sin previo aviso después de la vigencia.'],
-        archivo: 'Cotizacion ' + d.folio + ' ' + (d.razon || d.cliente || '') }); } },
+        archivo: 'Cotizacion ' + d.folio + ' ' + (d.razon || d.cliente || ''), cot: d }); } },
     pdfTraspaso: { det: p => ['detalleTraspaso', { folio: p.folio }], ult: 'trDet', key: p => p.folio, map: d => {
       const imp = d.total !== null && d.total !== undefined;
       let t;
