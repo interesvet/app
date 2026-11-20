@@ -1106,7 +1106,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
-    { v: 339, f: '20/11/2026', t: [{ x: '📦 Editar una nota ya no llena el inventario de “vendido / devuelto / vendido”: ahora solo se registra la diferencia real por lote (si no cambió nada, no se escribe ningún movimiento), aunque se reintente con mala señal.', p: 'ventas' }, { x: '🔧 Configuración → “Cuadrar ventas con inventario”: encuentra notas cuyos renglones no coinciden con lo descontado (cambios hechos a mano en la hoja, notas devueltas sin regresar producto) y las cuadra con un clic.', p: 'configuracion' }] },
+    { v: 339, f: '20/11/2026', t: [{ x: '📦 Editar una nota ya no llena el inventario de “vendido / devuelto / vendido”: ahora solo se registra la diferencia real por lote (si no cambió nada, no se escribe ningún movimiento), aunque se reintente con mala señal.', p: 'ventas' }, { x: '🔧 Configuración → “Cuadrar ventas con inventario”: encuentra notas cuyos renglones no coinciden con lo descontado (cambios hechos a mano en la hoja, notas devueltas sin regresar producto) y las cuadra con un clic.', p: 'configuracion' }, { x: '✏️ Gerentes de sucursal: ya pueden completar los datos de los clientes de su tienda (RFC, domicilio, teléfonos, ubicación, etc.). Lista de precios, crédito, límites, estado y vendedor los sigue cambiando el administrador.', p: 'clientes' }] },
     { v: 338, f: '19/11/2026', t: [{ x: '🛡️ Candado en la edición de notas: si estás editando una nota y eliges OTRO cliente, la app te propone hacer una venta NUEVA (la nota original no se toca); antes de guardar una edición siempre te pide confirmar el folio, el cliente y el total; y una edición olvidada ya no se queda abierta al volver a “Nueva venta”.', p: 'ventas' }] },
     { v: 337, f: '19/11/2026', t: [{ x: '🎨 Notas de venta con diseño nuevo: iconos, sellos PAGADO / FACTURADO, totales resaltados, pie de ondas y, cuando hay saldo, tus cuentas bancarias en “Instrucciones para pago”. Con o sin señal salen igual.', p: 'ventas' }] },
     { v: 336, f: '16/11/2026', t: [{ x: '🎨 Cotizaciones con diseño nuevo: recuadro verde de COTIZACIÓN, el logo de cada sucursal con su nombre, la tabla en verde, el total resaltado y el pie con ondas. Con o sin señal salen igual.', p: 'cotizaciones' }] },
@@ -10761,9 +10761,12 @@ const App = (() => {
     const formVals = Object.assign({}, ini); const nq = String(nombreIni || '').trim();
     if (!c && nq) { if (/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/i.test(nq)) formVals.RFC = nq.toUpperCase(); else if (/^[\d\s\-+()]{7,}$/.test(nq)) formVals.Celular = nq; else formVals.Nombre_cliente = nq.toUpperCase(); }
     S.formIni = ini; S.formDesdeVenta = desdeVenta === true ? 'venta' : desdeVenta || '';
-    const bloqueado = !!c && U().rol !== 'Administrador';
+    const gerSuyo = !!c && U().rol === 'Gerente' && puede('clientes_editar') && String(c.rfc || '').toUpperCase() !== 'XAXX010101000' && !/PUBLICO EN GRAL|PÚBLICO EN GENERAL/i.test(c.razon || c.nombre || '') && (U().todasSucursales || (D().permitidas || []).indexOf(c.suc) >= 0);
+    const bloqueado = !!c && U().rol !== 'Administrador' && !gerSuyo;
+    const COMERC = ['Lista_de_Precios', 'D_Credito', 'Limite_Credito', 'Status', 'ID_Sucursal', 'Vendedor', 'Socio_Asociacion', 'Limite_Semanal', 'Limite_Mensual'];
     if (bloqueado) campos.forEach(x => x.dis = true);
-    modal(c ? (c.razon || c.nombre) : 'Nuevo cliente', `${bloqueado ? `<div class="aviso-cand">🔒 <b>Solo el administrador puede modificar clientes.</b> Si necesitas cambiar algún dato de este cliente, <b>solicita autorización</b> al administrador.</div>` : ''}<div class="arch-par">${c ? bloqueArch('cliFoto', c.id) + bloqueArch('cliCsf', c.id) : bloqueArchNuevo('cliFoto', 'cliFotoN') + bloqueArchNuevo('cliCsf', 'cliCsfN')}</div><div id="fCli">${formulario(campos, formVals)}</div>
+    else if (gerSuyo) campos.forEach(x => { if (COMERC.indexOf(x.k) >= 0) x.dis = true; });
+    modal(c ? (c.razon || c.nombre) : 'Nuevo cliente', `${bloqueado ? `<div class="aviso-cand">🔒 <b>Solo el administrador puede modificar este cliente.</b> Si necesitas cambiar algún dato, <b>solicita autorización</b> al administrador.</div>` : gerSuyo ? `<div class="aviso-cand">✏️ Puedes <b>completar los datos</b> de este cliente de tu sucursal. Lista de precios, crédito, límites, estado y vendedor los cambia el administrador.</div>` : ''}<div class="arch-par">${c ? bloqueArch('cliFoto', c.id) + bloqueArch('cliCsf', c.id) : bloqueArchNuevo('cliFoto', 'cliFotoN') + bloqueArchNuevo('cliCsf', 'cliCsfN')}</div><div id="fCli">${formulario(campos, formVals)}</div>
       <div class="acciones">${c && puede('ventas') ? `<button class="btn" onclick="App.ventasDeCliente('${esc(c.id)}','${esc(String(c.razon || c.nombre || '').replace(/'/g, ''))}')">🧾 Ver sus ventas</button>` : ''}
       ${c && puede('ventas') ? `<button class="btn" onclick="App.venderA('${c.id}')">🛒 Venderle</button>` : ''}
       ${c && puede('bancos') ? `<button class="btn" onclick="App.bnCtaCli('${esc(c.id)}', true)">🏦 Cuentas con las que paga</button>` : ''}
@@ -10787,6 +10790,7 @@ const App = (() => {
     const dir = [x.Calle, x.Colonia, x.Localidad, x['Municipio/Delegación'], x.Estado, x['C.P.'] ? 'C.P. ' + x['C.P.'] : ''].filter(z => String(z || '').trim()).join(', ');
     const ubic = String(x['Ubicacion_trabajo/rancho'] || '').trim();
     const st = x.Status || 'Activo', admin = U().rol === 'Administrador', dueno = puede('dueno');
+    const gerEdita = !admin && U().rol === 'Gerente' && puede('clientes_editar') && String(c.rfc || '').toUpperCase() !== 'XAXX010101000' && (U().todasSucursales || (D().permitidas || []).indexOf(c.suc) >= 0);
     modal(x.Razon_social || x.Nombre_cliente || 'Cliente', `<div class="ficha-cli">
       <div class="fc-cab"><div><h3>${esc(x.Razon_social || x.Nombre_cliente || '')}</h3>
         ${x.Razon_social && x.Nombre_cliente && x.Razon_social !== x.Nombre_cliente ? `<div>${esc(x.Nombre_cliente)}</div>` : ''}
@@ -10804,7 +10808,7 @@ const App = (() => {
         <div class="acciones izq"><button class="btn chico" onclick="App.formVisita({idCliente:'${esc(c.id)}'})">📅 Programar visita</button><button class="btn chico" onclick="App.formVisita({idCliente:'${esc(c.id)}', realizada:1})">✅ Registrar visita</button><button class="btn chico" onclick="App.visitasDeCliente('${esc(c.id)}')">📋 Sus visitas</button>
         ${puede('recetas') ? `<button class="btn chico" onclick="App.recetasDeCliente('${esc(c.id)}')">💊 Sus recetas</button>` : ''}</div></div>` : puede('recetas') ? `<div class="acciones izq"><button class="btn chico" onclick="App.recetasDeCliente('${esc(c.id)}')">💊 Sus recetas</button></div>` : ''}
       <div class="fc-sec"><h4>🛒 Compras y recetas</h4><div class="pestanas" id="pcTabs"></div><div id="pcCont" data-id="${esc(c.id)}"><span class="muted">Cargando…</span></div></div>
-      ${!admin ? '<p class="muted" style="margin-top:10px">🔒 Solo el administrador puede editar o eliminar clientes. Si algún dato está mal, solicita autorización.</p>' : ''}
+      ${!admin ? (gerEdita ? '<p class="muted" style="margin-top:10px">✏️ Puedes completar los datos de este cliente. Lista de precios, crédito y baja: administrador.</p>' : '<p class="muted" style="margin-top:10px">🔒 Solo el administrador puede editar o eliminar clientes. Si algún dato está mal, solicita autorización.</p>') : ''}
       <div class="acciones">
         ${puede('seguimiento') || puede('recetas') || puede('ventas') ? `<button class="btn primario" onclick="App.historiaCliente('${esc(c.id)}')">📖 Historia e interacciones</button>` : ''}
         <button class="btn" onclick="App.formInteraccion({idCliente:'${esc(c.id)}', nombre:'${esc(String(x.Razon_social || x.Nombre_cliente || '').replace(/'/g, ''))}'})">📞 Registrar llamada / nota</button>
@@ -10815,7 +10819,7 @@ const App = (() => {
         ${puede('ventas') ? `<button class="btn" onclick="App.limiteClienteForm('${esc(c.id)}')">🛡️ Socio y límite de compra</button>` : ''}
         ${dueno ? `<button class="btn" onclick="App.comiCliente('${esc(c.id)}','${esc(String(x.Razon_social || x.Nombre_cliente || '').replace(/'/g, ''))}')">💼 Comisionista</button>` : ''}
         ${dueno ? `<button class="btn peligro" onclick="App.eliminarCliente('${esc(c.id)}')">🗑️ Eliminar</button>` : ''}
-        ${admin ? `<button class="btn primario" onclick="App.formCliente(${i})">✏️ Editar</button>` : ''}
+        ${admin || gerEdita ? `<button class="btn primario" onclick="App.formCliente(${i})">✏️ ${admin ? 'Editar' : 'Completar datos'}</button>` : ''}
       </div></div>`);
     if (puede('seguimiento')) cargarSegFicha(c.id);
     cargarPerfilCompras(c.id); cargarMonederosFicha(c.id);
