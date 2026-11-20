@@ -3893,7 +3893,7 @@ const App = (() => {
         <div class="fila"><select id="servCand" style="flex:1">${opts(r.candidatas.map(x => [x.id, x.sf + ' · ' + x.fecha + ' · ' + x.receptor + ' · ' + $$(x.total)]), '', '— Elige la factura —')}</select><button class="btn fijo" onclick="App.marcarServicio($('#servCand').value)">Pasar a Servicios</button></div></div>` : ''}
       <div class="tarjeta"><h4 style="margin:0 0 6px">🧾 Facturas de servicio</h4>${tabla([{ t: 'Factura', h: x => `${x.folio ? `<b class="etq">${esc(x.folio)}</b><br>` : ''}<a href="javascript:void(0)" onclick="App.verFactura('${esc(x.id)}')"><b>${esc(x.sf)}</b></a>${x.estado === 'Cancelada' ? ' <span class="etq mal">Cancelada</span>' : ''}<br><small class="muted">${esc(x.fecha)}</small>` },
         { t: 'Receptor', h: x => `${esc(x.receptor)}<br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Total', num: 1, h: x => $$(x.total) + (x.cobrado > 0.009 && x.saldo > 0.009 ? `<br><small class="muted">saldo ${$$(x.saldo)}</small>` : '') }, { t: 'Método', h: x => esc(x.metodo) },
-        { t: 'Cobro', h: x => x.estado === 'Cancelada' ? '' : `${x.cobro === 'Cobrada' ? '<span class="etq ok">Cobrada</span>' : x.cobro === 'Parcial' ? '<span class="etq av">Parcial</span>' : '<span class="etq av">Por cobrar</span>'}${x.cobros.length ? `<br><small class="muted">${x.cobros.map(c => esc(c.fecha) + ' · ' + $$(c.monto) + (c.forma ? ' · ' + esc(c.forma) : '')).join('<br>')}</small>` : x.legado ? '<br><small class="muted">se marcó sola al timbrar (PUE): captura el cobro real</small>' : ''}${x.saldo > 0.009 || x.legado ? ` <button class="btn chico primario" onclick="App.cobroServForm('${esc(x.id)}')">💵 ${x.legado ? 'Capturar el cobro' : 'Registrar cobro'}</button>` : ''}` },
+        { t: 'Cobro', h: x => x.estado === 'Cancelada' ? '' : `${x.cobro === 'Cobrada' ? '<span class="etq ok">Cobrada</span>' : x.cobro === 'Parcial' ? '<span class="etq av">Parcial</span>' : '<span class="etq av">Por cobrar</span>'}${x.cobros.length ? `<br><small class="muted">${x.cobros.map(c => esc(c.fecha) + ' · ' + $$(c.monto) + (c.forma ? ' · ' + esc(c.forma) : '') + (c.comps || []).map(u => ` <a href="${esc(u)}" target="_blank" rel="noopener" title="Comprobante">📎</a>`).join('')).join('<br>')}</small>` : x.legado ? '<br><small class="muted">se marcó sola al timbrar (PUE): captura el cobro real</small>' : ''}${x.saldo > 0.009 || x.legado ? ` <button class="btn chico primario" onclick="App.cobroServForm('${esc(x.id)}')">💵 ${x.legado ? 'Capturar el cobro' : 'Registrar cobro'}</button>` : ''}` },
         { t: '', h: x => x.pdf ? `<a class="btn chico" target="_blank" href="${esc(x.pdf)}">📄 PDF</a>` : '' }], r.facturas, { vacio: 'Todavía no hay facturas de servicio.' })}</div>`;
   }
   /** Totales de conceptos de servicio (mismo cálculo que el servidor). */
@@ -3977,30 +3977,32 @@ const App = (() => {
     toast('✅ Factura ' + x.sf + ' timbrada'); cerrarModal(); cargarServicios(); if (x.idFactura) verFactura(x.idFactura);
   }
   async function cobroServicio(id, cobrada) { try { await pedir('cobroServicio', { id: id, cobrada: cobrada }); toast(cobrada ? '✔ Marcada como cobrada' : 'Marcada por cobrar'); cargarServicios(); } catch (e) {} }
-  /** 💵 Cobro de una factura de servicio (nota interna SERV-####): monto, fecha, forma, cuenta y comprobante. */
+  /** 💵 Cobro de una factura de servicio (nota interna SERV-####): igual que el cobro de una nota de venta. */
   function cobroServForm(id) {
     const f0 = ((S.serv || {}).facturas || []).find(x => x.id === id); if (!f0) return;
-    const f = f0.legado ? Object.assign({}, f0, { saldo: f0.total, cobrado: 0 }) : f0;   /* marcada cobrada sola (PUE): se captura el cobro real */
-    const cat = D().catalogos || {};
-    modal('💵 Cobro de servicio ' + (f.folio || ''), `<p><b>${esc(f.receptor)}</b> · factura ${esc(f.sf)} del ${esc(f.fecha)}<br>Total ${$$(f.total)}${f.cobrado ? ' · cobrado ' + $$(f.cobrado) : ''} · <b>saldo ${$$(f.saldo)}</b></p>
-      <div class="rejilla-2"><label>Monto cobrado $<input type="number" id="csMonto" step="0.01" min="0" value="${f.saldo}"></label>
-      <label>Fecha del cobro<input type="date" id="csFecha" value="${hoyISO()}"></label>
-      <label>Forma de pago<select id="csForma">${opts(cat.formasPago, (x => x ? (Array.isArray(x) ? x[0] : x.id) : '3')((cat.formasPago || []).find(o => /transfer/i.test(Array.isArray(o) ? o[1] : (o && o.nombre) || ''))))}</select></label>
-      <label>Cuenta donde entró<select id="csBanco">${opts(cat.bancos, '', '— Elige la cuenta —')}</select></label>
-      <label style="grid-column:1/-1">Nota<input id="csNota" placeholder="Opcional · p. ej. transferencia del 15/11"></label>
-      <label style="grid-column:1/-1">Comprobante (foto o PDF, opcional)<input type="file" id="csComp" accept="image/*,application/pdf"></label></div>
-      <p class="muted peq">Queda en la hoja <b>APP_Cobros_Servicio</b> con su folio interno de servicio; no se mezcla con la cobranza de las notas de venta.</p>
-      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="csOk" onclick="App.cobroServGuardar('${esc(id)}')">Guardar cobro</button></div>`);
+    const saldo = f0.legado ? f0.total : f0.saldo, cat = D().catalogos;
+    modal('Registrar cobro', `<p class="muted" style="margin-top:0">🛎️ <b>${esc(f0.folio || 'Servicio')}</b> · ${esc(f0.receptor)} · factura ${esc(f0.sf)} · saldo <b>${$$(saldo)}</b></p><div class="rejilla">
+      <label>Monto $<input type="number" id="cbMonto" step="0.01" value="${saldo}"></label>
+      <label>Fecha<input type="date" id="cbFecha" value="${hoyISO()}"></label>
+      <label>Forma de pago<select id="cbForma">${opts(cat.formasPago, '3')}</select></label>
+      <label>Cuenta / caja<select id="cbBanco">${opts(cat.bancos, '')}</select></label>
+      ${camposPagoExtra('cb', 'SUC_MAT_1')}
+      <label style="grid-column:1/-1">Nota<input id="cbNota"></label>
+      <label style="grid-column:1/-1">Comprobante (foto y/o PDF, opcional — puedes elegir ambos)<input type="file" id="cbArch" multiple accept="image/&#42;,application/pdf"></label></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="cbOk" onclick="App.cobroServGuardar('${esc(id)}')">Guardar cobro</button></div>`);
+    refrescarSelTerminal('cb', 'SUC_MAT_1');
   }
   async function cobroServGuardar(id) {
-    const monto = Number($('#csMonto').value) || 0; if (!(monto > 0)) return toast('Captura el monto', true);
-    const sel = (i) => { const o = $(i); return o && o.selectedIndex >= 0 && o.value ? o.options[o.selectedIndex].text : ''; };
-    let comp = ''; const fi = $('#csComp') && $('#csComp').files[0];
-    if (fi) { if (fi.size > 8e6) return toast('El comprobante pesa más de 8 MB', true); comp = await leerArchivo(fi); }
-    $('#csOk').disabled = true;
-    try { const r = await pedir('cobroServicio', { id: id, monto: monto, fecha: $('#csFecha').value, forma: sel('#csForma'), banco: sel('#csBanco'), nota: $('#csNota').value, comprobante: comp });
-      toast('✔ Cobro registrado en ' + r.folio + (r.saldo > 0.009 ? ' · saldo ' + $$(r.saldo) : ' · liquidada')); cerrarModal(); cargarServicios();
-    } catch (e) { if ($('#csOk')) $('#csOk').disabled = false; }
+    const monto = Number($('#cbMonto').value) || 0; if (!(monto > 0)) return toast('Captura el monto', true);
+    const txt = i => { const o = $(i); return o && o.value ? o.options[o.selectedIndex].text : ''; };
+    let adjs; try { adjs = await leerComprobantes($('#cbArch'), 1600); } catch (e) { return toast(e.message || 'No se pudo leer el comprobante', true); }
+    const ex = leerPagoExtra('cb'), tm = ex.terminal ? txt('#cbTerm') : '';
+    const nota = [$('#cbNota').value.trim(), tm ? 'Terminal: ' + tm : '', ex.referencia ? 'Ref. ' + ex.referencia : ''].filter(Boolean).join(' · ');
+    $('#cbOk').disabled = true;
+    try { const r = await pedir('cobroServicio', { id: id, monto: monto, fecha: $('#cbFecha').value, forma: txt('#cbForma'), banco: txt('#cbBanco'), nota: nota, comprobantes: adjs });
+      toast('✔ Cobro registrado. Saldo: ' + $$(r.saldo) + (adjs.length ? (adjs.length > 1 ? ' · foto y PDF adjuntos' : ' · comprobante adjunto') : ''));
+      cerrarModal(); cargarServicios();
+    } catch (e) { if ($('#cbOk')) $('#cbOk').disabled = false; if (e.red) toast('El cobro de servicios requiere conexión', true); }
   }
   async function marcarServicio(id) { if (!id) return; try { const r = await pedir('marcarServicio', { id: id }); toast('✔ Pasó a Servicios como ' + r.folio); cargarServicios(); } catch (e) {} }
   /* ---------- 💳 COMPLEMENTOS DE PAGO (facturas PPD) ---------- */
