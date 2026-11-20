@@ -9,7 +9,7 @@ const { chromium } = require('playwright');
 const RAIZ = path.resolve(__dirname, '..', '..'), PUERTO = 8799;
 const TIPOS = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.webmanifest': 'application/manifest+json' };
 const VISTAS = ['inicio', 'venta', 'pos', 'ventas', 'cotizaciones', 'cobranza', 'caja', 'clientes', 'seguimiento', 'productos', 'inventario', 'precios', 'compras',
-  'proveedores', 'traspasos', 'requisiciones', 'ajustes', 'conteo', 'gastos', 'sucursales', 'reuniones', 'recetas', 'pedido', 'resumen', 'config'];
+  'proveedores', 'traspasos', 'requisiciones', 'ajustes', 'conteo', 'gastos', 'sucursales', 'reuniones', 'recetas', 'pedido', 'resumen', 'config', 'cortes', 'acuerdos', 'equipo'];
 const GRAVE = /(ReferenceError|SyntaxError|is not defined|App\.\w+ is not a function|before initialization|has already been declared)/;
 const usuario = { id: 'u1', nombre: 'USUARIO PRUEBA', rol: 'Administrador', rolNombre: 'Administrador', sucursal: 'SUC_1', todasSucursales: true, permisos: {} };
 ['dashboard', 'ver_costos', 'ver_utilidades', 'ver_importes', 'ventas', 'compras', 'inventario', 'clientes', 'cotizaciones', 'seguimiento', 'equipo', 'dueno', 'bancos', 'listas_precios',
