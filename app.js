@@ -76,7 +76,7 @@ const App = (() => {
   const S = {
     token: LS.get('token', null), datos: LS.get('datos', null), cola: LS.get('cola', []),
     online: navigator.onLine, vista: LS.get('vista', 'inicio'), suc: LS.get('suc', null),
-    venta: LS.get('borrador_venta', null), oc: null, tr: null, aj: null, charts: [], sincronizando: false
+    venta: (b => b && b.editId && !(Date.now() - (b.editDesde || 0) < 1800000) ? null : b)(LS.get('borrador_venta', null)), oc: null, tr: null, aj: null, charts: [], sincronizando: false
   };
 
   /* ---------------- utilidades ---------------- */
@@ -892,6 +892,8 @@ const App = (() => {
     ir(t.v, true);
   }
   function ir(v, directo) {
+    if (v === 'venta' && S.venta && S.venta.editId && S.vista !== 'venta' && Date.now() - (S.venta.editDesde || 0) > 60000
+      && !confirm('✏️ Tienes abierta (sin guardar) la EDICIÓN de la nota ' + S.venta.editFolio + (S.venta.editCliNom ? ' de ' + S.venta.editCliNom : '') + '.\n\nAceptar = seguir editando esa nota\nCancelar = empezar una venta NUEVA (la ' + S.venta.editFolio + ' queda como estaba)')) { S.venta = ventaNueva(); guardarBorrador(); }
     if (v === 'cobranza') { S.tabVen = 'cobranza'; v = 'ventas'; }   // Cobranza ahora es una pestaña de Ventas
     if (GRUPOS[v] && !directo) {   // desde el menú: la última pestaña usada de la sección, o la primera permitida
       const tabs = tabsGrupo(v), ult = (S.ultGrupo || {})[v];
@@ -1104,6 +1106,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 338, f: '19/11/2026', t: [{ x: '🛡️ Candado en la edición de notas: si estás editando una nota y eliges OTRO cliente, la app te propone hacer una venta NUEVA (la nota original no se toca); antes de guardar una edición siempre te pide confirmar el folio, el cliente y el total; y una edición olvidada ya no se queda abierta al volver a “Nueva venta”.', p: 'ventas' }] },
     { v: 337, f: '19/11/2026', t: [{ x: '🎨 Notas de venta con diseño nuevo: iconos, sellos PAGADO / FACTURADO, totales resaltados, pie de ondas y, cuando hay saldo, tus cuentas bancarias en “Instrucciones para pago”. Con o sin señal salen igual.', p: 'ventas' }] },
     { v: 336, f: '16/11/2026', t: [{ x: '🎨 Cotizaciones con diseño nuevo: recuadro verde de COTIZACIÓN, el logo de cada sucursal con su nombre, la tabla en verde, el total resaltado y el pie con ondas. Con o sin señal salen igual.', p: 'cotizaciones' }] },
     { v: 335, f: '15/11/2026', t: [{ x: '🏬 Sucursales: ya no ven botones de facturación que solo puede usar Matriz (cancelar ante el SAT, factura global, claves del SAT).', p: 'facturacion' }] },
@@ -1993,7 +1996,7 @@ const App = (() => {
     const ed = !!v.editId, vse = (D().config || {}).ventaSinExist || {};
     $('#vista').innerHTML = `
       ${vse.vigente ? `<div class="filtro-activo">⚠️ Venta sin existencia permitida${vse.hasta ? ' hasta el ' + esc(fechaCorta(vse.hasta)) : ''}: si el sistema no tiene piezas, la nota se guarda y la existencia queda en negativo para cuadrarla en el inventario físico.</div>` : ''}
-      ${ed ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">✏️ <b>Editando la nota ${esc(v.editFolio)}</b><br><small class="muted">Al guardar se reemplazan sus productos y condiciones; se conservan folio, fecha y cobros. Si estaba entregada, el inventario se ajusta solo.</small></div>
+      ${ed ? `<div class="tarjeta" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">✏️ <b>Editando la nota ${esc(v.editFolio)}${v.editCliNom ? ' de ' + esc(v.editCliNom) : ''}</b> <span class="etq av">NO es venta nueva</span><br><small class="muted">Al guardar se reemplazan sus productos y condiciones; se conservan folio, fecha y cobros. Si estaba entregada, el inventario se ajusta solo.</small></div>
         <button class="btn fijo" onclick="App.limpiarVenta()">Salir sin guardar</button></div></div>` : ''}
       ${v.desdeCot && !ed ? `<div class="tarjeta" style="border-color:var(--s1)"><div class="fila"><div style="flex:3 1 260px">📝 <b>Venta desde la cotización ${esc(v.desdeCot.folio)}</b><br><small class="muted">Al guardar, la cotización queda como vendida y ligada a esta nota. Revisa existencias y lotes.</small></div>
         <button class="btn fijo" onclick="App.quitarCotVenta()">Quitar liga</button></div></div>` : ''}
@@ -2026,7 +2029,7 @@ const App = (() => {
         </div></div>
         <div class="tarjeta"><h3>Totales</h3><div class="totales" id="vTot"></div>
           <div class="acciones"><button class="btn peligro" onclick="App.limpiarVenta()">${ed ? 'Salir sin guardar' : 'Descartar'}</button>
-          <button class="btn primario" id="vGuardar" onclick="App.guardarVenta()">${ed ? '💾 Guardar cambios' : '💾 Guardar venta'}</button></div></div>
+          <button class="btn primario" id="vGuardar" onclick="App.guardarVenta()">${ed ? '💾 Guardar cambios en la ' + esc(v.editFolio) : '💾 Guardar venta'}</button></div></div>
       </div>`;
     if ($('#vSuc')) $('#vSuc').onchange = e => { v.suc = e.target.value; v.lineas.forEach(l => l.lote = ''); guardarBorrador(); V.venta(); };
     buscador($('#vCli'), { fuente: fuenteClientes, nuevo: puede('clientes_editar') ? q => formCliente(null, 'venta', q) : null, alElegir: x => elegirClienteVenta(x.id), codigo: t => { const id = idClienteQR(t); if (id) { elegirClienteVenta(id); return true; } return false; } });
@@ -2051,13 +2054,24 @@ const App = (() => {
   /** Renglones con precio abajo del mínimo de la sucursal (texto para el aviso) o ''. */
   const bajoMinimo = lineas => { const l = lineas.filter(x => { const p = prod(x.id); return p && p.pmin && Number(x.precio) * (1 - (Number(x.desc) || 0) / 100) < p.pmin - 0.005; });
     return l.length ? l.map(x => prod(x.id).nombre.split(',')[0] + ' (mínimo ' + $$(prod(x.id).pmin) + ')').join(', ') : ''; };
-  function elegirClienteVenta(id) {
-    const v = S.venta, c = cliente(id);
+  function elegirClienteVenta(id, forzar) {
+    let v = S.venta; const c = cliente(id);
+    if (v.editId && id !== (v.editCli || v.cli) && !forzar) {
+      modal('⚠️ Estás editando una nota', `<p>Estás <b>editando la nota ${esc(v.editFolio)}</b> de <b>${esc(v.editCliNom || (cliente(v.editCli || v.cli) || {}).razon || '')}</b>.</p>
+        <p>Elegiste a <b>${esc(c.razon || c.nombre)}</b>. Si es <b>otra venta</b>, se empieza una nota NUEVA y la ${esc(v.editFolio)} no se toca.</p>
+        <div class="acciones" style="flex-wrap:wrap"><button class="btn primario" onclick="App.ventaNuevaPara('${esc(id)}')">🧾 Venta nueva para ${esc(c.razon || c.nombre)}</button>
+        <button class="btn" onclick="App.corregirClienteNota('${esc(id)}')">Corregir el cliente de la ${esc(v.editFolio)}</button>
+        <button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
+      return;
+    }
+    if (forzar === 'corregir') v.cambiarCli = true;
     v.cli = id; v.lista = c.lista && D().catalogos.listas.indexOf(c.lista) >= 0 ? c.lista : (D().catalogos.listaBase || 'Publico');
     v.dias = c.credito || 0; v.metodo = v.dias > 0 ? 'PPD' : 'PUE'; v.usarMon = !!(c.mon && c.mon.saldo > 0);   // 🎁 monedero: se propone usarlo
     v.lineas.forEach(l => { const p = prod(l.id); if (p) l.precio = precioVta(p, v.lista); });
     guardarBorrador(); V.venta();
   }
+  function ventaNuevaPara(id) { cerrarModal(); const s = S.venta && S.venta.suc; S.venta = ventaNueva(); if (s) S.venta.suc = s; toast('🧾 Venta NUEVA · la nota que editabas quedó como estaba'); elegirClienteVenta(id); }
+  function corregirClienteNota(id) { cerrarModal(); if (!confirm('¿Seguro? La nota ' + S.venta.editFolio + ' pasará a ser de otro cliente (es para corregir un cliente equivocado, NO para hacer otra venta).')) return; elegirClienteVenta(id, 'corregir'); }
   function agregarLineaVenta(id) {
     const v = S.venta, p = prod(id);
     const ya = v.lineas.find(l => l.id === id && !l.lote);
@@ -2230,7 +2244,7 @@ const App = (() => {
     if (!d || d.id !== id) return;
     if (S.venta && S.venta.lineas.length && S.venta.editId !== id && !confirm('Tienes una venta en captura que se va a descartar. ¿Continuar?')) return;
     const listas = (D().catalogos || {}).listas || [];
-    S.venta = { editId: d.id, editFolio: d.folio, suc: d.sucursal.id, cli: d.idCliente, lista: listas.indexOf(d.lista) >= 0 ? d.lista : 'Publico',
+    S.venta = { editId: d.id, editFolio: d.folio, editCli: d.idCliente, editCliNom: d.razon || d.cliente || '', editTotal: Number(d.total) || 0, editDesde: Date.now(), suc: d.sucursal.id, cli: d.idCliente, lista: listas.indexOf(d.lista) >= 0 ? d.lista : 'Publico',
       dias: d.dias, metodo: d.metodo || 'PUE', descPC: d.descPCPct || 0, flete: d.flete || 0, fletePag: d.fletePagado || 0, clientePaga: d.clientePaga !== false, comentarios: d.comentarios || '',
       estatus: d.estatus === 'Pendiente' ? 'Pendiente' : 'Entregado', idFlete: d.idFlete || ENVIO_DEFAULT, guia: d.guia || '',
       cobro: { monto: '', forma: '1', banco: 'EFECTI10' },
@@ -2289,7 +2303,9 @@ const App = (() => {
     if (v.editId) {
       const rep = v.lineas.filter((l, i) => v.lineas.findIndex(x => x.id === l.id && (x.lote || '') === (l.lote || '')) !== i);
       if (rep.length && !confirm('Hay productos repetidos en la nota (' + rep.map(l => (prod(l.id) || {}).nombre || l.id).join(', ') + '). ¿Guardar así?')) { $('#vGuardar').disabled = false; return; }
-      params.ID_Venta = v.editId; delete params.pago;
+      params.ID_Venta = v.editId; params.editFolio = v.editFolio; if (v.cambiarCli) params.cambiarCliente = true; delete params.pago;
+      { const min = Math.round((Date.now() - (v.editDesde || Date.now())) / 60000), cn = (cliente(v.cli) || {}).razon || '';
+        if (!confirm('✏️ Vas a MODIFICAR la nota ya existente ' + v.editFolio + (v.editCliNom ? ' de ' + v.editCliNom : '') + '.\n\n' + (v.editTotal ? 'Total actual ' + $$(v.editTotal) + ' → nuevo ' + $$(t.total) + '\n' : '') + (v.cambiarCli ? 'Cliente nuevo: ' + cn + '\n' : '') + (min >= 10 ? '(Llevas ' + min + ' min en esta edición)\n' : '') + '\nSi es OTRA venta, cancela y usa «Salir sin guardar» → nueva venta.\n\n¿Guardar los cambios EN la ' + v.editFolio + '?')) { $('#vGuardar').disabled = false; return; } }
       try {
         const r = await pedir('editarVenta', params);
         (r.avisos || []).forEach(a => toast(a, true));
@@ -16379,7 +16395,7 @@ const App = (() => {
     imprimir, revisarSaldos, repararRegistros, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
-    limpiarVenta, guardarVenta, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
+    limpiarVenta, guardarVenta, ventaNuevaPara, corregirClienteNota, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
     formCancelarLinea, cancelarLinea, entregarVenta, formEnvio, guardarEnvio, formCobro, guardarCobro, buscarVentas, buscarCobros, abrirCobro: i => verCobro(S.lista[i].id), verCobro, verAdjCob, subirAdjCob, quitarAdjCob, verAdj, subirAdj, quitarAdj, volverAdj: (t, id) => ADJ[t].volver(id), pdfNota, pdfCobro, editarNota,
     vistaCompras: t => V.compras(t), buscarCompras, actualizarApp, actualizarAhora, vistaCreditos, verCorrida, abrirCredito, formCredito, crLeerPdf, crPrev: () => pintarPrevCorrida(), guardarCredito, quitarCredito, buscarPagosProv, verPagoProv, formEditarPago, guardarEdicionPago, abrirPagoProv: i => verPagoProv(S.lista[i].id), pagosSinAdj, verCxP, verCxC, abrirCompra: i => verCompra(S.lista[i].id), abrirCompraId: verCompra, formFacturaCompra, guardarFacturaCompra, recibirCompra, editarCompra, editarCompraId, cancelarCompra, salirEdicionCompra, formPagoProv, guardarPagoProv, formNotaCredito, ncPorcentaje, leerXmlNC, guardarNotaCredito, limpiarCompra, guardarCompra,
     logoTransparente,
