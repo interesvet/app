@@ -37,7 +37,7 @@ a { color: var(--marca); }
 .login-card label { text-align: left; }
 .logo { font-size: 40px; }
 .logo img { max-width: 220px; width: 100%; height: auto; }
-.menu .cab img { height: 54px; display: block; margin-bottom: 6px; }
+.menu .cab img { height: 54px; display: block; margin: 0 auto 6px; }
 .nota .enc img { height: 64px; }
 
 /* Layout */
