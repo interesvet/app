@@ -9,7 +9,7 @@ const { chromium } = require('playwright');
 const RAIZ = path.resolve(__dirname, '..', '..'), PUERTO = 8799;
 const TIPOS = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.webmanifest': 'application/manifest+json' };
 const VISTAS = ['inicio', 'venta', 'pos', 'ventas', 'cotizaciones', 'cobranza', 'caja', 'clientes', 'seguimiento', 'productos', 'inventario', 'precios', 'compras',
-  'proveedores', 'traspasos', 'requisiciones', 'ajustes', 'conteo', 'gastos', 'sucursales', 'reuniones', 'recetas', 'pedido', 'resumen', 'config', 'cortes', 'acuerdos', 'equipo', 'midia'];
+  'proveedores', 'traspasos', 'requisiciones', 'ajustes', 'conteo', 'gastos', 'sucursales', 'reuniones', 'recetas', 'pedido', 'resumen', 'config', 'cortes', 'acuerdos', 'equipo', 'midia', 'manual'];
 const GRAVE = /(ReferenceError|SyntaxError|is not defined|App\.\w+ is not a function|before initialization|has already been declared)/;
 const usuario = { id: 'u1', nombre: 'USUARIO PRUEBA', rol: 'Administrador', rolNombre: 'Administrador', sucursal: 'SUC_1', todasSucursales: true, permisos: {} };
 ['dashboard', 'ver_costos', 'ver_utilidades', 'ver_importes', 'ventas', 'compras', 'inventario', 'clientes', 'cotizaciones', 'seguimiento', 'equipo', 'dueno', 'bancos', 'listas_precios',
@@ -44,7 +44,7 @@ const srv = http.createServer((q, r) => {
   pg.on('pageerror', e => { if (GRAVE.test(e.message)) errores.push(vista + ': ' + e.message); });
   await pg.goto('http://localhost:' + PUERTO + '/index.html'); await pg.waitForTimeout(3000);
   for (const v of VISTAS) { vista = v; try { await pg.evaluate(x => App.ir(x), v); } catch (e) { if (GRAVE.test(e.message)) errores.push(v + ': ' + e.message); } await pg.waitForTimeout(700); }
-  if (process.env.CAPTURAS) { for (const [n, f] of [['acta', () => App.actasDe('E1').then(() => App.actaForm())], ['acuerdo', () => App.ir('acuerdos') || new Promise(r => setTimeout(r, 800)).then(() => App.acuForm())], ['corte', () => { App.cerrarModal(); App.ir('cortes'); }], ['midia', () => { App.cerrarModal(); App.ir('midia'); }]]) {
+  if (process.env.CAPTURAS) { for (const [n, f] of [['acta', () => App.actasDe('E1').then(() => App.actaForm())], ['acuerdo', () => App.ir('acuerdos') || new Promise(r => setTimeout(r, 800)).then(() => App.acuForm())], ['corte', () => { App.cerrarModal(); App.ir('cortes'); }], ['midia', () => { App.cerrarModal(); App.ir('midia'); }], ['manual', () => { App.ir('manual'); }]]) {
       vista = n; try { await pg.evaluate(f); } catch (e) { errores.push(n + ': ' + e.message); } await pg.waitForTimeout(1200); await pg.screenshot({ path: process.env.CAPTURAS + '/' + n + '.png' }); } }
   // todos los onclick="App.x(...)" deben existir
   const usados = Array.from(new Set((fs.readFileSync(path.join(RAIZ, 'app.js'), 'utf8').match(/App\.([a-zA-Z_]\w*)\(/g) || []).map(x => x.slice(4, -1))));
