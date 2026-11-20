@@ -1106,7 +1106,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
-    { v: 339, f: '20/11/2026', t: [{ x: '📦 Editar una nota ya no llena el inventario de “vendido / devuelto / vendido”: ahora solo se registra la diferencia real por lote (si no cambió nada, no se escribe ningún movimiento), aunque se reintente con mala señal.', p: 'ventas' }, { x: '🔧 Configuración → “Cuadrar ventas con inventario”: encuentra notas cuyos renglones no coinciden con lo descontado (cambios hechos a mano en la hoja, notas devueltas sin regresar producto) y las cuadra con un clic.', p: 'configuracion' }, { x: '✏️ Gerentes de sucursal: ya pueden completar los datos de los clientes de su tienda (RFC, domicilio, teléfonos, ubicación, etc.). Lista de precios, crédito, límites, estado y vendedor los sigue cambiando el administrador.', p: 'clientes' }] },
+    { v: 339, f: '20/11/2026', t: [{ x: '📦 Editar una nota ya no llena el inventario de “vendido / devuelto / vendido”: ahora solo se registra la diferencia real por lote (si no cambió nada, no se escribe ningún movimiento), aunque se reintente con mala señal.', p: 'ventas' }, { x: '🔧 Configuración → “Cuadrar ventas con inventario”: encuentra notas cuyos renglones no coinciden con lo descontado (cambios hechos a mano en la hoja, notas devueltas sin regresar producto) y las cuadra con un clic.', p: 'configuracion' }, { x: '🏛️ Cotizaciones para dependencias de gobierno: casillas para agregar «A quien corresponda» (con firma «Atentamente»), los datos bancarios para depósito y el correo electrónico de contacto. También salen sin conexión.', p: 'cotizaciones' }, { x: '✏️ Gerentes de sucursal: ya pueden completar los datos de los clientes de su tienda (RFC, domicilio, teléfonos, ubicación, etc.). Lista de precios, crédito, límites, estado y vendedor los sigue cambiando el administrador.', p: 'clientes' }] },
     { v: 338, f: '19/11/2026', t: [{ x: '🛡️ Candado en la edición de notas: si estás editando una nota y eliges OTRO cliente, la app te propone hacer una venta NUEVA (la nota original no se toca); antes de guardar una edición siempre te pide confirmar el folio, el cliente y el total; y una edición olvidada ya no se queda abierta al volver a “Nueva venta”.', p: 'ventas' }] },
     { v: 337, f: '19/11/2026', t: [{ x: '🎨 Notas de venta con diseño nuevo: iconos, sellos PAGADO / FACTURADO, totales resaltados, pie de ondas y, cuando hay saldo, tus cuentas bancarias en “Instrucciones para pago”. Con o sin señal salen igual.', p: 'ventas' }] },
     { v: 336, f: '16/11/2026', t: [{ x: '🎨 Cotizaciones con diseño nuevo: recuadro verde de COTIZACIÓN, el logo de cada sucursal con su nombre, la tabla en verde, el total resaltado y el pie con ondas. Con o sin señal salen igual.', p: 'cotizaciones' }] },
@@ -3179,7 +3179,24 @@ const App = (() => {
   /* ---------- COTIZACIONES ---------- */
   const COT_ETQ = { Abierta: 'av', Vendida: 'ok', Vencida: 'mal', Cancelada: 'mal' };
   const etqCot = e => `<span class="etq ${COT_ETQ[e] || ''}">${esc(e)}</span>`;
-  const cotNueva = () => ({ suc: sucTrabajo(), cli: null, lista: 'Publico', obs: '', lineas: [], descPC: 0, flete: 0 });
+  const cotNueva = () => ({ suc: sucTrabajo(), cli: null, lista: 'Publico', obs: '', lineas: [], descPC: 0, flete: 0, opc: { aqc: false, dirigido: '', banco: false, correo: false, correoTxt: '' } });
+  /** 🏛️ Casillas para dependencias de gobierno (A quien corresponda · datos bancarios · correo). */
+  function cotOpcHtml(v) {
+    const o = v.opc = Object.assign({ aqc: false, dirigido: '', banco: false, correo: false, correoTxt: '' }, v.opc || {});
+    const ck = (k, t) => `<label class="fila" style="gap:8px;align-items:center;margin:6px 0"><input type="checkbox" data-opc="${k}" ${o[k] ? 'checked' : ''} style="width:auto"> <span>${t}</span></label>`;
+    const sd = sucDe(v.suc) || {};
+    return `<div class="tarjeta"><h3>🏛️ Para dependencias / gobierno</h3><p class="muted peq" style="margin-top:0">Activa lo que te pidan en el documento de Cotización / Presupuesto.</p>
+      ${ck('aqc', '<b>A quien corresponda</b> (encabezado y firma «Atentamente»)')}
+      <label style="margin:0 0 6px 26px;${o.aqc ? '' : 'display:none'}" id="cOpcDir">Dirigido a (opcional)<input data-opct="dirigido" value="${esc(o.dirigido)}" placeholder="A quien corresponda · o p. ej. H. Ayuntamiento de Escárcega, Depto. de Compras"></label>
+      ${ck('banco', '<b>Datos bancarios para depósito</b> (las cuentas de Configuración de facturas)')}
+      ${ck('correo', '<b>Correo electrónico</b> de contacto')}
+      <label style="margin:0 0 6px 26px;${o.correo ? '' : 'display:none'}" id="cOpcCor">Correo que aparece<input type="email" data-opct="correoTxt" value="${esc(o.correoTxt)}" placeholder="${esc(sd.email || 'ventas@…')}"></label></div>`;
+  }
+  function cotOpcEnlazar(v) {
+    document.querySelectorAll('[data-opc]').forEach(i => i.onchange = () => { v.opc[i.dataset.opc] = i.checked; guardarBorradorCot();
+      const a = $('#cOpcDir'), b = $('#cOpcCor'); if (a) a.style.display = v.opc.aqc ? '' : 'none'; if (b) b.style.display = v.opc.correo ? '' : 'none'; });
+    document.querySelectorAll('[data-opct]').forEach(i => i.oninput = () => { v.opc[i.dataset.opct] = i.value; guardarBorradorCot(); });
+  }
   const guardarBorradorCot = () => LS.set('borrador_cot', S.cot);
   V.cotizaciones = (tab) => {
     tab = tab || S.tabCot || 'lista'; S.tabCot = tab;
@@ -3230,7 +3247,7 @@ const App = (() => {
       <div class="tarjeta"><div class="buscador buscador-prod"><input id="cProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, laboratorio o categoría…" autocomplete="off"></div>
         <div class="espacio"></div><div class="doc-lineas" id="cLineas"></div></div>
       <div class="rejilla-2" style="margin-top:14px">
-        <div class="tarjeta"><h3>Observaciones</h3><label>Notas para el cliente (salen en el PDF)<input id="cObs" value="${esc(v.obs)}" placeholder="Ej. precios con envío incluido, tiempo de entrega 3 días…"></label></div>
+        <div><div class="tarjeta"><h3>Observaciones</h3><label>Notas para el cliente (salen en el PDF)<input id="cObs" value="${esc(v.obs)}" placeholder="Ej. precios con envío incluido, tiempo de entrega 3 días…"></label></div>${cotOpcHtml(v)}</div>
         <div class="tarjeta"><h3>Totales</h3><div class="totales" id="cTot"></div>
           <div class="acciones"><button class="btn peligro" onclick="App.limpiarCot()">${ed ? 'Salir sin guardar' : 'Descartar'}</button>
           <button class="btn primario" id="cGuardar" onclick="App.guardarCot()">${ed ? '💾 Guardar cambios' : '💾 Guardar cotización'}</button></div></div></div>`;
@@ -3238,6 +3255,7 @@ const App = (() => {
     buscador($('#cCli'), { fuente: fuenteClientes, nuevo: puede('clientes_editar') ? q => formCliente(null, 'cot', q) : null, alElegir: x => elegirClienteCot(x.id) });
     buscador($('#cProd'), { fuente: q => fuenteProductos(v.suc, v.lista, true)(q), limpiar: true, alElegir: x => agregarLineaCot(x.id) });
     $('#cObs').oninput = e => { v.obs = e.target.value; guardarBorradorCot(); };
+    cotOpcEnlazar(v);
     if (!ed) mostrarFolio('cFolio', v.suc, 'Cotizacion');
     pintarLineasCot();
   }
@@ -3297,7 +3315,7 @@ const App = (() => {
     if (v.lineas.some(l => !(l.cant > 0))) return toast('Revisa las cantidades', true);
     $('#cGuardar').disabled = true;
     try {
-      const r = await pedir('guardarCotizacion', { ID_Cotizacion: v.editId || v.nuevoId || (v.nuevoId = uid()), nueva: !v.editId, ID_Sucursal: v.suc, ID_Cliente: v.cli, Observacion: v.obs,
+      const r = await pedir('guardarCotizacion', { ID_Cotizacion: v.editId || v.nuevoId || (v.nuevoId = uid()), nueva: !v.editId, ID_Sucursal: v.suc, ID_Cliente: v.cli, Observacion: v.obs, opciones: v.opc || null,
         lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, lote: l.lote || '' })) });
       toast('✔ Cotización ' + r.folio + ' guardada · ' + $$(r.total));
       S.cot = cotNueva(); guardarBorradorCot(); S.tabCot = 'lista';
@@ -3311,7 +3329,7 @@ const App = (() => {
   /** Sin señal: la cotización queda en la cola (el folio se asigna al sincronizar) y ya se puede mandar en PDF. */
   function cotOffline(v) {
     const t = calcVenta(v), c = cliente(v.cli) || {}, conRfc = c.rfc && !/^X[AE]XX010101000$/i.test(c.rfc);
-    const params = { ID_Cotizacion: v.editId || v.nuevoId || (v.nuevoId = uid()), nueva: !v.editId, ID_Sucursal: v.suc, ID_Cliente: v.cli, Observacion: v.obs,
+    const params = { ID_Cotizacion: v.editId || v.nuevoId || (v.nuevoId = uid()), nueva: !v.editId, ID_Sucursal: v.suc, ID_Cliente: v.cli, Observacion: v.obs, opciones: v.opc || null,
       lineas: v.lineas.map(l => ({ ID_Producto: l.id, Cantidad: l.cant, Precio: l.precio, Desc_pct: l.desc, lote: l.lote || '' })) };
     encolar('guardarCotizacion', params, 'Cotización a ' + (c.razon || c.nombre || '') + ' por ' + $$(t.total));
     const vig = new Date(); vig.setDate(vig.getDate() + 15);
@@ -3319,7 +3337,7 @@ const App = (() => {
       cliente: c.nombre, razon: c.razon, rfc: c.rfc, cel: c.cel, domicilio: [c.calle, c.colonia, c.municipio, c.estado].filter(Boolean).join(', '),
       fiscal: { cp: c.cp || '', regimen: conRfc ? c.regimen || '' : '', uso: conRfc ? c.uso || '' : '' }, obs: v.obs, vendedor: U().nombre, sucursal: sucDe(v.suc),
       lineas: v.lineas.map((l, i) => { const p = prod(l.id) || {}; return { nombre: p.nombre || l.id, unidad: p.unidad || '', cant: l.cant, precioLista: l.precio, desc: t.descs[i], importe: r2c(t.brutos[i] - t.descs[i]), ivaMonto: t.ivas[i], total: t.imps[i], lote: '', cad: '' }; }),
-      sub: t.sub, desc: t.desc, iva: t.iva, total: t.total };
+      sub: t.sub, desc: t.desc, iva: t.iva, total: t.total, opciones: v.opc || {}, pagoCfg: (() => { try { return JSON.parse(localStorage.getItem('iv_pagoCfg') || 'null'); } catch (e) { return null; } })() };
     S.cotOff = d;
     S.cot = cotNueva(); guardarBorradorCot(); S.tabCot = 'lista';
     V.cotizaciones('lista');
@@ -3338,6 +3356,7 @@ const App = (() => {
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
         <div><b>${esc(d.razon || d.cliente)}</b>${d.razon && d.razon !== d.cliente ? '<br>' + esc(d.cliente) : ''}<br>${d.rfc ? 'RFC ' + esc(d.rfc) : ''} ${esc(d.domicilio || '')}${fiscalHtml(d.fiscal)}</div>
         <div style="text-align:right">Atendió: ${esc(d.vendedor || '')}</div></div>
+      ${(() => { const o = d.opciones || {}, t = [o.aqc ? (o.dirigido || 'A quien corresponda') : '', o.banco ? 'datos bancarios' : '', o.correo ? 'correo ' + (o.correoTxt || '') : ''].filter(Boolean); return t.length ? `<p class="muted peq">🏛️ En el PDF: ${esc(t.join(' · '))}</p>` : ''; })()}
       <div class="tabla-cont"><table><thead><tr><th class="num">Cant.</th><th>Producto</th>${d.lineas.some(l => l.lote) ? '<th>Lote</th><th>Cad.</th>' : ''}<th class="num">Precio unit.</th>${d.desc ? '<th class="num">Descuento</th>' : ''}<th class="num">Importe</th><th class="num">IVA $</th><th class="num">Total</th></tr></thead><tbody>
       ${d.lineas.map(l => `<tr><td class="num">${nf(l.cant)}</td><td>${esc(l.nombre)}</td>${d.lineas.some(x => x.lote) ? `<td>${esc(l.lote || 'Auto')}</td><td>${esc(l.cad || '')}</td>` : ''}<td class="num">${$$(l.precioLista !== undefined ? l.precioLista : l.precio)}</td>${d.desc ? `<td class="num">${l.desc ? '−' + $$(l.desc) : '—'}</td>` : ''}<td class="num">${$$(l.importe)}</td><td class="num">${$$(l.ivaMonto !== undefined ? l.ivaMonto : l.importe * (l.iva || 0))}</td><td class="num"><b>${$$(l.total !== undefined ? l.total : l.importe * (1 + (l.iva || 0)))}</b></td></tr>`).join('')}
       </tbody></table></div>
@@ -3377,7 +3396,7 @@ const App = (() => {
     const d = S.ultimaCot; if (!d || d.id !== id) return;
     if (S.cot && S.cot.lineas.length && S.cot.editId !== id && !confirm('Tienes una cotización en captura que se va a descartar. ¿Continuar?')) return;
     const listas = (D().catalogos || {}).listas || [], c = cliente(d.idCliente);
-    S.cot = { editId: d.id, editFolio: d.folio, suc: d.sucursal.id, cli: d.idCliente, lista: c && listas.indexOf(c.lista) >= 0 ? c.lista : 'Publico', obs: d.obs, descPC: 0, flete: 0,
+    S.cot = { editId: d.id, editFolio: d.folio, suc: d.sucursal.id, cli: d.idCliente, lista: c && listas.indexOf(c.lista) >= 0 ? c.lista : 'Publico', obs: d.obs, descPC: 0, flete: 0, opc: Object.assign({}, d.opciones || {}),
       lineas: d.lineas.map(l => ({ id: l.prod, cant: l.cant, precio: l.descPct ? l.precioLista : l.precio, desc: l.descPct || 0, lote: l.k || '', loteTxt: l.lote || '', cadTxt: l.cad || '' })) };
     guardarBorradorCot(); cerrarModal(); S.tabCot = 'nueva'; ir('cotizaciones');
   }
@@ -9893,7 +9912,11 @@ const App = (() => {
     const hC = 14 + clL.reduce((a, x) => a + (x[1] ? 14 : 10.5), 0);
     relleno(V2); pdf.roundedRect(M, y, AN, hC, 8, 8, 'F'); let yc = y + 17;
     clL.forEach(x => { fuente(x[1] ? 'bold' : 'normal', x[1] ? 11 : 8); color(x[1] ? TX : GR); pdf.text(x[0], M + 12, yc); yc += x[1] ? 14 : 10.5; });
-    y += hC + 14; fuente('normal', 8.5); color(TX); pdf.text('Por medio de la presente, ponemos a su consideración la siguiente cotización de productos veterinarios:', M + 2, y); y += 10;
+    const op = d.opciones || {}, pc = d.pagoCfg || (() => { try { return JSON.parse(localStorage.getItem('iv_pagoCfg') || 'null'); } catch (e) { return null; } })() || {};
+    const cuentas = ((pc && pc.cuentas) || []).filter(x => x.banco), correo = op.correo ? (op.correoTxt || s.email || pc.correo || '') : '';
+    y += hC + 14;
+    if (op.aqc) { fuente('bold', 10); color(TX); pdf.text(txtPdf(String(op.dirigido || 'A quien corresponda').toUpperCase() + ':'), M + 2, y); y += 14; }
+    fuente('normal', 8.5); color(TX); pdf.text('Por medio de la presente, ponemos a su consideración la siguiente cotización de productos veterinarios:', M + 2, y); y += 10;
     // --- tabla
     const cols = [{ t: 'Cant.', w: 0.55, al: 'center' }, { t: 'Producto', w: conLote ? 2.7 : 3.6 }].concat(conLote ? [{ t: 'Lote', w: 0.85, al: 'center' }, { t: 'Cad.', w: 0.85, al: 'center' }] : [])
       .concat([{ t: 'Precio unit.', w: 0.95, al: 'right' }]).concat(conDesc ? [{ t: 'Descuento', w: 0.9, al: 'right' }] : []).concat([{ t: 'Importe', w: 0.95, al: 'right' }, { t: 'IVA $', w: 0.75, al: 'right' }, { t: 'Total', w: 0.95, al: 'right' }]);
@@ -9922,8 +9945,9 @@ const App = (() => {
     // --- atendió / observaciones (izquierda) y totales (derecha)
     if (y + 110 > limite) { pdf.addPage(); y = M; }
     const xT = W - M - 190, y0 = y;
-    relleno(GRS); pdf.roundedRect(M, y, xT - M - 18, 40, 8, 8, 'F'); fuente('bold', 8.5); color(V); pdf.text('Atendió:', M + 10, y + 14); fuente('bold', 10.5); color(TX); pdf.text(txtPdf(d.vendedor || ''), M + 10, y + 30);
-    let yo = y + 54; if (d.obs) { fuente('normal', 8); color(GR); pdf.splitTextToSize(txtPdf('Observaciones: ' + d.obs), xT - M - 22).forEach(t => { pdf.text(t, M + 2, yo); yo += 10; }); }
+    relleno(GRS); pdf.roundedRect(M, y, xT - M - 18, correo ? 52 : 40, 8, 8, 'F'); fuente('bold', 8.5); color(V); pdf.text('Atendió:', M + 10, y + 14); fuente('bold', 10.5); color(TX); pdf.text(txtPdf(d.vendedor || ''), M + 10, y + 30);
+    if (correo) { fuente('normal', 8); pdf.text(txtPdf('Correo electrónico: ' + correo), M + 10, y + 44); }
+    let yo = y + (correo ? 66 : 54); if (d.obs) { fuente('normal', 8); color(GR); pdf.splitTextToSize(txtPdf('Observaciones: ' + d.obs), xT - M - 22).forEach(t => { pdf.text(t, M + 2, yo); yo += 10; }); }
     let yt = y + 8; const fila = (a, b) => { fuente('normal', 9); color(TX); pdf.text(txtPdf(a), xT, yt); pdf.text(txtPdf(b), W - M, yt, { align: 'right' }); yt += 14; };
     fila('Subtotal', $$(d.sub)); if (d.desc) fila('Descuento', '-' + $$(d.desc)); fila('IVA (suma de los productos)', $$(d.iva));
     yt -= 4; relleno(V2); pdf.roundedRect(xT, yt, 190, 28, 8, 8, 'F'); relleno(V); pdf.roundedRect(xT + 70, yt, 120, 28, 8, 8, 'F'); pdf.rect(xT + 70, yt, 12, 28, 'F');
@@ -9935,6 +9959,23 @@ const App = (() => {
     if (y + 40 > limite) { pdf.addPage(); y = M; }
     fuente('bold', 10.5); color(V); pdf.text('Condiciones:', M, y); y += 13; fuente('normal', 8.5); color(TX);
     cond.forEach(c => { pdf.splitTextToSize(txtPdf(c), AN - 16).forEach((t, i) => { if (!i) { relleno(TX); pdf.circle(M + 6, y - 3, 1.3, 'F'); } pdf.text(t, M + 14, y); y += 11; }); });
+    if (op.banco && cuentas.length) {
+      if (y + 80 > limite) { pdf.addPage(); y = M; }
+      y += 6; fuente('bold', 10.5); color(V); pdf.text('Datos bancarios para depósito:', M, y); y += 8;
+      const bw = (AN - 10 * (cuentas.length - 1)) / cuentas.length; let hB = 0;
+      cuentas.forEach((x, i) => { const ls2 = [[x.banco, 1]].concat(pc.titular ? [['Titular: ' + pc.titular]] : []).concat(x.cuenta ? [['Cuenta: ' + x.cuenta]] : []).concat(x.clabe ? [['CLABE: ' + x.clabe]] : []).concat(x.suc ? [['Sucursal: ' + x.suc]] : []);
+        const h = 12 + ls2.length * 11; hB = Math.max(hB, h); const xb = M + i * (bw + 10);
+        relleno(V3); pdf.setDrawColor(223, 232, 220); pdf.roundedRect(xb, y, bw, h, 6, 6, 'FD'); let yy = y + 13;
+        ls2.forEach(l => { fuente(l[1] ? 'bold' : 'normal', l[1] ? 9.5 : 8.5); color(TX); pdf.text(txtPdf(l[0]), xb + 9, yy); yy += 11; }); });
+      y += hB + 6;
+    }
+    if (op.aqc) {
+      if (y + 70 > limite) { pdf.addPage(); y = M; }
+      y += 18; fuente('normal', 9.5); color(TX); pdf.text('Atentamente', W / 2, y, { align: 'center' }); y += 34;
+      pdf.setDrawColor(29, 43, 34); pdf.setLineWidth(0.7); pdf.line(W / 2 - 90, y, W / 2 + 90, y); y += 12;
+      fuente('bold', 9.5); pdf.text(txtPdf(d.vendedor || ''), W / 2, y, { align: 'center' }); y += 11;
+      fuente('normal', 8.5); pdf.text(txtPdf('Interés Veterinario' + (s.nombre ? ' · ' + s.nombre : '')), W / 2, y, { align: 'center' });
+    }
     // --- pie de ondas al fondo de la última hoja + pie de página
     if (pie) pdf.addImage(pie.data, 'PNG', 0, H - PIE_H, W, PIE_H);
     const n = pdf.getNumberOfPages();
@@ -10061,7 +10102,7 @@ const App = (() => {
         izq: [d.razon || d.cliente, d.razon && d.razon !== d.cliente ? d.cliente : '', d.rfc ? 'RFC ' + d.rfc : '', d.domicilio, fiscalTxt(d.fiscal)], der: ['Atendió: ' + (d.vendedor || '')],
         totales: [['Subtotal', d.sub], d.desc ? ['Descuento', '-' + $$(d.desc)] : null, ['IVA (suma de los productos)', d.iva], ['Total', d.total, true]], letras: d.letras,
         notas: [d.obs, 'Cotización válida por ' + (d.vigenciaDias || 15) + ' días' + (d.vigencia ? ' (hasta el ' + d.vigencia + ')' : '') + '. Precios en pesos mexicanos; sujetos a existencias y a cambio sin previo aviso después de la vigencia.'],
-        archivo: 'Cotizacion ' + d.folio + ' ' + (d.razon || d.cliente || ''), cot: d }); } },
+        archivo: 'Cotizacion ' + d.folio + ' ' + (d.razon || d.cliente || ''), cot: (() => { try { if (d.pagoCfg) localStorage.setItem('iv_pagoCfg', JSON.stringify(d.pagoCfg)); } catch (e) {} return d; })() }); } },
     pdfTraspaso: { det: p => ['detalleTraspaso', { folio: p.folio }], ult: 'trDet', key: p => p.folio, map: d => {
       const imp = d.total !== null && d.total !== undefined;
       let t;
