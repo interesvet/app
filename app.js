@@ -1106,7 +1106,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
-    { v: 339, f: '20/11/2026', t: [{ x: '📦 Editar una nota ya no llena el inventario de “vendido / devuelto / vendido”: ahora solo se registra la diferencia real por lote (si no cambió nada, no se escribe ningún movimiento), aunque se reintente con mala señal.', p: 'ventas' }, { x: '🔧 Configuración → “Cuadrar ventas con inventario”: encuentra notas cuyos renglones no coinciden con lo descontado (cambios hechos a mano en la hoja, notas devueltas sin regresar producto) y las cuadra con un clic.', p: 'configuracion' }, { x: '🏛️ Cotizaciones para dependencias de gobierno: casillas para agregar «A quien corresponda» (con firma «Atentamente»), los datos bancarios para depósito y el correo electrónico de contacto. También salen sin conexión.', p: 'cotizaciones' }, { x: '✏️ Gerentes de sucursal: ya pueden completar los datos de los clientes de su tienda (RFC, domicilio, teléfonos, ubicación, etc.). Lista de precios, crédito, límites, estado y vendedor los sigue cambiando el administrador.', p: 'clientes' }] },
+    { v: 339, f: '20/11/2026', t: [{ x: '📦 Editar una nota ya no llena el inventario de “vendido / devuelto / vendido”: ahora solo se registra la diferencia real por lote (si no cambió nada, no se escribe ningún movimiento), aunque se reintente con mala señal.', p: 'ventas' }, { x: '🔧 Configuración → “Cuadrar ventas con inventario”: encuentra notas cuyos renglones no coinciden con lo descontado (cambios hechos a mano en la hoja, notas devueltas sin regresar producto) y las cuadra con un clic.', p: 'configuracion' }, { x: '📲 WhatsApp con PDF: ahora se comparte solo el archivo (WhatsApp en iPhone perdía el adjunto cuando iba con texto) y el mensaje queda copiado para pegarlo. En las notas de sucursal, «Enviar comprobante al WhatsApp» muestra el número de esa sucursal.', p: 'ventas' }, { x: '🏛️ Cotizaciones para dependencias de gobierno: casillas para agregar «A quien corresponda» (con firma «Atentamente»), los datos bancarios para depósito y el correo electrónico de contacto. También salen sin conexión.', p: 'cotizaciones' }, { x: '✏️ Gerentes de sucursal: ya pueden completar los datos de los clientes de su tienda (RFC, domicilio, teléfonos, ubicación, etc.). Lista de precios, crédito, límites, estado y vendedor los sigue cambiando el administrador.', p: 'clientes' }] },
     { v: 338, f: '19/11/2026', t: [{ x: '🛡️ Candado en la edición de notas: si estás editando una nota y eliges OTRO cliente, la app te propone hacer una venta NUEVA (la nota original no se toca); antes de guardar una edición siempre te pide confirmar el folio, el cliente y el total; y una edición olvidada ya no se queda abierta al volver a “Nueva venta”.', p: 'ventas' }] },
     { v: 337, f: '19/11/2026', t: [{ x: '🎨 Notas de venta con diseño nuevo: iconos, sellos PAGADO / FACTURADO, totales resaltados, pie de ondas y, cuando hay saldo, tus cuentas bancarias en “Instrucciones para pago”. Con o sin señal salen igual.', p: 'ventas' }] },
     { v: 336, f: '16/11/2026', t: [{ x: '🎨 Cotizaciones con diseño nuevo: recuadro verde de COTIZACIÓN, el logo de cada sucursal con su nombre, la tabla en verde, el total resaltado y el pie con ondas. Con o sin señal salen igual.', p: 'cotizaciones' }] },
@@ -2218,7 +2218,7 @@ const App = (() => {
     const cm = cliente(m.cli) || {}, tel = String(cm.cel || '').replace(/\D/g, '').slice(-10);
     const txt = '¡Hola! 🎁 Le compartimos su Monedero de regalo ' + m.folio + ' de Interés Veterinario por ' + $$(m.estado === 'Vigente' ? m.saldo : m.importe) + ', válido hasta el ' + m.vence + '. Aplíquelo en su próxima compra en cualquiera de nuestras sucursales. Aplican restricciones.';
     const b = await monederoPng(m), f = new File([b], 'Monedero-' + m.folio + '.png', { type: 'image/png' });
-    if (navigator.canShare && navigator.canShare({ files: [f] })) { try { await navigator.share({ files: [f], text: txt }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+    if (navigator.canShare && navigator.canShare({ files: [f] })) { try { navigator.clipboard && navigator.clipboard.writeText(txt).catch(() => {}); } catch (x) {} try { await navigator.share({ files: [f] }); toast('🎁 El mensaje quedó copiado: pégalo en el chat si quieres.'); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
     const w = window.open('', '_blank');
     try {
       const b64 = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.readAsDataURL(b); });
@@ -2472,7 +2472,7 @@ const App = (() => {
     const blobP = ticketPng(S.tkF);
     if (tkMovil() && navigator.canShare) {
       const b = await blobP, file = new File([b], 'ticket-' + String(d.folio || 'nota').replace(/[^\w-]/g, '_') + '.png', { type: 'image/png' });
-      if (navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], text: tkTexto(d) }); } catch (e) {} return; }
+      if (navigator.canShare({ files: [file] })) { try { navigator.clipboard && navigator.clipboard.writeText(tkTexto(d)).catch(() => {}); } catch (x) {} try { await navigator.share({ files: [file] }); } catch (e) {} return; }
     }
     let copiada = false;
     try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobP })]); copiada = true; } } catch (e) {}
@@ -2507,7 +2507,7 @@ const App = (() => {
     if (modo === 'imagen') {
       const b = await ticketPng(F), file = new File([b], 'ticket-' + String(S.tkFolio).replace(/[^\w-]/g, '_') + '.png', { type: 'image/png' });
       const tx = soloCompartir && S.tkNota ? 'Interés Veterinario® — Nota ' + (S.tkNota.folio || '') + ' · Total ' + $$(S.tkNota.total || 0) + ' · Saldo ' + $$(S.tkNota.saldo || 0) : undefined;
-      if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share(Object.assign({ files: [file], title: 'Ticket ' + S.tkFolio }, tx ? { text: tx } : {})); } catch (e) {} return; }
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { try { if (tx && navigator.clipboard) navigator.clipboard.writeText(tx).catch(() => {}); } catch (x) {} try { await navigator.share({ files: [file] }); } catch (e) {} return; }
       const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); toast('Imagen descargada: ábrela con la app de tu impresora');
       return;
     }
@@ -2598,10 +2598,17 @@ const App = (() => {
     try { const bin = atob(p.b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
       const f = new File([u], p.titulo || 'documento.pdf', { type: 'application/pdf' }); return navigator.canShare({ files: [f] }) ? f : null; } catch (e) { return null; }
   }
+  /** 📎 Comparte el PDF como ARCHIVO. WhatsApp (sobre todo en iPhone) descarta el adjunto si junto al archivo va texto o título:
+   *  por eso se manda solo el archivo y el mensaje se copia para pegarlo en el chat si se quiere. */
   function compartirPdf(conTexto) {
     const p = S.pdfListo; if (!p || !navigator.share) return;
     const f = pdfArchivo();
-    if (f) { navigator.share(Object.assign({ files: [f], title: p.titulo }, conTexto ? { text: p.texto } : {})).catch(e => { if (e && e.name !== 'AbortError') toast('No se pudo adjuntar; usa 💬 WhatsApp (enlace)', true); }); return; }
+    if (f) {
+      if (conTexto && p.texto) { try { navigator.clipboard && navigator.clipboard.writeText(p.texto + (p.url ? '\n' + p.url : '')).catch(() => {}); } catch (e) {} }
+      navigator.share({ files: [f] }).then(() => { if (conTexto && p.texto) toast('📎 PDF enviado. El mensaje quedó copiado: si quieres, pégalo en el chat.'); })
+        .catch(e => { if (e && e.name !== 'AbortError') toast('No se pudo adjuntar; usa 💬 WhatsApp (enlace)', true); });
+      return;
+    }
     navigator.share({ title: p.titulo, text: p.texto, url: p.url }).catch(() => {});
   }
   function pdfNota(id) {
@@ -9844,7 +9851,8 @@ const App = (() => {
         const l1 = (c.cuenta ? 'No. Cta. ' + c.cuenta : '') , l2 = c.clabe ? 'CLABE: ' + g4(c.clabe) : '';
         pdf.text(txtPdf(l1), x0 + bw + 26, y + 35); pdf.text(txtPdf(l2 + (c.suc ? ' · Suc. ' + c.suc : '')), x0 + bw + 26, y + 46); });
       fuente('normal', 8); color(TX);
-      pdf.text(txtPdf((pc.titular ? 'A nombre de: ' + pc.titular + '  ·  ' : '') + 'Referencia: ' + d.folio + (pc.tel || pc.correo ? '  ·  Enviar comprobante al: ' + [pc.tel, pc.correo].filter(Boolean).join(' o ') : '')), M + 10, y + 68);
+      const sN = d.sucursal || {}, telC = sN.id && sN.id !== 'SUC_MAT_1' && sN.tel ? sN.tel : pc.tel;   /* cada sucursal recibe comprobantes en su WhatsApp */
+      pdf.text(txtPdf((pc.titular ? 'A nombre de: ' + pc.titular + '  ·  ' : '') + 'Referencia: ' + d.folio + (telC || pc.correo ? '  ·  Enviar comprobante al WhatsApp: ' + [telC, pc.correo].filter(Boolean).join(' o ') : '')), M + 10, y + 68);
       y += 88;
     }
     // --- pagos realizados
@@ -10645,7 +10653,7 @@ const App = (() => {
   }
   async function compartirPdfLocal() {
     const x = S.pdfLocal; if (!x) return;
-    try { const f = new File([x.bytes], x.nombre, { type: 'application/pdf' }); if (navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: x.nombre }); else toast('Este equipo no permite compartir archivos; usa Descargar', true); } catch (e) {}
+    try { const f = new File([x.bytes], x.nombre, { type: 'application/pdf' }); if (navigator.canShare({ files: [f] })) await navigator.share({ files: [f] }); else toast('Este equipo no permite compartir archivos; usa Descargar', true); } catch (e) {}
   }
 
   async function prodMargen() {
