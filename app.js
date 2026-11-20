@@ -1104,6 +1104,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 337, f: '19/11/2026', t: [{ x: '🎨 Notas de venta con diseño nuevo: iconos, sellos PAGADO / FACTURADO, totales resaltados, pie de ondas y, cuando hay saldo, tus cuentas bancarias en “Instrucciones para pago”. Con o sin señal salen igual.', p: 'ventas' }] },
     { v: 336, f: '16/11/2026', t: [{ x: '🎨 Cotizaciones con diseño nuevo: recuadro verde de COTIZACIÓN, el logo de cada sucursal con su nombre, la tabla en verde, el total resaltado y el pie con ondas. Con o sin señal salen igual.', p: 'cotizaciones' }] },
     { v: 335, f: '15/11/2026', t: [{ x: '🏬 Sucursales: ya no ven botones de facturación que solo puede usar Matriz (cancelar ante el SAT, factura global, claves del SAT).', p: 'facturacion' }] },
     { v: 334, f: '14/11/2026', t: [{ x: '👥 Al timbrar una nota: botón “Público en general” que llena solo el RFC genérico del SAT (para notas que te pagaron sin pedir factura).', p: 'facturacion' }, { x: '⚠️ Configuración › Timbrado avisa cuando al ambiente elegido (Pruebas o Producción) le falta su usuario o contraseña de Facturama.', p: 'dueno' }] },
@@ -9671,6 +9672,169 @@ const App = (() => {
    * { titulo, folio, fecha, extra:[líneas], suc:{id,nombre,direccion,tel,email}, izq:[líneas (1a en negritas)], der:[líneas],
    *   cols:[{t, w (fracción), num}], filas:[[celdas]], suma:[celdas] | null, totales:[[etiqueta, valor, negritas]], letras, notas:[líneas], firmas:[títulos], archivo }
    */
+  /** 🎨 Nota de venta sin señal con el mismo diseño del servidor (iconos, sellos, cuentas para pago y pie de ondas). sp.nota = detalle de la venta. */
+  async function pdfNotaLocal(sp) {
+    const d = sp.nota, { jsPDF } = await libLocal('jspdf');
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+    const W = 612, H = 792, M = 22, AN = W - 2 * M, V = [31, 107, 58], V2 = [230, 242, 227], V3 = [243, 248, 241], GRS = [242, 244, 241], TX = [29, 43, 34], GR = [95, 107, 98];
+    const color = c => pdf.setTextColor(c[0], c[1], c[2]), relleno = c => pdf.setFillColor(c[0], c[1], c[2]);
+    const fuente = (t, n) => { pdf.setFont('helvetica', t || 'normal'); pdf.setFontSize(n || 9); };
+    const s = d.sucursal || {};
+    const fs = s.id ? await fotoSucDatos(s.id) : null, logo = fs || await logoDoc();
+    const ico = {}; for (const n of ['persona', 'ubicacion', 'documento', 'calendario', 'credito', 'camion', 'monedas', 'telefono', 'correo', 'selloPagado', 'selloFacturado']) { try { ico[n] = await imgDatos('pdf/' + n + '.png'); } catch (e) {} }
+    const icono = (n, x, y, z) => { if (ico[n]) pdf.addImage(ico[n].data, 'PNG', x, y, z, z); };
+    let pie = null; try { pie = await imgDatos('pie_cotizacion.jpg'); } catch (e) {}
+    const PIE_H = pie ? W / pie.w * pie.h : 0, limite = H - Math.max(PIE_H * 0.62, 30) - 6;   // la parte de arriba del pie es blanca
+    let y = 20;
+    // --- encabezado
+    if (logo) { const mw = 105, mh = 70, k = Math.min(mw / logo.w, mh / logo.h); pdf.addImage(logo.data, 'PNG', M + (110 - logo.w * k) / 2, y + 4, logo.w * k, logo.h * k); }
+    relleno(V); pdf.rect(M + 122, y + 4, 2.2, 74, 'F');
+    const xD = M + 134; let yd = y + 22;
+    icono('ubicacion', xD, yd - 9, 11); fuente('bold', 10); color(TX); pdf.text(txtPdf(s.nombre || ''), xD + 15, yd); yd += 11;
+    if (s.direccion) { fuente('normal', 7.5); color(GR); pdf.splitTextToSize(txtPdf(s.direccion), 230).forEach(l => { pdf.text(l, xD + 15, yd); yd += 9; }); }
+    yd += 4; if (s.tel) { icono('telefono', xD, yd - 9, 11); fuente('bold', 10.5); color(TX); pdf.text(txtPdf(s.tel), xD + 15, yd); yd += 14; }
+    if (s.email) { icono('correo', xD, yd - 8.5, 11); fuente('normal', 8); color(TX); pdf.text(txtPdf(s.email), xD + 15, yd); }
+    const xB = W - M - 168, anB = 168;
+    relleno(V); pdf.roundedRect(xB, y, anB, 32, 7, 7, 'F'); pdf.rect(xB, y + 20, anB, 12, 'F');
+    fuente('bold', 15); color([255, 255, 255]); pdf.text('NOTA DE VENTA', xB + anB / 2, y + 21.5, { align: 'center' });
+    relleno(GRS); pdf.roundedRect(xB, y + 32, anB, 58, 7, 7, 'F'); pdf.rect(xB, y + 32, anB, 10, 'F');
+    fuente('bold', 13); color(TX); pdf.text(txtPdf(d.folio || ''), xB + anB / 2, y + 50, { align: 'center' });
+    fuente('normal', 8.5); pdf.text(txtPdf(d.fecha || ''), xB + anB / 2, y + 63, { align: 'center' });
+    const est = d.estatus === 'Pendiente' ? 'Pendiente de entrega' : (d.estatus || ''), ec = { Entregado: [[216, 239, 217], V], Pendiente: [[251, 231, 198], [154, 91, 0]], Cancelado: [[248, 215, 211], [161, 44, 31]], Devuelto: [[228, 230, 227], [85, 85, 85]] }[d.estatus] || [[228, 230, 227], [85, 85, 85]];
+    if (est) { fuente('bold', 9); const ew = pdf.getTextWidth(txtPdf(est)) + 18; relleno(ec[0]); pdf.roundedRect(xB + anB / 2 - ew / 2, y + 68, ew, 14, 7, 7, 'F'); color(ec[1]); pdf.text(txtPdf(est), xB + anB / 2, y + 78, { align: 'center' }); }
+    y += 98; relleno(V); pdf.rect(M, y, AN, 2.4, 'F'); y += 12;
+    // --- cliente (izquierda) y datos de la nota (derecha)
+    const f = d.fiscal || {}, et = (c, t) => !t ? c : String(t).indexOf(c) === 0 ? t : c + ' - ' + t;
+    const anI = AN * 0.58 - 8, xR = M + AN * 0.58 + 4, anR = W - M - xR;
+    const filasI = [];   // [icono, texto, negrita-etiqueta]
+    if (d.domicilio || f.cp) filasI.push(['ubicacion', (d.domicilio || '') + (f.cp ? (d.domicilio ? '\n' : '') + 'C.P. ' + f.cp : '')]);
+    if (f.regimen) filasI.push(['documento', 'Régimen fiscal: ' + et(f.regimen, f.regimenTxt)]);
+    if (f.uso) filasI.push(['calendario', 'Uso de CFDI: ' + et(f.uso, f.usoTxt)]);
+    fuente('bold', 11); const nomL = pdf.splitTextToSize(txtPdf(d.razon || d.cliente || ''), anI - 20);
+    fuente('normal', 8); const filasL = filasI.map(r => ({ n: r[0], ls: [].concat(...String(r[1]).split('\n').map(t => pdf.splitTextToSize(txtPdf(t), anI - 34))) }));
+    const hI = 22 + nomL.length * 13 + (d.razon && d.razon !== d.cliente ? 10 : 0) + (d.rfc ? 11 : 0) + filasL.reduce((a, r) => a + r.ls.length * 10 + 4, 0) + 8;
+    const fs2 = d.facturas || [], filasR = [];
+    fs2.forEach(x => filasR.push(['documento', [['b', 'Factura: ' + x.sf]].concat(x.uuid ? [['s', 'Folio fiscal:'], ['m', x.uuid]] : [])]));
+    if (!fs2.length && d.anotFactura) filasR.push(['documento', [['b', 'Factura: ' + d.anotFactura]]]);
+    filasR.push(['credito', [['c', 'Crédito: ' + (d.dias || 0) + ' días']]]);
+    filasR.push(['persona', [['b', 'Vendedor:'], ['n', d.vendedor || '']]]);
+    filasR.push(['camion', [['n', 'Envío: ' + (d.envio || 'Entrega física') + (d.guia ? ' · Guía ' + d.guia : '')]]]);
+    const hR = 14 + filasR.reduce((a, r) => a + r[1].length * 10.5 + 8, 0);
+    const hC = Math.max(hI, hR);
+    relleno(V2); pdf.roundedRect(M, y, anI, 20, 7, 7, 'F'); pdf.rect(M, y + 12, anI, 8, 'F');
+    pdf.setDrawColor(225, 232, 223); pdf.setLineWidth(0.8); pdf.roundedRect(M, y, anI, hC, 7, 7);
+    icono('persona', M + 9, y + 4, 12); fuente('bold', 10.5); color(TX); pdf.text('Cliente', M + 25, y + 14);
+    let yc = y + 34; fuente('bold', 11); nomL.forEach(t => { pdf.text(t, M + 10, yc); yc += 13; });
+    if (d.razon && d.razon !== d.cliente) { fuente('normal', 8); color(GR); pdf.text(txtPdf(d.cliente), M + 10, yc - 2); yc += 10; }
+    if (d.rfc) { fuente('bold', 8.5); color(TX); pdf.text('RFC:', M + 10, yc); fuente('normal', 8.5); pdf.text(txtPdf(d.rfc), M + 10 + pdf.getTextWidth('RFC: '), yc); yc += 13; }
+    filasL.forEach(r => { icono(r.n, M + 10, yc - 8, 10); fuente('normal', 8); color(TX); r.ls.forEach(t => { pdf.text(t, M + 26, yc); yc += 10; }); yc += 4; });
+    relleno(GRS); pdf.roundedRect(xR, y, anR, hC, 7, 7, 'F');
+    let yr = y + 16;
+    filasR.forEach(r => { icono(r[0], xR + 9, yr - 9, 13);
+      r[1].forEach(z => { const tx = txtPdf(z[1]);
+        if (z[0] === 'b') { fuente('bold', 9.5); color(TX); pdf.text(tx, xR + 28, yr); }
+        else if (z[0] === 's') { fuente('bold', 7.5); color(TX); pdf.text(tx, xR + 28, yr); }
+        else if (z[0] === 'm') { fuente('normal', 7); color(TX); pdf.text(tx, xR + 28, yr); }
+        else if (z[0] === 'c') { fuente('bold', 9); color(TX); pdf.text('Crédito:', xR + 28, yr); fuente('normal', 9); const w0 = xR + 28 + pdf.getTextWidth(txtPdf('Crédito:')) + 4; pdf.text(txtPdf((d.dias || 0) + ' días'), w0, yr);
+          if (d.venc) { const xv = w0 + pdf.getTextWidth((d.dias || 0) + ' días') + 10; icono('calendario', xv, yr - 9, 11); fuente('bold', 8.5); const vt = txtPdf('Vence: ' + d.venc), vw = pdf.getTextWidth(vt) + 12; relleno(V2); pdf.roundedRect(xv + 14, yr - 9, vw, 12, 6, 6, 'F'); color(TX); pdf.text(vt, xv + 20, yr); } }
+        else { fuente('normal', 9); color(TX); pdf.text(tx, xR + 28, yr); }
+        yr += 10.5; });
+      yr += 8; });
+    y += hC + 12;
+    // --- tablas de productos
+    const tabla = (ls) => {
+      const conLote = ls.some(l => l.lote || l.cad), conDesc = ls.some(l => l.desc);
+      const cols = [{ t: 'Cant.', w: 0.55, al: 'center' }, { t: 'Producto', w: conLote ? 2.7 : 3.6 }].concat(conLote ? [{ t: 'Lote', w: 0.85, al: 'center' }, { t: 'Caducidad', w: 0.9, al: 'center' }] : [])
+        .concat([{ t: 'Precio unit.', w: 0.95, al: 'right' }]).concat(conDesc ? [{ t: 'Descuento', w: 0.9, al: 'right' }] : []).concat([{ t: 'Importe', w: 0.95, al: 'right' }, { t: 'IVA', w: 0.75, al: 'right' }, { t: 'Total', w: 0.95, al: 'right' }]);
+      const tf = cols.reduce((a, c) => a + c.w, 0), an = cols.map(c => AN * c.w / tf), xs = an.map((w, i) => M + an.slice(0, i).reduce((a, b) => a + b, 0));
+      const tx = (t, i, yy) => { const c = cols[i]; pdf.text(t, c.al === 'right' ? xs[i] + an[i] - 5 : c.al === 'center' ? xs[i] + an[i] / 2 : xs[i] + 5, yy, { align: c.al || 'left' }); };
+      const encab = () => { relleno(V); pdf.rect(M, y, AN, 19, 'F'); fuente('bold', 8); color([255, 255, 255]); cols.forEach((c, i) => tx(txtPdf(c.t), i, y + 12.5)); y += 19; };
+      if (y + 40 > limite) { pdf.addPage(); y = M; }
+      encab(); let sI = 0, sV = 0, sD = 0;
+      ls.forEach(l => { sI += l.importe; sV += l.iva; sD += l.desc || 0;
+        fuente('bold', 8.5); const nom = pdf.splitTextToSize(txtPdf(l.nombre), an[1] - 10), h = nom.length * 10 + 9;
+        if (y + h > limite) { pdf.addPage(); y = M; encab(); }
+        relleno(V3); pdf.rect(xs[cols.length - 1], y, an[cols.length - 1], h, 'F');
+        color(TX); fuente('normal', 8.5); tx(nf(l.cant), 0, y + 12); fuente('bold', 8.5); nom.forEach((t, k) => pdf.text(t, xs[1] + 5, y + 12 + k * 10)); fuente('normal', 8.5);
+        let i = 2; if (conLote) { tx(txtPdf(l.lote || ''), i++, y + 12); tx(txtPdf(l.cad || ''), i++, y + 12); }
+        tx($$(l.precio), i++, y + 12); if (conDesc) tx(l.desc ? '-' + $$(l.desc) : '-', i++, y + 12);
+        tx($$(l.importe), i++, y + 12); tx($$(l.iva), i++, y + 12); fuente('bold', 8.5); tx($$(r2c(l.importe + l.iva)), i, y + 12);
+        y += h; pdf.setDrawColor(223, 232, 220); pdf.setLineWidth(0.6); pdf.line(M, y, W - M, y); });
+      if (y + 20 > limite) { pdf.addPage(); y = M; }
+      relleno(V2); pdf.rect(M, y, AN, 20, 'F'); fuente('bold', 8.5); color(TX);
+      let k = 2 + (conLote ? 2 : 0); pdf.text('Suma de los productos', xs[k] + an[k] - 5, y + 13, { align: 'right' }); k++;
+      if (conDesc) tx(sD ? '-' + $$(sD) : '-', k++, y + 13); tx($$(sI), k++, y + 13); tx($$(sV), k++, y + 13); tx($$(r2c(sI + sV)), k, y + 13);
+      y += 20;
+    };
+    const lin = l => { const imp = r2c((l.sub !== undefined && l.sub !== null ? l.sub : l.cant * l.precio) - (l.desc || 0)); const iva = l.iva !== undefined && l.iva !== null ? l.iva : Math.max(0, r2c((l.total || 0) - imp));
+      return { cant: l.cant, nombre: l.nombre, lote: l.lote || (d.estatus === 'Pendiente' ? 'Se asigna al entregar' : ''), cad: l.cad, precio: l.precio, desc: l.desc || 0, importe: imp, iva: iva }; };
+    const propias = (d.lineas || []).filter(l => l.cant > 0 && !l.asoc), deAsoc = (d.lineas || []).filter(l => l.cant > 0 && l.asoc);
+    if (propias.length || !deAsoc.length) tabla(propias.map(lin));
+    if (deAsoc.length) {
+      const nomA = d.asoc ? d.asoc.nombre : 'la asociación', stA = d.asoc ? d.asoc.total : r2c(deAsoc.reduce((t, l) => { const x = lin(l); return t + x.importe + x.iva; }, 0));
+      if (propias.length) { fuente('normal', 8.5); color(TX); pdf.text(txtPdf('Subtotal de nuestros productos: ' + $$(r2c(d.total - (d.flete || 0) - stA))), W - M, y + 11, { align: 'right' }); y += 16; }
+      fuente('bold', 10); color(TX); y += 8; pdf.text(txtPdf('Productos de ' + nomA), M, y); fuente('normal', 8); color(GR); pdf.text(' (no facturables)', M + pdf.getTextWidth(txtPdf('Productos de ' + nomA)) + 18, y); y += 5;
+      tabla(deAsoc.map(lin)); fuente('normal', 8.5); color(TX); pdf.text(txtPdf('Subtotal de ' + nomA + ': ' + $$(stA)), W - M, y + 11, { align: 'right' }); y += 14;
+    }
+    y += 12;
+    // --- letras / comentarios / sellos (izquierda) y totales (derecha)
+    if (y + 140 > limite) { pdf.addPage(); y = M; }
+    const xT = W - M - 230, y0 = y; let yl = y + 8;
+    if (d.letras) { fuente('normal', 8.5); color(TX); pdf.splitTextToSize(txtPdf('(' + d.letras + ')'), xT - M - 16).forEach(t => { pdf.text(t, M, yl); yl += 10; }); }
+    if (d.comentarios) { yl += 4; fuente('normal', 8); color(GR); pdf.splitTextToSize(txtPdf('Comentarios: ' + d.comentarios), xT - M - 16).forEach(t => { pdf.text(t, M, yl); yl += 10; }); }
+    const viva = d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto', pagado = viva && d.total > 0.009 && (d.cobrado || 0) > 0.009 && (d.saldo || 0) <= 0.009, facturado = viva && !!d.facturadaTotal;
+    if (pagado && ico.selloPagado) { const w = 150, h = w * ico.selloPagado.h / ico.selloPagado.w; pdf.addImage(ico.selloPagado.data, 'PNG', M + 20, yl + 2, w, h); yl += h + 6; }
+    if (facturado && ico.selloFacturado) { const w = 178, h = w * ico.selloFacturado.h / ico.selloFacturado.w; pdf.addImage(ico.selloFacturado.data, 'PNG', M + 20, yl + 2, w, h); yl += h + 6; }
+    let yt = y; const tfila = (a, b, bold) => { pdf.setDrawColor(227, 232, 227); pdf.setLineWidth(0.6); fuente(bold ? 'bold' : 'normal', 9); color(TX); fuente('bold', 9); pdf.text(txtPdf(a), xT + 10, yt + 13); fuente('normal', 9); pdf.text(txtPdf(b), W - M - 10, yt + 13, { align: 'right' }); yt += 19; pdf.line(xT, yt, W - M, yt); };
+    tfila('Subtotal', $$(d.sub)); if (d.desc) tfila('Descuento', '-' + $$(d.desc)); if (d.descPC) tfila('Pronto pago', '-' + $$(d.descPC)); tfila('IVA (suma de los productos)', $$(d.iva)); if (d.flete) tfila('Flete', $$(d.flete));
+    relleno(V2); pdf.rect(xT, yt, 230, 26, 'F'); relleno(V); pdf.roundedRect(xT + 100, yt, 130, 26, 7, 7, 'F'); pdf.rect(xT + 220, yt, 10, 26, 'F');
+    fuente('bold', 13); color(TX); pdf.text('Total', xT + 10, yt + 17.5); fuente('bold', 13.5); color([255, 255, 255]); pdf.text($$(d.total), W - M - 10, yt + 18, { align: 'right' }); yt += 26;
+    tfila('Pagado', $$(d.cobrado || 0));
+    relleno(V2); pdf.rect(xT, yt, 230, 22, 'F'); fuente('bold', 11); color(TX); pdf.text('Saldo', xT + 10, yt + 15); pdf.text($$(d.saldo || 0), W - M - 10, yt + 15, { align: 'right' }); yt += 22;
+    pdf.setDrawColor(213, 221, 213); pdf.setLineWidth(0.8); pdf.rect(xT, y0, 230, yt - y0);
+    y = Math.max(yt, yl) + 14;
+    // --- instrucciones para pago (cuando hay saldo)
+    const pc = d.pagoCfg || (() => { try { return JSON.parse(localStorage.getItem('iv_pagoCfg') || 'null'); } catch (e) { return null; } })();
+    const cuentas = pc && pc.cuentas ? pc.cuentas.filter(c => c.banco) : [];
+    if (cuentas.length && viva && (d.saldo || 0) > 0.009) {
+      if (y + 80 > limite) { pdf.addPage(); y = M; }
+      const g4 = x => String(x || '').replace(/\s+/g, '').replace(/(\d{4})(?=\d)/g, '$1 ');
+      const colB = b => /banorte/i.test(b) ? [215, 25, 32] : /bbva/i.test(b) ? [7, 33, 70] : /santander/i.test(b) ? [236, 0, 0] : /banamex|citi/i.test(b) ? [5, 109, 174] : [13, 59, 102];
+      relleno(V2); pdf.roundedRect(M, y, AN, 76, 8, 8, 'F'); fuente('bold', 10); color(TX); pdf.text('INSTRUCCIONES PARA PAGO', M + 10, y + 15);
+      relleno([255, 255, 255]); pdf.roundedRect(M + 8, y + 21, AN - 16, 34, 6, 6, 'F');
+      const wc = (AN - 16) / cuentas.length;
+      cuentas.forEach((c, i) => { const x0 = M + 8 + i * wc; fuente('bold', 11.5); color(colB(c.banco)); const bn = txtPdf(String(c.banco).toUpperCase()); pdf.text(bn, x0 + 10, y + 42); const bw = pdf.getTextWidth(bn);
+        pdf.setDrawColor(223, 229, 220); pdf.line(x0 + bw + 18, y + 26, x0 + bw + 18, y + 50); fuente('normal', 8); color(TX);
+        const l1 = (c.cuenta ? 'No. Cta. ' + c.cuenta : '') , l2 = c.clabe ? 'CLABE: ' + g4(c.clabe) : '';
+        pdf.text(txtPdf(l1), x0 + bw + 26, y + 35); pdf.text(txtPdf(l2 + (c.suc ? ' · Suc. ' + c.suc : '')), x0 + bw + 26, y + 46); });
+      fuente('normal', 8); color(TX);
+      pdf.text(txtPdf((pc.titular ? 'A nombre de: ' + pc.titular + '  ·  ' : '') + 'Referencia: ' + d.folio + (pc.tel || pc.correo ? '  ·  Enviar comprobante al: ' + [pc.tel, pc.correo].filter(Boolean).join(' o ') : '')), M + 10, y + 68);
+      y += 88;
+    }
+    // --- pagos realizados
+    if (d.cobros && d.cobros.length) {
+      if (y + 60 > limite) { pdf.addPage(); y = M; }
+      relleno(V2); pdf.roundedRect(M, y, AN, 20, 8, 8, 'F'); icono('monedas', M + 9, y + 3, 14); fuente('bold', 10.5); color(TX); pdf.text('Pagos realizados', M + 28, y + 14); y += 24;
+      const pw = [0.18, 0.4, 0.24, 0.18].map(x => x * AN), px = pw.map((w, i) => M + pw.slice(0, i).reduce((a, b) => a + b, 0));
+      relleno(V); pdf.rect(M, y, AN, 18, 'F'); fuente('bold', 8.5); color([255, 255, 255]);
+      ['Fecha', 'Forma de pago', 'Banco / cuenta'].forEach((t, i) => pdf.text(t, px[i] + pw[i] / 2, y + 12, { align: 'center' })); pdf.text('Importe', W - M - 6, y + 12, { align: 'right' }); y += 18;
+      d.cobros.forEach(c => { if (y + 18 > limite) { pdf.addPage(); y = M; } fuente('normal', 8.5); color(TX);
+        pdf.text(txtPdf(c.fecha || ''), px[0] + pw[0] / 2, y + 12, { align: 'center' }); pdf.text(txtPdf(String(c.forma || '').slice(0, 48)), px[1] + pw[1] / 2, y + 12, { align: 'center' });
+        pdf.text(txtPdf(String(c.banco || '').slice(0, 30)), px[2] + pw[2] / 2, y + 12, { align: 'center' }); pdf.text($$(c.monto), W - M - 6, y + 12, { align: 'right' }); y += 18; pdf.setDrawColor(223, 232, 220); pdf.line(M, y, W - M, y); });
+      relleno(V2); pdf.rect(M, y, AN, 20, 'F'); relleno(V); pdf.rect(px[3], y, pw[3], 20, 'F'); fuente('bold', 9); color(TX); pdf.text('Total pagado', px[3] - 8, y + 13, { align: 'right' });
+      color([255, 255, 255]); pdf.text($$(d.cobros.reduce((t, c) => t + c.monto, 0)), W - M - 6, y + 13.5, { align: 'right' }); y += 26;
+    }
+    if (d.motivo) { fuente('normal', 8); color(GR); pdf.splitTextToSize(txtPdf('Cancelaciones: ' + d.motivo), AN).forEach(t => { pdf.text(t, M, y + 8); y += 10; }); y += 4; }
+    // --- firma
+    if (y + 50 > limite) { pdf.addPage(); y = M; }
+    y += 34; pdf.setDrawColor(51, 51, 51); pdf.setLineWidth(0.8); pdf.line(W / 2 - 110, y, W / 2 + 110, y); fuente('normal', 8.5); color(TX); pdf.text('Recibí de conformidad' + (d.recibio ? ': ' + txtPdf(d.recibio) : ''), W / 2, y + 11, { align: 'center' });
+    // --- pie de ondas al fondo de la última hoja
+    if (pie) pdf.addImage(pie.data, 'PNG', 0, H - PIE_H, W, PIE_H);
+    const n = pdf.getNumberOfPages();
+    if (sp.pie || n > 1) for (let i = 1; i <= n; i++) { pdf.setPage(i); fuente('normal', 7); color(i === n && pie ? [255, 255, 255] : [140, 146, 136]); pdf.text(txtPdf((sp.pie ? sp.pie + ' · ' : '') + (n > 1 ? 'Página ' + i + ' de ' + n : '')), M, H - 8); }
+    pdf.setProperties({ title: txtPdf('NOTA DE VENTA ' + (d.folio || '')), author: 'Interés Veterinario®' });
+    return new Uint8Array(pdf.output('arraybuffer'));
+  }
   /** 🎨 Cotización sin señal con el mismo diseño del servidor (verde, recuadro COTIZACIÓN, pie de ondas). sp.cot = detalle de la cotización. */
   async function pdfCotLocal(sp) {
     const d = sp.cot, { jsPDF } = await libLocal('jspdf');
@@ -9763,6 +9927,7 @@ const App = (() => {
   }
   async function pdfLocal(sp) {
     if (sp.cot) return pdfCotLocal(sp);
+    if (sp.nota) return pdfNotaLocal(sp);
     const { jsPDF } = await libLocal('jspdf');
     const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
     const W = 612, H = 792, M = 36, AN = W - 2 * M, VERDE = [31, 111, 74], GRIS = [92, 98, 88], LINEA = [214, 220, 210];
@@ -9870,7 +10035,8 @@ const App = (() => {
         der: ['Crédito: ' + (d.dias || 0) + ' días' + (d.venc ? ' · Vence ' + d.venc : ''), 'Vendedor: ' + (d.vendedor || ''), 'Envío: ' + (d.envio || 'Entrega física') + (d.guia ? ' · Guía ' + d.guia : '')],
         totales: [['Subtotal', d.sub], d.desc ? ['Descuento', '-' + $$(d.desc)] : null, d.descPC ? ['Pronto pago', '-' + $$(d.descPC)] : null, ['IVA (suma de los productos)', d.iva], d.flete ? ['Flete', d.flete] : null,
           ['Total', d.total, true], ['Pagado', d.cobrado || 0], ['Saldo', d.saldo || 0]],
-        letras: d.letras, notas: [d.comentarios], firmas: ['Recibí de conformidad'], archivo: 'Nota ' + d.folio + ' ' + (d.razon || d.cliente || '') }); } },
+        letras: d.letras, notas: [d.comentarios], firmas: ['Recibí de conformidad'], archivo: 'Nota ' + d.folio + ' ' + (d.razon || d.cliente || ''),
+        nota: (() => { try { if (d.pagoCfg) localStorage.setItem('iv_pagoCfg', JSON.stringify(d.pagoCfg)); } catch (e) {} return d; })() }); } },
     pdfCotizacion: { det: p => ['detalleCotizacion', { id: p.id }], ult: 'ultimaCot', key: p => p.id, map: d => {
       const ls = d.lineas.map(l => ({ cant: l.cant, nombre: l.nombre + (l.unidad ? ' (' + l.unidad + ')' : ''), lote: l.lote, cad: l.cad, precio: l.precioLista, desc: l.desc, importe: l.importe, iva: l.ivaMonto, total: l.total }));
       const t = lineasImp(ls, ls.some(l => l.lote || l.cad), ls.some(l => l.desc));
