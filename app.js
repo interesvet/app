@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 355, f: '21/11/2026', t: [{ x: '✍️ La firma de recibido ahora sale también en el ticket de 80 mm (con el nombre de quien recibió), y se corrigió que no apareciera en el PDF de la nota.', p: 'ventas' }] },
     { v: 354, f: '20/11/2026', t: [{ x: '🏬 Sucursales → Resumen: el inventario (tarjeta, cuadro «Inventario y cartera», por caducar, caducado, días de inventario y GMROI) ya se valúa al precio de la lista de cada sucursal (Matriz: Subdistribuidor), igual que en Inventario.', p: 'sucursales' }] },
     { v: 353, f: '20/11/2026', t: [{ x: '🎨 El logotipo de la barra lateral ahora va centrado.', p: '' }] },
     { v: 352, f: '20/11/2026', t: [{ x: '📘 Manual de usuario en el menú (Administración → Manual de usuario): cada quien ve la versión de su perfil, con solo lo que puede usar, y la puede descargar en PDF.', p: '' }] },
@@ -2432,7 +2433,8 @@ const App = (() => {
     const viva = d.estatus !== 'Cancelado' && d.estatus !== 'Devuelto';
     if (viva && d.facturadaTotal) L('*** FACTURADO ***', { c: 1, n: 1, g: 1 }); else if (viva && (d.facturas || []).length) L('*** FACTURADO PARCIAL ***', { c: 1, n: 1 });
     if (d.comentarios) { S_(); L(d.comentarios, { p: 1 }); }
-    F.push({ esp: 70 }); L('______________________________', { c: 1 }); L('Recibí de conformidad', { c: 1, p: 1 });
+    if (d.firmaUri) { F.push({ esp: 16 }); F.push({ img: d.firmaUri }); } else F.push({ esp: 70 });
+    L('______________________________', { c: 1 }); L('Recibí de conformidad', { c: 1, p: 1 }); if (d.recibio) L(d.recibio, { c: 1, p: 1, n: 1 });
     F.push({ esp: 16 }); L('¡Gracias por su preferencia!', { c: 1, n: 1 }); F.push({ esp: 30 });
     return F;
   }
@@ -2445,7 +2447,7 @@ const App = (() => {
     const f = paraNavegador ? { g: '15px', p: '10.5px' } : { g: '30px', p: '19px' };
     return '<html><head><meta charset="utf-8"><style>' + st + '.c{text-align:center}.n{font-weight:bold}.g{font-size:' + f.g + '}.p{font-size:' + f.p + '}.d{display:flex;justify-content:space-between;gap:8px}.d span:last-child{white-space:nowrap}hr{border:0;border-top:1px dashed #000;margin:6px 0}</style></head><body>' +
       '<div class="c"><img src="' + logo + '" style="max-width:55%;max-height:' + (paraNavegador ? '22mm' : '150px') + ';filter:grayscale(1)" onerror="this.remove()"></div>' +
-      F.map(r => r.sep ? '<hr>' : r.esp ? '<div style="height:' + (paraNavegador ? r.esp / 8 + 'mm' : r.esp + 'px') + '"></div>' :
+      F.map(r => r.img ? '<div class="c"><img src="' + r.img + '" style="max-width:70%;max-height:' + (paraNavegador ? '24mm' : '150px') + ';filter:grayscale(1) contrast(1.4)"></div>' : r.sep ? '<hr>' : r.esp ? '<div style="height:' + (paraNavegador ? r.esp / 8 + 'mm' : r.esp + 'px') + '"></div>' :
         '<div class="' + [r.a !== undefined ? 'd' : '', r.c ? 'c' : '', r.n ? 'n' : '', r.g ? 'g' : '', r.p ? 'p' : ''].join(' ') + '">' + (r.a !== undefined ? '<span>' + esc(r.a) + '</span><span>' + esc(r.b) + '</span>' : esc(r.t)) + '</div>').join('') +
       '</body></html>';
   }
@@ -2457,7 +2459,10 @@ const App = (() => {
     let logo = null; try { logo = await new Promise((ok, mal) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = mal; i.src = logoSrcSuc(((S.ultimaVenta || {}).sucursal || {}).id || sucTrabajo()); }); } catch (e) {}
     const lh = logo ? Math.min(150, logo.height * Math.min(1, (W * 0.55) / logo.width)) : 0, lw = logo ? logo.width * lh / logo.height : 0;
     const pasos = [];   // primero se mide
+    const imgs = {};
+    for (const r of F) if (r.img && !imgs[r.img]) { try { imgs[r.img] = await new Promise((ok, mal) => { const i = new Image(); i.onload = () => ok(i); i.onerror = mal; i.src = r.img; }); } catch (e) {} }
     F.forEach(r => {
+      if (r.img) { const im = imgs[r.img]; if (!im) return; const ih = Math.min(150, im.height * Math.min(1, (W * 0.7) / im.width)); return pasos.push({ img: im, h: ih + 6, iw: im.width * ih / im.height, ih: ih }); }
       if (r.sep) return pasos.push({ sep: 1, h: 16 });
       if (r.esp) return pasos.push({ h: r.esp });
       x.font = font(r);
@@ -2469,15 +2474,18 @@ const App = (() => {
     let y = M;
     if (logo) { x.filter = 'grayscale(1)'; x.drawImage(logo, (TK_W - lw) / 2, y, lw, lh); x.filter = 'none'; y += lh + 10; }
     pasos.forEach(p => {
-      if (p.sep) { x.setLineDash([6, 5]); x.beginPath(); x.moveTo(M, y + 8); x.lineTo(TK_W - M, y + 8); x.stroke(); x.setLineDash([]); }
+      if (p.img) { x.filter = 'grayscale(1) contrast(1.4)'; x.drawImage(p.img, (TK_W - p.iw) / 2, y, p.iw, p.ih); x.filter = 'none'; }
+      else if (p.sep) { x.setLineDash([6, 5]); x.beginPath(); x.moveTo(M, y + 8); x.lineTo(TK_W - M, y + 8); x.stroke(); x.setLineDash([]); }
       else if (p.r) { x.font = font(p.r); x.textAlign = p.r.c ? 'center' : 'left'; x.fillText(p.t, p.r.c ? TK_W / 2 : M, y); if (p.b) { x.textAlign = 'right'; x.fillText(p.b, TK_W - M, y); } }
       y += p.h;
     });
     return new Promise(ok => cv.toBlob(ok, 'image/png'));
   }
   const tkModo = () => { try { return localStorage.getItem('ticketModo') || ''; } catch (e) { return ''; } };
-  function ticketNota(offline) {
+  async function ticketNota(offline) {
     const d = offline ? S.notaOff : S.ultimaVenta; if (!d) return toast('Abre la nota primero', true);
+    if (!d.firmaUri && S.firmaReciente && S.firmaReciente.id === d.id) d.firmaUri = S.firmaReciente.uri;
+    if (!offline && d.tieneFirma !== false && !d.firmaUri && d.id) { try { const r = await pedir('firmaVenta', { ID_Venta: d.id }, true); if (r && r.uri) d.firmaUri = r.uri; } catch (e) {} }   /* ✍️ firma de recibido en el ticket */
     S.tkF = ticketFilas(d); S.tkFolio = d.folio || 'nota'; S.tkNota = d; S.tkOff = !!offline;
     const m = tkModo(), op = (id, t, sub) => `<button class="btn ${m === id ? 'primario' : ''}" style="display:block;width:100%;text-align:left" onclick="App.ticketImprimir('${id}')"><b>${t}</b><br><small>${sub}</small></button>`;
     modal('🧾 Ticket 80 mm · ' + esc(S.tkFolio), `<div class="tk-vista">${ticketHtml(S.tkF, true).replace(/^[\s\S]*?<body>|<\/body>[\s\S]*$/g, '')}</div>
@@ -3060,7 +3068,7 @@ const App = (() => {
     if (!f) return;
     if (f.omitida && !confirm('¿Marcar la nota como Entregada sin firma? Se descontarán las piezas del inventario de la sucursal.')) return;
     try { const r = await pedir('entregarVenta', Object.assign({ ID_Venta: id }, f.nombre ? { Recibio: f.nombre } : {}));
-      if (f.png) { if (await subirFirma('ventaFirma', id, f)) toast('✔ Firma guardada'); }
+      if (f.png) { if (await subirFirma('ventaFirma', id, f)) { toast('✔ Firma guardada'); S.firmaReciente = { id: id, uri: f.png }; } }
       toast('✔ Nota entregada: inventario descontado'); (r.avisos || []).forEach(a => setTimeout(() => toast('⚠️ ' + a, true), 2900)); refrescarStock(); verVenta(id); if ($('#lVentas')) buscarVentas(); } catch (e) {}
   }
   function formEnvio(id) {
