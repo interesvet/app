@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 357, f: '21/11/2026', t: [{ x: '⭐ Programa de puntos: cada cliente gana 1 punto por cada $100 que paga (configurable) y los canjea en sucursal por un monedero de regalo. En la ficha del cliente se ven sus puntos, movimientos y el botón Canjear.', p: 'clientes' }, { x: '📱 La tarjeta QR del cliente ahora muestra, al escanearla con su celular, su nombre, sus puntos y lo que valen, su monedero vigente y las ofertas activas (sin datos de compras ni fiscales).', p: 'clientes' }, { x: '🏷️ Configuración → Programa de puntos y ofertas: activa el programa, define cuánto vale un punto, el mínimo para canjear, las listas que no acumulan y crea ofertas con fechas y puntos dobles o triples.', p: '' }] },
     { v: 356, f: '21/11/2026', t: [{ x: '✍️ Firmas completas: la nota en pantalla y su PDF sin conexión ya muestran la firma y el nombre de quien recibió; el traspaso muestra la firma de quien recibió y la orden de compra recibida, la firma de recepción (también en sus PDF).', p: 'ventas' }] },
     { v: 355, f: '21/11/2026', t: [{ x: '✍️ La firma de recibido ahora sale también en el ticket de 80 mm (con el nombre de quien recibió), y se corrigió que no apareciera en el PDF de la nota.', p: 'ventas' }] },
     { v: 354, f: '20/11/2026', t: [{ x: '🏬 Sucursales → Resumen: el inventario (tarjeta, cuadro «Inventario y cartera», por caducar, caducado, días de inventario y GMROI) ya se valúa al precio de la lista de cada sucursal (Matriz: Subdistribuidor), igual que en Inventario.', p: 'sucursales' }] },
@@ -2263,6 +2264,78 @@ const App = (() => {
     let r; try { r = await pedir('monederos', { idCliente: id }, true); } catch (e) { el.closest('.fc-sec').style.display = 'none'; return; }
     S.monFicha = r.monederos || []; if (!S.monFicha.length) { el.closest('.fc-sec').style.display = 'none'; return; }
     el.innerHTML = S.monFicha.map((m, i) => `<button class="btn chico" onclick="App.verMonederoI(${i})">🎁 ${esc(m.folio)} · ${$$(m.estado === 'Vigente' ? m.saldo : m.importe)} · ${esc(m.estado)}${m.estado === 'Vigente' ? ' (vence ' + esc(m.vence) + ')' : ''}</button>`).join(' ');
+  }
+  /* ---------- ⭐ PUNTOS del cliente (ficha) ---------- */
+  async function cargarPuntosFicha(id) {
+    const el = $('#fcPts'); if (!el) return;
+    let r; try { r = await pedir('puntosCliente', { idCliente: id }, true); } catch (e) { el.closest('.fc-sec').style.display = 'none'; return; }
+    S.ptsTok = S.ptsTok || {}; S.ptsTok[id] = r.token; S.ptsCli = Object.assign({ id: id }, r);
+    if (!r.activo) { el.innerHTML = '<span class="muted peq">El programa de puntos no está activo' + (puede('dueno') || U().rol === 'Administrador' ? ' (Configuración → ⭐ Programa de puntos y ofertas).' : '.') + '</span>'; return; }
+    el.innerHTML = `<div class="fila" style="align-items:center;gap:10px;flex-wrap:wrap"><div><b style="font-size:20px">${nf(r.saldo)} puntos</b><br><small class="muted">equivalen a ${$$(r.valor)} · 1 punto por cada ${$$(r.pesosPorPunto)} pagados${r.excluido ? ' · <b>su lista no acumula</b>' : ''}</small></div>
+      ${puede('ventas') && r.saldo >= r.minCanje && r.saldo > 0 ? `<button class="btn primario chico" onclick="App.ptsCanjeForm('${esc(id)}')">🎁 Canjear puntos</button>` : `<small class="muted">Canje desde ${nf(r.minCanje)} puntos</small>`}
+      ${puede('dueno') || U().rol === 'Administrador' ? `<button class="btn chico" onclick="App.ptsAjusteForm('${esc(id)}')">± Ajustar</button>` : ''}</div>
+      ${r.ofertas.length ? `<p class="peq" style="margin:6px 0 0">🏷️ Ofertas vigentes: ${r.ofertas.map(o => '<b>' + esc(o.titulo) + '</b>' + (o.hasta ? ' (hasta ' + esc(o.hasta) + ')' : '')).join(' · ')}</p>` : ''}
+      ${r.movs.length ? `<details style="margin-top:6px"><summary class="muted peq">Movimientos</summary>${tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Movimiento', h: x => esc(x.tipo) + (x.ref ? ' · ' + esc(x.ref) : '') + (x.nota ? '<br><small class="muted">' + esc(x.nota) + '</small>' : '') }, { t: 'Puntos', num: 1, h: x => `<b class="${x.puntos < 0 ? 'txt-mal' : ''}">${x.puntos > 0 ? '+' : ''}${nf(x.puntos)}</b>` }], r.movs)}</details>` : ''}`;
+  }
+  function ptsCanjeForm(id) {
+    const r = S.ptsCli; if (!r || r.id !== id) return;
+    modal('🎁 Canjear puntos', `<p>Tiene <b>${nf(r.saldo)} puntos</b> (${$$(r.valor)}). Se convierten en un <b>monedero de regalo</b> que se usa en su siguiente compra.</p>
+      <label>Puntos a canjear<input type="number" id="pcPts" min="${r.minCanje}" max="${r.saldo}" step="1" value="${r.saldo}"></label><p class="muted peq" id="pcVal">= ${$$(r.saldo * r.valorPunto)}</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="pcOk" onclick="App.ptsCanjear('${esc(id)}')">Canjear</button></div>`);
+    $('#pcPts').oninput = e => { $('#pcVal').textContent = '= ' + $$((Number(e.target.value) || 0) * r.valorPunto); };
+  }
+  async function ptsCanjear(id) {
+    $('#pcOk').disabled = true;
+    try { const x = await pedir('canjearPuntos', { idCliente: id, puntos: Number($('#pcPts').value) });
+      const cm = cliente(id); if (cm) { cm.mon = cm.mon || { saldo: 0, vence: x.monedero.vence, folios: [] }; cm.mon.saldo = r2((cm.mon.saldo || 0) + x.monedero.saldo); LS.set('datos', S.datos); }
+      cargarPuntosFicha(id); cargarMonederosFicha(id);
+      cerrarModal(); toast('🎁 Monedero ' + x.monedero.folio + ' por ' + $$(x.monedero.importe) + ' · quedan ' + nf(x.saldo) + ' puntos'); verMonedero(x.monedero); } catch (e) { if ($('#pcOk')) $('#pcOk').disabled = false; }
+  }
+  function ptsAjusteForm(id) {
+    modal('± Ajustar puntos', `<label>Puntos (+ para sumar, − para restar)<input type="number" id="paPts" step="1"></label><label>Motivo<input id="paNota" placeholder="p. ej. compra anterior al programa"></label>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.ptsAjustar('${esc(id)}')">Guardar</button></div>`);
+  }
+  async function ptsAjustar(id) { try { const r = await pedir('ajustePuntos', { idCliente: id, puntos: Number($('#paPts').value), nota: $('#paNota').value }); cerrarModal(); toast('✔ Saldo: ' + nf(r.saldo) + ' puntos'); cargarPuntosFicha(id); } catch (e) {} }
+  /* ---------- ⭐ Configuración del programa de puntos ---------- */
+  async function ptsCfgCargar() {
+    const el = $('#ptsCfgRes'); if (!el) return;
+    try { const r = await pedir('cfgPuntos', {}, true); S.ptsCfg = r; const c = r.cfg, z = r.resumen;
+      el.innerHTML = `<p>${c.activo ? '<span class="etq ok">Activo</span> desde ' + esc(c.inicio) : '<span class="etq">Apagado</span>'} · 1 punto por cada ${$$(c.pesosPorPunto)} pagados · 1 punto = ${$$(c.valorPunto)} · canje desde ${nf(c.minCanje)} puntos · ${c.ofertas.filter(o => o.activa).length} ofertas</p>
+        ${z ? `<p>${nf(z.clientes)} clientes con puntos · ${nf(z.puntos)} puntos en circulación = <b>${$$(z.valor)}</b> por canjear</p>${z.top.length ? `<details><summary>Clientes con más puntos</summary>${tabla([{ t: 'Cliente', k: 'nombre' }, { t: 'Puntos', num: 1, h: x => nf(x.puntos) }, { t: 'Valor', num: 1, h: x => $$(x.puntos * c.valorPunto) }], z.top)}</details>` : ''}` : ''}`;
+    } catch (e) { el.textContent = 'Publica el servidor 277 para usar el programa de puntos.'; }
+  }
+  function ptsOfFilaHtml(o) {
+    return `<div class="tarjeta pts-of" style="padding:10px;margin:6px 0" data-id="${esc(o.id || '')}"><div class="fila" style="gap:6px;flex-wrap:wrap"><input class="po-tit" placeholder="Título (p. ej. Puntos dobles en vacunas)" value="${esc(o.titulo || '')}" style="flex:2;min-width:180px">
+      <label class="peq">Puntos ×<select class="po-mul">${[1, 2, 3].map(n => `<option ${Number(o.multiplicador || 1) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      <label class="peq"><input type="checkbox" class="po-act" ${o.activa !== false ? 'checked' : ''}> activa</label><button class="btn chico" onclick="App.ptsOfQuitar(this)">🗑️</button></div>
+      <textarea class="po-txt" rows="2" placeholder="Descripción que verá el cliente (p. ej. 10% en desparasitantes presentando tu tarjeta)">${esc(o.texto || '')}</textarea>
+      <div class="fila" style="gap:6px"><label class="peq">Desde<input type="date" class="po-des" value="${esc(o.desde || '')}"></label><label class="peq">Hasta<input type="date" class="po-has" value="${esc(o.hasta || '')}"></label></div></div>`;
+  }
+  function ptsOfFila() { $('#poLista').insertAdjacentHTML('beforeend', ptsOfFilaHtml({ multiplicador: 1, activa: true })); }
+  function ptsOfQuitar(b) { b.closest('.pts-of').remove(); }
+  async function ptsCfgForm() {
+    let r = S.ptsCfg; if (!r) { try { r = await pedir('cfgPuntos', {}); S.ptsCfg = r; } catch (e) { return; } }
+    const c = r.cfg;
+    modal('⭐ Programa de puntos y ofertas', `<label><input type="checkbox" id="pcAct" ${c.activo ? 'checked' : ''}> <b>Programa activo</b></label>
+      <div class="grid2"><label>Cuenta cobros desde<input type="date" id="pcIni" value="${esc(c.inicio || hoyISO())}"></label>
+      <label>1 punto por cada $<input type="number" id="pcPpp" min="1" step="1" value="${c.pesosPorPunto}"></label>
+      <label>Valor de 1 punto ($)<input type="number" id="pcVal2" min="0.01" step="0.01" value="${c.valorPunto}"></label>
+      <label>Mínimo para canjear (puntos)<input type="number" id="pcMin" min="0" step="1" value="${c.minCanje}"></label>
+      <label>Vigencia del monedero (días)<input type="number" id="pcDias" min="1" step="1" value="${c.monederoDias}"></label></div>
+      <p class="muted peq" id="pcEj"></p>
+      <p class="peq"><b>Listas que NO acumulan</b> (p. ej. distribuidores):<br>${(r.listas || []).map(l => `<label style="display:inline-block;margin-right:12px"><input type="checkbox" class="pcExc" value="${esc(l)}" ${c.excluirListas.indexOf(l) >= 0 ? 'checked' : ''}> ${esc(l)}</label>`).join('')}</p>
+      <p class="muted peq">No acumulan: público en general, lo pagado con monedero o nota de crédito, notas canceladas o devueltas, ni la parte de asociación (consignación).</p>
+      <h4 style="margin:12px 0 4px">🏷️ Ofertas</h4><div id="poLista">${c.ofertas.map(ptsOfFilaHtml).join('')}</div><button class="btn chico" onclick="App.ptsOfFila()">+ Agregar oferta</button>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="pcGuardar" onclick="App.ptsCfgGuardar()">Guardar</button></div>`);
+    const ej = () => { const ppp = Number($('#pcPpp').value) || 100, v = Number($('#pcVal2').value) || 1; $('#pcEj').textContent = 'Ejemplo: un cliente que paga $1,000 gana ' + nf(Math.floor(1000 / ppp)) + ' puntos = ' + $$(Math.floor(1000 / ppp) * v) + ' (' + nf(100 * v / ppp) + '% de regreso).'; };
+    ['#pcPpp', '#pcVal2'].forEach(x => $(x).oninput = ej); ej();
+  }
+  async function ptsCfgGuardar() {
+    const g = { activo: $('#pcAct').checked, inicio: $('#pcIni').value, pesosPorPunto: Number($('#pcPpp').value), valorPunto: Number($('#pcVal2').value), minCanje: Number($('#pcMin').value), monederoDias: Number($('#pcDias').value),
+      excluirListas: [...document.querySelectorAll('.pcExc:checked')].map(x => x.value),
+      ofertas: [...document.querySelectorAll('#poLista .pts-of')].map(d => ({ id: d.dataset.id, titulo: d.querySelector('.po-tit').value, texto: d.querySelector('.po-txt').value, multiplicador: Number(d.querySelector('.po-mul').value), activa: d.querySelector('.po-act').checked, desde: d.querySelector('.po-des').value, hasta: d.querySelector('.po-has').value })) };
+    $('#pcGuardar').disabled = true;
+    try { await pedir('cfgPuntos', { guardar: g }); S.ptsCfg = null; cerrarModal(); toast('⭐ Programa guardado'); ptsCfgCargar(); } catch (e) { if ($('#pcGuardar')) $('#pcGuardar').disabled = false; }
   }
   function verMonederoI(i) { const m = (S.monFicha || [])[i]; if (m) verMonedero(m); }
   function limpiarVenta() {
@@ -6809,6 +6882,9 @@ const App = (() => {
         ['ul', ['Alta: ➕ Nuevo cliente (también desde la venta: «¿No está? Dar de alta»). Captura nombre, RFC, régimen, uso de CFDI, C.P., teléfonos y correo; sube la Constancia de Situación Fiscal si factura.'], 'clientes_editar'],
         ['p', 'Como gerente puedes «Completar datos» de los clientes de tu sucursal; lista de precios, crédito, límites, estado y vendedor los cambia el administrador.', () => U().rol === 'Gerente'],
         ['p', 'Como administrador cambias todos los datos del cliente, incluidos lista de precios, crédito y límites.', esJefeM]] },
+      { h: 'Puntos y tarjeta QR', p: 'clientes', b: [['p', 'Cada cliente gana puntos por lo que PAGA: 1 punto por cada $100 cobrados (se configura). No acumulan público en general, lo pagado con monedero o nota de crédito, notas canceladas o devueltas, la parte de asociación ni las listas excluidas (p. ej. distribuidores). Si una nota se cancela después, sus puntos se restan solos.'],
+        ['ul', ['Ficha del cliente > ⭐ Puntos: saldo, cuánto valen y sus movimientos.', '🎁 Canjear puntos (desde el mínimo configurado): se convierten en un monedero de regalo que se aplica en su siguiente compra.', '🪪 Tarjeta: al enviarla, su QR lleva una firma; cuando el cliente la escanea con su celular ve su nombre, sus puntos, su monedero vigente y las ofertas activas (sin datos de compras ni fiscales). En sucursal el mismo QR lo identifica en la venta.']],
+        ['ul', ['± Ajustar suma o resta puntos con un motivo (p. ej. compras anteriores al programa).', 'Configuración > ⭐ Programa de puntos y ofertas: activar, fecha desde la que cuentan los cobros, $ por punto, valor del punto, mínimo para canjear, vigencia del monedero, listas que no acumulan y ofertas (título, descripción, fechas y puntos ×2 o ×3 mientras estén vigentes).'], 'dueno']] },
       { h: 'Cotizaciones', p: 'cotizaciones', b: [['ol', ['➕ Nueva cotización: cliente, lista de precios, productos, descuentos y observaciones.', 'Para dependencias de gobierno, en 🏛️ Para dependencias / gobierno activa: A quien corresponda (con firma «Atentamente»), Datos bancarios para depósito y Correo electrónico.', 'Guarda y comparte el PDF (tamaño carta). Funciona sin señal.', 'Cuando el cliente acepta, Convertir en venta: se crea la nota con los mismos renglones y queda ligada.', 'Si se pierde, registra el motivo (precio, existencia, otro proveedor…).']]] },
       { h: 'Seguimiento (CRM)', p: 'seguimiento', b: [['ul', ['Por atender: clientes que ya deberían recomprar y clientes dormidos, con sugerencia de qué ofrecer.', 'Prospectos: Interesado → Contactado → Cotizado → En negociación → Ganado / Perdido, con valor estimado y próxima acción.', 'Interacciones: 📞 Registrar llamada / WhatsApp / nota; captura el resumen y el próximo paso con fecha (aparece en Actividades del día).', 'Visitas: programa visitas a ranchos y clínicas y regístralas con foto y ubicación.']]] }] },
     { t: '4. Inventario y abasto', p: ['inventario', 'traspasos', 'compras', 'inventario_fisico', 'reclamaciones'], g: [
@@ -11291,6 +11367,7 @@ const App = (() => {
       ${seccion('🐂 Comercial', dato('Tipo', x.Tipo) + dato('¿Cómo nos conoció?', x.Origen) + dato('Potencial', x.Potencial) + dato('Sucursal', sucNom(x.ID_Sucursal)) + dato('Vendedor', vend ? vend.nombre : x.Vendedor) +
         (nichos.length ? `<div class="fc-dato ancho"><small>Nicho de mercado</small><span class="multi-sel">${nichos.map(n => `<span class="chip-op on">${esc(n)}</span>`).join('')}</span></div>` : ''))}
       ${x.Comentarios ? seccion('📝 Comentarios', dato('', x.Comentarios, 1)) : ''}
+      <div class="fc-sec"><h4>⭐ Puntos</h4><div id="fcPts" data-id="${esc(c.id)}"><span class="muted">Cargando…</span></div></div>
       <div class="fc-sec"><h4>🎁 Monederos de regalo</h4><div id="fcMon"><span class="muted">Cargando…</span></div></div>
       ${puede('seguimiento') ? `<div class="fc-sec"><h4>🤝 Seguimiento</h4><div id="fcSeg" data-id="${esc(c.id)}"><span class="muted">Cargando…</span></div>
         <div class="acciones izq"><button class="btn chico" onclick="App.formVisita({idCliente:'${esc(c.id)}'})">📅 Programar visita</button><button class="btn chico" onclick="App.formVisita({idCliente:'${esc(c.id)}', realizada:1})">✅ Registrar visita</button><button class="btn chico" onclick="App.visitasDeCliente('${esc(c.id)}')">📋 Sus visitas</button>
@@ -11310,7 +11387,7 @@ const App = (() => {
         ${admin || gerEdita ? `<button class="btn primario" onclick="App.formCliente(${i})">✏️ ${admin ? 'Editar' : 'Completar datos'}</button>` : ''}
       </div></div>`);
     if (puede('seguimiento')) cargarSegFicha(c.id);
-    cargarPerfilCompras(c.id); cargarMonederosFicha(c.id);
+    cargarPerfilCompras(c.id); cargarMonederosFicha(c.id); cargarPuntosFicha(c.id);
   }
   async function eliminarCliente(id) {
     const c = (D().clientes || []).find(z => z.id === id) || {};
@@ -11835,8 +11912,24 @@ const App = (() => {
     const f = document.querySelector('#login .login-card'); if (!f || $('#lgQR')) return;
     [...f.children].forEach(x => { if (!/^(lgLogo|lgNombre)$/.test(x.id)) x.classList.add('oculto-qr'); });
     f.insertAdjacentHTML('beforeend', `<div id="lgQR" style="text-align:center"><p style="font-size:17px;margin:10px 0 6px"><b>Tarjeta de cliente</b></p>
-      <p class="muted">Presenta esta tarjeta en tu sucursal de Interés Veterinario® para identificarte en tu compra.</p>
+      <div id="lgQRdatos"><p class="muted">Presenta esta tarjeta en tu sucursal de Interés Veterinario® para identificarte en tu compra.</p></div>
       <p style="margin-top:22px"><a href="#" class="muted peq" onclick="event.preventDefault();document.querySelectorAll('#login .oculto-qr').forEach(x=>x.classList.remove('oculto-qr'));this.closest('#lgQR').remove()">Personal de la empresa</a></p></div>`);
+    tarjetaPublicaCargar();
+  }
+  /** ⭐ Lo que ve el cliente al escanear su QR (sin sesión): nombre, puntos, monedero y ofertas. Solo con la firma t= del enlace. */
+  function tarjetaPublicaCargar() {
+    let q; try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    const id = q.get('cli'), t = q.get('t'); if (!id || !t || !window.google) return;
+    google.script.run.withSuccessHandler(txt => {
+      let r; try { r = JSON.parse(txt); } catch (e) { return; } if (!r.ok || !r.data) return;
+      const d = r.data, el = $('#lgQRdatos'); if (!el) return;
+      el.innerHTML = `<p style="font-size:19px;margin:4px 0 12px"><b>${esc(d.nombre)}</b></p>
+        ${d.puntos !== null ? `<div style="background:#1f6b3a;color:#fff;border-radius:16px;padding:14px;margin:8px 0"><div style="font-size:13px;opacity:.85">Tus puntos</div><div style="font-size:34px;font-weight:bold">${nf(d.puntos)}</div><div style="font-size:13px;opacity:.9">equivalen a ${$$(d.valor)} para tu siguiente compra</div></div>
+          <p class="muted peq">Ganas 1 punto por cada ${$$(d.programa.pesosPorPunto)} que pagas. Canjéalos en sucursal desde ${nf(d.programa.minCanje)} puntos.</p>` : ''}
+        ${d.monedero ? `<div style="border:2px dashed #1f6b3a;border-radius:14px;padding:10px;margin:10px 0"><b>🎁 Monedero de regalo: ${$$(d.monedero.saldo)}</b><br><small class="muted">válido hasta el ${esc(d.monedero.vence)}</small></div>` : ''}
+        ${d.ofertas.length ? `<div style="text-align:left;margin-top:12px"><b>🏷️ Ofertas para ti</b>${d.ofertas.map(o => `<div style="background:var(--fondo-suave,#f2f4f1);border-radius:12px;padding:10px;margin-top:8px"><b>${esc(o.titulo)}</b>${o.multiplicador > 1 ? ' <span class="etq ok">puntos ×' + o.multiplicador + '</span>' : ''}${o.texto ? '<br><span class="peq">' + esc(o.texto) + '</span>' : ''}${o.hasta ? '<br><small class="muted">hasta el ' + esc(o.hasta) + '</small>' : ''}</div>`).join('')}</div>` : ''}
+        <p class="muted peq" style="margin-top:12px">Presenta esta tarjeta en tu sucursal de Interés Veterinario® para identificarte en tu compra.</p>`;
+    }).withFailureHandler(() => {}).tarjeta(id, t);
   }
   /** Interpreta un código leído (pistola o cámara). destino: 'venta' | 'pos'. Regresa el texto a mostrar o null si no se reconoce. */
   function leerCodigo(txt, destino) {
@@ -12037,7 +12130,7 @@ const App = (() => {
     return cv;
   }
   /** Tarjeta del cliente (credencial vertical, para mostrar en el celular o imprimir). */
-  async function tarjetaPng(c) {
+  async function tarjetaPng(c, token) {
     const W = 640, H = 1090, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
     const rr = (X, Y, w, h, r) => { x.beginPath(); if (x.roundRect) x.roundRect(X, Y, w, h, r); else x.rect(X, Y, w, h); };
     const ajustar = (t, max, px, min) => { let s = px; do { x.font = 'bold ' + s + 'px Arial'; s -= 2; } while (x.measureText(t).width > max && s > min); };
@@ -12050,7 +12143,7 @@ const App = (() => {
     x.font = '600 22px Arial'; x.globalAlpha = .8; x.fillText('TARJETA DE CLIENTE · MONEDERO', W / 2, 360); x.globalAlpha = 1;
     const nom = String(c.razon || c.nombre || ''); ajustar(nom, W - 80, 50, 26); x.fillText(nom, W / 2, 420);
     if (c.razon && c.nombre && c.razon !== c.nombre) { x.font = '28px Arial'; x.globalAlpha = .8; x.fillText(String(c.nombre).slice(0, 36), W / 2, 462); x.globalAlpha = 1; }
-    const qr = await qrCanvas(QR_CLI + encodeURIComponent(c.id), 380);
+    const qr = await qrCanvas(QR_CLI + encodeURIComponent(c.id) + (token ? '&t=' + encodeURIComponent(token) : ''), 380);
     x.fillStyle = '#fff'; rr((W - 400) / 2, 500, 400, 400, 30); x.fill(); x.drawImage(qr, (W - 380) / 2, 510, 380, 380);
     const edo = String(c.estado || '').trim();
     if (edo) {
@@ -12065,7 +12158,8 @@ const App = (() => {
   }
   async function tarjetaCliente(id) {
     const c = cliente(id); if (!c) return;
-    let b; try { b = await tarjetaPng(c); } catch (e) { return toast(e.message || 'No se pudo generar la tarjeta', true); }
+    let tk = (S.ptsTok || {})[id] || ''; if (!tk && navigator.onLine !== false) { try { tk = (await pedir('tokenTarjeta', { idCliente: id }, true)).token || ''; } catch (e) {} }
+    let b; try { b = await tarjetaPng(c, tk); } catch (e) { return toast(e.message || 'No se pudo generar la tarjeta', true); }
     S.tarjeta = { id: id, blob: b }; const url = URL.createObjectURL(b);
     modal('🪪 Tarjeta del cliente', `<div style="text-align:center"><img src="${url}" alt="Tarjeta" style="width:100%;max-width:300px;border-radius:18px;box-shadow:0 4px 16px rgba(0,0,0,.25)"></div>
       <p class="muted peq">Al escanear el QR en la venta (cámara de la app o pistola lectora) se elige al cliente y se le aplican sus precios. Si tu personal lo escanea con la cámara del celular, abre Nueva venta con ese cliente; a cualquier otra persona no le muestra nada.</p>
@@ -12089,7 +12183,7 @@ const App = (() => {
     const t = S.tarjeta; if (!t) return; const c = cliente(t.id) || {};
     const txt = 'Interés Veterinario® — Esta es tu tarjeta de cliente. Preséntala en tu próxima compra.';
     const file = new File([t.blob], 'tarjeta-interes-veterinario.png', { type: 'image/png' });
-    if (tkMovil() && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], text: txt }); } catch (e) {} return; }
+    if (tkMovil() && navigator.canShare && navigator.canShare({ files: [file] })) { try { navigator.clipboard && navigator.clipboard.writeText(txt).catch(() => {}); } catch (x) {} try { await navigator.share({ files: [file] }); } catch (e) {} return; }
     let ok = false; try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': t.blob })]); ok = true; } } catch (e) {}
     const tel = String(c.cel || '').replace(/\D/g, '').slice(-10); window.open(WA_BASE + (tel ? '52' + tel : '') + '?text=' + encodeURIComponent(txt), '_blank');
     if (ok) toast('✔ Imagen copiada: pégala en el chat con ⌘V / Ctrl+V'); else { tarjetaBajar(); toast('Se descargó la imagen: adjúntala en el chat', true); }
@@ -16128,6 +16222,8 @@ const App = (() => {
         <div class="fila"><button class="btn fijo" onclick="App.cargarGrupos()">Ver / editar grupos</button></div><div id="cfGrupos" style="margin-top:12px"></div></div>` : ''}
       ${puede('configuracion') ? `<div class="tarjeta"><h3>Registros de inventario</h3><p class="muted">Busca renglones de compras, ventas y traspasos que ya tienen su movimiento en <b>Movimientos_Inventario</b> pero aún dicen <i>Mov_Registrado = FALSE</i>, y órdenes o notas que ya deberían estar como recibidas / entregadas. La app nunca vuelve a meter al inventario un renglón que ya tiene movimiento.</p>
         <div class="fila"><button class="btn fijo" onclick="App.repararRegistros(false)">Revisar registros</button></div><div id="cfReg" style="margin-top:12px"></div></div>` : ''}
+      ${puede('dueno') || U().rol === 'Administrador' ? `<div class="tarjeta"><h3>⭐ Programa de puntos y ofertas</h3><p class="muted">Cada cliente gana puntos por lo que <b>paga</b> (no por lo que se le vende a crédito) y los canjea en sucursal por un monedero de regalo. Las ofertas que actives se ven en su tarjeta QR y pueden dar puntos dobles o triples mientras estén vigentes.</p>
+        <div id="ptsCfgRes" class="peq muted">Cargando…</div><button class="btn primario" onclick="App.ptsCfgForm()">⚙️ Configurar programa y ofertas</button></div>` : ''}
       ${puede('configuracion') ? `<div class="tarjeta"><h3>🔧 Cuadrar ventas con inventario</h3><p class="muted">Compara lo que dice cada nota (sus renglones) contra lo que realmente se descontó en <b>Movimientos_Inventario</b>. Encuentra renglones agregados o cambiados a mano en la hoja y notas devueltas o canceladas sin regresar el producto. Tú eliges cuáles cuadrar; se escribe un movimiento de ajuste ligado a la nota.</p>
         <div class="fila"><button class="btn fijo" onclick="App.auditarVentasInv()">Revisar ventas vs inventario</button></div><div id="cfAudV" style="margin-top:12px"></div></div>` : ''}
       ${puede('dueno') ? tarjetaVentaSinExist() : ''}
@@ -16135,6 +16231,7 @@ const App = (() => {
     if (!puede('dueno')) return;
     if (u.rol === 'Administrador') cargarVendedores();
     if (u.rol === 'Administrador' && puede('recetas')) cargarCfgReceta();
+    if (puede('dueno') || u.rol === 'Administrador') ptsCfgCargar();
     if (puede('configuracion')) {
       try { const f = await pedir('folios', {}, true);
         f.sort((a, b) => (a.suc + a.tipo).localeCompare(b.suc + b.tipo));
@@ -16986,7 +17083,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, ptsCanjeForm, ptsCanjear, ptsAjusteForm, ptsAjustar, ptsCfgForm, ptsCfgGuardar, ptsOfFila, ptsOfQuitar, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, ventaNuevaPara, corregirClienteNota, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
