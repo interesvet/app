@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 356, f: '21/11/2026', t: [{ x: '✍️ Firmas completas: la nota en pantalla y su PDF sin conexión ya muestran la firma y el nombre de quien recibió; el traspaso muestra la firma de quien recibió y la orden de compra recibida, la firma de recepción (también en sus PDF).', p: 'ventas' }] },
     { v: 355, f: '21/11/2026', t: [{ x: '✍️ La firma de recibido ahora sale también en el ticket de 80 mm (con el nombre de quien recibió), y se corrigió que no apareciera en el PDF de la nota.', p: 'ventas' }] },
     { v: 354, f: '20/11/2026', t: [{ x: '🏬 Sucursales → Resumen: el inventario (tarjeta, cuadro «Inventario y cartera», por caducar, caducado, días de inventario y GMROI) ya se valúa al precio de la lista de cada sucursal (Matriz: Subdistribuidor), igual que en Inventario.', p: 'sucursales' }] },
     { v: 353, f: '20/11/2026', t: [{ x: '🎨 El logotipo de la barra lateral ahora va centrado.', p: '' }] },
@@ -2585,7 +2586,7 @@ const App = (() => {
         ${d.cobros.map(c => `<tr><td>${esc(c.fecha)}${c.id && puede('cobranza') && !offline ? ` <a class="no-imprimir" href="#" title="Ver comprobante del pago" onclick="App.verCobro('${c.id}');return false">${c.adj ? '📎' + c.adj : '🧾'}</a>` : ''}</td><td>${esc(c.forma || '')}</td><td>${esc(c.banco || '')}</td><td class="num">${$$(c.monto)}</td></tr>`).join('')}
         <tr><td colspan="3" style="text-align:right"><b>Total pagado</b></td><td class="num"><b>${$$(d.cobros.reduce((t, c) => t + c.monto, 0))}</b></td></tr>
         </tbody></table></div></div>` : ''}
-      <p style="margin-top:36px;text-align:center">_______________________________<br><small>Recibí de conformidad</small></p></div></div>
+      <div style="margin-top:22px;text-align:center;break-inside:avoid"><div id="notaFirmaImg" style="min-height:14px">${d.firmaUri ? `<img src="${d.firmaUri}" alt="Firma" style="max-height:80px;max-width:260px">` : ''}</div>_______________________________<br><small>Recibí de conformidad</small>${d.recibio ? `<br><b>${esc(d.recibio)}</b>` : ''}</div></div></div>
       <div class="acciones no-imprimir">
         <button class="btn" onclick="App.ticketNota(${offline ? 'true' : 'false'})">🧾 Ticket 80 mm</button>
         ${!offline && d.id ? `<button class="btn primario" onclick="App.pdfNota('${d.id}')">📄 PDF para enviar / imprimir</button>` : '<button class="btn primario" onclick="App.pdfNotaOffline()">📄 PDF para enviar</button><button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button>'}
@@ -3040,7 +3041,7 @@ const App = (() => {
   }
 
   async function verVenta(id) {
-    try { const d = await pedir('detalleVenta', { ID_Venta: id }); S.ultimaVenta = d; modal('Nota ' + d.folio, htmlNota(d)); if ($('#notaFact')) cargarFactNota(id); if ($('#notaRx')) cargarRxNota(d); } catch (e) {}
+    try { const d = await pedir('detalleVenta', { ID_Venta: id }); S.ultimaVenta = d; modal('Nota ' + d.folio, htmlNota(d)); if ($('#notaFact')) cargarFactNota(id); firmaEnNota(d); if ($('#notaRx')) cargarRxNota(d); } catch (e) {}
   }
   function formCancelarLinea(idVenta, idDet) {
     const d = S.ultimaVenta, l = d && d.lineas.find(x => x.idDet === idDet);
@@ -3808,6 +3809,18 @@ const App = (() => {
   const etqCuadre = c => ({ 'cuadra': '<span class="etq ok">Cuadra</span>', 'falta asignar': '<span class="etq av">Falta asignar</span>', 'excede': '<span class="etq mal">Excede</span>',
     'por definir': '<span class="etq av">Montos por definir</span>', 'sin XML': '<span class="etq">Sin XML</span>', 'sin notas': '<span class="etq mal">Sin notas</span>',
     'cancelada': '<span class="etq mal">🚫 Cancelada · falta la nueva</span>', 'sustituida': '<span class="etq">🚫 Cancelada · sustituida</span>' })[c] || esc(c);
+  /** ✍️ Trae la firma (traspaso u orden de compra) y la pone dentro del documento. */
+  async function firmaDocEn(tipo, id, sel) {
+    try { const r = await pedir('firmaDoc', { tipo: tipo, id: id }, true); const el = $(sel); if (!el || !r || !r.uri) return;
+      el.innerHTML = `<img src="${r.uri}" alt="Firma" style="max-height:70px;max-width:220px">`; if (tipo === 'ocFirma' && $('#ocFirmaDoc')) $('#ocFirmaDoc').style.display = ''; } catch (e) {}
+  }
+  /** ✍️ Pone la imagen de la firma de recibido dentro de la nota (vista, ticket y PDF local la reutilizan). */
+  async function firmaEnNota(d) {
+    if (!d || !d.id || d.estatus !== 'Entregado' || d.tieneFirma === false) return;
+    if (!d.firmaUri && S.firmaReciente && S.firmaReciente.id === d.id) d.firmaUri = S.firmaReciente.uri;
+    if (!d.firmaUri) { try { const r = await pedir('firmaVenta', { ID_Venta: d.id }, true); if (r && r.uri) d.firmaUri = r.uri; } catch (e) { return; } }
+    const el = $('#notaFirmaImg'); if (el && d.firmaUri && S.ultimaVenta === d) el.innerHTML = `<img src="${d.firmaUri}" alt="Firma" style="max-height:80px;max-width:260px">`;
+  }
   async function cargarFactNota(id) {
     const el = $('#notaFact'); if (!el) return;
     let r; try { r = await pedir('facturasNota', { ID_Venta: id }, true); } catch (e) { el.innerHTML = '<span class="muted">Facturación: requiere conexión.</span>'; return; }
@@ -6117,7 +6130,7 @@ const App = (() => {
       ${tabla([{ t: 'Cant.', num: 1, h: x => nf(x.cant) }, { t: 'Producto', k: 'nombre' }, { t: 'Lote', h: x => x.registrado ? esc(x.lote) : x.lote && x.lote !== 'SIN LOTE' ? esc(x.lote) + ' <small class="muted">(por confirmar)</small>' : '<span class="muted">al recibir</span>' }, { t: 'Cad.', h: x => esc(x.cad || '') }, { t: 'Costo', num: 1, h: x => $$(x.precio) }, { t: 'Importe', num: 1, h: x => $$((x.sub || x.cant * x.precio) - (x.desc || 0)) }, { t: 'IVA $', num: 1, h: x => $$(x.iva || 0) }, { t: 'Total', num: 1, h: x => `<b>${$$(x.total)}</b>` }], d.lineas)}
       <div class="totales" style="margin-top:10px"><div><span>Subtotal</span><span>${$$(d.sub)}</span></div>${d.descEsp ? `<div><span>Descuento especial</span><span>−${$$(d.descEsp)}</span></div>` : ''}${d.descPP ? `<div><span>Descuento pronto pago</span><span>−${$$(d.descPP)}</span></div>` : ''}<div><span>IVA</span><span>${$$(d.iva)}</span></div>${d.flete ? `<div><span>Flete</span><span>${$$(d.flete)}</span></div>` : ''}
       <div class="gran"><span>Total</span><span>${$$(d.total)}</span></div><div><span>Pagado</span><span>${$$(d.pagado)}</span></div><div><b>Saldo</b><b>${$$(d.saldo)}</b></div></div>
-      ${tablaPagosOC(d)}</div></div>
+      ${tablaPagosOC(d)}${String(d.recibido).toUpperCase() === 'SI' ? '<div id="ocFirmaDoc" style="margin-top:16px;text-align:center;display:none"><div id="ocFirmaImg"></div>_______________________________<br><small>Recibió la mercancía (sucursal)</small></div>' : ''}</div></div>
       ${d.cancelada ? `<div class="tarjeta" style="margin-top:12px;border-color:var(--mal)"><b class="txt-mal">🚫 Orden cancelada.</b> <span class="muted">${esc(d.obs || '')}</span></div>` : ''}
       ${puede('dueno') && (d.fletesPagados || []).length ? `<div class="tarjeta no-imprimir" style="margin-top:12px"><b>🚚 Flete que pagaste</b> <small class="muted">(se suma al costo real de estos productos, repartido por valor)</small>${d.fletesPagados.map(f => `<div class="peq" style="margin-top:4px">${esc(f.emisor)} · ${esc(f.fecha)} · factura ${$$(f.factura)} sin IVA${f.ordenes > 1 ? ', repartida entre ' + f.ordenes + ' órdenes' : ''} → a esta orden <b>${$$(f.monto)}</b> <a href="#" onclick="App.fleteLigar('${esc(f.uuid)}');return false">cambiar</a></div>`).join('')}</div>` : ''}
       ${pend.length && !d.cancelada && puede('compras') ? `<div class="tarjeta no-imprimir" style="margin-top:12px"><h3>Recibir mercancía en ${esc(sucNom(d.suc))}</h3><p class="muted peq" style="margin:0 0 8px">Captura el lote y la caducidad de cada producto, como vienen en la factura del proveedor.</p>
@@ -6130,6 +6143,7 @@ const App = (() => {
       ${puede('compras') && !d.cancelada ? `<button class="btn" onclick="App.formFacturaCompra('${d.id}')">🧾 ${d.factura || d.nota ? 'Editar' : 'Capturar'} factura / nota</button>` : ''}
       ${puede('compras') && d.editable ? `<button class="btn" onclick="App.editarCompra()">✏️ Editar orden</button><button class="btn peligro" onclick="App.cancelarCompra('${d.id}')">🚫 Cancelar orden</button>` : ''}
       ${d.saldo > 0.009 && puede('pagos_proveedor') ? `<button class="btn" onclick="App.formNotaCredito('${d.id}',${d.saldo})">🧾 Nota de crédito</button><button class="btn primario" onclick="App.formPagoProv('${d.id}',${d.saldo})">Registrar pago</button>` : ''}</div>`);
+    if ($('#ocFirmaDoc')) firmaDocEn('ocFirma', d.id, '#ocFirmaImg');
   }
   /** Carga la orden (sin recibir) en el formulario para editarla. */
   function editarCompra() {
@@ -6628,14 +6642,14 @@ const App = (() => {
         <div class="tabla-cont"><table class="tr-tabla"><thead><tr><th class="num">Cant.</th><th>Producto</th><th>Lote / Cad.</th>${imp ? '<th class="num">Precio</th><th class="num">Importe</th><th class="num">IVA $</th><th class="num">Total</th>' : ''}</tr></thead><tbody>${filas}${imp ? `<tr class="res-total"><td colspan="4" class="num"><b>Suma de los productos</b></td><td class="num"><b>${$$(sub)}</b></td><td class="num"><b>${$$(iva)}</b></td><td class="num"><b>${$$(sub + iva)}</b></td></tr>` : ''}</tbody></table></div>
         <div class="tr-pie"><div class="muted"><b>${nf(pzs)} piezas</b> · ${d.lineas.length} productos${d.comentarios ? `<br><b>Comentarios:</b> ${esc(d.comentarios)}` : ''}</div>
           ${imp ? `<table class="tr-tot"><tr><td>Subtotal</td><td class="num">${$$(sub)}</td></tr><tr><td>IVA</td><td class="num">${$$(iva)}</td></tr><tr><td>Flete${absorbe ? `<small class="muted"> (lo absorbe Matriz${fleteCap ? ': ' + $$(fleteCap) : ''})</small>` : ''}</td><td class="num">${$$(flete)}</td></tr><tr class="total"><td>TOTAL</td><td class="num">${$$(total)}</td></tr></table>` : ''}</div>
-        <div class="tr-firmas"><div><span></span><b>Entregó</b><small>Almacén ${esc(d.origenNombre)}</small></div><div><span></span><b>Transportista</b><small>${esc([d.envio, d.guia].filter(Boolean).join(' · ') || '—')}</small></div><div><span></span><b>Recibió</b><small>${d.recibio ? esc(d.recibio) + ' · ' : ''}Almacén ${esc(d.destinoNombre)}</small></div></div>
+        <div class="tr-firmas"><div><span></span><b>Entregó</b><small>Almacén ${esc(d.origenNombre)}</small></div><div><span></span><b>Transportista</b><small>${esc([d.envio, d.guia].filter(Boolean).join(' · ') || '—')}</small></div><div><div id="trFirmaImg" style="text-align:center;min-height:0"></div><span></span><b>Recibió</b><small>${d.recibio ? esc(d.recibio) + ' · ' : ''}Almacén ${esc(d.destinoNombre)}</small></div></div>
       </div></div>
         ${transito && d.id && puede('traspasos') ? `<div class="tarjeta no-imprimir" style="border-color:var(--aviso);background:var(--aviso-suave)"><div class="fila"><div style="flex:3 1 260px">🚚 <b>En tránsito</b>: todavía no se mueve el inventario. Al marcarlo <b>Entregado</b> sale de ${esc(d.origenNombre)} y entra a ${esc(d.destinoNombre)} con fecha de hoy.</div>
           <label class="fijo">Recibió<input id="trEntRec" value="${esc(d.recibio || '')}" placeholder="Nombre"></label>
           <button class="btn primario fijo" onclick="App.entregarTraspaso()">✅ Marcar entregado</button><button class="btn peligro fijo" onclick="App.cancelarTraspaso()">✕ Cancelar</button></div></div>` : ''}
         ${d.id ? bloqueArch('trGuia', d.id) + bloqueArch('trFirma', d.id) : ''}
         <div class="acciones no-imprimir">${d.editable && d.estatus !== 'Cancelado' ? `<button class="btn" onclick="App.formEditarTraspaso()">✏️ Editar envío y datos</button>` : ''}<button class="btn" onclick="App.imprimir()">🖨️ Imprimir</button><button class="btn primario" onclick="App.pdfTraspaso('${esc(d.folio)}')">📄 PDF para enviar</button></div>`);
-      S.trDet = d; } catch (e) {}
+      S.trDet = d; if (d.id && !transito) firmaDocEn('trFirma', d.id, '#trFirmaImg'); } catch (e) {}
   }
   const verImpC = () => { const per = U().permisos || {}; return per.ver_importes !== undefined ? !!per.ver_importes : U().rol !== 'Almacenista'; };
   const paqueterias = () => { const l = (D().catalogos || {}).paqueterias || []; return l.length ? l : [{ id: ENVIO_DEFAULT, nombre: 'Entrega física' }]; };
@@ -10295,7 +10309,8 @@ const App = (() => {
     if (d.motivo) { fuente('normal', 8); color(GR); pdf.splitTextToSize(txtPdf('Cancelaciones: ' + d.motivo), AN).forEach(t => { pdf.text(t, M, y + 8); y += 10; }); y += 4; }
     // --- firma
     if (y + 50 > limite) { pdf.addPage(); y = M; }
-    y += 34; pdf.setDrawColor(51, 51, 51); pdf.setLineWidth(0.8); pdf.line(W / 2 - 110, y, W / 2 + 110, y); fuente('normal', 8.5); color(TX); pdf.text('Recibí de conformidad' + (d.recibio ? ': ' + txtPdf(d.recibio) : ''), W / 2, y + 11, { align: 'center' });
+    if (d.firmaUri) { try { if (y + 100 > limite) { pdf.addPage(); y = M; } const fp = pdf.getImageProperties(d.firmaUri), fh = 62, fw = Math.min(220, fp.width * fh / fp.height); pdf.addImage(d.firmaUri, (fp.fileType || 'PNG'), W / 2 - fw / 2, y + 8, fw, fh); y += 40; } catch (e) {} }
+    y += 34; pdf.setDrawColor(51, 51, 51); pdf.setLineWidth(0.8); pdf.line(W / 2 - 110, y, W / 2 + 110, y); fuente('normal', 8.5); color(TX); pdf.text('Recibí de conformidad', W / 2, y + 11, { align: 'center' }); if (d.recibio) { fuente('bold', 8.5); pdf.text(txtPdf(d.recibio), W / 2, y + 22, { align: 'center' }); }
     // --- pie de ondas al fondo de la última hoja
     if (pie) pdf.addImage(pie.data, 'PNG', 0, H - PIE_H, W, PIE_H);
     const n = pdf.getNumberOfPages();
