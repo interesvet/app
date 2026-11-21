@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 358, f: '21/11/2026', t: [{ x: '⭐ En la nota de venta, al elegir o escanear al cliente, el encabezado muestra sus puntos (aunque sean 0) y su monedero vigente.', p: 'ventas' }] },
     { v: 357, f: '21/11/2026', t: [{ x: '⭐ Programa de puntos: cada cliente gana 1 punto por cada $100 que paga (configurable) y los canjea en sucursal por un monedero de regalo. En la ficha del cliente se ven sus puntos, movimientos y el botón Canjear.', p: 'clientes' }, { x: '📱 La tarjeta QR del cliente ahora muestra, al escanearla con su celular, su nombre, sus puntos y lo que valen, su monedero vigente y las ofertas activas (sin datos de compras ni fiscales).', p: 'clientes' }, { x: '🏷️ Configuración → Programa de puntos y ofertas: activa el programa, define cuánto vale un punto, el mínimo para canjear, las listas que no acumulan y crea ofertas con fechas y puntos dobles o triples.', p: '' }] },
     { v: 356, f: '21/11/2026', t: [{ x: '✍️ Firmas completas: la nota en pantalla y su PDF sin conexión ya muestran la firma y el nombre de quien recibió; el traspaso muestra la firma de quien recibió y la orden de compra recibida, la firma de recepción (también en sus PDF).', p: 'ventas' }] },
     { v: 355, f: '21/11/2026', t: [{ x: '✍️ La firma de recibido ahora sale también en el ticket de 80 mm (con el nombre de quien recibió), y se corrigió que no apareciera en el PDF de la nota.', p: 'ventas' }] },
@@ -2038,7 +2039,7 @@ const App = (() => {
         <label style="flex:3 1 280px">Cliente<div class="buscador"><input id="vCli" placeholder="Buscar por nombre, razón social, RFC o teléfono…" value="${c ? esc(c.razon || c.nombre) : ''}" autocomplete="off"></div></label>
         ${puede('clientes_editar') ? '<button class="btn fijo" onclick="App.formCliente(null,\'venta\')">+ Cliente</button>' : ''}
       </div>
-      <div id="vCliInfo" class="muted" style="margin-top:8px">${c ? `Lista <b>${esc(v.lista)}</b> · Crédito ${c.credito} días · ${esc(c.rfc || 'Sin RFC')} · ${esc(c.localidad || c.municipio || '')} ${c.status === 'Inactivo' ? '<span class="etq mal">Inactivo</span>' : ''}` : 'Selecciona un cliente para aplicar su lista de precios.'}</div></div>
+      <div id="vCliInfo" class="muted" style="margin-top:8px">${c ? `Lista <b>${esc(v.lista)}</b> · Crédito ${c.credito} días · ${esc(c.rfc || 'Sin RFC')} · ${esc(c.localidad || c.municipio || '')} ${c.status === 'Inactivo' ? '<span class="etq mal">Inactivo</span>' : ''}${ptsVentaHtml(c)}` : 'Selecciona un cliente para aplicar su lista de precios.'}</div></div>
       <div class="tarjeta"><div class="fila" style="gap:8px;flex-wrap:nowrap"><div class="buscador buscador-prod" style="flex:1"><input id="vProd" enterkeyhint="search" placeholder="🔍 Agregar producto: clave, nombre, código de barras…" autocomplete="off"></div><button class="btn fijo" onclick="App.escanear('venta', true)" title="Escanear con la cámara">📷</button></div>
         <div class="espacio"></div>
         <div class="doc-lineas" id="vLineas"></div></div>
@@ -2264,6 +2265,19 @@ const App = (() => {
     let r; try { r = await pedir('monederos', { idCliente: id }, true); } catch (e) { el.closest('.fc-sec').style.display = 'none'; return; }
     S.monFicha = r.monederos || []; if (!S.monFicha.length) { el.closest('.fc-sec').style.display = 'none'; return; }
     el.innerHTML = S.monFicha.map((m, i) => `<button class="btn chico" onclick="App.verMonederoI(${i})">🎁 ${esc(m.folio)} · ${$$(m.estado === 'Vigente' ? m.saldo : m.importe)} · ${esc(m.estado)}${m.estado === 'Vigente' ? ' (vence ' + esc(m.vence) + ')' : ''}</button>`).join(' ');
+  }
+  /* ---------- ⭐ Puntos y monedero en el encabezado de la venta (se guarda el último saldo para verlo sin señal) ---------- */
+  function ptsVentaTxt(id, c) {
+    const k = (LS.get('ptsSaldo', {}) || {})[id], mon = c && c.mon && c.mon.saldo > 0 ? ` · 🎁 Monedero <b>${$$(c.mon.saldo)}</b>` : '';
+    return `<br><span>⭐ Puntos: <b>${k ? nf(k.p) : '0'}</b>${k && k.v ? ' (' + $$(k.v) + ')' : ''}${k && k.off ? ' <small>· programa apagado</small>' : ''}${mon}</span>`;
+  }
+  function ptsVentaHtml(c) {
+    if (!c || c.id === 'PUBLICO' || /p[uú]blico en general/i.test(c.nombre || '')) return '';
+    setTimeout(async () => {
+      try { const r = await pedir('puntosCliente', { idCliente: c.id }, true); const m = LS.get('ptsSaldo', {}) || {}; m[c.id] = { p: r.saldo, v: r.valor, off: !r.activo }; LS.set('ptsSaldo', m);
+        (S.ptsTok = S.ptsTok || {})[c.id] = r.token; const el = $('#vCliPts'); if (el && el.dataset.id === c.id) el.innerHTML = ptsVentaTxt(c.id, c); } catch (e) {}
+    }, 0);
+    return `<span id="vCliPts" data-id="${esc(c.id)}">${ptsVentaTxt(c.id, c)}</span>`;
   }
   /* ---------- ⭐ PUNTOS del cliente (ficha) ---------- */
   async function cargarPuntosFicha(id) {
@@ -6883,7 +6897,7 @@ const App = (() => {
         ['p', 'Como gerente puedes «Completar datos» de los clientes de tu sucursal; lista de precios, crédito, límites, estado y vendedor los cambia el administrador.', () => U().rol === 'Gerente'],
         ['p', 'Como administrador cambias todos los datos del cliente, incluidos lista de precios, crédito y límites.', esJefeM]] },
       { h: 'Puntos y tarjeta QR', p: 'clientes', b: [['p', 'Cada cliente gana puntos por lo que PAGA: 1 punto por cada $100 cobrados (se configura). No acumulan público en general, lo pagado con monedero o nota de crédito, notas canceladas o devueltas, la parte de asociación ni las listas excluidas (p. ej. distribuidores). Si una nota se cancela después, sus puntos se restan solos.'],
-        ['ul', ['Ficha del cliente > ⭐ Puntos: saldo, cuánto valen y sus movimientos.', '🎁 Canjear puntos (desde el mínimo configurado): se convierten en un monedero de regalo que se aplica en su siguiente compra.', '🪪 Tarjeta: al enviarla, su QR lleva una firma; cuando el cliente la escanea con su celular ve su nombre, sus puntos, su monedero vigente y las ofertas activas (sin datos de compras ni fiscales). En sucursal el mismo QR lo identifica en la venta.']],
+        ['ul', ['Ficha del cliente > ⭐ Puntos: saldo, cuánto valen y sus movimientos.', '🎁 Canjear puntos (desde el mínimo configurado): se convierten en un monedero de regalo que se aplica en su siguiente compra.', 'En la nueva venta, al elegir o escanear al cliente, el encabezado muestra ⭐ Puntos (aunque sean 0) y su monedero vigente.', '🪪 Tarjeta: al enviarla, su QR lleva una firma; cuando el cliente la escanea con su celular ve su nombre, sus puntos, su monedero vigente y las ofertas activas (sin datos de compras ni fiscales). En sucursal el mismo QR lo identifica en la venta.']],
         ['ul', ['± Ajustar suma o resta puntos con un motivo (p. ej. compras anteriores al programa).', 'Configuración > ⭐ Programa de puntos y ofertas: activar, fecha desde la que cuentan los cobros, $ por punto, valor del punto, mínimo para canjear, vigencia del monedero, listas que no acumulan y ofertas (título, descripción, fechas y puntos ×2 o ×3 mientras estén vigentes).'], 'dueno']] },
       { h: 'Cotizaciones', p: 'cotizaciones', b: [['ol', ['➕ Nueva cotización: cliente, lista de precios, productos, descuentos y observaciones.', 'Para dependencias de gobierno, en 🏛️ Para dependencias / gobierno activa: A quien corresponda (con firma «Atentamente»), Datos bancarios para depósito y Correo electrónico.', 'Guarda y comparte el PDF (tamaño carta). Funciona sin señal.', 'Cuando el cliente acepta, Convertir en venta: se crea la nota con los mismos renglones y queda ligada.', 'Si se pierde, registra el motivo (precio, existencia, otro proveedor…).']]] },
       { h: 'Seguimiento (CRM)', p: 'seguimiento', b: [['ul', ['Por atender: clientes que ya deberían recomprar y clientes dormidos, con sugerencia de qué ofrecer.', 'Prospectos: Interesado → Contactado → Cotizado → En negociación → Ganado / Perdido, con valor estimado y próxima acción.', 'Interacciones: 📞 Registrar llamada / WhatsApp / nota; captura el resumen y el próximo paso con fecha (aparece en Actividades del día).', 'Visitas: programa visitas a ranchos y clínicas y regístralas con foto y ubicación.']]] }] },
