@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 359, f: '21/11/2026', t: [{ x: '🪪 La tarjeta del cliente ahora dice que acumula puntos («★ Acumula 1 punto por cada $100 de compra»). Al escanearla, el cliente ve su resumen de puntos y monedero, sus últimos movimientos y la campaña de puntos vigente.', p: 'clientes' }, { x: '🏷️ Ofertas de puntos por categoría: en Configuración → Programa de puntos, cada oferta puede dar puntos ×2 a ×5 solo en las categorías de productos que marques (p. ej. Vacunas).', p: '' }] },
     { v: 358, f: '21/11/2026', t: [{ x: '⭐ En la nota de venta, al elegir o escanear al cliente, el encabezado muestra sus puntos (aunque sean 0) y su monedero vigente.', p: 'ventas' }] },
     { v: 357, f: '21/11/2026', t: [{ x: '⭐ Programa de puntos: cada cliente gana 1 punto por cada $100 que paga (configurable) y los canjea en sucursal por un monedero de regalo. En la ficha del cliente se ven sus puntos, movimientos y el botón Canjear.', p: 'clientes' }, { x: '📱 La tarjeta QR del cliente ahora muestra, al escanearla con su celular, su nombre, sus puntos y lo que valen, su monedero vigente y las ofertas activas (sin datos de compras ni fiscales).', p: 'clientes' }, { x: '🏷️ Configuración → Programa de puntos y ofertas: activa el programa, define cuánto vale un punto, el mínimo para canjear, las listas que no acumulan y crea ofertas con fechas y puntos dobles o triples.', p: '' }] },
     { v: 356, f: '21/11/2026', t: [{ x: '✍️ Firmas completas: la nota en pantalla y su PDF sin conexión ya muestran la firma y el nombre de quien recibió; el traspaso muestra la firma de quien recibió y la orden de compra recibida, la firma de recepción (también en sus PDF).', p: 'ventas' }] },
@@ -2274,7 +2275,7 @@ const App = (() => {
   function ptsVentaHtml(c) {
     if (!c || c.id === 'PUBLICO' || /p[uú]blico en general/i.test(c.nombre || '')) return '';
     setTimeout(async () => {
-      try { const r = await pedir('puntosCliente', { idCliente: c.id }, true); const m = LS.get('ptsSaldo', {}) || {}; m[c.id] = { p: r.saldo, v: r.valor, off: !r.activo }; LS.set('ptsSaldo', m);
+      try { const r = await pedir('puntosCliente', { idCliente: c.id }, true); const m = LS.get('ptsSaldo', {}) || {}; m[c.id] = { p: r.saldo, v: r.valor, off: !r.activo }; LS.set('ptsSaldo', m); if (r.pesosPorPunto) LS.set('ptsPpp', r.pesosPorPunto);
         (S.ptsTok = S.ptsTok || {})[c.id] = r.token; const el = $('#vCliPts'); if (el && el.dataset.id === c.id) el.innerHTML = ptsVentaTxt(c.id, c); } catch (e) {}
     }, 0);
     return `<span id="vCliPts" data-id="${esc(c.id)}">${ptsVentaTxt(c.id, c)}</span>`;
@@ -2283,12 +2284,12 @@ const App = (() => {
   async function cargarPuntosFicha(id) {
     const el = $('#fcPts'); if (!el) return;
     let r; try { r = await pedir('puntosCliente', { idCliente: id }, true); } catch (e) { el.closest('.fc-sec').style.display = 'none'; return; }
-    S.ptsTok = S.ptsTok || {}; S.ptsTok[id] = r.token; S.ptsCli = Object.assign({ id: id }, r);
+    S.ptsTok = S.ptsTok || {}; S.ptsTok[id] = r.token; S.ptsCli = Object.assign({ id: id }, r); if (r.pesosPorPunto) LS.set('ptsPpp', r.pesosPorPunto);
     if (!r.activo) { el.innerHTML = '<span class="muted peq">El programa de puntos no está activo' + (puede('dueno') || U().rol === 'Administrador' ? ' (Configuración → ⭐ Programa de puntos y ofertas).' : '.') + '</span>'; return; }
     el.innerHTML = `<div class="fila" style="align-items:center;gap:10px;flex-wrap:wrap"><div><b style="font-size:20px">${nf(r.saldo)} puntos</b><br><small class="muted">equivalen a ${$$(r.valor)} · 1 punto por cada ${$$(r.pesosPorPunto)} pagados${r.excluido ? ' · <b>su lista no acumula</b>' : ''}</small></div>
       ${puede('ventas') && r.saldo >= r.minCanje && r.saldo > 0 ? `<button class="btn primario chico" onclick="App.ptsCanjeForm('${esc(id)}')">🎁 Canjear puntos</button>` : `<small class="muted">Canje desde ${nf(r.minCanje)} puntos</small>`}
       ${puede('dueno') || U().rol === 'Administrador' ? `<button class="btn chico" onclick="App.ptsAjusteForm('${esc(id)}')">± Ajustar</button>` : ''}</div>
-      ${r.ofertas.length ? `<p class="peq" style="margin:6px 0 0">🏷️ Ofertas vigentes: ${r.ofertas.map(o => '<b>' + esc(o.titulo) + '</b>' + (o.hasta ? ' (hasta ' + esc(o.hasta) + ')' : '')).join(' · ')}</p>` : ''}
+      ${r.ofertas.length ? `<p class="peq" style="margin:6px 0 0">🏷️ Ofertas vigentes: ${r.ofertas.map(o => '<b>' + esc(o.titulo) + '</b>' + (o.multiplicador > 1 ? ' puntos ×' + o.multiplicador + ((o.categorias || []).length ? ' en ' + esc(o.categorias.join(', ')) : '') : '') + (o.hasta ? ' (hasta ' + esc(o.hasta) + ')' : '')).join(' · ')}</p>` : ''}
       ${r.movs.length ? `<details style="margin-top:6px"><summary class="muted peq">Movimientos</summary>${tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Movimiento', h: x => esc(x.tipo) + (x.ref ? ' · ' + esc(x.ref) : '') + (x.nota ? '<br><small class="muted">' + esc(x.nota) + '</small>' : '') }, { t: 'Puntos', num: 1, h: x => `<b class="${x.puntos < 0 ? 'txt-mal' : ''}">${x.puntos > 0 ? '+' : ''}${nf(x.puntos)}</b>` }], r.movs)}</details>` : ''}`;
   }
   function ptsCanjeForm(id) {
@@ -2320,10 +2321,15 @@ const App = (() => {
   }
   function ptsOfFilaHtml(o) {
     return `<div class="tarjeta pts-of" style="padding:10px;margin:6px 0" data-id="${esc(o.id || '')}"><div class="fila" style="gap:6px;flex-wrap:wrap"><input class="po-tit" placeholder="Título (p. ej. Puntos dobles en vacunas)" value="${esc(o.titulo || '')}" style="flex:2;min-width:180px">
-      <label class="peq">Puntos ×<select class="po-mul">${[1, 2, 3].map(n => `<option ${Number(o.multiplicador || 1) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      <label class="peq">Puntos ×<select class="po-mul">${[1, 2, 3, 4, 5].map(n => `<option ${Number(o.multiplicador || 1) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label class="peq"><input type="checkbox" class="po-act" ${o.activa !== false ? 'checked' : ''}> activa</label><button class="btn chico" onclick="App.ptsOfQuitar(this)">🗑️</button></div>
       <textarea class="po-txt" rows="2" placeholder="Descripción que verá el cliente (p. ej. 10% en desparasitantes presentando tu tarjeta)">${esc(o.texto || '')}</textarea>
-      <div class="fila" style="gap:6px"><label class="peq">Desde<input type="date" class="po-des" value="${esc(o.desde || '')}"></label><label class="peq">Hasta<input type="date" class="po-has" value="${esc(o.hasta || '')}"></label></div></div>`;
+      <div class="fila" style="gap:6px"><label class="peq">Desde<input type="date" class="po-des" value="${esc(o.desde || '')}"></label><label class="peq">Hasta<input type="date" class="po-has" value="${esc(o.hasta || '')}"></label></div>
+      <details class="peq"${(o.categorias || []).length ? ' open' : ''}><summary>Categorías: <b class="po-cres">${(o.categorias || []).length ? esc(o.categorias.join(', ')) : 'toda la compra'}</b></summary>
+        <div style="max-height:160px;overflow:auto;padding:4px 0" onchange="const v=[...this.querySelectorAll('input:checked')].map(i=>i.value);this.closest('details').querySelector('.po-cres').textContent=v.length?v.join(', '):'toda la compra'">${ptsCats().map(k => `<label style="display:inline-block;margin:2px 12px 2px 0"><input type="checkbox" class="po-cat" value="${esc(k)}" ${(o.categorias || []).indexOf(k) >= 0 ? 'checked' : ''}> ${esc(k)}</label>`).join('') || '<span class="muted">Sin categorías en el catálogo</span>'}</div>
+        <small class="muted">Sin marcar = los puntos extra aplican a toda la compra. Marcadas = solo a los productos de esas categorías.</small></details></div>`;
+  }
+  function ptsCats() { const r = S.ptsCfg || {}; if (r.categorias && r.categorias.length) return r.categorias; return [...new Set((D().productos || []).map(p => String(p.categoria || '').trim()).filter(Boolean))].sort();
   }
   function ptsOfFila() { $('#poLista').insertAdjacentHTML('beforeend', ptsOfFilaHtml({ multiplicador: 1, activa: true })); }
   function ptsOfQuitar(b) { b.closest('.pts-of').remove(); }
@@ -2347,7 +2353,7 @@ const App = (() => {
   async function ptsCfgGuardar() {
     const g = { activo: $('#pcAct').checked, inicio: $('#pcIni').value, pesosPorPunto: Number($('#pcPpp').value), valorPunto: Number($('#pcVal2').value), minCanje: Number($('#pcMin').value), monederoDias: Number($('#pcDias').value),
       excluirListas: [...document.querySelectorAll('.pcExc:checked')].map(x => x.value),
-      ofertas: [...document.querySelectorAll('#poLista .pts-of')].map(d => ({ id: d.dataset.id, titulo: d.querySelector('.po-tit').value, texto: d.querySelector('.po-txt').value, multiplicador: Number(d.querySelector('.po-mul').value), activa: d.querySelector('.po-act').checked, desde: d.querySelector('.po-des').value, hasta: d.querySelector('.po-has').value })) };
+      ofertas: [...document.querySelectorAll('#poLista .pts-of')].map(d => ({ id: d.dataset.id, titulo: d.querySelector('.po-tit').value, texto: d.querySelector('.po-txt').value, multiplicador: Number(d.querySelector('.po-mul').value), activa: d.querySelector('.po-act').checked, categorias: [...d.querySelectorAll('.po-cat:checked')].map(i => i.value), desde: d.querySelector('.po-des').value, hasta: d.querySelector('.po-has').value })) };
     $('#pcGuardar').disabled = true;
     try { await pedir('cfgPuntos', { guardar: g }); S.ptsCfg = null; cerrarModal(); toast('⭐ Programa guardado'); ptsCfgCargar(); } catch (e) { if ($('#pcGuardar')) $('#pcGuardar').disabled = false; }
   }
@@ -6897,8 +6903,8 @@ const App = (() => {
         ['p', 'Como gerente puedes «Completar datos» de los clientes de tu sucursal; lista de precios, crédito, límites, estado y vendedor los cambia el administrador.', () => U().rol === 'Gerente'],
         ['p', 'Como administrador cambias todos los datos del cliente, incluidos lista de precios, crédito y límites.', esJefeM]] },
       { h: 'Puntos y tarjeta QR', p: 'clientes', b: [['p', 'Cada cliente gana puntos por lo que PAGA: 1 punto por cada $100 cobrados (se configura). No acumulan público en general, lo pagado con monedero o nota de crédito, notas canceladas o devueltas, la parte de asociación ni las listas excluidas (p. ej. distribuidores). Si una nota se cancela después, sus puntos se restan solos.'],
-        ['ul', ['Ficha del cliente > ⭐ Puntos: saldo, cuánto valen y sus movimientos.', '🎁 Canjear puntos (desde el mínimo configurado): se convierten en un monedero de regalo que se aplica en su siguiente compra.', 'En la nueva venta, al elegir o escanear al cliente, el encabezado muestra ⭐ Puntos (aunque sean 0) y su monedero vigente.', '🪪 Tarjeta: al enviarla, su QR lleva una firma; cuando el cliente la escanea con su celular ve su nombre, sus puntos, su monedero vigente y las ofertas activas (sin datos de compras ni fiscales). En sucursal el mismo QR lo identifica en la venta.']],
-        ['ul', ['± Ajustar suma o resta puntos con un motivo (p. ej. compras anteriores al programa).', 'Configuración > ⭐ Programa de puntos y ofertas: activar, fecha desde la que cuentan los cobros, $ por punto, valor del punto, mínimo para canjear, vigencia del monedero, listas que no acumulan y ofertas (título, descripción, fechas y puntos ×2 o ×3 mientras estén vigentes).'], 'dueno']] },
+        ['ul', ['Ficha del cliente > ⭐ Puntos: saldo, cuánto valen y sus movimientos.', '🎁 Canjear puntos (desde el mínimo configurado): se convierten en un monedero de regalo que se aplica en su siguiente compra.', 'En la nueva venta, al elegir o escanear al cliente, el encabezado muestra ⭐ Puntos (aunque sean 0) y su monedero vigente.', '🪪 Tarjeta: al enviarla, su QR lleva una firma; cuando el cliente la escanea con su celular ve su nombre, sus puntos y lo que valen, sus últimos movimientos, su monedero vigente, cómo gana puntos (incluidas las campañas por categoría) y las ofertas activas (sin datos de compras ni fiscales). En sucursal el mismo QR lo identifica en la venta.']],
+        ['ul', ['± Ajustar suma o resta puntos con un motivo (p. ej. compras anteriores al programa).', 'Configuración > ⭐ Programa de puntos y ofertas: activar, fecha desde la que cuentan los cobros, $ por punto, valor del punto, mínimo para canjear, vigencia del monedero, listas que no acumulan y ofertas (título, descripción, fechas y puntos ×2 a ×5 mientras estén vigentes, en toda la compra o solo en las categorías de productos que marques; el cobro se reparte entre los productos de la nota).'], 'dueno']] },
       { h: 'Cotizaciones', p: 'cotizaciones', b: [['ol', ['➕ Nueva cotización: cliente, lista de precios, productos, descuentos y observaciones.', 'Para dependencias de gobierno, en 🏛️ Para dependencias / gobierno activa: A quien corresponda (con firma «Atentamente»), Datos bancarios para depósito y Correo electrónico.', 'Guarda y comparte el PDF (tamaño carta). Funciona sin señal.', 'Cuando el cliente acepta, Convertir en venta: se crea la nota con los mismos renglones y queda ligada.', 'Si se pierde, registra el motivo (precio, existencia, otro proveedor…).']]] },
       { h: 'Seguimiento (CRM)', p: 'seguimiento', b: [['ul', ['Por atender: clientes que ya deberían recomprar y clientes dormidos, con sugerencia de qué ofrecer.', 'Prospectos: Interesado → Contactado → Cotizado → En negociación → Ganado / Perdido, con valor estimado y próxima acción.', 'Interacciones: 📞 Registrar llamada / WhatsApp / nota; captura el resumen y el próximo paso con fecha (aparece en Actividades del día).', 'Visitas: programa visitas a ranchos y clínicas y regístralas con foto y ubicación.']]] }] },
     { t: '4. Inventario y abasto', p: ['inventario', 'traspasos', 'compras', 'inventario_fisico', 'reclamaciones'], g: [
@@ -11937,12 +11943,18 @@ const App = (() => {
     google.script.run.withSuccessHandler(txt => {
       let r; try { r = JSON.parse(txt); } catch (e) { return; } if (!r.ok || !r.data) return;
       const d = r.data, el = $('#lgQRdatos'); if (!el) return;
+      const pp = n => $$(n).replace(/\.00$/, ''), caja = 'text-align:left;border-radius:14px;padding:12px;margin:10px 0;color:#1d2b22;';
+      const movTxt = m => m.tipo === 'Gana' ? 'Compra ' + m.ref : m.tipo === 'Canje' ? 'Canje a monedero' : m.tipo === 'Cancela' ? 'Nota cancelada ' + m.ref : m.tipo === 'Ajuste' ? 'Ajuste' : m.tipo;
       el.innerHTML = `<p style="font-size:19px;margin:4px 0 12px"><b>${esc(d.nombre)}</b></p>
-        ${d.puntos !== null ? `<div style="background:#1f6b3a;color:#fff;border-radius:16px;padding:14px;margin:8px 0"><div style="font-size:13px;opacity:.85">Tus puntos</div><div style="font-size:34px;font-weight:bold">${nf(d.puntos)}</div><div style="font-size:13px;opacity:.9">equivalen a ${$$(d.valor)} para tu siguiente compra</div></div>
-          <p class="muted peq">Ganas 1 punto por cada ${$$(d.programa.pesosPorPunto)} que pagas. Canjéalos en sucursal desde ${nf(d.programa.minCanje)} puntos.</p>` : ''}
-        ${d.monedero ? `<div style="border:2px dashed #1f6b3a;border-radius:14px;padding:10px;margin:10px 0"><b>🎁 Monedero de regalo: ${$$(d.monedero.saldo)}</b><br><small class="muted">válido hasta el ${esc(d.monedero.vence)}</small></div>` : ''}
-        ${d.ofertas.length ? `<div style="text-align:left;margin-top:12px"><b>🏷️ Ofertas para ti</b>${d.ofertas.map(o => `<div style="background:var(--fondo-suave,#f2f4f1);border-radius:12px;padding:10px;margin-top:8px"><b>${esc(o.titulo)}</b>${o.multiplicador > 1 ? ' <span class="etq ok">puntos ×' + o.multiplicador + '</span>' : ''}${o.texto ? '<br><span class="peq">' + esc(o.texto) + '</span>' : ''}${o.hasta ? '<br><small class="muted">hasta el ' + esc(o.hasta) + '</small>' : ''}</div>`).join('')}</div>` : ''}
-        <p class="muted peq" style="margin-top:12px">Presenta esta tarjeta en tu sucursal de Interés Veterinario® para identificarte en tu compra.</p>`;
+        ${d.puntos !== null ? `<div style="background:#1f6b3a;color:#fff;border-radius:16px;padding:14px;margin:8px 0"><div style="font-size:13px;opacity:.85">Tus puntos</div><div style="font-size:36px;font-weight:bold;line-height:1.1">${nf(d.puntos)}</div><div style="font-size:13px;opacity:.9">equivalen a ${$$(d.valor)} para tu siguiente compra</div></div>` : ''}
+        ${d.monedero ? `<div style="border:2px dashed #8ef0b5;border-radius:14px;padding:10px;margin:10px 0"><b>🎁 Monedero de regalo: ${$$(d.monedero.saldo)}</b><br><small>válido hasta el ${esc(d.monedero.vence)} · se aplica en tu siguiente compra</small></div>` : ''}
+        ${d.programa ? `<div style="${caja}background:#fff7e0;border:1px solid #f2c14e"><b>★ Cómo ganas puntos</b>
+            <div style="margin-top:4px">1 punto por cada <b>${pp(d.programa.pesosPorPunto)}</b> que pagas.</div>
+            ${d.ofertas.filter(o => o.multiplicador > 1).map(o => `<div style="margin-top:4px">🔥 <b>Puntos ×${o.multiplicador}</b> ${(o.categorias || []).length ? 'en ' + esc(o.categorias.join(', ')) : 'en toda tu compra'}${o.hasta ? ' <small style="color:#6b5a2b">· hasta el ' + esc(o.hasta) + '</small>' : ''}</div>`).join('')}
+            <div style="margin-top:6px;font-size:12px;color:#6b5a2b">Canjéalos en sucursal desde ${nf(d.programa.minCanje)} puntos por un monedero de regalo.</div></div>` : ''}
+        ${d.ofertas.length ? `<div style="text-align:left;margin-top:14px"><b>🏷️ Ofertas para ti</b>${d.ofertas.map(o => `<div style="${caja}background:#f2f5f1;margin:8px 0"><b>${esc(o.titulo)}</b>${o.multiplicador > 1 ? ' <span style="background:#1f6b3a;color:#fff;border-radius:10px;padding:1px 8px;font-size:12px">puntos ×' + o.multiplicador + '</span>' : ''}${(o.categorias || []).length ? '<div style="font-size:12px;color:#456">En: ' + esc(o.categorias.join(', ')) + '</div>' : ''}${o.texto ? '<div style="font-size:14px;margin-top:2px">' + esc(o.texto) + '</div>' : ''}${o.hasta ? '<div style="font-size:12px;color:#667">hasta el ' + esc(o.hasta) + '</div>' : ''}</div>`).join('')}</div>` : ''}
+        ${(d.movs || []).length ? `<div style="text-align:left;margin-top:14px"><b>Últimos movimientos</b>${d.movs.map(m => `<div style="display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(127,127,127,.25);padding:6px 0;font-size:14px"><span>${esc(m.fecha)} · ${esc(movTxt(m))}</span><b style="color:${m.puntos < 0 ? '#ff8a80' : '#8ef0b5'}">${m.puntos > 0 ? '+' : ''}${nf(m.puntos)}</b></div>`).join('')}</div>` : ''}
+        <p class="muted peq" style="margin-top:14px">Presenta esta tarjeta en tu sucursal de Interés Veterinario® para identificarte en tu compra.</p>`;
     }).withFailureHandler(() => {}).tarjeta(id, t);
   }
   /** Interpreta un código leído (pistola o cámara). destino: 'venta' | 'pos'. Regresa el texto a mostrar o null si no se reconoce. */
@@ -12144,8 +12156,8 @@ const App = (() => {
     return cv;
   }
   /** Tarjeta del cliente (credencial vertical, para mostrar en el celular o imprimir). */
-  async function tarjetaPng(c, token) {
-    const W = 640, H = 1090, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+  async function tarjetaPng(c, token, ppp) {
+    const W = 640, H = String(c.estado || '').trim() ? 1170 : 1126, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
     const rr = (X, Y, w, h, r) => { x.beginPath(); if (x.roundRect) x.roundRect(X, Y, w, h, r); else x.rect(X, Y, w, h); };
     const ajustar = (t, max, px, min) => { let s = px; do { x.font = 'bold ' + s + 'px Arial'; s -= 2; } while (x.measureText(t).width > max && s > min); };
     rr(0, 0, W, H, 44); x.clip();
@@ -12154,7 +12166,7 @@ const App = (() => {
     try { const logo = await new Promise((ok, mal) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = mal; i.src = window.LOGO || 'logo.png'; });
       const lh = 170, lw = Math.min(W - 80, logo.width * lh / logo.height), lh2 = lw * logo.height / logo.width; x.drawImage(logo, (W - lw) / 2, 40 + (lh - lh2) / 2, lw, lh2); } catch (e) {}
     x.textAlign = 'center'; x.fillStyle = '#fff';
-    x.font = '600 22px Arial'; x.globalAlpha = .8; x.fillText('TARJETA DE CLIENTE · MONEDERO', W / 2, 360); x.globalAlpha = 1;
+    x.font = '600 22px Arial'; x.globalAlpha = .8; x.fillText('TARJETA DE CLIENTE · PUNTOS Y MONEDERO', W / 2, 360); x.globalAlpha = 1;
     const nom = String(c.razon || c.nombre || ''); ajustar(nom, W - 80, 50, 26); x.fillText(nom, W / 2, 420);
     if (c.razon && c.nombre && c.razon !== c.nombre) { x.font = '28px Arial'; x.globalAlpha = .8; x.fillText(String(c.nombre).slice(0, 36), W / 2, 462); x.globalAlpha = 1; }
     const qr = await qrCanvas(QR_CLI + encodeURIComponent(c.id) + (token ? '&t=' + encodeURIComponent(token) : ''), 380);
@@ -12166,14 +12178,17 @@ const App = (() => {
       x.fillStyle = 'rgba(0,0,0,.25)'; x.beginPath(); x.arc(X0 + 12, 946, 4.8, 0, 7); x.fill();
       x.fillStyle = '#fff'; x.textAlign = 'left'; x.fillText(edo, X0 + 34, 958); x.textAlign = 'center';
     }
-    x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(W / 2 - 120, edo ? 994 : 950, 240, 2);
-    x.fillStyle = '#fff'; x.globalAlpha = .9; x.font = 'italic 24px Arial'; x.fillText('Preséntala en cada compra: aquí se aplica tu monedero', W / 2, edo ? 1040 : 1000); x.globalAlpha = 1;
+    const y0 = edo ? 994 : 950, pts = ppp ? '★ Acumula 1 punto por cada ' + $$(ppp).replace(/\.00$/, '') + ' de compra' : '★ Acumula puntos en cada compra';
+    ajustar(pts, W - 140, 25, 18); const pw = x.measureText(pts).width + 56;
+    x.fillStyle = '#f2c14e'; rr((W - pw) / 2, y0 + 4, pw, 58, 29); x.fill(); x.fillStyle = '#123d2b'; x.fillText(pts, W / 2, y0 + 43);
+    x.fillStyle = '#fff'; x.globalAlpha = .9; x.font = 'italic 23px Arial'; x.fillText('Preséntala en cada compra: aquí se aplica tu monedero', W / 2, y0 + 108);
+    x.globalAlpha = .75; x.font = '21px Arial'; x.fillText('Escanéala con tu celular para ver tus puntos y ofertas', W / 2, y0 + 142); x.globalAlpha = 1;
     return new Promise(ok => cv.toBlob(ok, 'image/png'));
   }
   async function tarjetaCliente(id) {
     const c = cliente(id); if (!c) return;
     let tk = (S.ptsTok || {})[id] || ''; if (!tk && navigator.onLine !== false) { try { tk = (await pedir('tokenTarjeta', { idCliente: id }, true)).token || ''; } catch (e) {} }
-    let b; try { b = await tarjetaPng(c, tk); } catch (e) { return toast(e.message || 'No se pudo generar la tarjeta', true); }
+    let b; try { b = await tarjetaPng(c, tk, (S.ptsCli && S.ptsCli.pesosPorPunto) || LS.get('ptsPpp', 0)); } catch (e) { return toast(e.message || 'No se pudo generar la tarjeta', true); }
     S.tarjeta = { id: id, blob: b }; const url = URL.createObjectURL(b);
     modal('🪪 Tarjeta del cliente', `<div style="text-align:center"><img src="${url}" alt="Tarjeta" style="width:100%;max-width:300px;border-radius:18px;box-shadow:0 4px 16px rgba(0,0,0,.25)"></div>
       <p class="muted peq">Al escanear el QR en la venta (cámara de la app o pistola lectora) se elige al cliente y se le aplican sus precios. Si tu personal lo escanea con la cámara del celular, abre Nueva venta con ese cliente; a cualquier otra persona no le muestra nada.</p>
