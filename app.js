@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 354, f: '20/11/2026', t: [{ x: '🏬 Sucursales → Resumen: el inventario (tarjeta, cuadro «Inventario y cartera», por caducar, caducado, días de inventario y GMROI) ya se valúa al precio de la lista de cada sucursal (Matriz: Subdistribuidor), igual que en Inventario.', p: 'sucursales' }] },
     { v: 353, f: '20/11/2026', t: [{ x: '🎨 El logotipo de la barra lateral ahora va centrado.', p: '' }] },
     { v: 352, f: '20/11/2026', t: [{ x: '📘 Manual de usuario en el menú (Administración → Manual de usuario): cada quien ve la versión de su perfil, con solo lo que puede usar, y la puede descargar en PDF.', p: '' }] },
     { v: 350, f: '20/11/2026', t: [{ x: '🛎️ Servicios: las facturas que se marcaron “Cobrada” solas al timbrar (PUE), como la IV-275 de VYQ, ahora muestran «💵 Capturar el cobro» para registrar el pago real (fecha, forma, cuenta y comprobante).', p: 'ventas' }] },
@@ -5468,7 +5469,7 @@ const App = (() => {
       ${kpi('Utilidad bruta', $$(T.utilidadBruta), 'margen ' + pctTxt(T.margenBruto))}
       ${kpi('Contribución de sucursales', $$(T.contribucion), 'después de mermas, gastos y depreciación')}
       ${kpi('Utilidad neta', $$(T.utilidadNeta), 'margen ' + pctTxt(T.margenNeto))}
-      ${kpi('Inventario a costo real', $$(T.inventario), (T.diasInventario === null ? '' : T.diasInventario + ' días de inventario · ') + 'GMROI ' + (T.gmroi === null ? '—' : T.gmroi))}
+      ${kpi(r.valuacion === 'lista' ? 'Inventario (precio de cada sucursal)' : 'Inventario a costo real', $$(T.inventario), (T.diasInventario === null ? '' : T.diasInventario + ' días de inventario · ') + 'GMROI ' + (T.gmroi === null ? '—' : T.gmroi))}
       ${kpi('Por cobrar', $$(T.cxc), 'vencido ' + $$(T.cxcVencida))}</div>
       <div class="tarjeta"><h3>Rentabilidad por sucursal · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3>` +
       tabla([{ t: 'Sucursal', h: x => `<div class="con-avatar">${avatarSuc(x.suc)}<div><b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo)}</small></div></div>` }, { t: 'Ventas', num: 1, h: x => $$(x.ventas) },
@@ -5479,7 +5480,7 @@ const App = (() => {
         { t: 'Financieros', num: 1, cls: 'ocultar-movil', h: x => $$(x.financiero) },
         { t: 'Utilidad neta', num: 1, h: x => `<b class="${x.utilidadNeta < 0 ? 'error' : ''}">${$$(x.utilidadNeta)}</b>` }], L, { clic: 'App.verSucursal' }) + `</div>
       <div class="rejilla-2"><div class="tarjeta"><h3>Ventas vs contribución</h3><div class="grafica"><canvas id="sgBar"></canvas></div></div>
-      <div class="tarjeta"><h3>Inventario y cartera</h3>` +
+      <div class="tarjeta"><h3>Inventario y cartera</h3>${r.valuacion === 'lista' ? '<p class="muted peq" style="margin-top:0">Inventario valuado al precio de la lista de cada sucursal (Matriz: Subdistribuidor), igual que en Inventario.</p>' : ''}` +
       tabla([{ t: 'Sucursal', h: x => `<b>${esc(x.nombre)}</b>` }, { t: 'Inventario', num: 1, h: x => $$(x.inventario) }, { t: 'Días inv.', num: 1, h: x => x.diasInventario === null ? '—' : nf(x.diasInventario) },
         { t: 'GMROI', num: 1, h: x => x.gmroi === null ? '—' : x.gmroi }, { t: 'Por caducar', num: 1, cls: 'ocultar-movil', h: x => x.porCaducar ? `<span class="etq av">${$$(x.porCaducar)}</span>` : '—' },
         { t: 'Caducado', num: 1, cls: 'ocultar-movil', h: x => x.caducado ? `<span class="etq mal">${$$(x.caducado)}</span>` : '—' }, { t: 'Por cobrar', num: 1, h: x => $$(x.cxc) }], L, { clic: 'App.verSucursal' }) + `</div></div>
@@ -6789,7 +6790,7 @@ const App = (() => {
       { h: 'Cotizaciones', p: 'cotizaciones', b: [['ol', ['➕ Nueva cotización: cliente, lista de precios, productos, descuentos y observaciones.', 'Para dependencias de gobierno, en 🏛️ Para dependencias / gobierno activa: A quien corresponda (con firma «Atentamente»), Datos bancarios para depósito y Correo electrónico.', 'Guarda y comparte el PDF (tamaño carta). Funciona sin señal.', 'Cuando el cliente acepta, Convertir en venta: se crea la nota con los mismos renglones y queda ligada.', 'Si se pierde, registra el motivo (precio, existencia, otro proveedor…).']]] },
       { h: 'Seguimiento (CRM)', p: 'seguimiento', b: [['ul', ['Por atender: clientes que ya deberían recomprar y clientes dormidos, con sugerencia de qué ofrecer.', 'Prospectos: Interesado → Contactado → Cotizado → En negociación → Ganado / Perdido, con valor estimado y próxima acción.', 'Interacciones: 📞 Registrar llamada / WhatsApp / nota; captura el resumen y el próximo paso con fecha (aparece en Actividades del día).', 'Visitas: programa visitas a ranchos y clínicas y regístralas con foto y ubicación.']]] }] },
     { t: '4. Inventario y abasto', p: ['inventario', 'traspasos', 'compras', 'inventario_fisico', 'reclamaciones'], g: [
-      { h: 'Cómo se calcula la existencia', p: 'inventario', b: [['p', 'La existencia sale de los movimientos (ventas, devoluciones, compras, traspasos, ajustes y mermas) por sucursal, lote y caducidad. Nunca cambies cantidades a mano en la hoja: usa ajustes o conteo físico.']] },
+      { h: 'Cómo se calcula la existencia', p: 'inventario', b: [['p', 'La existencia sale de los movimientos (ventas, devoluciones, compras, traspasos, ajustes y mermas) por sucursal, lote y caducidad. Nunca cambies cantidades a mano en la hoja: usa ajustes o conteo físico.'], ['p', 'El valor del inventario (en Inventario y en Sucursales → Resumen) se calcula al precio de la lista asignada a cada sucursal, que es lo que le paga a Matriz; Matriz se valúa a Subdistribuidor.', 'ver_importes']] },
       { h: 'Inventario', p: 'inventario', b: [['p', 'Sucursales → Inventario: existencias por producto y lote, caducidades, productos sin rotación y riesgo de caducidad.']] },
       { h: 'Traspasos', p: 'traspasos', b: [['p', 'Envía mercancía de un almacén a otro. Queda en tránsito hasta que quien recibe toca Entregar. Cada traspaso tiene su folio.']] },
       { h: 'Requisición de traspaso', p: 'requisiciones', b: [['p', 'Pide productos a otra sucursal; lo que no hay pasa a compra.']] },
