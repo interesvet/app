@@ -163,6 +163,18 @@ textarea { min-height: 70px; resize: vertical; }
 .dg-tot small { display: block; color: var(--texto-2); font-size: 12px; }
 .dg-tot b { font-size: 22px; font-variant-numeric: tabular-nums; }
 .det-calc summary { cursor: pointer; }
+/* 🖼️ formatos de captura: ícono dentro del campo + secciones de color */
+label.con-ico { position: relative; }
+label.con-ico > input, label.con-ico > select { padding-left: 40px !important; }
+label.con-ico::after { content: attr(data-ico); position: absolute; left: 12px; bottom: 0; height: var(--alto-campo, 42px); display: flex; align-items: center; font-size: 17px; line-height: 1; pointer-events: none; }
+.fsec { border: 1px solid var(--borde); border-radius: 14px; padding: 10px 14px 14px; margin: 0 0 12px; }
+.fsec > h4 { margin: 0 0 10px; font-size: 15px; font-weight: 700; color: var(--texto); }
+.fsec-1 { background: rgba(66,133,224,.09); border-color: rgba(66,133,224,.35); }
+.fsec-2 { background: rgba(240,190,40,.09); border-color: rgba(240,190,40,.38); }
+.fsec-3 { background: rgba(46,158,91,.09); border-color: rgba(46,158,91,.35); }
+.fsec-4 { background: rgba(170,90,200,.09); border-color: rgba(170,90,200,.35); }
+.fsec-5 { background: rgba(230,120,60,.09); border-color: rgba(230,120,60,.35); }
+.fsec-6 { background: rgba(40,170,180,.09); border-color: rgba(40,170,180,.35); }
 .kpi-activo { background: var(--marca-suave); box-shadow: inset 0 0 0 2px var(--marca); }
 .kf-aviso { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--marca-suave); font-size: 14px; }
 .det-calc ol { margin: 6px 0 0; padding-left: 20px; }

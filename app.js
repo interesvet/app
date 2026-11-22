@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 365, f: '22/11/2026', t: [{ x: '🖼️ Formatos de captura más fáciles de leer: cada campo lleva un ícono que dice qué va ahí (👤 nombre, 🧾 RFC, 📱 celular, 📍 dirección, 💲 importes, 🏪 sucursal…) en clientes, productos, proveedores, notas, traspasos, compras, cobros y mermas.', p: '' }, { x: '🎨 Alta y edición de clientes, productos y proveedores ahora agrupan sus campos en secciones de color (Datos, Fiscales, Contacto, Dirección, Precios y crédito…).', p: '' }] },
     { v: 364, f: '22/11/2026', t: [{ x: '🔒 Los desgloses y las mermas nunca muestran el costo real a quien no tiene permiso: el gerente de sucursal ve todo a su precio asignado (se indica en el desglose) y los empleados no ven costos ni márgenes.', p: 'dashboard' }] },
     { v: 363, f: '22/11/2026', t: [{ x: '📦 Ventas › Por producto: venta neta por producto en el periodo; toca un producto para ver sus presentaciones (frasco de 20 ml, 100 ml…) y sigue bajando por sucursal, vendedor o cliente.', p: 'dashboard' }, { x: '🔍 Los desgloses de ventas, utilidad, mermas e inventario ahora agrupan por producto y, dentro de cada uno, por presentación; también por laboratorio.', p: 'dashboard' }, { x: '🔎 En Ventas, Cobranza y Compras los cuadros de arriba filtran la lista: p. ej. «Por cobrar del periodo» deja solo las notas con saldo, «⚠️ Por reportar» solo esos cobros y cada forma de pago sus cobros. Tócalo otra vez para quitar el filtro.', p: '' }] },
     { v: 362, f: '22/11/2026', t: [{ x: '🔍 Desglose de los cuadros: en Inicio y en Sucursales › Resumen, los cuadros con 🔍 se pueden tocar para ver de qué se forma la cifra, por pestañas (sucursal, vendedor, cliente, categoría, producto, mes…), con comparación contra el año anterior y Excel.', p: 'dashboard' }, { x: '🔎 Toca un renglón del desglose para entrar a él y seguir analizando (p. ej. Ventas netas › Champotón › un vendedor › sus clientes); las migas de arriba te regresan a cualquier nivel.', p: 'dashboard' }] },
@@ -1259,7 +1260,34 @@ const App = (() => {
   /** Filtros de listas: texto con 'input' y listas/casillas con 'change'. (Con los dos, al salir del buscador la lista se
    *  redibujaba justo al tocar una fila y ese primer toque se perdía.) */
   const enlazarFiltro = (sel, fn) => { const el = $(sel); if (!el) return; if (el.tagName === 'INPUT' && el.type !== 'checkbox') el.oninput = fn; else el.onchange = fn; };
-  const formulario = (campos, val) => `<div class="rejilla">${campos.map(c => campoHtml(c, val[c.k])).join('')}</div>`;
+  /** Formulario genérico. Con `secs` agrupa los campos en secciones de color con su ícono (👤 Datos, 🧾 Fiscales…):
+   *  secs = [[título, color 1-6, [claves…]], …]; los campos que no estén en ninguna van a la última sección. */
+  const formulario = (campos, val, secs) => {
+    if (!secs) return `<div class="rejilla">${campos.map(c => campoHtml(c, val[c.k])).join('')}</div>`;
+    const usados = new Set(); secs.forEach(x => x[2].forEach(k => usados.add(k)));
+    const resto = campos.filter(c => !usados.has(c.k));
+    return secs.map((x, i) => { const cs = campos.filter(c => x[2].indexOf(c.k) >= 0).concat(i === secs.length - 1 ? resto : []); if (!cs.length) return '';
+      return `<div class="fsec fsec-${x[1]}"><h4>${x[0]}</h4><div class="rejilla">${cs.map(c => campoHtml(c, val[c.k])).join('')}</div></div>`; }).join('');
+  };
+  /* 🖼️ Ícono dentro de cada campo de captura según su etiqueta (todas las pantallas: alta de cliente, nota, traspaso, compra…) */
+  const ICO_CAMPO = [[/contraseña|password|nip\b/i, '🔒'], [/rancho|negocio/i, '🐄'], [/raz[oó]n social|nombre comercial|nombre del cliente|^nombre\b|^cliente\b|^titular/i, '👤'], [/\brfc\b/i, '🧾'], [/r[eé]gimen/i, '🏛️'], [/uso cfdi/i, '📄'],
+    [/c\.p\.|c[oó]digo postal/i, '📮'], [/c[oó]digo.*barras/i, '🔖'], [/lista de precio|^lista\b/i, '🏷️'], [/caducidad/i, '⏳'], [/^(periodo|mes|a[nñ]o|desde|hasta)\b/i, ''], [/d[ií]as de cr[eé]dito|vencimiento|vence|fecha|cumplea|aniversario/i, '📅'],
+    [/celular|tel[eé]fono|^tel\b|tel\.|cel\./i, '📱'], [/correo|e-?mail/i, '✉️'], [/calle|colonia|municipio|localidad|^estado$|direcci[oó]n|ubicaci[oó]n|entregar en/i, '📍'], [/\bruta\b/i, '🛣️'],
+    [/sucursal|origen|destino|almac[eé]n/i, '🏪'], [/vendedor|encargad|ejecutivo|gerente|responsable|usuario|recibe|solicit/i, '🧑‍💼'], [/proveedor/i, '🚚'], [/laboratorio/i, '🧪'], [/categor[ií]a/i, '🗂️'],
+    [/producto|art[ií]culo/i, '📦'], [/\blote\b/i, '🔖'], [/cantidad|piezas|pzas|unidad|existencia|stock/i, '🔢'], [/forma de pago|m[eé]todo de pago/i, '💳'], [/banco|cuenta|clabe/i, '🏦'],
+    [/gu[ií]a|paqueter[ií]a|env[ií]o|flete/i, '🚛'], [/descuento|desc\./i, '🏷️'], [/referencia|autorizaci[oó]n|folio|no\. |n[uú]mero|clave/i, '#️⃣'], [/monto|importe|precio|costo|total|l[ií]mite|descuento|\$|anticipo|pago/i, '💲'],
+    [/nota|comentario|observaci|motivo|concepto|descripci|indicaci|advertencia|dosis/i, '📝'], [/clasificaci/i, '⭐'], [/potencial/i, '📈'], [/especies/i, '🐾'], [/registro/i, '📋'], [/iva/i, '🧮'], [/tipo|estatus|^estado\b/i, '🔖']];
+  function iconosCampos(root) {
+    (root || document).querySelectorAll('label:not(.ico-ok):not(.check):not(.chk):not(.chip-op):not(.btn):not(.busq-lab)').forEach(l => {
+      l.classList.add('ico-ok');
+      const el = l.querySelector(':scope > input, :scope > select'); if (!el || el.classList.contains('busq') || el.closest('.multi-sel')) return;
+      if (el.tagName === 'INPUT' && !/^(text|number|tel|email|search|url|password|)$/.test(el.getAttribute('type') || '')) return;   /* las fechas ya traen su calendario */
+      let ult = l.lastElementChild; while (ult && ult.tagName === 'DATALIST') ult = ult.previousElementSibling; if (ult !== el) return;   /* solo si el campo es lo último de la etiqueta */
+      const t = Array.from(l.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').replace(/\*/g, '').trim(); if (!t || /^[\p{Extended_Pictographic}]/u.test(t)) return;
+      const m = ICO_CAMPO.find(x => x[0].test(t)); if (!m || !m[1]) return;
+      l.classList.add('con-ico'); l.dataset.ico = m[1]; if (el.offsetHeight > 0) l.style.setProperty('--alto-campo', el.offsetHeight + 'px');
+    });
+  }
   function leerForm(cont) {
     const o = {};
     cont.querySelectorAll('[data-k]').forEach(el => { o[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value; });
@@ -6919,6 +6947,7 @@ const App = (() => {
   const MANUAL = [
     { t: '1. Primeros pasos', g: [
       { h: 'Entrar', b: [['ol', ['Abre app.interesveterinario.com en Safari (iPhone, iPad, Mac) o Chrome.', 'Escribe tu usuario (o correo) y tu contraseña. La sesión dura 7 días en ese equipo.', 'Cambia tu contraseña en ⚙️ Mi cuenta → Cambiar mi contraseña.']]] },
+      { h: 'Cómo leer los formatos de captura', b: [['p', 'Cada campo lleva un ícono que dice qué se escribe ahí: 👤 nombre, 🐄 rancho o negocio, 🧾 RFC, 📮 código postal, 📱 teléfono, ✉️ correo, 📍 dirección, 🏪 sucursal, 📦 producto, 🔢 cantidad, 🔖 lote, 💲 importes y precios, 💳 forma de pago, 🏦 banco o cuenta, 🚛 envío y flete, 📝 notas y comentarios.'], ['p', 'Los formatos largos (cliente, producto y proveedor) agrupan sus campos en secciones de color: Datos, Fiscales, Contacto, Dirección, Precios y crédito, etc.']] },
       { h: 'Instalarla como app', b: [['ul', ['iPhone / iPad: en Safari toca Compartir → Agregar a pantalla de inicio.', 'Mac: en Safari, Archivo → Agregar al Dock.', 'Las versiones nuevas se instalan solas al reabrir; arriba ves el número (p. ej. v351). Toca 🔄 para forzar la actualización.', 'Cada versión trae una nota de Novedades con lo que cambió.']]] },
       { h: 'Trabajar sin señal', b: [['ul', ['Puedes vender, cobrar y cotizar sin internet. El indicador de arriba cambia de En línea a Sin conexión y lo capturado queda en el equipo.', 'Al volver la señal todo se envía solo, en orden y sin duplicar.', 'Requieren conexión: editar notas, facturar, reportes, cortes quincenales y cobros de servicios.', 'Si una pantalla dice «Sin respuesta del servidor», revisa antes de volver a guardar: puede que sí se haya guardado.']]] },
       { h: 'Face ID / huella', b: [['ol', ['⚙️ Mi cuenta → Activar Face ID / huella en este equipo.', 'Desde entonces se pide al abrir la app, al volver después de 5 minutos, al solicitar factura, al editar notas y al editar clientes.', 'Se activa por persona y por equipo; para quitarlo, el mismo botón dice «Quitar».']]] },
@@ -11319,7 +11348,10 @@ const App = (() => {
     modal(p ? 'Editar ' + p.nombre : 'Nuevo producto', `${p ? `<div class="foto-editar"><div class="foto-prod" id="fotoEdit" data-grande="${esc(p.id)}">${p.foto ? '<span class="muted">Cargando foto…</span>' : '<span class="muted">Sin foto</span>'}</div>
       <label class="btn">📷 ${p.foto ? 'Cambiar foto' : 'Agregar foto'}<input type="file" accept="image/&#42;" style="display:none" onchange="App.subirFoto('${esc(p.id)}', this)"></label></div>`
       : `<div class="foto-editar"><div class="foto-prod" id="fotoEdit"><span class="muted">Sin foto</span></div>
-      <label class="btn">📷 Agregar foto<input type="file" id="fotoNueva" accept="image/&#42;" style="display:none" onchange="App.fotoNuevaPrev(this)"></label></div>`}<div id="fProd">${formulario(campos, ini)}</div>${p ? bloqueFichaCompartir(p.id) : ''}${p ? bloqueArch('prodFicha', p.id) : ''}
+      <label class="btn">📷 Agregar foto<input type="file" id="fotoNueva" accept="image/&#42;" style="display:none" onchange="App.fotoNuevaPrev(this)"></label></div>`}<div id="fProd">${formulario(campos, ini, [['📦 Datos del producto', 1, ['ID_Producto', 'Prod_Nombre', 'Unidad_Venta', 'Piezas_por_Unidad', 'Categoria', 'Laboratorio', 'No_Registro', 'Codigo_Barras', 'Activo']],
+      ['🔢 Inventario e impuestos', 3, ['Stock_Minimo', 'TASA_IVA', 'Usa_Lote', 'Usa_Caducidad', 'En_Promocion']],
+      ['💲 Costo y listas de precios', 4, ['Precio_Costo', 'Precio_Publico', 'Precio_Subdistribuidor', 'Precio_Socio', 'Precio_Aliado', 'AGL', 'Precio_Farmacia', 'Precio_Ganadero', 'Comisionista']],
+      ['📋 Ficha técnica', 2, ['Especies', 'Descripcion', 'Indicaciones', 'Dosis', 'Tiempo_retiro', 'Advertencias']]])}</div>${p ? bloqueFichaCompartir(p.id) : ''}${p ? bloqueArch('prodFicha', p.id) : ''}
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarProducto(${p ? 'false' : 'true'})">Guardar</button></div>`);
     if (p && p.foto) cargarFotoGrande(p.id);
   }
@@ -11392,7 +11424,11 @@ const App = (() => {
     const COMERC = ['Lista_de_Precios', 'D_Credito', 'Limite_Credito', 'Status', 'ID_Sucursal', 'Vendedor', 'Socio_Asociacion', 'Limite_Semanal', 'Limite_Mensual'];
     if (bloqueado) campos.forEach(x => x.dis = true);
     else if (gerSuyo) campos.forEach(x => { if (COMERC.indexOf(x.k) >= 0) x.dis = true; });
-    modal(c ? (c.razon || c.nombre) : 'Nuevo cliente', `${bloqueado ? `<div class="aviso-cand">🔒 <b>Solo el administrador puede modificar este cliente.</b> Si necesitas cambiar algún dato, <b>solicita autorización</b> al administrador.</div>` : gerSuyo ? `<div class="aviso-cand">✏️ Puedes <b>completar los datos</b> de este cliente de tu sucursal. Lista de precios, crédito, límites, estado y vendedor los cambia el administrador.</div>` : ''}<div class="arch-par">${c ? bloqueArch('cliFoto', c.id) + bloqueArch('cliCsf', c.id) : bloqueArchNuevo('cliFoto', 'cliFotoN') + bloqueArchNuevo('cliCsf', 'cliCsfN')}</div><div id="fCli">${formulario(campos, formVals)}</div>
+    modal(c ? (c.razon || c.nombre) : 'Nuevo cliente', `${bloqueado ? `<div class="aviso-cand">🔒 <b>Solo el administrador puede modificar este cliente.</b> Si necesitas cambiar algún dato, <b>solicita autorización</b> al administrador.</div>` : gerSuyo ? `<div class="aviso-cand">✏️ Puedes <b>completar los datos</b> de este cliente de tu sucursal. Lista de precios, crédito, límites, estado y vendedor los cambia el administrador.</div>` : ''}<div class="arch-par">${c ? bloqueArch('cliFoto', c.id) + bloqueArch('cliCsf', c.id) : bloqueArchNuevo('cliFoto', 'cliFotoN') + bloqueArchNuevo('cliCsf', 'cliCsfN')}</div><div id="fCli">${formulario(campos, formVals, [['👤 Datos del cliente', 1, ['Nombre_cliente', 'Razon_social', 'Nombre_Rancho', 'Fecha_cumpleaños', 'Tipo', 'Clasificacion', 'Nicho Mercado']],
+      ['🧾 Datos fiscales', 2, ['RFC', 'Regimen_Fiscal', 'Uso_CFDI', 'C.P.']], ['📞 Contacto', 3, ['Celular', 'e-mail', 'Tel_Fijo', 'Enc_Compras', 'Tel_Enc_Compras', 'Enc_Pagos', 'Tel_Enc_Pagos']],
+      ['📍 Dirección y ubicación', 5, ['Calle', 'Colonia', 'Municipio/Delegación', 'Localidad', 'Estado', 'Ruta', 'Ubicacion_trabajo/rancho']],
+      ['💳 Precios, crédito y sucursal', 4, ['Lista_de_Precios', 'D_Credito', 'Limite_Credito', 'ID_Sucursal', 'Vendedor', 'Status']], ['📈 Seguimiento comercial', 6, ['Potencial', 'Origen']],
+      ['🤝 Asociación', 2, ['Socio_Asociacion', 'Limite_Semanal', 'Limite_Mensual']], ['📝 Comentarios', 1, ['Comentarios']]])}</div>
       <div class="acciones">${c && puede('ventas') ? `<button class="btn" onclick="App.ventasDeCliente('${esc(c.id)}','${esc(String(c.razon || c.nombre || '').replace(/'/g, ''))}')">🧾 Ver sus ventas</button>` : ''}
       ${c && puede('ventas') ? `<button class="btn" onclick="App.venderA('${c.id}')">🛒 Venderle</button>` : ''}
       ${c && puede('bancos') ? `<button class="btn" onclick="App.bnCtaCli('${esc(c.id)}', true)">🏦 Cuentas con las que paga</button>` : ''}
@@ -16348,7 +16384,9 @@ const App = (() => {
       { k: 'C.P.', t: 'C.P.' }, { k: 'Localidad', t: 'Localidad' }, { k: 'Estado', t: 'Estado' }, { k: 'Banco', t: 'Banco' }, { k: 'CLABE', t: 'CLABE' }, { k: 'No_CTA.', t: 'No. cuenta' },
       { k: 'Activo', t: 'Estado', tipo: 'select', ops: [['SI', 'Activo'], ['NO', 'Inactivo (no se muestra en compras ni documentos)']] }];
     S.formIni = p ? full : { Activo: 'SI', D_Credito: 0 };
-    modal(p ? p.nombre : 'Nuevo proveedor', `<div class="arch-par">${p ? bloqueArch('provLogo', p.id) + bloqueArch('provCsf', p.id) : bloqueArchNuevo('provLogo', 'provLogoN') + bloqueArchNuevo('provCsf', 'provCsfN')}</div><div id="fProv">${formulario(campos, S.formIni)}</div><div class="acciones">${p && puede('compras') ? `<button class="btn" onclick="App.comprasDeProveedor('${esc(p.id)}','${esc(String(p.nombre || '').replace(/'/g, ''))}')">📦 Ver sus compras</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarProveedor()">Guardar</button></div>`);
+    modal(p ? p.nombre : 'Nuevo proveedor', `<div class="arch-par">${p ? bloqueArch('provLogo', p.id) + bloqueArch('provCsf', p.id) : bloqueArchNuevo('provLogo', 'provLogoN') + bloqueArchNuevo('provCsf', 'provCsfN')}</div><div id="fProv">${formulario(campos, S.formIni, [['🚚 Datos del proveedor', 1, ['Nombre_Empresa', 'Razon_social', 'Activo']], ['🧾 Datos fiscales y crédito', 2, ['RFC', 'Regimen_Fiscal', 'D_Credito']],
+      ['📞 Contacto', 3, ['Gerente', 'Celular', 'Telefono', 'e-mail_empresa', 'Enc_Ventas', 'Cel_Enc_Ventas', 'e-mail_Ventas']], ['📍 Dirección', 5, ['Calle', 'Colonia', 'C.P.', 'Localidad', 'Estado']],
+      ['🏦 Datos bancarios', 4, ['Banco', 'CLABE', 'No_CTA.']]])}</div><div class="acciones">${p && puede('compras') ? `<button class="btn" onclick="App.comprasDeProveedor('${esc(p.id)}','${esc(String(p.nombre || '').replace(/'/g, ''))}')">📦 Ver sus compras</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarProveedor()">Guardar</button></div>`);
   }
   async function activarProveedor(id) {
     const p = (D().proveedores || []).find(x => x.id === id); if (!p) return;
@@ -16668,7 +16706,7 @@ const App = (() => {
       }
     });
   }
-  { let pend = 0; new MutationObserver(() => { if (pend) return; pend = requestAnimationFrame(() => { pend = 0; marcarBusquedas(); }); }).observe(document.documentElement, { childList: true, subtree: true }); }
+  { let pend = 0; new MutationObserver(() => { if (pend) return; pend = requestAnimationFrame(() => { pend = 0; marcarBusquedas(); try { iconosCampos(); } catch (e) {} }); }).observe(document.documentElement, { childList: true, subtree: true }); }
   document.addEventListener('DOMContentLoaded', iniciar);
 
   /* ---------------- 📣 RECLAMACIONES (de clientes y a proveedores) ----------------
