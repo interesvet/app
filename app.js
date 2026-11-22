@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 371, f: '22/11/2026', t: [{ x: '📊 Clasificación contable de gastos: cada concepto ya dice si es gasto de venta, de administración o financiero; fijo o variable, y directo o indirecto (los indirectos de Matriz se reparten entre sucursales). En Inicio, el estado de resultados por función y el ⚖️ punto de equilibrio.', p: '' }] },
     { v: 370, f: '22/11/2026', t: [{ x: '🗂️ Catálogo de gastos: cada gasto lleva rubro › concepto (Personal, Instalaciones, Vehículos y reparto, Viáticos…). Tú agregas, editas, mueves o quitas rubros y conceptos en Gastos › 🗂️ Catálogo, y el estado de gastos muestra los totales por rubro.', p: '' }, { x: '🧾 Gastos sin factura: nómina, caja chica, propinas… con su comprobante, y los que se repiten cada semana, quincena o mes.', p: '' }] },
     { v: 369, f: '22/11/2026', t: [{ x: '📄 Cotizaciones y estados de cuenta en PDF como la nota: pie de página y logotipo de fondo en cada hoja, se compactan para caber en una sola si se pasan poco, y si son largos llevan «Página 1 de 2» y repiten los encabezados de la tabla (también la nota de venta).', p: '' }] },
     { v: 368, f: '22/11/2026', t: [{ x: '👤 Alta de cliente más ordenada: la foto va dentro de «Datos del cliente» (antes del nombre) y la constancia de situación fiscal dentro de «Datos fiscales» (después del C.P.).', p: '' }] },
@@ -1967,9 +1968,19 @@ const App = (() => {
         <div class="un-total ${est}"><small>Utilidad neta</small><b>${$$(neta)}</b><span>Margen neto ${pct(neta)}</span></div></div>
       <div class="un-flujo">
         ${paso('Ventas netas', R.ventas)}${paso('Costo de lo vendido', R.costo, 'resta', 1)}${paso('Utilidad bruta', R.utilidadBruta, 'sub')}
-        ${paso('Mermas', R.mermas, 'resta', 1)}${R.fletesVenta > 0 ? paso('Fletes de venta', R.fletesVenta, 'resta', 1) : R.fletesVenta < 0 ? paso('Fletes cobrados (neto)', -R.fletesVenta) : ''}${paso('Gastos de operación', R.gastosOperacion, 'resta', 1)}${R.comisiones || R.comi ? paso('Comisiones', R.comisiones || 0, 'resta', 1) : ''}
+        ${paso('Mermas', R.mermas, 'resta', 1)}${R.fletesVenta > 0 ? paso('Fletes de venta', R.fletesVenta, 'resta', 1) : R.fletesVenta < 0 ? paso('Fletes cobrados (neto)', -R.fletesVenta) : ''}${R.porFuncion ? (R.porFuncion.costo ? paso('Otros costos de venta', R.porFuncion.costo, 'resta', 1) : '') + paso('Gastos de venta', R.porFuncion.venta - (R.porFuncion.comisionesEnVenta || 0), 'resta', 1) + paso('Gastos de administración', R.porFuncion.admin, 'resta', 1) : paso('Gastos de operación', R.gastosOperacion, 'resta', 1)}${R.comisiones || R.comi ? paso('Comisiones', R.comisiones || 0, 'resta', 1) : ''}
         ${paso('Utilidad de operación', R.utilidadOperacion, 'sub')}${paso('Gastos financieros', R.financieros, 'resta', 1)}${paso('Utilidad neta', neta, 'fin ' + est)}
-      </div></div>` + htmlComisionesGasto(R) + htmlDepreciacion(R);
+      </div></div>` + htmlEquilibrio(R) + htmlComisionesGasto(R) + htmlDepreciacion(R);
+  }
+  /** ⚖️ Punto de equilibrio: cuánto hay que vender para cubrir los gastos fijos (solo el dueño, usa el costo real). */
+  function htmlEquilibrio(R) {
+    const E = R.equilibrio; if (!E || !R.ventas) return '';
+    const ok = E.ventasNecesarias !== null && R.ventas >= E.ventasNecesarias, dif = E.ventasNecesarias === null ? 0 : R.ventas - E.ventasNecesarias;
+    return `<div class="tarjeta dep-card"><div class="un-cab"><div><h3 style="margin:0">⚖️ Punto de equilibrio</h3>
+        <p class="muted" style="margin:4px 0 0">Lo mínimo que hay que vender en el periodo para cubrir los gastos fijos. De cada $100 que vendes te quedan <b>$${E.mcPct.toFixed(1)}</b> después de pagar el costo y los gastos variables (margen de contribución); con eso se pagan los fijos y lo que sobra es utilidad.</p></div>
+        <div class="un-total ${E.ventasNecesarias === null ? 'mal' : ok ? 'ok' : 'mal'}"><small>Ventas necesarias</small><b>${E.ventasNecesarias === null ? '—' : $$(E.ventasNecesarias)}</b><span>${E.ventasNecesarias === null ? 'el margen no cubre los gastos variables' : ok ? 'vas ' + $$(dif) + ' arriba' : 'faltan ' + $$(-dif)}</span></div></div>
+      <div class="un-flujo">${[['Ventas del periodo', R.ventas], ['Costo + gastos variables', E.variables], ['Margen de contribución', E.mc], ['Gastos fijos', E.fijos]].map(x => `<div class="un-paso"><small>${x[0]}</small><b>${$$(x[1])}</b></div>`).join('')}</div>
+      <p class="muted peq" style="margin:8px 0 0">Variables: costo de lo vendido, mermas, fletes de venta, comisiones y los conceptos marcados como «Variable» en Gastos › 🗂️ Catálogo. Fijos: los marcados como «Fijo» (incluye financieros). Directos ${$$(E.directos)} · indirectos ${$$(E.indirectos)}.</p></div>`;
   }
   /** 💼 Comisiones del periodo como gasto (solo el dueño): devengadas, pagadas y por pagar, por comisionista. */
   function htmlComisionesGasto(R) {
@@ -2017,14 +2028,15 @@ const App = (() => {
         ${fila('<b>Utilidad bruta</b>', R.utilidadBruta, { total: 1 })}
         ${fila('Mermas', R.mermas, { menos: 1, sangria: 1 })}
         ${R.fletesPagados || R.fletesCobrados ? fila('Fletes de venta: pagados ' + $$(R.fletesPagados) + ' − cobrados ' + $$(R.fletesCobrados), R.fletesVenta, { menos: 1, sangria: 1 }) : ''}
-        ${fila('Gastos de operación', R.gastosOperacion, { menos: 1, sangria: 1 })}
-        ${R.comisiones ? fila('Comisiones', R.comisiones, { menos: 1, sangria: 1 }) : ''}
+        ${R.porFuncion ? (R.porFuncion.costo ? fila('Otros costos de venta', R.porFuncion.costo, { menos: 1, sangria: 1 }) : '') + fila('Gastos de venta', R.porFuncion.venta - (R.porFuncion.comisionesEnVenta || 0), { menos: 1, sangria: 1 }) + fila('Gastos de administración', R.porFuncion.admin, { menos: 1, sangria: 1 }) : fila('Gastos de operación', R.gastosOperacion, { menos: 1, sangria: 1 })}
+        ${R.comisiones ? fila('Comisiones (gasto de venta)', R.comisiones, { menos: 1, sangria: 1 }) : ''}
         ${fila('<b>Utilidad de operación</b>', R.utilidadOperacion, { total: 1 })}
         ${fila('Gastos financieros', R.financieros, { menos: 1, sangria: 1 })}
         ${fila('<b>Utilidad neta</b>', R.utilidadNeta, { total: 1 })}
         ${R.depreciacion ? fila('Aparte: depreciación de inversiones (estimada, no se resta)', R.depreciacion, { sangria: 1 }) : ''}
         </tbody></table></div>
-        <p class="muted" style="margin-top:8px">Aparte: inversión ${$$(R.inversion)} · excluidos ${$$(R.excluidos)}. Montos sin IVA.</p>
+        <p class="muted" style="margin-top:8px">Aparte: inversión ${$$(R.inversion)} · excluidos ${$$(R.excluidos)}. Montos sin IVA.${R.porFuncion ? ' Gastos por función según su clasificación en Gastos › 🗂️ Catálogo.' : ''}</p>
+        ${R.equilibrio && R.ventas ? `<p style="margin-top:6px">⚖️ <b>Punto de equilibrio:</b> ${R.equilibrio.ventasNecesarias === null ? 'el margen no alcanza a cubrir los gastos variables' : 'vender ' + $$(R.equilibrio.ventasNecesarias) + ' en el periodo (margen de contribución ' + R.equilibrio.mcPct.toFixed(1) + '%, gastos fijos ' + $$(R.equilibrio.fijos) + ')'}.</p>` : ''}
         <h4 style="margin-top:12px">IVA del periodo (estimado)</h4>
         <div class="tabla-cont"><table><tbody><tr><td>IVA de tus ventas (trasladado)</td><td class="num">${$$(R.ivaTrasladado)}</td></tr>
         <tr><td>IVA de tus gastos (acreditable)</td><td class="num">−${$$(R.ivaAcreditable)}</td></tr>
@@ -4715,6 +4727,18 @@ const App = (() => {
     if (!S.catsGas || S.catsGas.length !== S.datGas.categorias.length) { S.catsGas = S.datGas.categorias; const sel = $('#gCat'); if (sel) sel.innerHTML = '<option value="">Todas</option>' + S.catsGas.map(c => `<option ${c === f.categoria ? 'selected' : ''}>${esc(c)}</option>`).join(''); }
     pintarGastos();
   }
+  /** 📊 Clasificación contable del periodo: por renglón del estado de resultados, fijos vs variables y directos vs indirectos. */
+  function gastosClasifContable(r, pct) {
+    const C = r.clasif; if (!C) return '';
+    const F = C.porFuncion || {}, tot = Object.values(F).reduce((a, v) => a + v, 0); if (!tot) return '';
+    const barra = (a, b, ta, tb) => `<div class="cls-par"><div class="cls-b"><span style="width:${(a / ((a + b) || 1) * 100).toFixed(1)}%"></span></div>
+      <div class="cls-lbl"><span><b>${ta}</b> ${$$(a)} <small class="muted">${((a / ((a + b) || 1)) * 100).toFixed(0)}%</small></span><span><b>${tb}</b> ${$$(b)} <small class="muted">${((b / ((a + b) || 1)) * 100).toFixed(0)}%</small></span></div></div>`;
+    const fila = (t, v) => v ? `<div class="cls-f"><span>${t}</span><b>${$$(v)}</b><small class="muted">${r.ventas ? pct(v) + ' de ventas' : ''}</small></div>` : '';
+    return `<div class="tarjeta"><h3>📊 Clasificación contable</h3><p class="muted peq" style="margin-top:-4px">Gastos de operación y financieros del periodo, sin IVA. Cada concepto trae su clasificación del 🗂️ Catálogo.${C.sucAuto ? ' ' + nf(C.sucAuto) + ' gastos indirectos de Matriz se repartieron entre las sucursales según su % de ventas.' : ''}</p>
+      <div class="rejilla-2"><div><h4 style="margin:6px 0">Por renglón del estado de resultados</h4>${fila('Costo de venta', F['Costo de venta'])}${fila('Gastos de venta', F['Gastos de venta'])}${fila('Gastos de administración', F['Gastos de administración'])}${fila('Gastos financieros', F['Gastos financieros'])}</div>
+      <div><h4 style="margin:6px 0">Fijos y variables</h4>${barra(C.fijo, C.variable, 'Fijos', 'Variables')}<h4 style="margin:12px 0 6px">Directos e indirectos</h4>${barra(C.directo, C.indirecto, 'Directos', 'Indirectos')}</div></div>
+      <p class="muted peq" style="margin:6px 0 0">El punto de equilibrio (cuánto necesitas vender para cubrir tus gastos fijos) está en Inicio, en el estado de resultados.</p></div>`;
+  }
   /** 🗂️ Gastos del periodo por rubro (barras); al abrir un rubro, sus conceptos; al tocar un concepto, sus facturas. */
   function gastosPorRubro(r, pct) {
     const R = {}; (r.resumen || []).forEach(x => { const k = x.rubro || 'Sin rubro'; const o = R[k] || (R[k] = { rubro: k, icono: x.icono || '📁', monto: 0, anterior: 0, n: 0, cuenta: 0, ls: [] });
@@ -4744,7 +4768,7 @@ const App = (() => {
       ${kpi('IVA acreditable', $$(t.iva), nf(t.facturas) + ' facturas', 'iva')}</div>
       <p class="muted peq no-imprimir" style="margin:-6px 0 12px">🔍 Toca un recuadro para ver las facturas que lo forman, las que quedaron fuera y cómo se calcula.</p>`;
     if (tab === 'resumen') {
-      html += gastosPorRubro(r, pct);
+      html += gastosClasifContable(r, pct) + gastosPorRubro(r, pct);
       html += `<div class="rejilla-2"><div class="tarjeta"><h3>Estado de gastos · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3>
         <p class="muted" style="margin-bottom:8px">Comparado contra ${esc(r.periodo.anterior)} (mismo número de días).</p>` +
         GRUPOS_G.filter(g => r.resumen.some(x => x.grupo === g)).map(g => {
@@ -4781,7 +4805,7 @@ const App = (() => {
         <p class="muted">${nf(r.facturas.length)} facturas · ${$$(r.facturas.reduce((a, x) => a + x.monto, 0))} sin IVA · ${$$(r.facturas.reduce((a, x) => a + x.total, 0))} con IVA${r.sucursal ? ' · montos ponderados para ' + esc(sucNom(r.sucursal)) : ''}</p>` +
         tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Concepto', h: x => x.manual ? `${esc(x.cat)} <span class="etq">🧾 sin factura</span>${puedeManual() ? ` <button class="icono no-imprimir" title="Editar este gasto" onclick="App.formGastoManual('${esc(x.manual)}')">✏️</button>` : ''}<br><small class="muted">${esc(x.rubro || '')} · ${esc(x.grupo)}</small>` : !editaGas() ? esc(x.cat) + `<br><small class="muted">${esc(x.grupo || '')}</small>` : x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + ` <button class="icono no-imprimir" title="Cambiar la categoría de esta factura" onclick="App.editarCatGasto('${esc(x.uuid)}')">✏️</button><br><small class="muted">${esc(x.grupo)}</small>` },
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
-          { t: 'Sucursal', h: (x) => lectSuc || x.manual ? esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) : `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
+          { t: 'Sucursal', h: (x) => lectSuc || x.manual ? esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) : `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.sucAuto ? '<br><small class="muted" title="Gasto indirecto de Matriz: se reparte entre las sucursales según su % de ventas. Si eliges una sucursal, se queda ahí.">auto · indirecto</small>' : ''}${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
           ...(puede('equipo') ? [{ t: 'Empleado', cls: 'ocultar-movil', h: x => x.grupo === 'Operación' || x.grupo === 'Financiero' ? `<select class="chico" onchange="App.asignarEmpGasto('${esc(x.uuid)}', this.value)"><option value="">—</option>${(D().vendedores || []).filter(v => !/contador/i.test(v.rol || '')).map(v => `<option value="${esc(v.id)}" ${String(v.id) === String(x.emp || '') ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('')}</select>` : '' }] : []),
           { t: 'Factura', h: x => x.manual ? (x.archivo ? `<button class="btn chico" title="Ver comprobante" onclick="App.abrirArchivoDrive('${esc(x.archivo)}')">📎</button>` : '<small class="muted">—</small>') : (x.credito ? `<button class="btn chico" title="Corrida financiera del crédito: renglón de este mes" onclick="App.abrirCredito('${esc(x.credito)}','${esc(x.fecha)}')">📑</button>` : '') + `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>${x.xml ? `<button class="btn chico" title="Descargar el XML" onclick="App.bajarXmlGasto('${esc(x.uuid)}')">XML</button>` : ''}` },
           ...(lect ? [] : [{ t: 'Flete', h: x => x.manual ? '' : x.flete ? `<button class="btn chico" style="color:var(--ok);border-color:var(--ok)" title="Flete ligado a ${x.flete} documento(s) (órdenes de compra / notas de venta)" onclick="App.fleteLigar('${esc(x.uuid)}')">🚚 ${x.flete}</button>`
@@ -4923,6 +4947,8 @@ const App = (() => {
       return `<optgroup label="${esc((cs[0].i || '') + ' ' + r)}">${cs.map(x => `<option value="${esc(x.c)}" ${x.c === sel ? 'selected' : ''}>${esc(x.c)}</option>`).join('')}</optgroup>`; }).join('');
   };
   const catGasL = () => (S.datGas && S.datGas.catalogo && S.datGas.catalogo.length ? S.datGas.catalogo : (S.gm && S.gm.conceptos) || []);
+  const FUNC_CORTO = { 'Costo de venta': 'Costo de venta', 'Gastos de venta': 'Venta', 'Gastos de administración': 'Administración', 'Gastos financieros': 'Financiero', 'Inversión': 'Inversión', 'Excluir': 'Excluir' };
+  const FUNC_AYUDA = { 'Costo de venta': 'Parte del costo de lo que vendes (se resta antes de la utilidad bruta en el estado por función)', 'Gastos de venta': 'Lo que cuesta vender y entregar: vendedores, vehículos, reparto, publicidad, sucursales', 'Gastos de administración': 'Lo que cuesta dirigir el negocio: oficina, contabilidad, sistemas, sueldos administrativos', 'Gastos financieros': 'Intereses de créditos y comisiones bancarias', 'Inversión': 'Activo fijo: no se resta en el mes, se deprecia', 'Excluir': 'Personal / no es del negocio: no cuenta' };
   const chipGrupo = g => `<span class="etq gq-${g === 'Operación' ? 'op' : g === 'Financiero' ? 'fin' : g === 'Inversión' ? 'inv' : 'exc'}">${esc(g)}</span>`;
   async function vistaCatalogoGasto() {
     S.tabGas = 'catalogo';
@@ -4934,12 +4960,13 @@ const App = (() => {
     const C = S.ctg, ed = C.edita, rubs = [];
     C.conceptos.forEach(c => { if (!rubs.some(r => r.rubro === c.rubro)) rubs.push({ rubro: c.rubro, icono: c.icono }); });
     $('#ctgRes').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center"><div style="flex:3 1 260px"><h3 style="margin:0">🗂️ Catálogo de gastos</h3>
-        <small class="muted">Cada factura o gasto sin factura lleva un <b>concepto</b>, y cada concepto pertenece a un <b>rubro</b>. El grupo del concepto decide cómo cuenta: Operación y Financiero se restan cada mes, Inversión se deprecia y Excluir no cuenta.${ed ? ' Toca un concepto para editarlo, moverlo de rubro o quitarlo; ✏️ junto al rubro le cambia el nombre.' : ''}</small></div>
+        <small class="muted">Cada factura o gasto sin factura lleva un <b>concepto</b>, y cada concepto pertenece a un <b>rubro</b>. Cada concepto se clasifica para la contabilidad en tres formas: su <b>renglón del estado de resultados</b> (venta, administración, financiero, costo de venta, inversión o excluir), si es <b>fijo o variable</b> y si es <b>directo o indirecto</b> (los indirectos de Matriz se reparten entre las sucursales según su % de ventas).${ed ? ' Toca un concepto para editarlo, moverlo de rubro o quitarlo; ✏️ junto al rubro le cambia el nombre.' : ''}</small></div>
         ${ed ? `<button class="btn primario fijo" onclick="App.formConceptoGasto('', '__nuevo')">➕ Rubro</button><button class="btn fijo" onclick="App.formConceptoGasto('')">➕ Concepto</button>` : ''}</div></div>` +
-      `<div class="ctg-rejilla">` + rubs.map(R => { const cs = C.conceptos.filter(c => c.rubro === R.rubro), act = cs.filter(c => c.activo), gs = [...new Set(act.map(c => c.grupo))];
-        return `<div class="tarjeta ctg-rubro"><div class="ctg-cab"><b>${esc(R.icono)} ${esc(R.rubro)}</b> ${gs.map(chipGrupo).join(' ')}<span class="muted peq" style="margin-left:auto">${nf(act.length)} concepto${act.length === 1 ? '' : 's'}</span>
+      `<div class="ctg-rejilla">` + rubs.map(R => { const cs = C.conceptos.filter(c => c.rubro === R.rubro), act = cs.filter(c => c.activo), gs = [...new Set(act.map(c => c.grupo))], fs = [...new Set(act.map(c => FUNC_CORTO[c.func] || c.func).filter(Boolean))];
+        return `<div class="tarjeta ctg-rubro"><div class="ctg-cab"><b>${esc(R.icono)} ${esc(R.rubro)}</b> ${fs.length ? fs.map(f => `<span class="etq gq-${f === 'Financiero' ? 'fin' : f === 'Inversión' ? 'inv' : f === 'Excluir' ? 'exc' : 'op'}">${esc(f)}</span>`).join(' ') : gs.map(chipGrupo).join(' ')}<span class="muted peq" style="margin-left:auto">${nf(act.length)} concepto${act.length === 1 ? '' : 's'}</span>
             ${ed ? `<button class="icono" title="Cambiar nombre o ícono del rubro" onclick="App.formRubroGasto('${esc(R.rubro).replace(/'/g, "\\'")}')">✏️</button><button class="icono" title="Agregar un concepto a este rubro" onclick="App.formConceptoGasto('', '${esc(R.rubro).replace(/'/g, "\\'")}')">➕</button>` : ''}</div>` +
           cs.map(c => `<div class="ctg-con${c.activo ? '' : ' inactivo'}${ed ? ' clic' : ''}" ${ed ? `onclick="App.formConceptoGasto('${esc(c.id)}')"` : ''}><span>${esc(c.concepto)}${c.activo ? '' : ' <span class="etq">desactivado</span>'}${gs.length > 1 || c.grupo !== gs[0] ? ' ' + chipGrupo(c.grupo) : ''}</span>
+            ${c.func && c.func !== 'Excluir' && c.func !== 'Inversión' ? `<small class="ctg-cls">${esc(FUNC_CORTO[c.func] || c.func)} · ${esc(c.comp)} · ${esc(c.asig)}</small>` : ''}
             <small class="muted">${[c.n ? nf(c.n) + ' registro' + (c.n === 1 ? '' : 's') : 'sin uso', c.prov ? nf(c.prov) + ' proveedor' + (c.prov === 1 ? '' : 'es') + ' automático' + (c.prov === 1 ? '' : 's') : '', c.grupo === 'Inversión' && c.tasa !== '' ? c.tasa + ' % anual' : '', c.meses ? 'repartir en ' + c.meses + ' meses' : ''].filter(Boolean).join(' · ')}</small></div>`).join('') + '</div>';
       }).join('') + '</div><p class="muted peq">«Proveedor automático»: las facturas nuevas de ese RFC se clasifican solas con ese concepto (lo aprende al clasificar en 🏷️ Por clasificar con «todas de este proveedor»).</p>';
   }
@@ -4947,24 +4974,31 @@ const App = (() => {
   function formConceptoGasto(id, rubro) {
     const C = S.ctg, c = id ? C.conceptos.find(x => x.id === id) : null, nuevoR = rubro === '__nuevo';
     const rubs = [...new Set(C.conceptos.map(x => x.rubro))], r0 = c ? c.rubro : (nuevoR ? '' : rubro || rubs[0] || '');
-    const g0 = c ? c.grupo : ((C.conceptos.find(x => x.rubro === r0) || {}).grupo || 'Operación');
+    const f0 = c ? c.func : ((C.conceptos.find(x => x.rubro === r0) || {}).func || 'Gastos de administración');
     modal(c ? '✏️ Concepto de gasto' : nuevoR ? '➕ Nuevo rubro' : '➕ Nuevo concepto', `<div class="rejilla">
         ${nuevoR ? `<label>Nombre del rubro<input id="cgRubro" placeholder="Ej. Servicios técnicos de campo"></label><label>Ícono del rubro<input id="cgIco" maxlength="4" placeholder="Ej. 🐄" style="max-width:120px"></label>`
           : `<label>Rubro<select id="cgRubro">${rubs.map(r => `<option ${r === r0 ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>`}
         <label>${nuevoR ? 'Primer concepto del rubro' : 'Concepto'}<input id="cgNom" value="${esc(c ? c.concepto : '')}" placeholder="Ej. VETERINARIO DE CAMPO" style="text-transform:uppercase"></label>
-        <label>Grupo<select id="cgGrupo" onchange="App.cgGrupo()">${opts(C.grupos.map(g => [g, NOMBRE_G[g] || g]), g0)}</select></label>
+        <label>Renglón del estado de resultados<select id="cgGrupo" onchange="App.cgGrupo()">${opts((C.funciones || ['Gastos de venta', 'Gastos de administración', 'Gastos financieros', 'Inversión', 'Excluir']).map(f => [f, f === 'Inversión' ? 'Inversión (activo fijo, se deprecia)' : f === 'Excluir' ? 'Excluir (personal / no es del negocio)' : f]), f0)}</select></label>
+        <label id="cgCompL">¿Cambia con lo que vendes?<select id="cgComp">${opts([['Fijo', 'Fijo: casi igual cada mes'], ['Variable', 'Variable: sube y baja con las ventas']], c && c.comp ? c.comp : 'Fijo')}</select></label>
+        <label id="cgAsigL">Asignación<select id="cgAsig">${opts([['Directo', 'Directo: se queda en su sucursal'], ['Indirecto', 'Indirecto: si es de Matriz se reparte entre sucursales'], ['Según sucursal', 'Según sucursal: directo en sucursal, indirecto en Matriz']], c && c.asig ? c.asig : 'Indirecto')}</select></label>
         <label id="cgTasaL">Depreciación % anual<input type="number" id="cgTasa" min="0" max="100" step="0.01" value="${c && c.tasa !== '' ? c.tasa : ''}" placeholder="auto (10 %)"></label>
         <label id="cgMesesL" title="Pagos que cubren varios meses (p. ej. un seguro anual = 12)">Repartir cada pago en meses<input type="number" id="cgMeses" min="0" max="60" value="${c && c.meses ? c.meses : ''}" placeholder="—"></label>
         <label>Nota<input id="cgNota" value="${esc(c ? c.notas : '')}" placeholder="Opcional"></label></div>
+      <p class="muted peq" id="cgAyuda"></p>
       ${c ? `<label class="check"><input type="checkbox" id="cgAct" ${c.activo ? 'checked' : ''}> Activo (aparece en las listas para clasificar y capturar)</label>
         <p class="muted peq">${c.n ? nf(c.n) + ' facturas o gastos usan este concepto. Si le cambias el nombre, se cambia también en ellos.' : 'Todavía nadie lo usa.'}</p>` : ''}
       <div class="acciones">${c ? `<button class="btn peligro" onclick="App.quitarConceptoGasto('${esc(c.id)}')">Quitar</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="cgBtn" onclick="App.guardarConceptoGasto('${esc(id || '')}', ${nuevoR ? 1 : 0})">💾 Guardar</button></div>`);
     cgGrupo();
   }
-  function cgGrupo() { const g = $('#cgGrupo').value; $('#cgTasaL').style.display = g === 'Inversión' ? '' : 'none'; $('#cgMesesL').style.display = g === 'Operación' || g === 'Financiero' ? '' : 'none'; }
+  function cgGrupo() { const f = $('#cgGrupo').value, op = f !== 'Inversión' && f !== 'Excluir';
+    $('#cgTasaL').style.display = f === 'Inversión' ? '' : 'none'; $('#cgMesesL').style.display = op ? '' : 'none';
+    $('#cgCompL').style.display = op ? '' : 'none'; $('#cgAsigL').style.display = f === 'Excluir' ? 'none' : '';
+    $('#cgAyuda').textContent = FUNC_AYUDA[f] || ''; }
   async function guardarConceptoGasto(id, nuevoR) {
     const c = id ? S.ctg.conceptos.find(x => x.id === id) : null;
-    const p = { id: id, rubro: $('#cgRubro').value.trim(), concepto: $('#cgNom').value.trim(), grupo: $('#cgGrupo').value, tasa: $('#cgTasa').value, meses: $('#cgMeses').value, notas: $('#cgNota').value,
+    const fn = $('#cgGrupo').value;
+    const p = { id: id, rubro: $('#cgRubro').value.trim(), concepto: $('#cgNom').value.trim(), funcion: fn, grupo: fn === 'Gastos financieros' ? 'Financiero' : fn === 'Inversión' ? 'Inversión' : fn === 'Excluir' ? 'Excluir' : 'Operación', comp: $('#cgComp').value, asig: $('#cgAsig').value, tasa: $('#cgTasa').value, meses: $('#cgMeses').value, notas: $('#cgNota').value,
       activo: $('#cgAct') ? $('#cgAct').checked : true, icono: nuevoR ? $('#cgIco').value.trim() || '📁' : (c && c.rubro === $('#cgRubro').value ? c.icono : '') };
     if (!p.rubro) return toast('Escribe el nombre del rubro', true);
     if (!p.concepto) return toast('Escribe el nombre del concepto', true);
@@ -7186,6 +7220,8 @@ const App = (() => {
       { h: 'Gastos', p: esJefeM, b: [['p', 'Las facturas de gastos llegan solas desde el correo o se suben (XML, PDF o ZIP del SAT). En Por clasificar se les asigna su rubro › concepto y sucursal; el estado de gastos sale por rubro, concepto y mes.']] },
       { h: '🗂️ Catálogo de gastos (rubros y conceptos)', p: () => puede('dueno') || puede('clasificar_gastos'), b: [['p', 'Gastos › 🗂️ Catálogo. Cada gasto lleva un concepto (GASOLINA, RENTA, SUELDOS…) y cada concepto pertenece a un rubro (Vehículos y reparto, Instalaciones, Personal…).'],
         ['ul', ['➕ Rubro: crea un rubro nuevo con su primer concepto. ➕ Concepto: agrega un concepto a un rubro.', 'Toca un concepto para cambiarle el nombre, moverlo de rubro, cambiar su grupo (Operación, Financiero, Inversión o Excluir), su tasa de depreciación o en cuántos meses se reparte cada pago. Si le cambias el nombre, también cambia en sus facturas.', '✏️ junto a un rubro: le cambia el nombre o el ícono.', 'Quitar: si nadie lo usa se borra; si ya tiene facturas, las pasas a otro concepto o solo lo desactivas (sus facturas conservan su concepto y tus reportes no cambian).', 'En 🏷️ Por clasificar eliges el rubro › concepto; con «Todas de este proveedor» sus facturas futuras se clasifican solas.', 'En Estado de gastos, «Gastos por rubro» muestra los totales con barras: abre un rubro para ver sus conceptos y toca un concepto para ver sus facturas.']]] },
+      { h: '📊 Clasificación contable de los gastos', p: () => puede('dueno') || puede('clasificar_gastos'), b: [['p', 'Cada concepto del catálogo se clasifica en tres formas, como lo pide la contabilidad:'],
+        ['ul', ['Renglón del estado de resultados: costo de venta, gastos de venta (vender y entregar: vendedores, vehículos, reparto, publicidad, sucursales), gastos de administración (oficina, contabilidad, sistemas, sueldos administrativos), gastos financieros (intereses y comisiones bancarias), inversión o excluir.', 'Fijo o variable: fijo si casi no cambia mes con mes (renta, sueldos); variable si sube y baja con las ventas (gasolina, comisiones, paquetería).', 'Directo o indirecto: directo se queda en su sucursal; indirecto, si cae en Matriz, se reparte solo entre las sucursales según su % de ventas; «según sucursal» es directo y de venta en una sucursal, e indirecto y de administración en Matriz (renta, luz, agua, internet, teléfono).', 'Se cambian al editar el concepto en Gastos › 🗂️ Catálogo.', 'En Estado de gastos, «📊 Clasificación contable» muestra los gastos por renglón, fijos contra variables y directos contra indirectos.', 'En Inicio (dueño), el estado de resultados separa gastos de venta y de administración, y el cuadro «⚖️ Punto de equilibrio» dice cuánto hay que vender para cubrir los gastos fijos.', 'Los seguros pasaron de gasto financiero a gasto de administración, y los sueldos se separaron en administrativos y de ventas y reparto.']]] },
       { h: '🧾 Gastos sin factura', p: () => puede('dueno') || puede('capturar_gastos'), b: [['p', 'Gastos › 🧾 Sin factura (o el botón ➕ Gasto sin factura): nómina, caja chica, propinas y todo pago sin CFDI.'],
         ['ul', ['Captura fecha, rubro › concepto, sucursal, descripción, importe (y el IVA si aplica), cómo se pagó y, si quieres, una foto o PDF del comprobante.', 'Repetir cada semana, cada 15 días o cada mes: cuenta una vez por periodo hasta la fecha que indiques o hasta que lo quites (por ejemplo la nómina o la renta).', 'Entran al estado de gastos igual que las facturas y aparecen en Facturas con la etiqueta «🧾 sin factura».', 'Quitar un gasto que se repite: «Dejar de repetir desde hoy» conserva lo anterior; «Quitarlo por completo» lo saca de todos los periodos.', 'Permiso «Capturar gastos sin factura» (Configuración › Permisos): quien no ve todas las sucursales, por ejemplo un gerente, solo captura y ve los de su sucursal.']]] },
       { h: 'Bancos y Contable', p: esJefeM, b: [['p', 'Cuentas, cajas, comprobantes y conciliación; reportes para la contadora por periodo.']] },

@@ -189,6 +189,12 @@ details.rub-g[open] > summary .rub-n::before { content: '▾ '; }
 details.rub-g > summary small { grid-column: 1 / -1; }
 .rub-c { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 6px 4px 6px 20px; border-top: 1px dashed var(--borde); font-size: 13.5px; align-items: center; }
 .rub-c.clic { cursor: pointer; } .rub-c.clic:hover { background: var(--superficie-2); }
+.ctg-cls { color: var(--marca); font-weight: 600; font-size: 11.5px; }
+.cls-f { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; padding: 6px 2px; border-top: 1px dashed var(--borde); font-size: 13.5px; }
+.cls-f small { grid-column: 1 / -1; }
+.cls-par { margin: 4px 0; } .cls-b { height: 10px; border-radius: 6px; background: var(--aviso-suave); overflow: hidden; }
+.cls-b > span { display: block; height: 100%; background: var(--marca); }
+.cls-lbl { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; margin-top: 4px; }
 .fsec-1 { background: rgba(66,133,224,.09); border-color: rgba(66,133,224,.35); }
 .fsec-2 { background: rgba(240,190,40,.09); border-color: rgba(240,190,40,.38); }
 .fsec-3 { background: rgba(46,158,91,.09); border-color: rgba(46,158,91,.35); }
