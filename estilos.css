@@ -169,6 +169,8 @@ label.con-ico > input { padding-left: 40px !important; }
 label.con-ico::after { content: attr(data-ico); position: absolute; left: 12px; bottom: 0; height: var(--alto-campo, 42px); display: flex; align-items: center; font-size: 17px; line-height: 1; pointer-events: none; }
 .fsec { border: 1px solid var(--borde); border-radius: 14px; padding: 10px 14px 14px; margin: 0 0 12px; }
 .fsec > h4 { margin: 0 0 10px; font-size: 15px; font-weight: 700; color: var(--texto); }
+.fsec-arch { margin: 0 0 10px; }
+.fsec-arch > * { max-width: 520px; }
 .fsec-1 { background: rgba(66,133,224,.09); border-color: rgba(66,133,224,.35); }
 .fsec-2 { background: rgba(240,190,40,.09); border-color: rgba(240,190,40,.38); }
 .fsec-3 { background: rgba(46,158,91,.09); border-color: rgba(46,158,91,.35); }
