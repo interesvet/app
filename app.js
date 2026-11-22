@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 363, f: '22/11/2026', t: [{ x: '📦 Ventas › Por producto: venta neta por producto en el periodo; toca un producto para ver sus presentaciones (frasco de 20 ml, 100 ml…) y sigue bajando por sucursal, vendedor o cliente.', p: 'dashboard' }, { x: '🔍 Los desgloses de ventas, utilidad, mermas e inventario ahora agrupan por producto y, dentro de cada uno, por presentación; también por laboratorio.', p: 'dashboard' }, { x: '🔎 En Ventas, Cobranza y Compras los cuadros de arriba filtran la lista: p. ej. «Por cobrar del periodo» deja solo las notas con saldo, «⚠️ Por reportar» solo esos cobros y cada forma de pago sus cobros. Tócalo otra vez para quitar el filtro.', p: '' }] },
     { v: 362, f: '22/11/2026', t: [{ x: '🔍 Desglose de los cuadros: en Inicio y en Sucursales › Resumen, los cuadros con 🔍 se pueden tocar para ver de qué se forma la cifra, por pestañas (sucursal, vendedor, cliente, categoría, producto, mes…), con comparación contra el año anterior y Excel.', p: 'dashboard' }, { x: '🔎 Toca un renglón del desglose para entrar a él y seguir analizando (p. ej. Ventas netas › Champotón › un vendedor › sus clientes); las migas de arriba te regresan a cualquier nivel.', p: 'dashboard' }] },
     { v: 361, f: '21/11/2026', t: [{ x: '🎁 Canjear y aplicar: en la nueva venta, junto a ⭐ Puntos, un botón canjea los puntos del cliente y los descuenta en esa misma nota.', p: 'ventas' }, { x: '🎁 Pagar notas pendientes con monedero: al registrar un cobro, si el cliente tiene monedero aparece la opción para pagar con él (todo o parte).', p: 'cobranza' }] },
     { v: 360, f: '21/11/2026', t: [{ x: '🔒 Puntos y monederos por sucursal: cada sucursal solo ve los de sus clientes (también en la lista de monederos). Matriz y el dueño ven y escanean todos. Si una sucursal escanea la tarjeta de un cliente de otra, la app lo avisa.', p: 'clientes' }] },
@@ -3602,7 +3603,7 @@ const App = (() => {
   /* ---------- HISTORIAL DE VENTAS ---------- */
   V.ventas = (tab) => {
     const tabs = (puede('ventas') || esContador() ? [['notas', 'Notas de venta']] : []).concat(puede('cobranza') ? [['cobranza', '💵 Cobranza'], ['edocta', '📑 Estados de cuenta']] : [])
-      .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('devoluciones') ? [['dev', '↩️ Devoluciones']] : []).concat(puede('dueno') || esContador() || valGer() ? [['util', '🔒 Utilidad por nota']] : []);
+      .concat(puede('facturacion') ? [['fact', '🧾 Facturación']] : []).concat(puede('devoluciones') ? [['dev', '↩️ Devoluciones']] : []).concat(puede('dashboard') ? [['prod', '📦 Por producto']] : []).concat(puede('dueno') || esContador() || valGer() ? [['util', '🔒 Utilidad por nota']] : []);
     tab = tab || S.tabVen || 'notas'; if (!tabs.some(x => x[0] === tab)) tab = tabs[0][0]; S.tabVen = tab;
     const h = hoyISO(), ini = h.slice(0, 5) + String(Math.floor((+h.slice(5, 7) - 1) / 3) * 3 + 1).padStart(2, '0') + '-01';   // trimestre en curso: del día 1 del trimestre a hoy
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaVentas('${id}')">${n}</button>`;
@@ -3611,6 +3612,17 @@ const App = (() => {
     if (tab === 'cobranza') return V.cobranza(barra);
     if (tab === 'edocta') return vistaEdoCta(barra);
     if (tab === 'dev') return vistaDevoluciones(barra);
+    if (tab === 'prod') {   /* 📦 ventas por producto y, dentro de cada producto, por presentación */
+      const f = S.fvProd || { desde: h.slice(0, 8) + '01', hasta: h };
+      $('#vista').innerHTML = `${barra}<div class="tarjeta"><div class="fila">
+        <label>Desde<input type="date" id="vpDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="vpHasta" value="${f.hasta}"></label>
+        ${U().todasSucursales ? `<label>Sucursal<select id="vpSuc">${optsSuc(f.suc || '', false, 'Todas')}</select></label>` : ''}
+        <button class="btn primario fijo" onclick="App.ventasProd()">Actualizar</button></div>
+        <p class="muted peq" style="margin:6px 0 0">Venta neta sin IVA por producto. Toca un producto para ver sus presentaciones (frasco de 20 ml, 100 ml…) y sigue bajando por sucursal, vendedor o cliente.</p></div>
+        <div class="espacio"></div><div class="tarjeta" id="dgEmb"></div>`;
+      agregarMesAnio('vpDesde', 'vpHasta', ventasProd);
+      return ventasProd();
+    }
     if (tab === 'util') {
       $('#vista').innerHTML = `${barra}
         <div class="tarjeta"><div class="fila">
@@ -3653,20 +3665,23 @@ const App = (() => {
       const vivas = l.filter(x => x.estatus !== 'Cancelado');
       const tot = vivas.reduce((a, x) => a + x.total, 0), sal = vivas.reduce((a, x) => a + Math.max(0, x.saldo), 0), cob = vivas.reduce((a, x) => a + x.cobrado, 0);
       const conSal = vivas.filter(x => x.saldo > 0.009).length;
+      const kfV = S.kfV || '', kc = k => `kpi kpi-clic${kfV === k ? ' kpi-activo' : ''}" onclick="App.kFiltro('V','${k}')" title="${kfV === k ? 'Quitar el filtro' : 'Ver solo estas notas en la lista'}`;
+      const lv = kfV === 'cob' ? l.filter(x => x.cobrado > 0.009 && x.estatus !== 'Cancelado') : kfV === 'saldo' ? l.filter(x => x.saldo > 0.009 && x.estatus !== 'Cancelado') : kfV === 'fac' ? l.filter(x => (x.montoFac || 0) > 0.009) : l;
+      S.lista = lv;
       $('#lVentas').innerHTML = `<div class="kpis">
-        <div class="kpi"><small>${S.ventasCli && !$('#fDesde').value && !$('#fHasta').value ? 'Ventas históricas del cliente' : 'Ventas del periodo'}</small><b>${$$(tot)}</b><span>${vivas.length} ${vivas.length === 1 ? 'nota' : 'notas'}${l.length > vivas.length ? ' · ' + (l.length - vivas.length) + ' canceladas' : ''}</span></div>
-        <div class="kpi"><small>Cobrado de esas notas</small><b>${$$(cob)}</b><span>${tot > 0 ? Math.round(cob / tot * 100) + ' % del total' : '—'}</span></div>
-        <div class="kpi"><small>Por cobrar del periodo</small><b>${$$(sal)}</b><span>${conSal} ${conSal === 1 ? 'nota' : 'notas'} con saldo</span></div>
+        <div class="${kc('')}"><small>${S.ventasCli && !$('#fDesde').value && !$('#fHasta').value ? 'Ventas históricas del cliente' : 'Ventas del periodo'}</small><b>${$$(tot)}</b><span>${vivas.length} ${vivas.length === 1 ? 'nota' : 'notas'}${l.length > vivas.length ? ' · ' + (l.length - vivas.length) + ' canceladas' : ''}</span></div>
+        <div class="${kc('cob')}"><small>Cobrado de esas notas</small><b>${$$(cob)}</b><span>${tot > 0 ? Math.round(cob / tot * 100) + ' % del total' : '—'}</span></div>
+        <div class="${kc('saldo')}"><small>Por cobrar del periodo</small><b>${$$(sal)}</b><span>${conSal} ${conSal === 1 ? 'nota' : 'notas'} con saldo</span></div>
         ${puede('cobranza') ? `<div class="kpi kpi-clic" id="kCxC" onclick="App.verCxC()" title="Ver todas las notas con saldo"><small>Cuentas por cobrar (total)</small><b>…</b><span>calculando</span></div>` : ''}
-        ${esContador() ? `<div class="kpi"><small>Facturado de esas notas</small><b>${$$(vivas.reduce((a, x) => a + (x.montoFac || 0), 0))}</b><span>lo que ya se reportó al SAT de esas notas</span></div>` : ''}
-      </div>` + (esContador() ? '<p class="muted peq">Filtra con <b>Factura</b> para ver solo las facturadas o las que faltan. Lo emitido al SAT en el mes está en 🧮 Contabilidad del mes.</p>' : '') + tabla([
+        ${esContador() ? `<div class="${kc('fac')}"><small>Facturado de esas notas</small><b>${$$(vivas.reduce((a, x) => a + (x.montoFac || 0), 0))}</b><span>lo que ya se reportó al SAT de esas notas</span></div>` : ''}
+      </div>` + (kfV ? `<p class="kf-aviso">🔎 La lista muestra solo: <b>${{ cob: 'notas con cobro', saldo: 'notas con saldo', fac: 'notas con factura' }[kfV]}</b> (${nf(lv.length)}) <button class="btn chico" onclick="App.kFiltro('V','')">✕ Ver todas</button></p>` : '') + (esContador() ? '<p class="muted peq">Filtra con <b>Factura</b> para ver solo las facturadas o las que faltan. Lo emitido al SAT en el mes está en 🧮 Contabilidad del mes.</p>' : '') + tabla([
         { t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) },
         { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Saldo', num: 1, h: x => x.saldo > 0.009 && x.estatus !== 'Cancelado' ? `<b>${$$(x.saldo)}</b>` : '—' },
         { t: 'Estatus', h: x => etqEstatus(x.estatus) },
         { t: 'Factura', cls: 'ocultar-movil', h: x => { const t = String(x.facturado || '').trim().toUpperCase(); if (x.estatus === 'Cancelado') return '—';
           return (t === 'SI' ? '<span class="etq ok">Facturada</span>' : t === 'PARCIAL' ? '<span class="etq av">Parcial</span>' : '<span class="muted">Sin facturar</span>') + (x.montoFac !== undefined ? `<br><b>${$$(x.montoFac)}</b> facturado` : '') + (x.factura ? `<br><small class="muted">${esc(x.factura)}</small>` : ''); } },
         { t: 'Pago', h: x => x.estatus === 'Cancelado' || x.estatus === 'Devuelto' ? '—' : x.saldo > 0.009 ? '<span class="etq saldo">Con saldo</span>' : x.saldo < -0.009 ? '<span class="etq av">Saldo a favor</span>' : '<span class="etq ok">Pagada</span>' }
-      ], l, { clic: 'App.abrirVenta' });
+      ], lv, { clic: 'App.abrirVenta' });
       if (puede('cobranza')) totalCxC();
     } catch (e) { if (nq === S.qVentas && $('#lVentas')) $('#lVentas').innerHTML = `<div class="vacio">${e.red ? 'Consultar ventas requiere conexión.' : 'No se pudo consultar: ' + esc(e.message || '')}</div>`; }
   }
@@ -5658,13 +5673,16 @@ const App = (() => {
       const tot = l.reduce((a, x) => a + x.monto, 0);
       const porForma = {};
       l.forEach(x => { const k = x.forma || 'Sin forma'; porForma[k] = (porForma[k] || 0) + x.monto; });
+      const kfB = S.kfB || '', kcB = k => `kpi kpi-clic${kfB === k ? ' kpi-activo' : ''}" onclick="App.kFiltro('B',${esc(JSON.stringify(k))})" title="${kfB === k ? 'Quitar el filtro' : 'Ver solo estos cobros en la lista'}`;
+      const lb = !kfB ? l : kfB === 'fac' ? l.filter(x => !x.nc && x.porReportar === 0) : kfB === 'pend' ? l.filter(x => x.porReportar > 0) : kfB === 'nc' ? l.filter(x => x.nc) : kfB === 'ppd' ? l.filter(x => /PPD/.test(x.metodoFac || '')) : l.filter(x => 'f:' + (x.forma || 'Sin forma') === kfB);
+      S.lista = lb;
       const fac = l.reduce((a, x) => a + (x.montoFac || 0), 0), pend = l.reduce((a, x) => a + (x.porReportar || 0), 0), sinM = l.filter(x => x.montoFac === null), ppd = l.filter(x => /PPD/.test(x.metodoFac || '')), ncs = l.filter(x => x.nc), ncT = ncs.reduce((a, x) => a + x.monto, 0);
-      $('#lCob').innerHTML = `<div class="kpis"><div class="kpi"><small>Total cobrado</small><b>${$$(tot)}</b><span>${l.length} ${l.length === 1 ? 'cobro' : 'cobros'}</span></div>
-        <div class="kpi" style="border-color:var(--ok)"><small>✔ Ya facturado</small><b>${$$(fac)}</b><span>${tot - ncT ? (fac / (tot - ncT) * 100).toFixed(1) + '% de lo cobrado (sin N/C)' : ''}</span></div>
-        <div class="kpi" style="border-color:#c9473d"><small>⚠️ Por reportar (sin factura)</small><b>${$$(pend)}</b><span>${nf(l.filter(x => x.porReportar > 0).length)} cobros${sinM.length ? ' · ' + sinM.length + ' en parte sin montos (revisar)' : ''}</span></div>
-        ${ncs.length ? `<div class="kpi"><small>Notas de crédito</small><b>${$$(ncT)}</b><span>${ncs.length} · no son ingreso, no se facturan</span></div>` : ''}
-        ${ppd.length ? `<div class="kpi"><small>Cobros de facturas PPD</small><b>${$$(ppd.reduce((a, x) => a + x.monto, 0))}</b><span>${ppd.length} requieren complemento de pago</span></div>` : ''}
-        ${Object.keys(porForma).sort((a, b) => porForma[b] - porForma[a]).map(k => `<div class="kpi"><small>${esc(k)}</small><b>${$$(porForma[k])}</b></div>`).join('')}</div>` + tabla([
+      $('#lCob').innerHTML = `<div class="kpis"><div class="${kcB('')}"><small>Total cobrado</small><b>${$$(tot)}</b><span>${l.length} ${l.length === 1 ? 'cobro' : 'cobros'}</span></div>
+        <div class="${kcB('fac')}" style="border-color:var(--ok)"><small>✔ Ya facturado</small><b>${$$(fac)}</b><span>${tot - ncT ? (fac / (tot - ncT) * 100).toFixed(1) + '% de lo cobrado (sin N/C)' : ''}</span></div>
+        <div class="${kcB('pend')}" style="border-color:#c9473d"><small>⚠️ Por reportar (sin factura)</small><b>${$$(pend)}</b><span>${nf(l.filter(x => x.porReportar > 0).length)} cobros${sinM.length ? ' · ' + sinM.length + ' en parte sin montos (revisar)' : ''}</span></div>
+        ${ncs.length ? `<div class="${kcB('nc')}"><small>Notas de crédito</small><b>${$$(ncT)}</b><span>${ncs.length} · no son ingreso, no se facturan</span></div>` : ''}
+        ${ppd.length ? `<div class="${kcB('ppd')}"><small>Cobros de facturas PPD</small><b>${$$(ppd.reduce((a, x) => a + x.monto, 0))}</b><span>${ppd.length} requieren complemento de pago</span></div>` : ''}
+        ${Object.keys(porForma).sort((a, b) => porForma[b] - porForma[a]).map(k => `<div class="${kcB('f:' + k)}"><small>${esc(k)}</small><b>${$$(porForma[k])}</b></div>`).join('')}</div>` + (kfB ? `<p class="kf-aviso">🔎 La lista muestra solo: <b>${esc({ fac: 'cobros ya facturados', pend: 'cobros por reportar', nc: 'notas de crédito', ppd: 'cobros de facturas PPD' }[kfB] || kfB.slice(2))}</b> (${nf(lb.length)}) <button class="btn chico" onclick="App.kFiltro('B','')">✕ Ver todos</button></p>` : '') + tabla([
         { t: 'Fecha', k: 'fecha' }, { t: 'Nota', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Cliente', k: 'cliente' },
         { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Forma de pago', k: 'forma' }, { t: 'Cuenta', cls: 'ocultar-movil', k: 'banco' },
         { t: 'Monto', num: 1, h: x => `<b>${$$(x.monto)}</b>` },
@@ -5673,7 +5691,7 @@ const App = (() => {
           + (/PPD/.test(x.metodoFac || '') ? '<br><small class="txt-mal">PPD: emite su complemento de pago</small>' : '') },
         { t: '📎', h: x => x.adj ? `<span title="${x.adj} comprobante(s)">📎${x.adj > 1 ? x.adj : ''}</span>` : '<span class="muted" title="Sin comprobante">—</span>' },
         { t: 'Nota del cobro', cls: 'ocultar-movil', k: 'nota' }
-      ], l, { clic: 'App.abrirCobro', vacio: 'No hay cobros en ese periodo' });
+      ], lb, { clic: 'App.abrirCobro', vacio: 'No hay cobros en ese periodo' });
     } catch (e) { if ($('#lCob')) $('#lCob').innerHTML = '<div class="vacio">Consultar cobros requiere conexión.</div>'; }
   }
   /** Excel de cobros con su facturación (para el contador / cierre fiscal del mes). */
@@ -6173,21 +6191,24 @@ const App = (() => {
       let l = await pedir('listarCompras', { desde: $('#oDesde').value, hasta: $('#oHasta').value, texto: $('#oTxt').value, pendientes: $('#oPend').checked, idProveedor: S.comprasProv ? S.comprasProv.id : '' });
       if (nq !== S.qCompras || !$('#lOC')) return;
       if (S.soloSaldoOC) { l = l.filter(x => x.saldo > 0.009 && (x.conFactura !== undefined ? x.conFactura : !!String(x.factura || '').trim())); S.soloSaldoOC = false; }
-      S.lista = l;
+      /* S.lista se fija abajo con el filtro del cuadro */
       // solo cuentan como compra las órdenes con factura o nota del proveedor
       const conF = x => x.conFactura !== undefined ? x.conFactura : !!String(x.factura || '').trim();
       const lf = l.filter(conF), sinF = l.filter(x => !conF(x) && !/CANCELADA/i.test(String(x.recibido)));
       const tot = lf.reduce((a, x) => a + x.total, 0), pag = lf.reduce((a, x) => a + x.pagado, 0), sal = lf.reduce((a, x) => a + Math.max(0, x.saldo), 0);
+      const kfC = S.kfC || '', kcC = k => `kpi kpi-clic${kfC === k ? ' kpi-activo' : ''}" onclick="App.kFiltro('C','${k}')" title="${kfC === k ? 'Quitar el filtro' : 'Ver solo estas órdenes en la lista'}`;
+      const lc = kfC === 'conf' ? lf : kfC === 'pag' ? lf.filter(x => x.pagado > 0.009) : kfC === 'saldo' ? lf.filter(x => x.saldo > 0.009) : l;
+      S.lista = lc;
       const conSal = lf.filter(x => x.saldo > 0.009).length, porRec = l.filter(x => !/^(SI|CANCELADA)$/i.test(String(x.recibido))).length, totSinF = sinF.reduce((a, x) => a + x.total, 0);
       $('#lOC').innerHTML = `<div class="kpis">
-        <div class="kpi" title="Solo órdenes con factura o nota del proveedor"><small>Compras del periodo</small><b>${$$(tot)}</b><span>${lf.length} ${lf.length === 1 ? 'orden con factura' : 'órdenes con factura'}${porRec ? ' · ' + porRec + ' por recibir' : ''}${sinF.length ? `<br>${sinF.length} sin factura (${$$(totSinF)}) no se cuentan` : ''}</span></div>
-        <div class="kpi"><small>Pagado de esas compras</small><b>${$$(pag)}</b><span>${tot > 0 ? Math.round(pag / tot * 100) + ' % del total' : '—'}</span></div>
-        <div class="kpi"><small>Por pagar del periodo</small><b>${$$(sal)}</b><span>${conSal} ${conSal === 1 ? 'orden' : 'órdenes'} con saldo</span></div>
+        <div class="${kcC('conf')}"><small>Compras del periodo</small><b>${$$(tot)}</b><span>${lf.length} ${lf.length === 1 ? 'orden con factura' : 'órdenes con factura'}${porRec ? ' · ' + porRec + ' por recibir' : ''}${sinF.length ? `<br>${sinF.length} sin factura (${$$(totSinF)}) no se cuentan` : ''}</span></div>
+        <div class="${kcC('pag')}"><small>Pagado de esas compras</small><b>${$$(pag)}</b><span>${tot > 0 ? Math.round(pag / tot * 100) + ' % del total' : '—'}</span></div>
+        <div class="${kcC('saldo')}"><small>Por pagar del periodo</small><b>${$$(sal)}</b><span>${conSal} ${conSal === 1 ? 'orden' : 'órdenes'} con saldo</span></div>
         <div class="kpi kpi-clic" id="kCxP" onclick="App.verCxP()" title="Saldo de las órdenes con factura o nota del proveedor (todas las fechas)"><small>Cuentas por pagar (total)</small><b>…</b><span>calculando</span></div>
-      </div>` + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Proveedor', k: 'proveedor' }, { t: 'Factura / nota', h: x => x.factura ? esc(x.factura) + (x.nota ? `<br><small class="muted">nota ${esc(x.nota)}</small>` : '') : x.nota ? `<span class="muted">nota</span> ${esc(x.nota)}` : '' },
+      </div>` + (kfC ? `<p class="kf-aviso">🔎 La lista muestra solo: <b>${{ conf: 'órdenes con factura o nota', pag: 'órdenes con pago', saldo: 'órdenes con saldo' }[kfC]}</b> (${nf(lc.length)}) <button class="btn chico" onclick="App.kFiltro('C','')">✕ Ver todas</button></p>` : '') + tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Folio', h: x => `<b>${esc(x.folio)}</b>` }, { t: 'Proveedor', k: 'proveedor' }, { t: 'Factura / nota', h: x => x.factura ? esc(x.factura) + (x.nota ? `<br><small class="muted">nota ${esc(x.nota)}</small>` : '') : x.nota ? `<span class="muted">nota</span> ${esc(x.nota)}` : '' },
         { t: 'Destino', cls: 'ocultar-movil', h: x => esc(sucNom(x.suc)) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Saldo', num: 1, h: x => x.saldo > 0.009 ? `<b>${$$(x.saldo)}</b>` : '—' },
         { t: 'Recibida', h: x => `<span style="white-space:nowrap"><span class="etq ${String(x.recibido).toUpperCase() === 'SI' ? 'ok' : /CANCELADA/i.test(x.recibido) ? 'mal' : 'av'}">${esc(x.recibido || 'NO')}</span>` +
-          (puede('compras') && !/^(SI|CANCELADA)$/i.test(String(x.recibido)) ? ` <button class="btn chico no-imprimir" title="Editar productos, cantidades, precios, lote y caducidad" onclick="event.stopPropagation();App.editarCompraId('${esc(x.id)}')">✏️ Editar</button>` : '') + '</span>' }], l, { clic: 'App.abrirCompra' });
+          (puede('compras') && !/^(SI|CANCELADA)$/i.test(String(x.recibido)) ? ` <button class="btn chico no-imprimir" title="Editar productos, cantidades, precios, lote y caducidad" onclick="event.stopPropagation();App.editarCompraId('${esc(x.id)}')">✏️ Editar</button>` : '') + '</span>' }], lc, { clic: 'App.abrirCompra' });
       totalCxP();
     } catch (e) { if (nq === S.qCompras && $('#lOC')) $('#lOC').innerHTML = `<div class="vacio">${e.red ? 'Requiere conexión.' : 'No se pudo consultar: ' + esc(e.message || '')}</div>`; }
   }
@@ -6944,7 +6965,7 @@ const App = (() => {
       { h: 'Dashboard', b: [['p', 'Elige periodo y sucursal; toca cualquier tarjeta para ver el detalle.'], ['ul', ['Resultados: ventas netas, cobrado, mermas y gastos.', 'Por cobrar: cartera y cartera vencida.', '🧭 Salud comercial: días promedio de cobro, % de cartera vencida, clientes que repiten, retención, clientes nuevos y ticket promedio.', 'Comparativo contra el año anterior y rankings de productos, clientes y vendedores.']],
         ['ul', ['Utilidad bruta, utilidad después de mermas, cuentas por pagar y 🛎️ Servicios (aparte de las ventas).'], 'ver_costos']] },
       { h: '🔍 Desglose de los cuadros', b: [['p', 'Los cuadros con 🔍 (en Inicio y en Sucursales > Resumen) se pueden tocar: se abre de qué se forma la cifra.'],
-        ['ul', ['Pestañas para agruparla: sucursal, vendedor, cliente, categoría, producto, mes, forma de pago, antigüedad, proveedor o motivo, según el cuadro.', 'Toca un renglón para entrar a él y seguir analizando: p. ej. Ventas netas > Champotón > un vendedor > sus clientes. Las migas de arriba te regresan a cualquier nivel.', 'La última pestaña lista los registros (notas, cobros, órdenes, lotes, clientes); toca uno para abrirlo.', 'Comparación contra el mismo periodo del año anterior, ⬇️ Excel con todas las agrupaciones y 🧮 Cómo se calcula.', 'Cada perfil ve lo mismo que en el tablero: la utilidad solo quien la ve y cada sucursal solo lo suyo.']]] }] },
+        ['ul', ['Pestañas para agruparla: sucursal, vendedor, cliente, categoría, producto (y dentro de cada producto, sus presentaciones), laboratorio, mes, forma de pago, antigüedad, proveedor o motivo, según el cuadro.', 'Ventas > 📦 Por producto: el mismo desglose para el periodo que elijas, empezando por producto; toca uno para ver sus presentaciones.', 'En Ventas, Cobranza y Compras los cuadros de arriba filtran la lista de abajo (p. ej. Por cobrar del periodo, Por reportar, una forma de pago, Por pagar del periodo). Tócalo otra vez o ✕ Ver todas para quitar el filtro.', 'Toca un renglón para entrar a él y seguir analizando: p. ej. Ventas netas > Champotón > un vendedor > sus clientes. Las migas de arriba te regresan a cualquier nivel.', 'La última pestaña lista los registros (notas, cobros, órdenes, lotes, clientes); toca uno para abrirlo.', 'Comparación contra el mismo periodo del año anterior, ⬇️ Excel con todas las agrupaciones y 🧮 Cómo se calcula.', 'Cada perfil ve lo mismo que en el tablero: la utilidad solo quien la ve y cada sucursal solo lo suyo.']]] }] },
     { t: '6. Administración', p: () => esGerM() || puede('equipo'), g: [
       { h: 'Gastos', p: esJefeM, b: [['p', 'Las facturas de gastos llegan solas desde el correo o se suben (XML, PDF o ZIP del SAT). En Por clasificar se asigna categoría y sucursal; el estado de gastos sale por mes y categoría.']] },
       { h: 'Bancos y Contable', p: esJefeM, b: [['p', 'Cuentas, cajas, comprobantes y conciliación; reportes para la contadora por periodo.']] },
@@ -12420,21 +12441,21 @@ const App = (() => {
    * tocar un renglón entra a él (p. ej. Ventas netas › Champotón › Juan) y se puede seguir bajando.
    * ========================================================================== */
   const DG_DIM = { suc: '🏪 Sucursal', vend: '👤 Vendedor', cli: '🧑‍🌾 Cliente', cat: '🏷️ Categoría', prod: '📦 Producto', forma: '💳 Forma de pago', antig: '⏱️ Antigüedad',
-    motivo: '📝 Motivo', estado: '⏳ Caducidad', prov: '🚚 Proveedor', recibido: '📥 Recepción', tipo: '🧭 Tipo de cliente', mes: '📅 Mes' };
+    motivo: '📝 Motivo', base: '💊 Producto', pres: '📐 Presentación', lab: '🧪 Laboratorio', estado: '⏳ Caducidad', prov: '🚚 Proveedor', recibido: '📥 Recepción', tipo: '🧭 Tipo de cliente', mes: '📅 Mes' };
   const DG = {
-    ventas: { t: 'Ventas netas (sin IVA)', m: 'neto', dims: ['suc', 'vend', 'cli', 'cat', 'prod', 'mes'], lista: 'Notas', porNota: 1, ir: 'ventas', vs: 1,
+    ventas: { t: 'Ventas netas (sin IVA)', m: 'neto', dims: ['suc', 'base', 'pres', 'cat', 'lab', 'vend', 'cli', 'mes'], lista: 'Notas', porNota: 1, ir: 'ventas', vs: 1,
       calc: ['Notas del periodo que no están canceladas ni devueltas (sin las de gestiones anteriores).', 'Venta neta = subtotal − descuentos − descuento por pronto pago, sin IVA y sin la parte de la asociación.', 'Por categoría y producto, la venta neta de cada nota se reparte entre sus renglones según su importe.'] },
-    utilidad: { t: 'Utilidad bruta', m: 'util', dims: ['cat', 'prod', 'suc', 'vend', 'cli', 'mes'], lista: 'Notas', porNota: 1, ir: 'analisis', vs: 1,
+    utilidad: { t: 'Utilidad bruta', m: 'util', dims: ['cat', 'base', 'pres', 'lab', 'suc', 'vend', 'cli', 'mes'], lista: 'Notas', porNota: 1, ir: 'analisis', vs: 1,
       calc: ['Mismas notas que Ventas netas.', 'Utilidad = venta neta − costo de lo vendido (con el mismo costo que usa el tablero para tu perfil).'] },
     cobrado: { t: 'Cobrado en el periodo', m: 'monto', dims: ['forma', 'suc', 'cli', 'vend', 'mes'], lista: 'Cobros', ir: 'cobranza', vs: 1,
       calc: ['Cobros capturados con fecha dentro del periodo, de cualquier nota (aunque la nota sea de otro mes).'] },
     cxc: { t: 'Por cobrar', m: 'saldo', dims: ['cli', 'antig', 'suc', 'vend'], lista: 'Notas', ir: 'cartera',
       calc: ['Todas las notas vigentes con saldo pendiente, sin importar su fecha.', 'La antigüedad se cuenta desde el vencimiento de cada nota.'] },
-    mermas: { t: 'Mermas', m: 'valor', dims: ['prod', 'cat', 'suc', 'motivo', 'mes'], lista: 'Movimientos', ir: 'inventario', vs: 1,
+    mermas: { t: 'Mermas', m: 'valor', dims: ['base', 'pres', 'cat', 'suc', 'motivo', 'mes'], lista: 'Movimientos', ir: 'inventario', vs: 1,
       calc: ['Mermas registradas en el periodo, valuadas con el mismo costo que usa el tablero para tu perfil.'] },
-    inventario: { t: 'Inventario valorizado', m: 'valor', dims: ['suc', 'cat', 'prod', 'estado'], lista: 'Lotes', ir: 'inventario',
+    inventario: { t: 'Inventario valorizado', m: 'valor', dims: ['suc', 'cat', 'base', 'pres', 'lab', 'estado'], lista: 'Lotes', ir: 'inventario',
       calc: ['Existencia actual por lote (sin productos de la asociación), valuada como en el tablero.'] },
-    caducar: { t: 'Lotes por caducar y caducados', m: 'valor', dims: ['estado', 'suc', 'prod', 'cat'], lista: 'Lotes', ir: 'inventario',
+    caducar: { t: 'Lotes por caducar y caducados', m: 'valor', dims: ['estado', 'suc', 'base', 'pres', 'cat'], lista: 'Lotes', ir: 'inventario',
       calc: ['Lotes con existencia ya caducados o que caducan dentro de los días de alerta configurados.'] },
     compras: { t: 'Compras del periodo', m: 'total', dims: ['prov', 'suc', 'recibido', 'antig', 'mes'], lista: 'Órdenes', ir: 'compras', vs: 1,
       calc: ['Órdenes de compra del periodo con factura o nota del proveedor (las que no la tienen todavía no cuentan).'] },
@@ -12450,9 +12471,10 @@ const App = (() => {
     const c = DG[kpi]; if (!c) return;
     const d = S.dash && S.dash.p || {}, p = Object.assign({ kpi: kpi, desde: d.desde, hasta: d.hasta, sucursal: d.sucursal, claves: d.claves && d.claves.length > 1 ? d.claves : undefined }, extra || {});
     if (navigator.onLine === false) return toast('El desglose necesita conexión', true);
-    S.dg = { kpi: kpi, c: c, p: p, filtros: (extra && extra.filtros) || [], tab: (extra && extra.tab) || c.dims.find(x => !((extra && extra.filtros) || []).some(f => f.dim === x)), data: null, vs: null };
-    modal('🔍 ' + c.t, '<div class="vacio">Reuniendo los registros…</div>');
-    try { S.dg.data = await pedir('desglose', { kpi: kpi, desde: p.desde, hasta: p.hasta, sucursal: p.sucursal, claves: p.claves, valLista: p.valLista }, true); } catch (e) { $('#modalCuerpo').innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message || 'No se pudo cargar')}</div>`; return; }
+    S.dg = { kpi: kpi, c: c, p: p, el: p.el || '', filtros: (extra && extra.filtros) || [], tab: (extra && extra.tab) || c.dims.find(x => !((extra && extra.filtros) || []).some(f => f.dim === x)), data: null, vs: null };
+    if (p.el) { if ($(p.el)) $(p.el).innerHTML = '<div class="vacio">Reuniendo las ventas del periodo…</div>'; } else modal('🔍 ' + c.t, '<div class="vacio">Reuniendo los registros…</div>');
+    const nq = S.dgN = (S.dgN || 0) + 1;
+    try { const r = await pedir('desglose', { kpi: kpi, desde: p.desde, hasta: p.hasta, sucursal: p.sucursal, claves: p.claves, valLista: p.valLista }, true); if (nq !== S.dgN) return; S.dg.data = r; } catch (e) { const el = $(p.el || '#modalCuerpo'); if (el) el.innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message || 'No se pudo cargar')}</div>`; return; }
     S.dg.data.filas.forEach(r => { r.mes = dgMes(r.fecha); });
     dgPintar();
     S.dg.vsPend = !!(c.vs && p.desde && p.hasta);
@@ -12464,13 +12486,13 @@ const App = (() => {
   }
   function dgFiltrar(filas) { return filas.filter(r => S.dg.filtros.every(f => String(r[f.dim]) === f.val)); }
   function dgPintar() {
-    const g = S.dg; if (!g || !g.data || !$('#modalCuerpo')) return;
+    const g = S.dg, cont = g && $(g.el || '#modalCuerpo'); if (!g || !g.data || !cont) return;
     const c = g.c, filas = dgFiltrar(g.data.filas), total = r2(filas.reduce((t, r) => t + dgVal(c, r), 0));
     const notas = c.porNota ? new Set(filas.map(r => r.id)).size : filas.length, fmtV = v => (c.m === 'valor' && g.data.conValor === false) ? nf(v) : $$(v);
-    const dims = c.dims.filter(x => !g.filtros.some(f => f.dim === x) && g.data.filas.some(r => r[x] !== undefined && r[x] !== ''));
+    const dims = c.dims.filter(x => !g.filtros.some(f => f.dim === x) && (x !== 'pres' || g.filtros.some(f => f.dim === 'base')) && g.data.filas.some(r => r[x] !== undefined && r[x] !== ''));
     if (g.tab !== 'lista' && dims.indexOf(g.tab) < 0) g.tab = dims[0] || 'lista';
     const per = g.data.periodo ? (c.m === 'saldo' || /inventario|caducar/.test(g.kpi) ? 'al día de hoy' : g.data.periodo.desde + ' al ' + g.data.periodo.hasta) : '';
-    const migas = `<div class="dg-migas"><button class="btn chico ${g.filtros.length ? '' : 'primario'}" onclick="App.dgMiga(0)">${esc(c.t)}</button>${g.filtros.map((f, i) => ` › <button class="btn chico ${i === g.filtros.length - 1 ? 'primario' : ''}" onclick="App.dgMiga(${i + 1})">${esc(f.val)}</button>`).join('')}</div>`;
+    const migas = `<div class="dg-migas"><button class="btn chico ${g.filtros.length ? '' : 'primario'}" onclick="App.dgMiga(0)">${esc(g.el ? (g.p.titulo || c.t) : c.t)}</button>${g.filtros.map((f, i) => ` › <button class="btn chico ${i === g.filtros.length - 1 ? 'primario' : ''}" onclick="App.dgMiga(${i + 1})">${esc(f.val)}</button>`).join('')}</div>`;
     const tabs = `<div class="pestanas" style="margin:10px 0">${dims.map(x => `<button class="${g.tab === x ? 'activo' : ''}" onclick="App.dgTab('${x}')">${DG_DIM[x] || x}</button>`).join('')}<button class="${g.tab === 'lista' ? 'activo' : ''}" onclick="App.dgTab('lista')">🧾 ${esc(c.lista)} (${nf(c.porNota ? notas : filas.length)})</button></div>`;
     let cuerpo = '';
     if (g.tab === 'lista') { g.vista = dgLista(filas); cuerpo = tabla(g.vista.cols, g.vista.filas, { clic: g.vista.clic ? 'App.dgAbrir' : '' }) + (g.vista.filas.length >= 500 ? '<p class="muted peq">Se muestran los primeros 500; el Excel trae todos.</p>' : ''); }
@@ -12482,7 +12504,7 @@ const App = (() => {
       const cols = [{ t: (DG_DIM[g.tab] || g.tab).replace(/^\S+\s/, ''), h: o => `<b>${esc(g.tab === 'mes' ? dgEtq(o.k) : o.k)}</b>` },
         { t: c.porNota ? 'Notas' : 'Registros', num: 1, h: o => nf(o.n) }]
         .concat(g.kpi === 'utilidad' ? [{ t: 'Venta neta', num: 1, cls: 'ocultar-movil', h: o => $$(o.neto) }] : [])
-        .concat(/inventario|caducar|mermas/.test(g.kpi) ? [{ t: 'Piezas', num: 1, cls: 'ocultar-movil', h: o => nf(r2(o.cant)) }] : [])
+        .concat(/inventario|caducar|mermas|ventas|utilidad/.test(g.kpi) ? [{ t: 'Piezas', num: 1, cls: 'ocultar-movil', h: o => nf(r2(o.cant)) }] : [])
         .concat([{ t: c.m === 'util' ? 'Utilidad' : 'Importe', num: 1, h: o => `<b>${fmtV(o.v)}</b>` }])
         .concat(g.kpi === 'utilidad' ? [{ t: 'Margen', num: 1, h: o => o.neto ? (o.v / o.neto * 100).toFixed(1) + '%' : '—' }] : [])
         .concat([{ t: '% del total', num: 1, h: o => total ? (o.v / total * 100).toFixed(1) + '%' : '—' }])
@@ -12490,11 +12512,11 @@ const App = (() => {
       cuerpo = tabla(cols, l, { clic: 'App.dgEntrar', vacio: 'Sin registros' }) + (l.length ? `<p class="muted peq" style="margin:6px 0">Toca un renglón para ver su desglose y seguir analizando.</p>` : '');
     }
     const vsTot = g.vs ? r2(dgFiltrar(g.vs.filas).reduce((t, r) => t + dgVal(c, r), 0)) : null;
-    $('#modalTit').textContent = '🔍 ' + c.t + (g.data.sucursal ? ' · ' + g.data.sucursal : '');
-    $('#modalCuerpo').innerHTML = migas + `<div class="dg-tot"><div><small>${g.filtros.length ? esc(g.filtros.map(f => f.val).join(' › ')) : 'Total'}${per ? ' · ' + esc(per) : ''}</small><b>${fmtV(total)}</b></div>
+    if (!g.el) $('#modalTit').textContent = '🔍 ' + c.t + (g.data.sucursal ? ' · ' + g.data.sucursal : '');
+    cont.innerHTML = migas + `<div class="dg-tot"><div><small>${g.filtros.length ? esc(g.filtros.map(f => f.val).join(' › ')) : 'Total'}${per ? ' · ' + esc(per) : ''}</small><b>${fmtV(total)}</b></div>
       <div><small>${c.porNota ? 'Notas' : 'Registros'}</small><b>${nf(c.porNota ? notas : filas.length)}</b></div>${vsTot !== null ? `<div><small>Mismo periodo ${g.vsAnio}</small><b>${fmtV(vsTot)}</b> ${chipDelta(total, vsTot, g.kpi === 'mermas')}</div>` : ''}</div>`
       + tabs + cuerpo + `<details class="det-calc" style="margin-top:10px"><summary><b>🧮 Cómo se calcula</b></summary><ol>${c.calc.map(x => `<li>${x}</li>`).join('')}</ol></details>
-      <div class="acciones"><button class="btn" onclick="App.dgExcel()">⬇️ Excel</button>${c.ir ? `<button class="btn" onclick="App.cerrarModal();App.ir('${c.ir}')">Ver en la sección ›</button>` : ''}<button class="btn primario" onclick="App.cerrarModal()">Cerrar</button></div>`;
+      <div class="acciones"><button class="btn" onclick="App.dgExcel()">⬇️ Excel</button>${g.el ? '' : (c.ir ? `<button class="btn" onclick="App.cerrarModal();App.ir('${c.ir}')">Ver en la sección ›</button>` : '') + '<button class="btn primario" onclick="App.cerrarModal()">Cerrar</button>'}</div>`;
   }
   function dgLista(filas) {
     const k = S.dg.kpi, c = S.dg.c, fv = r => (c.m === 'valor' && S.dg.data.conValor === false) ? nf(dgVal(c, r)) : $$(dgVal(c, r));
@@ -12517,9 +12539,16 @@ const App = (() => {
     C.cxp = C.compras;
     return { filas: l.slice(0, 500), todas: l, cols: C[k] || [], clic: /cobrado|cxc|compras|cxp|clientes/.test(k) ? 1 : 0 };
   }
+  /** Cuadros de Ventas (V), Cobranza (B) y Compras (C): tocar uno filtra la lista de abajo; tocarlo otra vez lo quita. */
+  function kFiltro(sec, k) { const n = 'kf' + sec; S[n] = S[n] === k ? '' : k; (sec === 'V' ? buscarVentas : sec === 'B' ? buscarCobros : buscarCompras)(); }
+  function ventasProd() {
+    if (!$('#vpDesde')) return;
+    S.fvProd = { desde: $('#vpDesde').value, hasta: $('#vpHasta').value, suc: $('#vpSuc') ? $('#vpSuc').value : '' };
+    return desglose('ventas', { desde: S.fvProd.desde, hasta: S.fvProd.hasta, sucursal: S.fvProd.suc, claves: null, el: '#dgEmb', tab: 'base', titulo: 'Ventas por producto' });
+  }
   function dgTab(t) { S.dg.tab = t; dgPintar(); }
   function dgMiga(i) { S.dg.filtros = S.dg.filtros.slice(0, i); S.dg.tab = null; dgPintar(); }
-  function dgEntrar(i) { const g = S.dg, o = g.vista && g.vista.filas[i]; if (!o) return; g.filtros.push({ dim: g.tab, val: o.k }); g.tab = null; dgPintar(); $('#modalCuerpo').scrollTop = 0; }
+  function dgEntrar(i) { const g = S.dg, o = g.vista && g.vista.filas[i]; if (!o) return; g.filtros.push({ dim: g.tab, val: o.k }); g.tab = g.tab === 'base' ? 'pres' : null; dgPintar(); const el = $(g.el || '#modalCuerpo'); if (el && !g.el) el.scrollTop = 0; else if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
   function dgAbrir(i) {
     const g = S.dg, r = g.vista && g.vista.filas[i]; if (!r) return;
     if (/compras|cxp/.test(g.kpi)) { cerrarModal(); verCompra(r.id); }
@@ -12531,7 +12560,7 @@ const App = (() => {
     const txt = h => String(h).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
     const filas = dgFiltrar(g.data.filas), lista = dgLista(filas), tit = g.c.t + (g.filtros.length ? ' › ' + g.filtros.map(f => f.val).join(' › ') : '');
     const hojas = [];
-    g.c.dims.filter(x => !g.filtros.some(f => f.dim === x) && filas.some(r => r[x] !== undefined)).forEach(x => {
+    g.c.dims.filter(x => !g.filtros.some(f => f.dim === x) && (x !== 'pres' || g.filtros.some(f => f.dim === 'base')) && filas.some(r => r[x] !== undefined)).forEach(x => {
       const G = {}; filas.forEach(r => { const kk = String(r[x] || 'Sin dato'); G[kk] = (G[kk] || 0) + dgVal(g.c, r); });
       hojas.push({ nombre: (DG_DIM[x] || x).replace(/^\S+\s/, '').slice(0, 30), titulo: tit, sub: ['Agrupado por ' + (DG_DIM[x] || x).replace(/^\S+\s/, '').toLowerCase()], cols: [{ t: (DG_DIM[x] || x).replace(/^\S+\s/, ''), w: 40 }, { t: 'Importe', w: 16, fmt: 'mon', suma: 1 }],
         filas: Object.keys(G).sort((a, b) => G[b] - G[a]).map(kk => ({ v: [x === 'mes' ? dgEtq(kk) : kk, r2(G[kk])] })) });
@@ -17258,7 +17287,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, ptsCanjeForm, ptsCanjear, cbMonedero, desglose, dgTab, dgMiga, dgEntrar, dgAbrir, dgExcel, ptsAjusteForm, ptsAjustar, ptsCfgForm, ptsCfgGuardar, ptsOfFila, ptsOfQuitar, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, ptsCanjeForm, ptsCanjear, cbMonedero, desglose, ventasProd, kFiltro, dgTab, dgMiga, dgEntrar, dgAbrir, dgExcel, ptsAjusteForm, ptsAjustar, ptsCfgForm, ptsCfgGuardar, ptsOfFila, ptsOfQuitar, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, ventaNuevaPara, corregirClienteNota, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,

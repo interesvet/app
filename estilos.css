@@ -163,6 +163,8 @@ textarea { min-height: 70px; resize: vertical; }
 .dg-tot small { display: block; color: var(--texto-2); font-size: 12px; }
 .dg-tot b { font-size: 22px; font-variant-numeric: tabular-nums; }
 .det-calc summary { cursor: pointer; }
+.kpi-activo { background: var(--marca-suave); box-shadow: inset 0 0 0 2px var(--marca); }
+.kf-aviso { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--marca-suave); font-size: 14px; }
 .det-calc ol { margin: 6px 0 0; padding-left: 20px; }
 .det-calc li { margin: 3px 0; }
 .mz-listas { display: flex; flex-wrap: wrap; gap: 6px 16px; }
