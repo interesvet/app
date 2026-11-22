@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 362, f: '22/11/2026', t: [{ x: '🔍 Desglose de los cuadros: en Inicio y en Sucursales › Resumen, los cuadros con 🔍 se pueden tocar para ver de qué se forma la cifra, por pestañas (sucursal, vendedor, cliente, categoría, producto, mes…), con comparación contra el año anterior y Excel.', p: 'dashboard' }, { x: '🔎 Toca un renglón del desglose para entrar a él y seguir analizando (p. ej. Ventas netas › Champotón › un vendedor › sus clientes); las migas de arriba te regresan a cualquier nivel.', p: 'dashboard' }] },
     { v: 361, f: '21/11/2026', t: [{ x: '🎁 Canjear y aplicar: en la nueva venta, junto a ⭐ Puntos, un botón canjea los puntos del cliente y los descuenta en esa misma nota.', p: 'ventas' }, { x: '🎁 Pagar notas pendientes con monedero: al registrar un cobro, si el cliente tiene monedero aparece la opción para pagar con él (todo o parte).', p: 'cobranza' }] },
     { v: 360, f: '21/11/2026', t: [{ x: '🔒 Puntos y monederos por sucursal: cada sucursal solo ve los de sus clientes (también en la lista de monederos). Matriz y el dueño ven y escanean todos. Si una sucursal escanea la tarjeta de un cliente de otra, la app lo avisa.', p: 'clientes' }] },
     { v: 359, f: '21/11/2026', t: [{ x: '🪪 La tarjeta del cliente ahora dice que acumula puntos («★ Acumula 1 punto por cada $100 de compra»). Al escanearla, el cliente ve su resumen de puntos y monedero, sus últimos movimientos y la campaña de puntos vigente.', p: 'clientes' }, { x: '🏷️ Ofertas de puntos por categoría: en Configuración → Programa de puntos, cada oferta puede dar puntos ×2 a ×5 solo en las categorías de productos que marques (p. ej. Vacunas).', p: '' }] },
@@ -1665,34 +1666,34 @@ const App = (() => {
     S.charts.forEach(c => c.destroy()); S.charts = [];
     S.dash = { r: r, p: p };
     const k = r.kpi, c = k.utilidad !== undefined;
-    const kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
+    const kpi = (t, v, s, dg, ex) => `<div class="kpi${dg ? ' clic' : ''}"${dg ? ` onclick="App.desglose('${dg}'${ex ? ',' + esc(JSON.stringify(ex)) : ''})" title="Ver el desglose"` : ''}><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
     // Resumen de compras (igual que en Compras › Órdenes de compra): solo órdenes con factura o nota del proveedor
     const vc = k.compras !== null && k.compras !== undefined;
     const htmlCompras = !vc ? '' : `<div class="tarjeta"><h3 style="margin-top:0">📦 Compras y cuentas por pagar <small class="muted" style="font-weight:400">· solo órdenes con factura o nota del proveedor</small></h3><div class="kpis" style="margin:0">
-      <div class="kpi kpi-clic" onclick="App.ir('compras')"><small>Compras del periodo</small><b>${$$(k.compras)}</b><span>${k.ordenes} ${k.ordenes === 1 ? 'orden con factura' : 'órdenes con factura'}${k.porRecibir ? ' · ' + k.porRecibir + ' por recibir' : ''}${k.sinFactura ? '<br>' + k.sinFactura + ' sin factura (' + $$(k.sinFacturaTotal) + ') no se cuentan' : ''}</span></div>
+      <div class="kpi clic" onclick="App.desglose('compras')" title="Ver el desglose"><small>Compras del periodo</small><b>${$$(k.compras)}</b><span>${k.ordenes} ${k.ordenes === 1 ? 'orden con factura' : 'órdenes con factura'}${k.porRecibir ? ' · ' + k.porRecibir + ' por recibir' : ''}${k.sinFactura ? '<br>' + k.sinFactura + ' sin factura (' + $$(k.sinFacturaTotal) + ') no se cuentan' : ''}</span></div>
       <div class="kpi"><small>Pagado de esas compras</small><b>${k.comprasPagado === undefined ? '…' : $$(k.comprasPagado || 0)}</b><span>${k.comprasPagado === undefined ? (p.claves && p.claves.length > 1 && !r.resultados ? 'elige meses seguidos para verlo' : 'calculando…') : k.compras > 0 ? Math.round((k.comprasPagado || 0) / k.compras * 100) + ' % del total' : '—'}</span></div>
       <div class="kpi"><small>Por pagar del periodo</small><b>${k.comprasSaldo === undefined ? '…' : $$(k.comprasSaldo || 0)}</b><span>${k.comprasSaldo === undefined ? '' : (k.comprasConSaldo || 0) + ' ' + (k.comprasConSaldo === 1 ? 'orden' : 'órdenes') + ' con saldo'}</span></div>
-      <div class="kpi kpi-clic" onclick="App.ir('compras')"><small>Cuentas por pagar (total)</small><b>${$$(k.cxp)}</b><span>${k.cxpOrdenes || 0} ${k.cxpOrdenes === 1 ? 'orden' : 'órdenes'}${k.cxpVencido > 0.009 ? ` · <b class="txt-mal">vencido ${$$(k.cxpVencido)}</b>` : ' · nada vencido'}</span></div>
+      <div class="kpi clic" onclick="App.desglose('cxp')" title="Ver el desglose"><small>Cuentas por pagar (total)</small><b>${$$(k.cxp)}</b><span>${k.cxpOrdenes || 0} ${k.cxpOrdenes === 1 ? 'orden' : 'órdenes'}${k.cxpVencido > 0.009 ? ` · <b class="txt-mal">vencido ${$$(k.cxpVencido)}</b>` : ' · nada vencido'}</span></div>
       </div></div>`;
     $('#dash').innerHTML = `<div class="kpis">
-      ${kpi('Ventas netas (sin IVA)', $$(k.ventas), k.notas + ' notas · ticket ' + $$(k.ticket))}
-      ${kpi('Cobrado en el periodo', $$(k.cobrado), 'Ventas con IVA ' + $$(k.ventasConIva))}
-      ${kpi('Por cobrar', $$(k.cxc), 'Vencido ' + $$(k.cxcVencida))}
-      ${kpi('Lotes por caducar', k.porCaducar, k.caducados + ' lotes ya caducados con existencia')}
-      ${c || k.valLista ? kpi('Inventario valorizado', $$(k.valorInventario), nf(k.piezas) + ' piezas' + (k.valLista ? ' · a precio ' + esc(k.valLista) : '')) : kpi('Piezas en inventario', nf(k.piezas), '')}
-      ${kpi('Mermas', $$(k.mermas), k.valLista ? k.mermaPct + '% de las ventas · a precio ' + esc(k.valLista) : c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo')}
-      ${c ? kpi(k.valLista ? 'Utilidad bruta (a precio ' + esc(k.valLista) + ')' : U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)') : ''}
-      ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '%') : ''}
+      ${kpi('Ventas netas (sin IVA)', $$(k.ventas), k.notas + ' notas · ticket ' + $$(k.ticket), 'ventas')}
+      ${kpi('Cobrado en el periodo', $$(k.cobrado), 'Ventas con IVA ' + $$(k.ventasConIva), 'cobrado')}
+      ${kpi('Por cobrar', $$(k.cxc), 'Vencido ' + $$(k.cxcVencida), 'cxc')}
+      ${kpi('Lotes por caducar', k.porCaducar, k.caducados + ' lotes ya caducados con existencia', 'caducar')}
+      ${c || k.valLista ? kpi('Inventario valorizado', $$(k.valorInventario), nf(k.piezas) + ' piezas' + (k.valLista ? ' · a precio ' + esc(k.valLista) : ''), 'inventario') : kpi('Piezas en inventario', nf(k.piezas), '')}
+      ${kpi('Mermas', $$(k.mermas), k.valLista ? k.mermaPct + '% de las ventas · a precio ' + esc(k.valLista) : c ? k.mermaPct + '% de las ventas · ' + (U().costoLista ? 'a costo de lista' : 'a costo real') : 'a costo', 'mermas')}
+      ${c ? kpi(k.valLista ? 'Utilidad bruta (a precio ' + esc(k.valLista) + ')' : U().costoLista ? 'Utilidad bruta (costo de lista)' : 'Utilidad bruta (costo real)', $$(k.utilidad), 'Margen ' + k.margen + '% · costo ' + $$(k.costoVentas) + ' (incl. ' + k.fletePct + '% flete)', 'utilidad') : ''}
+      ${c ? kpi('Utilidad después de mermas', $$(k.utilidadNeta), 'Margen ' + (k.ventas ? (k.utilidadNeta / k.ventas * 100).toFixed(1) : 0) + '% · mermas ' + $$(k.mermas), 'utilidad') : ''}
       ${!(r.resultados && !r.resultados.error) && r.gastosRapido ? kpi('🔒 Gastos', $$(r.gastosRapido.op + r.gastosRapido.fin), 'Operación ' + $$(r.gastosRapido.op) + ' · financieros ' + $$(r.gastosRapido.fin) + (r.gastosRapido.com ? ' · comisiones aparte ' + $$(r.gastosRapido.com) : '') + (k.ventas ? ' · ' + ((r.gastosRapido.op + r.gastosRapido.fin) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
       ${r.resultados && !r.resultados.error ? kpi('🔒 Gastos', $$(r.resultados.gastosOperacion + r.resultados.financieros),
         'Operación ' + $$(r.resultados.gastosOperacion) + ' · financieros ' + $$(r.resultados.financieros) + (r.resultados.comisiones ? ' · comisiones aparte ' + $$(r.resultados.comisiones) : '') + (k.ventas ? ' · ' + ((r.resultados.gastosOperacion + r.resultados.financieros) / k.ventas * 100).toFixed(1) + '% de ventas' : '') + ' · sin IVA') : ''}
       </div>
       ${r.salud ? `<div class="tarjeta"><h3 style="margin-top:0">🧭 Salud comercial <small class="muted" style="font-weight:400">· cobro y clientes</small></h3><div class="kpis" style="margin:0">
-        ${kpi('Días promedio de cobro', r.salud.diasCobro === null ? '—' : r.salud.diasCobro + ' días', 'por cobrar ÷ venta diaria (90 días)')}
-        ${kpi('Cartera vencida', r.salud.vencidaPct + '%', 'del total por cobrar')}
-        ${kpi('Clientes que repiten', r.salud.recompraPct === null ? '—' : r.salud.recompraPct + '%', 'de ' + nf(r.salud.clientesPeriodo) + ' clientes del periodo ya habían comprado (180 días antes)')}
-        ${kpi('Retención', r.salud.retencionPct === null ? '—' : r.salud.retencionPct + '%', 'de los clientes de los 180 días previos volvieron a comprar')}
-        ${kpi('Clientes nuevos', nf(r.salud.nuevos), 'primera compra en el periodo')}
+        ${kpi('Días promedio de cobro', r.salud.diasCobro === null ? '—' : r.salud.diasCobro + ' días', 'por cobrar ÷ venta diaria (90 días)', 'cxc')}
+        ${kpi('Cartera vencida', r.salud.vencidaPct + '%', 'del total por cobrar', 'cxc', { tab: 'antig' })}
+        ${kpi('Clientes que repiten', r.salud.recompraPct === null ? '—' : r.salud.recompraPct + '%', 'de ' + nf(r.salud.clientesPeriodo) + ' clientes del periodo ya habían comprado (180 días antes)', 'clientes', { filtros: [{ dim: 'tipo', val: 'Repite' }], tab: 'lista' })}
+        ${kpi('Retención', r.salud.retencionPct === null ? '—' : r.salud.retencionPct + '%', 'de los clientes de los 180 días previos volvieron a comprar', 'clientes', { filtros: [{ dim: 'tipo', val: 'Dejó de comprar' }], tab: 'lista' })}
+        ${kpi('Clientes nuevos', nf(r.salud.nuevos), 'primera compra en el periodo', 'clientes', { filtros: [{ dim: 'tipo', val: 'Nuevo' }], tab: 'lista' })}
         ${kpi('Ticket promedio', $$(r.salud.ticket), 'venta neta por nota')}</div></div>` : ''}
       <div id="dashServ"></div>
       <div class="tarjeta cmp" id="dashComp"><div class="vacio">📅 Comparando con el año anterior…</div></div>
@@ -5582,14 +5583,14 @@ const App = (() => {
     const r = S.datSuc, T = r.totales, L = r.sucursales;
     S.charts.forEach(c => c.destroy()); S.charts = [];
     S.lista = L;
-    const kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
+    const kpi = (t, v, s, dg, ex) => `<div class="kpi${dg ? ' clic' : ''}"${dg ? ` onclick="App.desglose('${dg}',${esc(JSON.stringify(Object.assign({ sucursal: '', claves: null, desde: S.fsuc.desde, hasta: S.fsuc.hasta, valLista: S.datSuc.valuacion === 'lista' ? 1 : 0 }, ex || {})))})" title="Ver el desglose"` : ''}><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
     $('#sRes').innerHTML = `<div class="kpis">
-      ${kpi('Ventas netas', $$(T.ventas), nf(T.notas) + ' notas · ' + r.periodo.dias + ' días')}
-      ${kpi('Utilidad bruta', $$(T.utilidadBruta), 'margen ' + pctTxt(T.margenBruto))}
+      ${kpi('Ventas netas', $$(T.ventas), nf(T.notas) + ' notas · ' + r.periodo.dias + ' días', 'ventas')}
+      ${kpi('Utilidad bruta', $$(T.utilidadBruta), 'margen ' + pctTxt(T.margenBruto), 'utilidad')}
       ${kpi('Contribución de sucursales', $$(T.contribucion), 'después de mermas, gastos y depreciación')}
       ${kpi('Utilidad neta', $$(T.utilidadNeta), 'margen ' + pctTxt(T.margenNeto))}
-      ${kpi(r.valuacion === 'lista' ? 'Inventario (precio de cada sucursal)' : 'Inventario a costo real', $$(T.inventario), (T.diasInventario === null ? '' : T.diasInventario + ' días de inventario · ') + 'GMROI ' + (T.gmroi === null ? '—' : T.gmroi))}
-      ${kpi('Por cobrar', $$(T.cxc), 'vencido ' + $$(T.cxcVencida))}</div>
+      ${kpi(r.valuacion === 'lista' ? 'Inventario (precio de cada sucursal)' : 'Inventario a costo real', $$(T.inventario), (T.diasInventario === null ? '' : T.diasInventario + ' días de inventario · ') + 'GMROI ' + (T.gmroi === null ? '—' : T.gmroi), 'inventario')}
+      ${kpi('Por cobrar', $$(T.cxc), 'vencido ' + $$(T.cxcVencida), 'cxc')}</div>
       <div class="tarjeta"><h3>Rentabilidad por sucursal · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3>` +
       tabla([{ t: 'Sucursal', h: x => `<div class="con-avatar">${avatarSuc(x.suc)}<div><b>${esc(x.nombre)}</b><br><small class="muted">${esc(x.tipo)}</small></div></div>` }, { t: 'Ventas', num: 1, h: x => $$(x.ventas) },
         { t: '% del total', num: 1, cls: 'ocultar-movil', h: x => T.ventas ? (x.ventas / T.ventas * 100).toFixed(1) + '%' : '—' },
@@ -5616,9 +5617,9 @@ const App = (() => {
     const x = S.datSuc.sucursales[i];
     const pct = v => x.ventas ? (v / x.ventas * 100).toFixed(1) + '%' : '—';
     const fila = (t, v, neg, tot) => `<tr class="${tot ? 'res-total' : ''}"><td>${neg ? '<span style="padding-left:16px"></span>' : ''}${t}</td><td class="num ${!neg && v < 0 ? 'error' : ''}">${neg ? '−' + $$(Math.abs(v)) : $$(v)}</td><td class="num muted">${pct(v)}</td></tr>`;
-    const kpi = (t, v, s) => `<div class="kpi"><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
-    modal('🔒 ' + x.nombre, `<div class="arch-par">${bloqueFotoSuc(x.suc)}</div><div class="kpis">${kpi('Notas', nf(x.notas), 'ticket ' + $$(x.ticket))}${kpi('Clientes', nf(x.clientes), 'compraron en el periodo')}${kpi('Cobrado', $$(x.cobrado), 'por cobrar ' + $$(x.cxc) + ' · vencido ' + $$(x.cxcVencida))}
-      ${kpi('Inventario', $$(x.inventario), nf(x.piezas) + ' pzs · ' + nf(x.productos) + ' productos')}${kpi('Días de inventario', x.diasInventario === null ? '—' : nf(x.diasInventario), 'GMROI ' + (x.gmroi === null ? '—' : x.gmroi))}
+    const kpi = (t, v, s, dg, ex) => `<div class="kpi${dg ? ' clic' : ''}"${dg ? ` onclick="App.desglose('${dg}',${esc(JSON.stringify(Object.assign({ sucursal: x.suc, claves: null, desde: S.fsuc.desde, hasta: S.fsuc.hasta, valLista: S.datSuc.valuacion === 'lista' ? 1 : 0 }, ex || {})))})" title="Ver el desglose"` : ''}><small>${t}</small><b>${v}</b><span>${s || ''}</span></div>`;
+    modal('🔒 ' + x.nombre, `<div class="arch-par">${bloqueFotoSuc(x.suc)}</div><div class="kpis">${kpi('Notas', nf(x.notas), 'ticket ' + $$(x.ticket), 'ventas')}${kpi('Clientes', nf(x.clientes), 'compraron en el periodo', 'clientes')}${kpi('Cobrado', $$(x.cobrado), 'por cobrar ' + $$(x.cxc) + ' · vencido ' + $$(x.cxcVencida), 'cobrado')}
+      ${kpi('Inventario', $$(x.inventario), nf(x.piezas) + ' pzs · ' + nf(x.productos) + ' productos', 'inventario')}${kpi('Días de inventario', x.diasInventario === null ? '—' : nf(x.diasInventario), 'GMROI ' + (x.gmroi === null ? '—' : x.gmroi))}
       ${kpi('Traspasos', $$(x.traspasosRecibidos), 'recibidos · enviados ' + $$(x.traspasosEnviados))}</div>
       <div class="rejilla-2"><div><h4>Estado de resultados</h4><div class="tabla-cont"><table class="estado-res"><tbody>
       ${fila('Ventas netas', x.ventas)}${fila('Costo real de lo vendido', x.costo, 1)}${fila('<b>Utilidad bruta</b>', x.utilidadBruta, 0, 1)}${fila('Mermas', x.mermas, 1)}${x.fletesVenta ? fila('Fletes de venta (pagado − cobrado)', x.fletesVenta, 1) : ''}${fila('Gastos de operación', x.operacion, 1)}
@@ -6941,7 +6942,9 @@ const App = (() => {
     { t: '5. Revisión y análisis', p: 'dashboard', g: [
       { h: 'Resumen del día', b: [['p', 'Corte diario de la operación: ventas, cobros, notas por cobrar, movimientos y pendientes.'], ['p', 'Cada noche a las 21:00 llega también por correo.', esJefeM]] },
       { h: 'Dashboard', b: [['p', 'Elige periodo y sucursal; toca cualquier tarjeta para ver el detalle.'], ['ul', ['Resultados: ventas netas, cobrado, mermas y gastos.', 'Por cobrar: cartera y cartera vencida.', '🧭 Salud comercial: días promedio de cobro, % de cartera vencida, clientes que repiten, retención, clientes nuevos y ticket promedio.', 'Comparativo contra el año anterior y rankings de productos, clientes y vendedores.']],
-        ['ul', ['Utilidad bruta, utilidad después de mermas, cuentas por pagar y 🛎️ Servicios (aparte de las ventas).'], 'ver_costos']] }] },
+        ['ul', ['Utilidad bruta, utilidad después de mermas, cuentas por pagar y 🛎️ Servicios (aparte de las ventas).'], 'ver_costos']] },
+      { h: '🔍 Desglose de los cuadros', b: [['p', 'Los cuadros con 🔍 (en Inicio y en Sucursales > Resumen) se pueden tocar: se abre de qué se forma la cifra.'],
+        ['ul', ['Pestañas para agruparla: sucursal, vendedor, cliente, categoría, producto, mes, forma de pago, antigüedad, proveedor o motivo, según el cuadro.', 'Toca un renglón para entrar a él y seguir analizando: p. ej. Ventas netas > Champotón > un vendedor > sus clientes. Las migas de arriba te regresan a cualquier nivel.', 'La última pestaña lista los registros (notas, cobros, órdenes, lotes, clientes); toca uno para abrirlo.', 'Comparación contra el mismo periodo del año anterior, ⬇️ Excel con todas las agrupaciones y 🧮 Cómo se calcula.', 'Cada perfil ve lo mismo que en el tablero: la utilidad solo quien la ve y cada sucursal solo lo suyo.']]] }] },
     { t: '6. Administración', p: () => esGerM() || puede('equipo'), g: [
       { h: 'Gastos', p: esJefeM, b: [['p', 'Las facturas de gastos llegan solas desde el correo o se suben (XML, PDF o ZIP del SAT). En Por clasificar se asigna categoría y sucursal; el estado de gastos sale por mes y categoría.']] },
       { h: 'Bancos y Contable', p: esJefeM, b: [['p', 'Cuentas, cajas, comprobantes y conciliación; reportes para la contadora por periodo.']] },
@@ -12412,6 +12415,131 @@ const App = (() => {
         { t: 'Categoría', cls: 'ocultar-movil', h: x => esc(x.categoria), x: x => x.categoria, w: 18 }, { t: 'Estado', h: x => esc(x.estado), x: x => x.estado, w: 12 }] };
     return null;
   }
+  /* ==========================================================================
+   * 🔍 DESGLOSE DE LOS CUADROS: tocar un cuadro abre sus registros agrupados por pestañas;
+   * tocar un renglón entra a él (p. ej. Ventas netas › Champotón › Juan) y se puede seguir bajando.
+   * ========================================================================== */
+  const DG_DIM = { suc: '🏪 Sucursal', vend: '👤 Vendedor', cli: '🧑‍🌾 Cliente', cat: '🏷️ Categoría', prod: '📦 Producto', forma: '💳 Forma de pago', antig: '⏱️ Antigüedad',
+    motivo: '📝 Motivo', estado: '⏳ Caducidad', prov: '🚚 Proveedor', recibido: '📥 Recepción', tipo: '🧭 Tipo de cliente', mes: '📅 Mes' };
+  const DG = {
+    ventas: { t: 'Ventas netas (sin IVA)', m: 'neto', dims: ['suc', 'vend', 'cli', 'cat', 'prod', 'mes'], lista: 'Notas', porNota: 1, ir: 'ventas', vs: 1,
+      calc: ['Notas del periodo que no están canceladas ni devueltas (sin las de gestiones anteriores).', 'Venta neta = subtotal − descuentos − descuento por pronto pago, sin IVA y sin la parte de la asociación.', 'Por categoría y producto, la venta neta de cada nota se reparte entre sus renglones según su importe.'] },
+    utilidad: { t: 'Utilidad bruta', m: 'util', dims: ['cat', 'prod', 'suc', 'vend', 'cli', 'mes'], lista: 'Notas', porNota: 1, ir: 'analisis', vs: 1,
+      calc: ['Mismas notas que Ventas netas.', 'Utilidad = venta neta − costo de lo vendido (con el mismo costo que usa el tablero para tu perfil).'] },
+    cobrado: { t: 'Cobrado en el periodo', m: 'monto', dims: ['forma', 'suc', 'cli', 'vend', 'mes'], lista: 'Cobros', ir: 'cobranza', vs: 1,
+      calc: ['Cobros capturados con fecha dentro del periodo, de cualquier nota (aunque la nota sea de otro mes).'] },
+    cxc: { t: 'Por cobrar', m: 'saldo', dims: ['cli', 'antig', 'suc', 'vend'], lista: 'Notas', ir: 'cartera',
+      calc: ['Todas las notas vigentes con saldo pendiente, sin importar su fecha.', 'La antigüedad se cuenta desde el vencimiento de cada nota.'] },
+    mermas: { t: 'Mermas', m: 'valor', dims: ['prod', 'cat', 'suc', 'motivo', 'mes'], lista: 'Movimientos', ir: 'inventario', vs: 1,
+      calc: ['Mermas registradas en el periodo, valuadas con el mismo costo que usa el tablero para tu perfil.'] },
+    inventario: { t: 'Inventario valorizado', m: 'valor', dims: ['suc', 'cat', 'prod', 'estado'], lista: 'Lotes', ir: 'inventario',
+      calc: ['Existencia actual por lote (sin productos de la asociación), valuada como en el tablero.'] },
+    caducar: { t: 'Lotes por caducar y caducados', m: 'valor', dims: ['estado', 'suc', 'prod', 'cat'], lista: 'Lotes', ir: 'inventario',
+      calc: ['Lotes con existencia ya caducados o que caducan dentro de los días de alerta configurados.'] },
+    compras: { t: 'Compras del periodo', m: 'total', dims: ['prov', 'suc', 'recibido', 'antig', 'mes'], lista: 'Órdenes', ir: 'compras', vs: 1,
+      calc: ['Órdenes de compra del periodo con factura o nota del proveedor (las que no la tienen todavía no cuentan).'] },
+    cxp: { t: 'Cuentas por pagar', m: 'saldo', dims: ['prov', 'antig', 'suc'], lista: 'Órdenes', ir: 'compras',
+      calc: ['Órdenes con factura o nota del proveedor que tienen saldo pendiente, de cualquier fecha.'] },
+    clientes: { t: 'Clientes del periodo', m: 'neto', dims: ['tipo', 'suc', 'vend'], lista: 'Clientes', ir: 'seguimiento',
+      calc: ['Nuevo: su primera compra cae en el periodo.', 'Repite: compró en el periodo y también en los 180 días previos.', 'Dejó de comprar: compró en los 180 días previos y no en el periodo.'] }
+  };
+  const dgEtq = k => /^\d{4}-\d{2}$/.test(k) ? dashEtq(k) : k;
+  const dgMes = f => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(f || ''); return m ? m[3] + '-' + m[2] : 'Sin fecha'; };
+  const dgVal = (c, r) => c.m === 'util' ? r2((r.neto || 0) - (r.costo || 0)) : (Number(r[c.m]) || 0);
+  async function desglose(kpi, extra) {
+    const c = DG[kpi]; if (!c) return;
+    const d = S.dash && S.dash.p || {}, p = Object.assign({ kpi: kpi, desde: d.desde, hasta: d.hasta, sucursal: d.sucursal, claves: d.claves && d.claves.length > 1 ? d.claves : undefined }, extra || {});
+    if (navigator.onLine === false) return toast('El desglose necesita conexión', true);
+    S.dg = { kpi: kpi, c: c, p: p, filtros: (extra && extra.filtros) || [], tab: (extra && extra.tab) || c.dims.find(x => !((extra && extra.filtros) || []).some(f => f.dim === x)), data: null, vs: null };
+    modal('🔍 ' + c.t, '<div class="vacio">Reuniendo los registros…</div>');
+    try { S.dg.data = await pedir('desglose', { kpi: kpi, desde: p.desde, hasta: p.hasta, sucursal: p.sucursal, claves: p.claves, valLista: p.valLista }, true); } catch (e) { $('#modalCuerpo').innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message || 'No se pudo cargar')}</div>`; return; }
+    S.dg.data.filas.forEach(r => { r.mes = dgMes(r.fecha); });
+    dgPintar();
+    S.dg.vsPend = !!(c.vs && p.desde && p.hasta);
+    if (S.dg.vsPend) {   /* mismo periodo del año anterior, en segundo plano */
+      const atras = x => { const t = String(x); return (+t.slice(0, 4) - 1) + t.slice(4); };
+      pedir('desglose', { kpi: kpi, valLista: p.valLista, desde: atras(p.desde), hasta: atras(p.hasta).replace(/-02-29$/, '-02-28'), sucursal: p.sucursal, claves: p.claves ? p.claves.map(atras) : undefined }, true)
+        .then(r => { if (S.dg && S.dg.kpi === kpi) { r.filas.forEach(x => { x.mes = dgMes(x.fecha); }); S.dg.vs = r; S.dg.vsPend = false; S.dg.vsAnio = +String(p.desde).slice(0, 4) - 1; dgPintar(); } }).catch(() => { if (S.dg && S.dg.kpi === kpi) { S.dg.vsPend = false; dgPintar(); } });
+    }
+  }
+  function dgFiltrar(filas) { return filas.filter(r => S.dg.filtros.every(f => String(r[f.dim]) === f.val)); }
+  function dgPintar() {
+    const g = S.dg; if (!g || !g.data || !$('#modalCuerpo')) return;
+    const c = g.c, filas = dgFiltrar(g.data.filas), total = r2(filas.reduce((t, r) => t + dgVal(c, r), 0));
+    const notas = c.porNota ? new Set(filas.map(r => r.id)).size : filas.length, fmtV = v => (c.m === 'valor' && g.data.conValor === false) ? nf(v) : $$(v);
+    const dims = c.dims.filter(x => !g.filtros.some(f => f.dim === x) && g.data.filas.some(r => r[x] !== undefined && r[x] !== ''));
+    if (g.tab !== 'lista' && dims.indexOf(g.tab) < 0) g.tab = dims[0] || 'lista';
+    const per = g.data.periodo ? (c.m === 'saldo' || /inventario|caducar/.test(g.kpi) ? 'al día de hoy' : g.data.periodo.desde + ' al ' + g.data.periodo.hasta) : '';
+    const migas = `<div class="dg-migas"><button class="btn chico ${g.filtros.length ? '' : 'primario'}" onclick="App.dgMiga(0)">${esc(c.t)}</button>${g.filtros.map((f, i) => ` › <button class="btn chico ${i === g.filtros.length - 1 ? 'primario' : ''}" onclick="App.dgMiga(${i + 1})">${esc(f.val)}</button>`).join('')}</div>`;
+    const tabs = `<div class="pestanas" style="margin:10px 0">${dims.map(x => `<button class="${g.tab === x ? 'activo' : ''}" onclick="App.dgTab('${x}')">${DG_DIM[x] || x}</button>`).join('')}<button class="${g.tab === 'lista' ? 'activo' : ''}" onclick="App.dgTab('lista')">🧾 ${esc(c.lista)} (${nf(c.porNota ? notas : filas.length)})</button></div>`;
+    let cuerpo = '';
+    if (g.tab === 'lista') { g.vista = dgLista(filas); cuerpo = tabla(g.vista.cols, g.vista.filas, { clic: g.vista.clic ? 'App.dgAbrir' : '' }) + (g.vista.filas.length >= 500 ? '<p class="muted peq">Se muestran los primeros 500; el Excel trae todos.</p>' : ''); }
+    else {
+      const G = {}; filas.forEach(r => { const kk = String(r[g.tab] || 'Sin dato'); const o = G[kk] = G[kk] || { k: kk, v: 0, n: new Set(), neto: 0, costo: 0, cant: 0 }; o.v += dgVal(c, r); o.n.add(c.porNota ? r.id : o.n.size); o.neto += r.neto || 0; o.costo += r.costo || 0; o.cant += r.cant || 0; });
+      let vsG = null; if (g.vs) { vsG = {}; dgFiltrar(g.vs.filas).forEach(r => { const kk = String(r[g.tab] || 'Sin dato'); vsG[kk] = (vsG[kk] || 0) + dgVal(c, r); }); }
+      const l = Object.values(G).map(o => Object.assign(o, { v: r2(o.v), n: o.n.size })).sort((a, b) => g.tab === 'mes' || g.tab === 'antig' || g.tab === 'estado' ? (a.k < b.k ? -1 : 1) : b.v - a.v);
+      g.vista = { grupo: 1, filas: l };
+      const cols = [{ t: (DG_DIM[g.tab] || g.tab).replace(/^\S+\s/, ''), h: o => `<b>${esc(g.tab === 'mes' ? dgEtq(o.k) : o.k)}</b>` },
+        { t: c.porNota ? 'Notas' : 'Registros', num: 1, h: o => nf(o.n) }]
+        .concat(g.kpi === 'utilidad' ? [{ t: 'Venta neta', num: 1, cls: 'ocultar-movil', h: o => $$(o.neto) }] : [])
+        .concat(/inventario|caducar|mermas/.test(g.kpi) ? [{ t: 'Piezas', num: 1, cls: 'ocultar-movil', h: o => nf(r2(o.cant)) }] : [])
+        .concat([{ t: c.m === 'util' ? 'Utilidad' : 'Importe', num: 1, h: o => `<b>${fmtV(o.v)}</b>` }])
+        .concat(g.kpi === 'utilidad' ? [{ t: 'Margen', num: 1, h: o => o.neto ? (o.v / o.neto * 100).toFixed(1) + '%' : '—' }] : [])
+        .concat([{ t: '% del total', num: 1, h: o => total ? (o.v / total * 100).toFixed(1) + '%' : '—' }])
+        .concat(vsG ? [{ t: 'vs ' + g.vsAnio, num: 1, h: o => chipDelta(o.v, vsG[o.k] || 0, g.kpi === 'mermas') }] : g.vsPend ? [{ t: 'vs año ant.', num: 1, cls: 'ocultar-movil', h: () => '<span class="muted">…</span>' }] : []);
+      cuerpo = tabla(cols, l, { clic: 'App.dgEntrar', vacio: 'Sin registros' }) + (l.length ? `<p class="muted peq" style="margin:6px 0">Toca un renglón para ver su desglose y seguir analizando.</p>` : '');
+    }
+    const vsTot = g.vs ? r2(dgFiltrar(g.vs.filas).reduce((t, r) => t + dgVal(c, r), 0)) : null;
+    $('#modalTit').textContent = '🔍 ' + c.t + (g.data.sucursal ? ' · ' + g.data.sucursal : '');
+    $('#modalCuerpo').innerHTML = migas + `<div class="dg-tot"><div><small>${g.filtros.length ? esc(g.filtros.map(f => f.val).join(' › ')) : 'Total'}${per ? ' · ' + esc(per) : ''}</small><b>${fmtV(total)}</b></div>
+      <div><small>${c.porNota ? 'Notas' : 'Registros'}</small><b>${nf(c.porNota ? notas : filas.length)}</b></div>${vsTot !== null ? `<div><small>Mismo periodo ${g.vsAnio}</small><b>${fmtV(vsTot)}</b> ${chipDelta(total, vsTot, g.kpi === 'mermas')}</div>` : ''}</div>`
+      + tabs + cuerpo + `<details class="det-calc" style="margin-top:10px"><summary><b>🧮 Cómo se calcula</b></summary><ol>${c.calc.map(x => `<li>${x}</li>`).join('')}</ol></details>
+      <div class="acciones"><button class="btn" onclick="App.dgExcel()">⬇️ Excel</button>${c.ir ? `<button class="btn" onclick="App.cerrarModal();App.ir('${c.ir}')">Ver en la sección ›</button>` : ''}<button class="btn primario" onclick="App.cerrarModal()">Cerrar</button></div>`;
+  }
+  function dgLista(filas) {
+    const k = S.dg.kpi, c = S.dg.c, fv = r => (c.m === 'valor' && S.dg.data.conValor === false) ? nf(dgVal(c, r)) : $$(dgVal(c, r));
+    if (c.porNota) {   /* una fila por nota */
+      const N = {}; filas.forEach(r => { const o = N[r.id] = N[r.id] || { id: r.id, folio: r.folio, fecha: r.fecha, suc: r.suc, cli: r.cli, vend: r.vend, neto: 0, costo: 0 }; o.neto += r.neto || 0; o.costo += r.costo || 0; });
+      const l = Object.values(N).map(o => Object.assign(o, { neto: r2(o.neto), costo: r2(o.costo) })).sort((a, b) => (dgVal(c, b)) - (dgVal(c, a)));
+      return { filas: l.slice(0, 500), todas: l, clic: 1, cols: [{ t: 'Nota', h: o => `<b>${esc(o.folio)}</b><br><small class="muted">${esc(o.fecha)}</small>`, x: o => o.folio }, { t: 'Cliente', h: o => esc(o.cli) + `<br><small class="muted">${esc(o.suc)} · ${esc(o.vend)}</small>`, x: o => o.cli },
+        { t: k === 'utilidad' ? 'Utilidad' : 'Venta neta', num: 1, h: o => `<b>${$$(dgVal(c, o))}</b>`, x: o => dgVal(c, o), fmt: 'mon' }].concat(k === 'utilidad' ? [{ t: 'Margen', num: 1, h: o => o.neto ? ((o.neto - o.costo) / o.neto * 100).toFixed(1) + '%' : '—', x: o => o.neto ? r2((o.neto - o.costo) / o.neto * 100) : 0 }] : []) };
+    }
+    const l = filas.slice().sort((a, b) => dgVal(c, b) - dgVal(c, a));
+    const C = {
+      cobrado: [{ t: 'Fecha', k: 'fecha' }, { t: 'Nota', h: r => `<b>${esc(r.folio)}</b>`, x: r => r.folio }, { t: 'Cliente', h: r => esc(r.cli) + `<br><small class="muted">${esc(r.forma)}${r.banco ? ' · ' + esc(r.banco) : ''}</small>`, x: r => r.cli }, { t: 'Monto', num: 1, h: r => `<b>${$$(r.monto)}</b>`, x: r => r.monto, fmt: 'mon' }],
+      cxc: [{ t: 'Nota', h: r => `<b>${esc(r.folio)}</b><br><small class="muted">${esc(r.fecha)}</small>`, x: r => r.folio }, { t: 'Cliente', h: r => esc(r.cli) + `<br><small class="muted">${esc(r.suc)}</small>`, x: r => r.cli }, { t: 'Vence', h: r => esc(r.venc) + (r.dias > 0 ? `<br><small class="txt-mal">${r.dias} días vencida</small>` : ''), x: r => r.venc }, { t: 'Saldo', num: 1, h: r => `<b>${$$(r.saldo)}</b>`, x: r => r.saldo, fmt: 'mon' }],
+      mermas: [{ t: 'Fecha', k: 'fecha' }, { t: 'Producto', h: r => esc(r.prod) + `<br><small class="muted">${esc(r.suc)} · ${esc(r.motivo)}${r.lote ? ' · lote ' + esc(r.lote) : ''}</small>`, x: r => r.prod }, { t: 'Piezas', num: 1, h: r => nf(r.cant), x: r => r.cant }, { t: 'Valor', num: 1, h: r => `<b>${$$(r.valor)}</b>`, x: r => r.valor, fmt: 'mon' }],
+      inventario: [{ t: 'Producto', h: r => esc(r.prod) + `<br><small class="muted">${esc(r.suc)} · lote ${esc(r.lote || '—')}</small>`, x: r => r.prod }, { t: 'Caduca', h: r => esc(r.cad || '—'), x: r => r.cad }, { t: 'Piezas', num: 1, h: r => nf(r.cant), x: r => r.cant }, { t: 'Valor', num: 1, h: r => `<b>${fv(r)}</b>`, x: r => r.valor, fmt: 'mon' }],
+      compras: [{ t: 'Orden', h: r => `<b>${esc(r.folio)}</b><br><small class="muted">${esc(r.fecha)}</small>`, x: r => r.folio }, { t: 'Proveedor', h: r => esc(r.prov) + `<br><small class="muted">${esc(r.suc)} · ${esc(r.recibido)}</small>`, x: r => r.prov }, { t: 'Total', num: 1, h: r => $$(r.total), x: r => r.total, fmt: 'mon' }, { t: 'Saldo', num: 1, h: r => `<b>${$$(r.saldo)}</b>`, x: r => r.saldo, fmt: 'mon' }],
+      clientes: [{ t: 'Cliente', h: r => `<b>${esc(r.cli)}</b><br><small class="muted">${esc(r.tipo)} · ${esc(r.suc)}</small>`, x: r => r.cli }, { t: 'Primera / última', h: r => esc(r.primera) + '<br><small class="muted">' + esc(r.ultima) + '</small>', x: r => r.ultima }, { t: 'Notas', num: 1, h: r => nf(r.notas), x: r => r.notas }, { t: 'Venta del periodo', num: 1, h: r => `<b>${$$(r.neto)}</b>`, x: r => r.neto, fmt: 'mon' }]
+    };
+    C.caducar = [{ t: 'Producto', h: r => esc(r.prod) + `<br><small class="muted">${esc(r.suc)} · lote ${esc(r.lote || '—')}</small>`, x: r => r.prod }, { t: 'Caduca', h: r => esc(r.cad) + `<br><small class="${r.dias < 0 ? 'txt-mal' : 'muted'}">${r.dias < 0 ? 'caducado hace ' + (-r.dias) + ' días' : 'en ' + r.dias + ' días'}</small>`, x: r => r.cad }, { t: 'Piezas', num: 1, h: r => nf(r.cant), x: r => r.cant }, { t: 'Valor', num: 1, h: r => `<b>${fv(r)}</b>`, x: r => r.valor, fmt: 'mon' }];
+    C.cxp = C.compras;
+    return { filas: l.slice(0, 500), todas: l, cols: C[k] || [], clic: /cobrado|cxc|compras|cxp|clientes/.test(k) ? 1 : 0 };
+  }
+  function dgTab(t) { S.dg.tab = t; dgPintar(); }
+  function dgMiga(i) { S.dg.filtros = S.dg.filtros.slice(0, i); S.dg.tab = null; dgPintar(); }
+  function dgEntrar(i) { const g = S.dg, o = g.vista && g.vista.filas[i]; if (!o) return; g.filtros.push({ dim: g.tab, val: o.k }); g.tab = null; dgPintar(); $('#modalCuerpo').scrollTop = 0; }
+  function dgAbrir(i) {
+    const g = S.dg, r = g.vista && g.vista.filas[i]; if (!r) return;
+    if (/compras|cxp/.test(g.kpi)) { cerrarModal(); verCompra(r.id); }
+    else if (g.kpi === 'clientes') { cerrarModal(); fichaCliente(r.idCli); }
+    else if (r.id) { cerrarModal(); verVenta(r.id); }
+  }
+  async function dgExcel() {
+    const g = S.dg; if (!g || !g.data) return;
+    const txt = h => String(h).replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
+    const filas = dgFiltrar(g.data.filas), lista = dgLista(filas), tit = g.c.t + (g.filtros.length ? ' › ' + g.filtros.map(f => f.val).join(' › ') : '');
+    const hojas = [];
+    g.c.dims.filter(x => !g.filtros.some(f => f.dim === x) && filas.some(r => r[x] !== undefined)).forEach(x => {
+      const G = {}; filas.forEach(r => { const kk = String(r[x] || 'Sin dato'); G[kk] = (G[kk] || 0) + dgVal(g.c, r); });
+      hojas.push({ nombre: (DG_DIM[x] || x).replace(/^\S+\s/, '').slice(0, 30), titulo: tit, sub: ['Agrupado por ' + (DG_DIM[x] || x).replace(/^\S+\s/, '').toLowerCase()], cols: [{ t: (DG_DIM[x] || x).replace(/^\S+\s/, ''), w: 40 }, { t: 'Importe', w: 16, fmt: 'mon', suma: 1 }],
+        filas: Object.keys(G).sort((a, b) => G[b] - G[a]).map(kk => ({ v: [x === 'mes' ? dgEtq(kk) : kk, r2(G[kk])] })) });
+    });
+    const xc = lista.cols.filter(x => x.x || x.k);
+    hojas.push({ nombre: g.c.lista, titulo: tit, sub: [nf(lista.todas.length) + ' registros'], cols: xc.map(x => ({ t: x.t, w: 22, fmt: x.fmt })), filas: lista.todas.map(r => ({ v: xc.map(x => x.x ? x.x(r) : r[x.k]) })) });
+    try { toast('Armando el Excel…'); const nom = txt(tit).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 90); entregarArchivo(await excelLocal(nom, hojas), nom + '.xlsx', 'Desglose'); } catch (e) { toast('No se pudo armar el Excel: ' + (e.message || e)); }
+  }
   function detKpi(fuente, clave) {
     const c = fuente === 'g' ? detKpiGastos(clave) : detKpiCont(clave); if (!c) return;
     S.detK = c;
@@ -17130,7 +17258,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, ptsCanjeForm, ptsCanjear, cbMonedero, ptsAjusteForm, ptsAjustar, ptsCfgForm, ptsCfgGuardar, ptsOfFila, ptsOfQuitar, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, ptsCanjeForm, ptsCanjear, cbMonedero, desglose, dgTab, dgMiga, dgEntrar, dgAbrir, dgExcel, ptsAjusteForm, ptsAjustar, ptsCfgForm, ptsCfgGuardar, ptsOfFila, ptsOfQuitar, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, ventaNuevaPara, corregirClienteNota, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,

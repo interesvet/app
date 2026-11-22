@@ -157,6 +157,12 @@ textarea { min-height: 70px; resize: vertical; }
 .kpi.clic:hover, .kpi.clic:focus-visible { border-color: var(--marca); box-shadow: var(--sombra); }
 .kpi.clic small::after { content: ' 🔍'; font-size: 11px; opacity: .55; }
 .det-calc { background: var(--marca-suave); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+.dg-migas { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--texto-3); }
+.dg-migas .btn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dg-tot { display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 12px 0 4px; }
+.dg-tot small { display: block; color: var(--texto-2); font-size: 12px; }
+.dg-tot b { font-size: 22px; font-variant-numeric: tabular-nums; }
+.det-calc summary { cursor: pointer; }
 .det-calc ol { margin: 6px 0 0; padding-left: 20px; }
 .det-calc li { margin: 3px 0; }
 .mz-listas { display: flex; flex-wrap: wrap; gap: 6px 16px; }
