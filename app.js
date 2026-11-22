@@ -794,7 +794,7 @@ const App = (() => {
     { id: 'recetas', t: 'Recetas', i: '💊', p: 'recetas', oculto: 1 },
     { id: 'compras', t: 'Compras', i: '📦', p: ['compras', 'traspasos'] },
     { id: 'reclamaciones', t: 'Reclamaciones', i: '📣', p: ['ventas', 'compras', 'inventario'] },
-    { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos', 'ver_gastos'] },
+    { id: 'gastos', t: 'Gastos', i: '🔒', p: ['dueno', 'clasificar_gastos', 'ver_gastos', 'capturar_gastos'] },
     { id: 'equipo', t: 'Equipo', i: '🧑‍💼', p: 'equipo' },
     { id: 'sociedad', t: 'Mi sociedad', i: '🤝', oculto: 1 },
     { id: 'comisiones', t: 'Comisiones', i: '💼', p: 'dueno' },
@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 370, f: '22/11/2026', t: [{ x: '🗂️ Catálogo de gastos: cada gasto lleva rubro › concepto (Personal, Instalaciones, Vehículos y reparto, Viáticos…). Tú agregas, editas, mueves o quitas rubros y conceptos en Gastos › 🗂️ Catálogo, y el estado de gastos muestra los totales por rubro.', p: '' }, { x: '🧾 Gastos sin factura: nómina, caja chica, propinas… con su comprobante, y los que se repiten cada semana, quincena o mes.', p: '' }] },
     { v: 369, f: '22/11/2026', t: [{ x: '📄 Cotizaciones y estados de cuenta en PDF como la nota: pie de página y logotipo de fondo en cada hoja, se compactan para caber en una sola si se pasan poco, y si son largos llevan «Página 1 de 2» y repiten los encabezados de la tabla (también la nota de venta).', p: '' }] },
     { v: 368, f: '22/11/2026', t: [{ x: '👤 Alta de cliente más ordenada: la foto va dentro de «Datos del cliente» (antes del nombre) y la constancia de situación fiscal dentro de «Datos fiscales» (después del C.P.).', p: '' }] },
     { v: 366, f: '22/11/2026', t: [{ x: '📎 Facturas, comprobantes y adjuntos se abren dentro de la app: ya no piden la cuenta de Google ni marcan «acceso denegado» en el iPad o iPhone.', p: '' }] },
@@ -4497,10 +4498,17 @@ const App = (() => {
   const GRUPOS_G = ['Operación', 'Financiero', 'Inversión', 'Excluir'];
   const NOMBRE_G = { 'Operación': 'Gastos de operación', 'Financiero': 'Gastos financieros', 'Inversión': 'Inversiones (activo fijo)', 'Excluir': 'Excluidos (personales)' };
   V.gastos = (tab) => {
-    if (!puede('dueno') && !puede('ver_gastos')) return vistaPorClasificar(false);   // quien solo clasifica: solo la pestaña de facturas por clasificar
+    if (!puede('dueno') && !puede('ver_gastos')) {   // quien solo clasifica y/o captura gastos sin factura: solo esas pestañas
+      tab = tab || S.tabGas;
+      if (tab === 'catalogo' && puede('clasificar_gastos')) return vistaCatalogoGasto();
+      if (puede('capturar_gastos') && (tab === 'manual' || !puede('clasificar_gastos'))) return vistaGastosManuales();
+      return vistaPorClasificar(true);
+    }
     const lect = !puede('dueno');   // contador: consulta y descarga, sin cambiar nada
     tab = tab || S.tabGas || 'resumen'; S.tabGas = tab;
     if (tab === 'clasificar') return vistaPorClasificar(true);
+    if (tab === 'catalogo') return vistaCatalogoGasto();
+    if (tab === 'manual') return vistaGastosManuales();
     const h = hoyISO(), f = alDia(S.fgas || (S.fgas = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, grupo: '', categoria: '', texto: '' }));
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
     if (tab === 'reglas') return vistaReglasGasto();
@@ -4510,10 +4518,10 @@ const App = (() => {
         <label>Desde<input type="date" id="gDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="gHasta" value="${f.hasta}"></label>
         <label>Sucursal<select id="gSuc">${opts(D().sucursales || [], f.sucursal || '', 'Todas')}</select></label>
         <label>Grupo<select id="gGrupo">${opts(GRUPOS_G.map(g => [g, NOMBRE_G[g]]), f.grupo, 'Todos')}</select></label>
-        <label>Categoría<select id="gCat"><option value="">Todas</option>${(S.catsGas || []).map(c => `<option ${c === f.categoria ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+        <label>Concepto<select id="gCat"><option value="">Todos</option>${(S.catsGas || []).map(c => `<option ${c === f.categoria ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
         <label>Buscar<input id="gTxt" placeholder="Proveedor, RFC o UUID" value="${esc(f.texto)}"></label>
         <button class="btn primario fijo" onclick="App.cargarGastos()">Buscar</button><button class="btn fijo" onclick="App.pdfGastos()">📄 PDF</button>
-        ${lect ? '' : '<button class="btn fijo" onclick="App.formComprobantes()" title="Facturas de compra y de gastos, notas de crédito, complementos de pago y facturas de venta: cada uno se va a su sección">📥 Subir comprobantes</button>' + (puede('dueno') ? '<button class="btn fijo" onclick="App.correoGastos()">✉️ Revisar correo</button>' : '')}</div></div>
+        ${lect ? '' : '<button class="btn fijo" onclick="App.formComprobantes()" title="Facturas de compra y de gastos, notas de crédito, complementos de pago y facturas de venta: cada uno se va a su sección">📥 Subir comprobantes</button>' + (puede('dueno') ? '<button class="btn fijo" onclick="App.correoGastos()">✉️ Revisar correo</button>' : '')}${puedeManual() ? '<button class="btn fijo" onclick="App.formGastoManual(\'\')">➕ Gasto sin factura</button>' : ''}</div></div>
       <div id="gAviso"></div>
       <div class="espacio"></div><div id="gRes"><div class="vacio">Cargando…</div></div>`;
     agregarMesAnio('gDesde', 'gHasta', cargarGastos);
@@ -4523,10 +4531,13 @@ const App = (() => {
   };
   /** Dueño y contador: categorías, reglas de grupo y depreciación. */
   const editaGas = () => puede('dueno') || (puede('ver_gastos') && puede('clasificar_gastos'));
+  const puedeManual = () => puede('dueno') || puede('capturar_gastos') || esContador();
   function pestanasGas(tab) {
     const tb = (id, n) => `<button class="${tab === id ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
-    return tb('resumen', 'Estado de gastos') + tb('mes', 'Por mes') + tb('facturas', 'Facturas') + tb('inversion', 'Inversiones') + tb('creditos', '🚗 Créditos') + tb('emisores', 'Proveedores') +
-      (editaGas() ? tb('clasificar', '🏷️ Por clasificar') + tb('reglas', '⚙️ Reglas y depreciación') : '');
+    if (!puede('dueno') && !puede('ver_gastos'))
+      return (puede('clasificar_gastos') ? tb('clasificar', '🏷️ Por clasificar') : '') + (puede('capturar_gastos') ? tb('manual', '🧾 Sin factura') : '') + (puede('clasificar_gastos') ? tb('catalogo', '🗂️ Catálogo') : '');
+    return tb('resumen', 'Estado de gastos') + tb('mes', 'Por mes') + tb('facturas', 'Facturas') + (puedeManual() ? tb('manual', '🧾 Sin factura') : '') + tb('inversion', 'Inversiones') + tb('creditos', '🚗 Créditos') + tb('emisores', 'Proveedores') +
+      (editaGas() ? tb('clasificar', '🏷️ Por clasificar') + tb('catalogo', '🗂️ Catálogo') + tb('reglas', '⚙️ Reglas y depreciación') : '');
   }
 
   /* ---------- 🚗 Créditos: corrida financiera (PDF) ligada a los cargos de cada mes ---------- */
@@ -4665,7 +4676,7 @@ const App = (() => {
       <div class="tarjeta"><h3>🏗️ Criterios generales de depreciación</h3>
         <p class="muted">Se aplican a todas las inversiones (activo fijo). Cada activo se puede ajustar aparte en la pestaña <b>Inversiones</b> (✏️).</p>
         <div id="gDepCfg"><div class="vacio">Cargando…</div></div></div>
-      <div class="tarjeta"><h3>🗂️ Grupo de cada categoría y proveedor</h3>
+      <div class="tarjeta"><h3>🏷️ Reglas por proveedor</h3><p class="muted">El grupo, la tasa y los meses de cada <b>concepto</b> se definen en la pestaña <b>🗂️ Catálogo</b>. Aquí van las excepciones por proveedor: si el nombre del emisor contiene el texto, su factura cae en ese grupo sin importar el concepto (p. ej. una financiera → Financiero).</p>
         <p class="muted">Define en qué grupo cae cada factura: <b>Operación</b> (se resta cada mes), <b>Financiero</b> (intereses, seguros, créditos), <b>Inversión</b> (activo fijo: se deprecia) o <b>Excluir</b> (personal / no es del negocio).
         Las reglas por <b>Emisor</b> (el nombre del proveedor contiene…) tienen prioridad sobre las de <b>Categoría</b>. "Depreciación % anual" vacía = la sugerida (vehículos 25 %, cómputo 30 %, mobiliario y equipo 10 %).</p>
         <div id="cfGrupos"><div class="vacio">Cargando…</div></div></div>`;
@@ -4704,6 +4715,18 @@ const App = (() => {
     if (!S.catsGas || S.catsGas.length !== S.datGas.categorias.length) { S.catsGas = S.datGas.categorias; const sel = $('#gCat'); if (sel) sel.innerHTML = '<option value="">Todas</option>' + S.catsGas.map(c => `<option ${c === f.categoria ? 'selected' : ''}>${esc(c)}</option>`).join(''); }
     pintarGastos();
   }
+  /** 🗂️ Gastos del periodo por rubro (barras); al abrir un rubro, sus conceptos; al tocar un concepto, sus facturas. */
+  function gastosPorRubro(r, pct) {
+    const R = {}; (r.resumen || []).forEach(x => { const k = x.rubro || 'Sin rubro'; const o = R[k] || (R[k] = { rubro: k, icono: x.icono || '📁', monto: 0, anterior: 0, n: 0, cuenta: 0, ls: [] });
+      o.monto += x.monto; o.anterior += x.anterior; o.n += x.n; o.ls.push(x); if (x.grupo === 'Operación' || x.grupo === 'Financiero') o.cuenta += x.monto; });
+    const L = Object.values(R).filter(o => o.monto || o.anterior).sort((a, b) => b.monto - a.monto); if (!L.length) return '';
+    const max = Math.max(...L.map(o => o.monto), 1);
+    return `<div class="tarjeta"><h3>🗂️ Gastos por rubro</h3><p class="muted peq" style="margin-top:-4px">Sin IVA. Abre un rubro para ver sus conceptos; toca un concepto para ver sus facturas.${editaGas() ? ' Rubros y conceptos: pestaña 🗂️ Catálogo.' : ''}</p>` +
+      L.map(o => { const gs = [...new Set(o.ls.map(x => x.grupo))];
+        return `<details class="rub-g"><summary><span class="rub-n">${esc(o.icono)} ${esc(o.rubro)}${gs.length === 1 && gs[0] !== 'Operación' ? ' ' + chipGrupo(gs[0]) : ''}</span><b>${$$(o.monto)}</b>
+          <span class="rub-b"><span style="width:${Math.max(1, o.monto / max * 100).toFixed(1)}%"></span></span><small class="muted">${o.cuenta && r.ventas ? pct(o.cuenta) + ' de ventas · ' : ''}${nf(o.n)} reg.</small></summary>` +
+          o.ls.sort((a, b) => b.monto - a.monto).map(x => `<div class="rub-c clic" onclick="App.filtrarCatGasto('${esc(x.cat).replace(/'/g, "\\'")}')"><span>${esc(x.cat)}${gs.length > 1 ? ' ' + chipGrupo(x.grupo) : ''}</span><small class="muted">${nf(x.n)} · ant. ${$$(x.anterior)}</small><b>${$$(x.monto)}</b></div>`).join('') + '</details>'; }).join('') + '</div>';
+  }
   function pintarGastos() {
     const r = S.datGas, t = r.totales, tab = S.tabGas;
     S.charts.forEach(c => c.destroy()); S.charts = [];
@@ -4721,6 +4744,7 @@ const App = (() => {
       ${kpi('IVA acreditable', $$(t.iva), nf(t.facturas) + ' facturas', 'iva')}</div>
       <p class="muted peq no-imprimir" style="margin:-6px 0 12px">🔍 Toca un recuadro para ver las facturas que lo forman, las que quedaron fuera y cómo se calcula.</p>`;
     if (tab === 'resumen') {
+      html += gastosPorRubro(r, pct);
       html += `<div class="rejilla-2"><div class="tarjeta"><h3>Estado de gastos · ${esc(r.periodo.desde)} al ${esc(r.periodo.hasta)}</h3>
         <p class="muted" style="margin-bottom:8px">Comparado contra ${esc(r.periodo.anterior)} (mismo número de días).</p>` +
         GRUPOS_G.filter(g => r.resumen.some(x => x.grupo === g)).map(g => {
@@ -4755,12 +4779,12 @@ const App = (() => {
       html += `<div class="tarjeta">${lectSuc ? `<div class="fila no-imprimir" style="margin-bottom:8px"><button class="btn primario fijo" onclick="App.zipGastos()">⬇️ Descargar XML y PDF de estas ${nf(r.facturas.length)} facturas (ZIP)</button></div>` : `<div class="fila no-imprimir" style="margin-bottom:8px"><label>Asignar las ${nf(r.facturas.length)} facturas mostradas a<select id="gAsigTodas"><option value="">Elige sucursal…</option>${optSucG('')}</select></label>
         <button class="btn fijo" onclick="App.asignarSucGastos(null)">Aplicar</button><button class="btn fijo" onclick="App.zipGastos()">⬇️ XML y PDF (ZIP)</button></div>`}
         <p class="muted">${nf(r.facturas.length)} facturas · ${$$(r.facturas.reduce((a, x) => a + x.monto, 0))} sin IVA · ${$$(r.facturas.reduce((a, x) => a + x.total, 0))} con IVA${r.sucursal ? ' · montos ponderados para ' + esc(sucNom(r.sucursal)) : ''}</p>` +
-        tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Categoría', h: x => !editaGas() ? esc(x.cat) + `<br><small class="muted">${esc(x.grupo || '')}</small>` : x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + ` <button class="icono no-imprimir" title="Cambiar la categoría de esta factura" onclick="App.editarCatGasto('${esc(x.uuid)}')">✏️</button><br><small class="muted">${esc(x.grupo)}</small>` },
+        tabla([{ t: 'Fecha', k: 'fecha' }, { t: 'Proveedor', h: x => `<b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Concepto', h: x => x.manual ? `${esc(x.cat)} <span class="etq">🧾 sin factura</span>${puedeManual() ? ` <button class="icono no-imprimir" title="Editar este gasto" onclick="App.formGastoManual('${esc(x.manual)}')">✏️</button>` : ''}<br><small class="muted">${esc(x.rubro || '')} · ${esc(x.grupo)}</small>` : !editaGas() ? esc(x.cat) + `<br><small class="muted">${esc(x.grupo || '')}</small>` : x.cat === 'POR CLASIFICAR' ? selCatGasto(x) : esc(x.cat) + ` <button class="icono no-imprimir" title="Cambiar la categoría de esta factura" onclick="App.editarCatGasto('${esc(x.uuid)}')">✏️</button><br><small class="muted">${esc(x.grupo)}</small>` },
           { t: 'Sin IVA', num: 1, h: x => $$(x.monto) }, { t: 'IVA', num: 1, cls: 'ocultar-movil', h: x => $$(x.iva) }, { t: 'Total', num: 1, h: x => $$(x.total) }, { t: 'Pago', k: 'metodo', cls: 'ocultar-movil' },
-          { t: 'Sucursal', h: (x) => lectSuc ? esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) : `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
+          { t: 'Sucursal', h: (x) => lectSuc || x.manual ? esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) : `<select class="chico" onchange="App.asignarSucGastos('${esc(x.uuid)}', this.value)">${optSucG(x.suc)}</select>${x.peso < 1 ? `<br><small class="muted">${(x.peso * 100).toFixed(1)}%</small>` : ''}` },
           ...(puede('equipo') ? [{ t: 'Empleado', cls: 'ocultar-movil', h: x => x.grupo === 'Operación' || x.grupo === 'Financiero' ? `<select class="chico" onchange="App.asignarEmpGasto('${esc(x.uuid)}', this.value)"><option value="">—</option>${(D().vendedores || []).filter(v => !/contador/i.test(v.rol || '')).map(v => `<option value="${esc(v.id)}" ${String(v.id) === String(x.emp || '') ? 'selected' : ''}>${esc(v.nombre)}</option>`).join('')}</select>` : '' }] : []),
-          { t: 'Factura', h: x => (x.credito ? `<button class="btn chico" title="Corrida financiera del crédito: renglón de este mes" onclick="App.abrirCredito('${esc(x.credito)}','${esc(x.fecha)}')">📑</button>` : '') + `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>${x.xml ? `<button class="btn chico" title="Descargar el XML" onclick="App.bajarXmlGasto('${esc(x.uuid)}')">XML</button>` : ''}` },
-          ...(lect ? [] : [{ t: 'Flete', h: x => x.flete ? `<button class="btn chico" style="color:var(--ok);border-color:var(--ok)" title="Flete ligado a ${x.flete} documento(s) (órdenes de compra / notas de venta)" onclick="App.fleteLigar('${esc(x.uuid)}')">🚚 ${x.flete}</button>`
+          { t: 'Factura', h: x => x.manual ? (x.archivo ? `<button class="btn chico" title="Ver comprobante" onclick="App.abrirArchivoDrive('${esc(x.archivo)}')">📎</button>` : '<small class="muted">—</small>') : (x.credito ? `<button class="btn chico" title="Corrida financiera del crédito: renglón de este mes" onclick="App.abrirCredito('${esc(x.credito)}','${esc(x.fecha)}')">📑</button>` : '') + `<button class="btn chico" title="${x.pdf ? 'Ver PDF' : x.xml ? 'Ver (armado con el XML)' : 'Sin archivos: súbelos'}" ${x.pdf || x.xml ? '' : 'style="opacity:.45"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄</button>${x.xml ? `<button class="btn chico" title="Descargar el XML" onclick="App.bajarXmlGasto('${esc(x.uuid)}')">XML</button>` : ''}` },
+          ...(lect ? [] : [{ t: 'Flete', h: x => x.manual ? '' : x.flete ? `<button class="btn chico" style="color:var(--ok);border-color:var(--ok)" title="Flete ligado a ${x.flete} documento(s) (órdenes de compra / notas de venta)" onclick="App.fleteLigar('${esc(x.uuid)}')">🚚 ${x.flete}</button>`
             : `<button class="btn chico" ${x.fleteSug ? 'title="Parece flete: ligarlo a sus compras o ventas"' : 'style="opacity:.4" title="Si es un flete que pagaste, ligarlo a sus compras o ventas"'} onclick="App.fleteLigar('${esc(x.uuid)}')">🚚${x.fleteSug ? ' Ligar' : ''}</button>` }]),
           { t: 'UUID', cls: 'ocultar-movil', h: x => `<small class="muted">${esc(String(x.uuid).slice(0, 8))}…</small>` }], r.facturas, { vacio: 'Sin facturas' }) + '</div>';
     } else if (tab === 'inversion') {
@@ -4841,7 +4865,7 @@ const App = (() => {
     S.tabGas = 'clasificar';
     const tb = (id, n) => `<button class="${id === 'clasificar' ? 'activo' : ''}" onclick="App.vistaGastos('${id}')">${n}</button>`;
     $('#vista').innerHTML = (conPestanas ? `<div class="pestanas">${pestanasGas('clasificar')}</div>` : '') +
-      `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>🏷️ Facturas de gastos por clasificar</b><br><small class="muted">Llegaron de proveedores nuevos (por correo o subidas) y no se les pudo poner categoría. Elige la categoría de cada una; si marcas "todas del proveedor", también se usa para las que lleguen después de ese mismo RFC. Mientras no tengan categoría cuentan como gastos de operación. Si es una <b>compra</b> a un proveedor (mercancía), toca "🧾 Es compra": se pasa a Compras y deja de contar como gasto.</small></div>
+      `<div class="tarjeta"><div class="fila"><div style="flex:3 1 280px"><b>🏷️ Facturas de gastos por clasificar</b><br><small class="muted">Llegaron de proveedores nuevos (por correo o subidas) y no se les pudo poner concepto. Elige el rubro › concepto de cada una; si marcas "todas de este proveedor", también se usa para las que lleguen después de ese mismo RFC. Mientras no tengan concepto cuentan como gastos de operación. Si es una <b>compra</b> a un proveedor (mercancía), toca "🧾 Es compra": se pasa a Compras y deja de contar como gasto.</small></div>
         <label>Buscar<input id="pcTxt" placeholder="Proveedor o RFC"></label></div></div><div class="espacio"></div><div id="pcRes"><div class="vacio">Cargando…</div></div>`;
     let r; try { r = S.porClasif = await pedir('gastosPorClasificar', {}); } catch (e) { if ($('#pcRes')) $('#pcRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
     S.catsGas = S.catsGas && S.catsGas.length ? S.catsGas : r.categorias.map(c => c.cat);
@@ -4854,13 +4878,15 @@ const App = (() => {
     const q = ($('#pcTxt') ? $('#pcTxt').value : '').trim().toLowerCase();
     const l = r.facturas.filter(x => !q || (x.emisor + ' ' + x.rfc).toLowerCase().indexOf(q) >= 0);
     const grupo = {}; r.categorias.forEach(c => grupo[c.cat] = c.grupo);
-    const optCats = sug => `<option value="">Elige categoría…</option>` + ['Operación', 'Financiero', 'Inversión', 'Excluir'].map(g => { const cs = r.categorias.filter(c => c.grupo === g); return cs.length ? `<optgroup label="${esc(g === 'Excluir' ? 'Excluir (personal / no es del negocio)' : g)}">${cs.map(c => `<option ${c.cat === sug ? 'selected' : ''}>${esc(c.cat)}</option>`).join('')}</optgroup>` : ''; }).join('') + `<option value="__nueva">+ Otra categoría…</option>`;
+    const conRub = r.categorias.some(c => c.rubro);
+    const optCats = sug => conRub ? optConceptos(r.categorias.map(c => ({ c: c.cat, r: c.rubro, i: c.icono, g: c.grupo })), sug, 'Elige concepto…') + `<option value="__nueva">+ Nuevo concepto…</option>`
+      : `<option value="">Elige categoría…</option>` + ['Operación', 'Financiero', 'Inversión', 'Excluir'].map(g => { const cs = r.categorias.filter(c => c.grupo === g); return cs.length ? `<optgroup label="${esc(g === 'Excluir' ? 'Excluir (personal / no es del negocio)' : g)}">${cs.map(c => `<option ${c.cat === sug ? 'selected' : ''}>${esc(c.cat)}</option>`).join('')}</optgroup>` : ''; }).join('') + `<option value="__nueva">+ Otra categoría…</option>`;
     el.innerHTML = !r.facturas.length ? '<div class="vacio">✔ No hay facturas por clasificar</div>' :
       `<p class="muted">${nf(r.total)} factura(s) por clasificar${l.length !== r.facturas.length ? ' · mostrando ' + nf(l.length) : ''}</p>` +
       l.map(x => `<div class="tarjeta" data-pc="${esc(x.uuid)}"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div style="flex:3 1 240px"><b>${esc(x.emisor)}</b><br><small class="muted">${esc(x.rfc)} · ${esc(x.fecha)}${x.metodo ? ' · ' + esc(x.metodo) : ''}</small>${x.concepto && x.concepto.trim() ? `<br><small>🧾 ${esc(x.concepto)}</small>` : ''}</div>
         <div style="text-align:right"><b>${$$(x.total)}</b><br><small class="muted">${$$(x.subtotal)} + IVA ${$$(x.iva)}</small></div></div>
-        <div class="fila" style="margin-top:8px"><label style="flex:3 1 240px">Categoría${x.sugerida ? ' <small class="muted">(sugerida por el historial del proveedor)</small>' : ''}<select data-cat>${optCats(x.sugerida)}</select></label>
+        <div class="fila" style="margin-top:8px"><label style="flex:3 1 240px">Rubro › Concepto${x.sugerida ? ' <small class="muted">(sugerida por el historial del proveedor)</small>' : ''}<select data-cat>${optCats(x.sugerida)}</select></label>
           <label class="check fijo"><input type="checkbox" data-todas checked> Todas de este proveedor</label>
           <button class="btn primario fijo" onclick="App.guardarClasif('${esc(x.uuid)}')">✔ Guardar</button>
           <button class="btn fijo" ${x.pdf || x.xml ? '' : 'disabled title="Sin archivos"'} onclick="App.verPdfGasto('${esc(x.uuid)}')">📄 PDF</button>
@@ -4876,21 +4902,173 @@ const App = (() => {
   async function guardarClasif(uuid) {
     const card = document.querySelector(`[data-pc="${CSS.escape(uuid)}"]`); if (!card) return;
     let cat = card.querySelector('[data-cat]').value, todas = card.querySelector('[data-todas]').checked;
-    if (!cat) return toast('Elige la categoría', true);
-    if (cat === '__nueva') { cat = (prompt('Nombre de la nueva categoría:') || '').trim().toUpperCase(); if (!cat) return; }
+    if (!cat) return toast('Elige el concepto', true);
+    if (cat === '__nueva') { cat = (prompt('Nombre del nuevo concepto (queda en el rubro «Otros gastos»; lo puedes mover en 🗂️ Catálogo):') || '').trim().toUpperCase(); if (!cat) return; }
     try {
       const r = await pedir('clasificarGasto', { uuid: uuid, categoria: cat, todasDelProveedor: todas });
       toast('✔ ' + r.cambiadas + ' factura(s) → ' + cat);
       const x = S.porClasif.facturas.find(f => f.uuid === uuid), rfc = x ? x.rfc : '';
       S.porClasif.facturas = S.porClasif.facturas.filter(f => f.uuid !== uuid && !(todas && f.rfc === rfc));
       S.porClasif.total = S.porClasif.facturas.length;
-      if (!S.porClasif.categorias.some(c => c.cat === cat)) S.porClasif.categorias.push({ cat: cat, grupo: 'Operación' });
+      if (!S.porClasif.categorias.some(c => c.cat === cat)) S.porClasif.categorias.push({ cat: cat, grupo: 'Operación', rubro: 'Otros gastos', icono: '📁' });
       S.datGasKey = ''; pintarPorClasificar();
     } catch (e) {}
   }
 
+  /* ---------- 🗂️ Catálogo de gastos (Rubro › Concepto) ---------- */
+  /** Opciones de concepto agrupadas por rubro. lista: [{ c, r, i, g }] */
+  const optConceptos = (lista, sel, vacio) => {
+    const rubs = []; (lista || []).forEach(x => { if (rubs.indexOf(x.r) < 0) rubs.push(x.r); });
+    return (vacio !== undefined ? `<option value="">${esc(vacio)}</option>` : '') + rubs.map(r => { const cs = lista.filter(x => x.r === r);
+      return `<optgroup label="${esc((cs[0].i || '') + ' ' + r)}">${cs.map(x => `<option value="${esc(x.c)}" ${x.c === sel ? 'selected' : ''}>${esc(x.c)}</option>`).join('')}</optgroup>`; }).join('');
+  };
+  const catGasL = () => (S.datGas && S.datGas.catalogo && S.datGas.catalogo.length ? S.datGas.catalogo : (S.gm && S.gm.conceptos) || []);
+  const chipGrupo = g => `<span class="etq gq-${g === 'Operación' ? 'op' : g === 'Financiero' ? 'fin' : g === 'Inversión' ? 'inv' : 'exc'}">${esc(g)}</span>`;
+  async function vistaCatalogoGasto() {
+    S.tabGas = 'catalogo';
+    $('#vista').innerHTML = `<div class="pestanas">${pestanasGas('catalogo')}</div><div id="ctgRes"><div class="vacio">Cargando…</div></div>`;
+    try { S.ctg = await pedir('catalogoGasto', {}); } catch (e) { $('#ctgRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    pintarCatalogoGasto();
+  }
+  function pintarCatalogoGasto() {
+    const C = S.ctg, ed = C.edita, rubs = [];
+    C.conceptos.forEach(c => { if (!rubs.some(r => r.rubro === c.rubro)) rubs.push({ rubro: c.rubro, icono: c.icono }); });
+    $('#ctgRes').innerHTML = `<div class="tarjeta"><div class="fila" style="align-items:center"><div style="flex:3 1 260px"><h3 style="margin:0">🗂️ Catálogo de gastos</h3>
+        <small class="muted">Cada factura o gasto sin factura lleva un <b>concepto</b>, y cada concepto pertenece a un <b>rubro</b>. El grupo del concepto decide cómo cuenta: Operación y Financiero se restan cada mes, Inversión se deprecia y Excluir no cuenta.${ed ? ' Toca un concepto para editarlo, moverlo de rubro o quitarlo; ✏️ junto al rubro le cambia el nombre.' : ''}</small></div>
+        ${ed ? `<button class="btn primario fijo" onclick="App.formConceptoGasto('', '__nuevo')">➕ Rubro</button><button class="btn fijo" onclick="App.formConceptoGasto('')">➕ Concepto</button>` : ''}</div></div>` +
+      `<div class="ctg-rejilla">` + rubs.map(R => { const cs = C.conceptos.filter(c => c.rubro === R.rubro), act = cs.filter(c => c.activo), gs = [...new Set(act.map(c => c.grupo))];
+        return `<div class="tarjeta ctg-rubro"><div class="ctg-cab"><b>${esc(R.icono)} ${esc(R.rubro)}</b> ${gs.map(chipGrupo).join(' ')}<span class="muted peq" style="margin-left:auto">${nf(act.length)} concepto${act.length === 1 ? '' : 's'}</span>
+            ${ed ? `<button class="icono" title="Cambiar nombre o ícono del rubro" onclick="App.formRubroGasto('${esc(R.rubro).replace(/'/g, "\\'")}')">✏️</button><button class="icono" title="Agregar un concepto a este rubro" onclick="App.formConceptoGasto('', '${esc(R.rubro).replace(/'/g, "\\'")}')">➕</button>` : ''}</div>` +
+          cs.map(c => `<div class="ctg-con${c.activo ? '' : ' inactivo'}${ed ? ' clic' : ''}" ${ed ? `onclick="App.formConceptoGasto('${esc(c.id)}')"` : ''}><span>${esc(c.concepto)}${c.activo ? '' : ' <span class="etq">desactivado</span>'}${gs.length > 1 || c.grupo !== gs[0] ? ' ' + chipGrupo(c.grupo) : ''}</span>
+            <small class="muted">${[c.n ? nf(c.n) + ' registro' + (c.n === 1 ? '' : 's') : 'sin uso', c.prov ? nf(c.prov) + ' proveedor' + (c.prov === 1 ? '' : 'es') + ' automático' + (c.prov === 1 ? '' : 's') : '', c.grupo === 'Inversión' && c.tasa !== '' ? c.tasa + ' % anual' : '', c.meses ? 'repartir en ' + c.meses + ' meses' : ''].filter(Boolean).join(' · ')}</small></div>`).join('') + '</div>';
+      }).join('') + '</div><p class="muted peq">«Proveedor automático»: las facturas nuevas de ese RFC se clasifican solas con ese concepto (lo aprende al clasificar en 🏷️ Por clasificar con «todas de este proveedor»).</p>';
+  }
+  /** Alta / edición de concepto. rubro = '__nuevo' para crear un rubro nuevo con su primer concepto. */
+  function formConceptoGasto(id, rubro) {
+    const C = S.ctg, c = id ? C.conceptos.find(x => x.id === id) : null, nuevoR = rubro === '__nuevo';
+    const rubs = [...new Set(C.conceptos.map(x => x.rubro))], r0 = c ? c.rubro : (nuevoR ? '' : rubro || rubs[0] || '');
+    const g0 = c ? c.grupo : ((C.conceptos.find(x => x.rubro === r0) || {}).grupo || 'Operación');
+    modal(c ? '✏️ Concepto de gasto' : nuevoR ? '➕ Nuevo rubro' : '➕ Nuevo concepto', `<div class="rejilla">
+        ${nuevoR ? `<label>Nombre del rubro<input id="cgRubro" placeholder="Ej. Servicios técnicos de campo"></label><label>Ícono del rubro<input id="cgIco" maxlength="4" placeholder="Ej. 🐄" style="max-width:120px"></label>`
+          : `<label>Rubro<select id="cgRubro">${rubs.map(r => `<option ${r === r0 ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select></label>`}
+        <label>${nuevoR ? 'Primer concepto del rubro' : 'Concepto'}<input id="cgNom" value="${esc(c ? c.concepto : '')}" placeholder="Ej. VETERINARIO DE CAMPO" style="text-transform:uppercase"></label>
+        <label>Grupo<select id="cgGrupo" onchange="App.cgGrupo()">${opts(C.grupos.map(g => [g, NOMBRE_G[g] || g]), g0)}</select></label>
+        <label id="cgTasaL">Depreciación % anual<input type="number" id="cgTasa" min="0" max="100" step="0.01" value="${c && c.tasa !== '' ? c.tasa : ''}" placeholder="auto (10 %)"></label>
+        <label id="cgMesesL" title="Pagos que cubren varios meses (p. ej. un seguro anual = 12)">Repartir cada pago en meses<input type="number" id="cgMeses" min="0" max="60" value="${c && c.meses ? c.meses : ''}" placeholder="—"></label>
+        <label>Nota<input id="cgNota" value="${esc(c ? c.notas : '')}" placeholder="Opcional"></label></div>
+      ${c ? `<label class="check"><input type="checkbox" id="cgAct" ${c.activo ? 'checked' : ''}> Activo (aparece en las listas para clasificar y capturar)</label>
+        <p class="muted peq">${c.n ? nf(c.n) + ' facturas o gastos usan este concepto. Si le cambias el nombre, se cambia también en ellos.' : 'Todavía nadie lo usa.'}</p>` : ''}
+      <div class="acciones">${c ? `<button class="btn peligro" onclick="App.quitarConceptoGasto('${esc(c.id)}')">Quitar</button>` : ''}<button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="cgBtn" onclick="App.guardarConceptoGasto('${esc(id || '')}', ${nuevoR ? 1 : 0})">💾 Guardar</button></div>`);
+    cgGrupo();
+  }
+  function cgGrupo() { const g = $('#cgGrupo').value; $('#cgTasaL').style.display = g === 'Inversión' ? '' : 'none'; $('#cgMesesL').style.display = g === 'Operación' || g === 'Financiero' ? '' : 'none'; }
+  async function guardarConceptoGasto(id, nuevoR) {
+    const c = id ? S.ctg.conceptos.find(x => x.id === id) : null;
+    const p = { id: id, rubro: $('#cgRubro').value.trim(), concepto: $('#cgNom').value.trim(), grupo: $('#cgGrupo').value, tasa: $('#cgTasa').value, meses: $('#cgMeses').value, notas: $('#cgNota').value,
+      activo: $('#cgAct') ? $('#cgAct').checked : true, icono: nuevoR ? $('#cgIco').value.trim() || '📁' : (c && c.rubro === $('#cgRubro').value ? c.icono : '') };
+    if (!p.rubro) return toast('Escribe el nombre del rubro', true);
+    if (!p.concepto) return toast('Escribe el nombre del concepto', true);
+    $('#cgBtn').disabled = true;
+    try { const r = await pedir('guardarConceptoGasto', p); cerrarModal(); toast('✔ Concepto guardado' + (r.renombradas ? ' · ' + r.renombradas + ' registros renombrados' : '')); S.datGasKey = ''; S.catsGas = null; vistaCatalogoGasto(); } catch (e) { $('#cgBtn').disabled = false; }
+  }
+  function formRubroGasto(rubro) {
+    const c = S.ctg.conceptos.find(x => x.rubro === rubro) || {};
+    modal('✏️ Rubro', `<div class="rejilla"><label>Nombre del rubro<input id="crgNom" value="${esc(rubro)}"></label><label>Ícono<input id="crgIco" maxlength="4" value="${esc(c.icono || '')}" style="max-width:120px"></label></div>
+      <p class="muted peq">Se cambia en todos sus conceptos. Para quitar un rubro, quita o mueve sus conceptos a otro rubro.</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarRubroGasto('${esc(rubro).replace(/'/g, "\\'")}')">💾 Guardar</button></div>`);
+  }
+  async function guardarRubroGasto(de) {
+    try { await pedir('renombrarRubroGasto', { de: de, a: $('#crgNom').value.trim(), icono: $('#crgIco').value.trim() }); cerrarModal(); toast('✔ Rubro actualizado'); S.datGasKey = ''; vistaCatalogoGasto(); } catch (e) {}
+  }
+  async function quitarConceptoGasto(id) {
+    const c = S.ctg.conceptos.find(x => x.id === id); if (!c) return;
+    if (!c.n) { if (!confirm('¿Quitar el concepto «' + c.concepto + '»? Nadie lo usa.')) return; return quitarConceptoOk(id, ''); }
+    const otros = S.ctg.conceptos.filter(x => x.activo && x.id !== id).map(x => ({ c: x.concepto, r: x.rubro, i: x.icono }));
+    modal('Quitar «' + esc(c.concepto) + '»', `<p>${nf(c.n)} facturas o gastos usan este concepto. ¿Qué hacemos con ellos?</p>
+      <label>Pasarlos a otro concepto<select id="qcDest">${optConceptos(otros, '', 'Elige…')}</select></label>
+      <div class="acciones"><button class="btn" onclick="App.quitarConceptoOk('${esc(id)}', '')">Solo desactivar (conservan su concepto)</button><button class="btn primario" onclick="App.quitarConceptoOk('${esc(id)}', document.getElementById('qcDest').value || '-')">Pasarlos y quitar</button></div>`);
+  }
+  async function quitarConceptoOk(id, dest) {
+    if (dest === '-') return toast('Elige a qué concepto pasarlos', true);
+    try { const r = await pedir('quitarConceptoGasto', { id: id, pasarA: dest }); cerrarModal(); toast('✔ Concepto ' + r.accion); S.datGasKey = ''; S.catsGas = null; vistaCatalogoGasto(); } catch (e) {}
+  }
+
+  /* ---------- 🧾 Gastos sin factura (nómina, caja chica, propinas…) ---------- */
+  const REPETIR_G = [['', 'No se repite'], ['semanal', 'Cada semana'], ['quincenal', 'Cada 15 días'], ['mensual', 'Cada mes']];
+  const FORMAS_G = ['Efectivo', 'Transferencia', 'Tarjeta', 'Cheque', 'Otro'];
+  async function vistaGastosManuales() {
+    S.tabGas = 'manual';
+    const h = hoyISO(), f = alDia(S.fgas || (S.fgas = { desde: h.slice(0, 8) + '01', hasta: h, hastaHoy: h, grupo: '', categoria: '', texto: '' }));
+    const todas = puede('dueno') || (U().todasSucursales);
+    $('#vista').innerHTML = `<div class="pestanas">${pestanasGas('manual')}</div>
+      <div class="tarjeta no-imprimir"><div class="fila">
+        <label>Desde<input type="date" id="gmDesde" value="${f.desde}"></label><label>Hasta<input type="date" id="gmHasta" value="${f.hasta}"></label>
+        ${todas ? `<label>Sucursal<select id="gmSuc">${opts(D().sucursales || [], f.sucursal || '', 'Todas')}</select></label>` : ''}
+        <button class="btn primario fijo" onclick="App.cargarGastosManuales()">Buscar</button>
+        <button class="btn fijo" onclick="App.formGastoManual('')">➕ Gasto sin factura</button></div>
+        <p class="muted peq" style="margin:6px 0 0">Nómina, caja chica, propinas y todo pago sin factura. Entran al estado de gastos igual que las facturas, con su rubro y concepto. Los que se repiten (cada semana, quincena o mes) cuentan una vez por periodo hasta la fecha que indiques o hasta que los quites.</p></div>
+      <div id="gmRes"><div class="vacio">Cargando…</div></div>`;
+    agregarMesAnio('gmDesde', 'gmHasta', cargarGastosManuales);
+    if ($('#gmSuc')) $('#gmSuc').onchange = cargarGastosManuales;
+    cargarGastosManuales();
+  }
+  async function cargarGastosManuales() {
+    const p = { desde: $('#gmDesde').value, hasta: $('#gmHasta').value, sucursal: $('#gmSuc') ? $('#gmSuc').value : '' };
+    S.fgas = Object.assign(S.fgas || {}, { desde: p.desde, hasta: p.hasta });
+    $('#gmRes').innerHTML = '<div class="vacio">Cargando…</div>';
+    try { S.gm = await pedir('gastosManuales', p); } catch (e) { $('#gmRes').innerHTML = '<div class="vacio">Requiere conexión.</div>'; return; }
+    const L = S.gm.gastos, repTxt = x => x.repetir ? `<span class="etq">🔁 ${esc((REPETIR_G.find(r => r[0] === x.repetir) || ['', x.repetir])[1].toLowerCase())}${x.hasta ? ' hasta ' + esc(x.hasta) : ''}</span><br><small class="muted">${nf(x.veces)} ${x.veces === 1 ? 'vez' : 'veces'} en el periodo</small>` : '';
+    $('#gmRes').innerHTML = `<div class="tarjeta"><p class="muted">${nf(L.length)} gasto(s) · <b>${$$(S.gm.total)}</b> en el periodo${S.gm.soloSuc ? ' · ' + esc(sucNom(S.gm.soloSuc)) : ''}</p>` +
+      tabla([{ t: 'Fecha', h: x => (x.repetir ? '<small class="muted">desde </small>' : '') + esc(x.fecha) + (x.repetir ? '<br>' + repTxt(x) : '') }, { t: 'Concepto', h: x => `<b>${esc(x.concepto)}</b><br><small class="muted">${esc(x.icono)} ${esc(x.rubro)}</small>` },
+        { t: 'Descripción', h: x => esc(x.desc) + (x.forma ? `<br><small class="muted">${esc(x.forma)}</small>` : '') }, { t: 'Sucursal', cls: 'ocultar-movil', h: x => esc(x.suc === 'PRORRATEO' ? 'Prorrateo' : sucNom(x.suc)) },
+        { t: 'Importe', num: 1, h: x => $$(x.monto) + (x.iva ? `<br><small class="muted">+ IVA ${$$(x.iva)}</small>` : '') },
+        { t: '', h: x => (x.archivo ? `<button class="btn chico" title="Ver comprobante" onclick="App.abrirArchivoDrive('${esc(x.archivo)}')">📎</button>` : '') +
+          `<button class="btn chico" onclick="App.formGastoManual('${esc(x.id)}')">✏️</button><button class="btn chico" onclick="App.quitarGastoManual('${esc(x.id)}')">🗑️</button>` }], L, { vacio: 'Sin gastos sin factura en el periodo' }) + '</div>';
+  }
+  async function formGastoManual(id) {
+    if (!S.gm || (id && !S.gm.gastos.some(x => x.id === id))) { try { S.gm = await pedir('gastosManuales', {}); } catch (e) { return; } }
+    const x = id ? S.gm.gastos.find(g => g.id === id) || {} : {}, todas = puede('dueno') || U().todasSucursales;
+    modal(id ? '✏️ Gasto sin factura' : '➕ Gasto sin factura', `<div class="rejilla">
+        <label>Fecha<input type="date" id="gmF" value="${x.fecha ? x.fecha.split('/').reverse().join('-') : hoyISO()}"></label>
+        <label>Rubro › Concepto<select id="gmCon">${optConceptos(S.gm.conceptos, x.concepto || '', 'Elige…')}</select></label>
+        ${todas ? `<label>Sucursal<select id="gmSucF"><option value="PRORRATEO" ${x.suc === 'PRORRATEO' ? 'selected' : ''}>Prorrateo (% de ventas)</option>${(D().sucursales || []).map(s => `<option value="${esc(s.id)}" ${s.id === (x.suc || U().sucursal) ? 'selected' : ''}>${esc(s.nombre)}</option>`).join('')}</select></label>`
+          : `<label>Sucursal<input value="${esc(sucNom(U().sucursal))}" disabled></label>`}
+        <label>Descripción<input id="gmDesc" value="${esc(x.desc || '')}" placeholder="Ej. Nómina semana 47 (3 empleados)"></label>
+        <label>Importe (sin IVA) $<input type="number" id="gmMonto" min="0" step="0.01" value="${x.monto || ''}"></label>
+        <label>IVA $ <small class="muted">(si aplica)</small><input type="number" id="gmIva" min="0" step="0.01" value="${x.iva || ''}" placeholder="0"></label>
+        <label>Pagado con<select id="gmForma">${opts(FORMAS_G.map(v => [v, v]), x.forma || 'Efectivo')}</select></label>
+        <label>Repetir<select id="gmRep" onchange="App.gmRep()">${opts(REPETIR_G, x.repetir || '')}</select></label>
+        <label id="gmHastaL">Repetir hasta <small class="muted">(vacío = sin fin)</small><input type="date" id="gmHastaF" value="${x.hasta ? x.hasta.split('/').reverse().join('-') : ''}"></label>
+        <label>Comprobante (foto o PDF, opcional)<input type="file" id="gmArch" accept="image/*,application/pdf,.pdf"></label></div>
+      ${x.archivo ? `<p class="peq">📎 Ya tiene comprobante: <a href="#" onclick="App.abrirArchivoDrive('${esc(x.archivo)}');return false">verlo</a> · <label class="check" style="display:inline-flex"><input type="checkbox" id="gmQuitarA"> quitarlo</label></p>` : ''}
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" id="gmBtn" onclick="App.guardarGastoManual('${esc(id || '')}')">💾 Guardar gasto</button></div>`);
+    gmRep();
+  }
+  function gmRep() { $('#gmHastaL').style.display = $('#gmRep').value ? '' : 'none'; }
+  async function guardarGastoManual(id) {
+    const f = $('#gmArch').files[0];
+    const p = { id: id, fecha: $('#gmF').value, concepto: $('#gmCon').value, sucursal: $('#gmSucF') ? $('#gmSucF').value : '', descripcion: $('#gmDesc').value, monto: $('#gmMonto').value, iva: $('#gmIva').value,
+      forma: $('#gmForma').value, repetir: $('#gmRep').value, hasta: $('#gmRep').value ? $('#gmHastaF').value : '', quitarArchivo: $('#gmQuitarA') ? $('#gmQuitarA').checked : false };
+    if (!p.concepto) return toast('Elige el concepto', true);
+    if (!(Number(p.monto) > 0)) return toast('Pon el importe', true);
+    if (f) { if (f.size > 12e6) return toast('El comprobante pesa más de 12 MB', true); p.archivo = await leerArchivo(f); p.archivoNombre = f.name; }
+    $('#gmBtn').disabled = true;
+    try { await pedir('guardarGastoManual', p); cerrarModal(); toast('✔ Gasto guardado'); S.datGasKey = '';
+      if ($('#gmRes')) cargarGastosManuales(); else if ($('#gRes')) cargarGastos(); } catch (e) { $('#gmBtn').disabled = false; }
+  }
+  async function quitarGastoManual(id) {
+    const x = (S.gm.gastos || []).find(g => g.id === id); if (!x) return;
+    if (x.repetir) return modal('Quitar gasto que se repite', `<p><b>${esc(x.concepto)}</b> · ${$$(x.monto)} ${esc((REPETIR_G.find(r => r[0] === x.repetir) || ['', ''])[1].toLowerCase())}</p>
+      <div class="acciones"><button class="btn" onclick="App.quitarGastoManualOk('${esc(id)}', true)">Dejar de repetir desde hoy (lo anterior se queda)</button><button class="btn peligro" onclick="App.quitarGastoManualOk('${esc(id)}', false)">Quitarlo por completo</button></div>`);
+    if (!confirm('¿Quitar este gasto de ' + $$(x.monto) + '? Deja de contar en los gastos (el registro se conserva en la hoja).')) return;
+    quitarGastoManualOk(id, false);
+  }
+  async function quitarGastoManualOk(id, soloFuturo) {
+    try { await pedir('quitarGastoManual', { id: id, soloFuturo: soloFuturo }); cerrarModal(); toast(soloFuturo ? '✔ Ya no se repite' : '✔ Gasto quitado'); S.datGasKey = ''; if ($('#gmRes')) cargarGastosManuales(); else if ($('#gRes')) cargarGastos(); } catch (e) {}
+  }
+
   /* ---------- Facturas de gastos: subir, correo, ver PDF, clasificar ---------- */
-  const selCatGasto = x => `<select class="chico" style="border-color:var(--aviso)" onchange="App.clasificarGasto('${esc(x.uuid)}', this.value, '${esc(x.emisor).replace(/'/g, "\\'")}')"><option value="">🏷️ Por clasificar…</option>${(S.catsGas || []).filter(c => c !== 'POR CLASIFICAR').map(c => `<option>${esc(c)}</option>`).join('')}<option value="__nueva">+ Otra categoría…</option></select>`;
+  const selCatGasto = x => `<select class="chico" style="border-color:var(--aviso)" onchange="App.clasificarGasto('${esc(x.uuid)}', this.value, '${esc(x.emisor).replace(/'/g, "\\'")}')">${catGasL().length ? optConceptos(catGasL(), '', '🏷️ Por clasificar…') : '<option value="">🏷️ Por clasificar…</option>' + (S.catsGas || []).filter(c => c !== 'POR CLASIFICAR').map(c => `<option>${esc(c)}</option>`).join('')}<option value="__nueva">+ Nuevo concepto…</option></select>`;
   async function clasificarGasto(uuid, cat, emisor) {
     if (!cat) return;
     if (cat === '__nueva') { cat = (prompt('Nombre de la nueva categoría:') || '').trim().toUpperCase(); if (!cat) return; }
@@ -4903,8 +5081,8 @@ const App = (() => {
     const base = ['EQUIPO DE OFICINA', 'EQUIPO DE COMPUTO', 'MOBILIARIO', 'HERRAMIENTA Y EQUIPO'];
     const cats = [...new Set((S.catsGas || []).concat(base))].filter(c => c && c !== 'POR CLASIFICAR' && !/^FLETE DE (COMPRAS|VENTAS)/.test(c)).sort();
     modal('Cambiar categoría', `<p><b>${esc(x.emisor)}</b> · ${esc(x.fecha)} · ${$$(x.monto)} sin IVA</p>
-      <p class="muted peq">Categoría actual: <b>${esc(x.cat)}</b> (${esc(x.grupo)}). Solo cambia esta factura. El grupo (Operación, Inversión, Financiero o Excluir) lo define la categoría en Configuración › Grupos de gasto; por ejemplo EQUIPO DE OFICINA y EQUIPO DE COMPUTO son Inversión y se deprecian en lugar de restarse en el mes.</p>
-      <div class="rejilla"><label>Nueva categoría<select id="ecCat" onchange="document.getElementById('ecOtraL').style.display = this.value === '__nueva' ? '' : 'none'">${cats.map(c => `<option ${c === x.cat ? 'selected' : ''}>${esc(c)}</option>`).join('')}<option value="__nueva">+ Otra categoría…</option></select></label>
+      <p class="muted peq">Categoría actual: <b>${esc(x.cat)}</b> (${esc(x.grupo)}). Solo cambia esta factura. El grupo (Operación, Inversión, Financiero o Excluir) lo define el concepto en Gastos › 🗂️ Catálogo; por ejemplo EQUIPO DE OFICINA y EQUIPO DE COMPUTO son Inversión y se deprecian en lugar de restarse en el mes.</p>
+      <div class="rejilla"><label>Nuevo concepto<select id="ecCat" onchange="document.getElementById('ecOtraL').style.display = this.value === '__nueva' ? '' : 'none'">${catGasL().length ? optConceptos(catGasL(), x.cat) : cats.map(c => `<option ${c === x.cat ? 'selected' : ''}>${esc(c)}</option>`).join('')}<option value="__nueva">+ Nuevo concepto…</option></select></label>
         <label id="ecOtraL" style="display:none">Nombre de la categoría<input id="ecOtra" placeholder="Ej. EQUIPO DE OFICINA"></label></div>
       <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarCatGasto('${esc(uuid)}')">Guardar</button></div>`);
   }
@@ -7005,7 +7183,11 @@ const App = (() => {
       { h: '🔍 Desglose de los cuadros', b: [['p', 'Los cuadros con 🔍 (en Inicio y en Sucursales > Resumen) se pueden tocar: se abre de qué se forma la cifra.'],
         ['ul', ['Pestañas para agruparla: sucursal, vendedor, cliente, categoría, producto (y dentro de cada producto, sus presentaciones), laboratorio, mes, forma de pago, antigüedad, proveedor o motivo, según el cuadro.', 'Ventas > 📦 Por producto: el mismo desglose para el periodo que elijas, empezando por producto; toca uno para ver sus presentaciones.', 'En Ventas, Cobranza y Compras los cuadros de arriba filtran la lista de abajo (p. ej. Por cobrar del periodo, Por reportar, una forma de pago, Por pagar del periodo). Tócalo otra vez o ✕ Ver todas para quitar el filtro.', 'Toca un renglón para entrar a él y seguir analizando: p. ej. Ventas netas > Champotón > un vendedor > sus clientes. Las migas de arriba te regresan a cualquier nivel.', 'La última pestaña lista los registros (notas, cobros, órdenes, lotes, clientes); toca uno para abrirlo.', 'Comparación contra el mismo periodo del año anterior, ⬇️ Excel con todas las agrupaciones y 🧮 Cómo se calcula.', 'Cada perfil ve lo mismo que en el tablero: el costo real y sus márgenes solo el Administrador; el gerente de sucursal ve utilidad, mermas e inventario a su precio asignado (lo indica el desglose); los empleados no ven costos ni márgenes; cada sucursal solo lo suyo.']]] }] },
     { t: '6. Administración', p: () => esGerM() || puede('equipo'), g: [
-      { h: 'Gastos', p: esJefeM, b: [['p', 'Las facturas de gastos llegan solas desde el correo o se suben (XML, PDF o ZIP del SAT). En Por clasificar se asigna categoría y sucursal; el estado de gastos sale por mes y categoría.']] },
+      { h: 'Gastos', p: esJefeM, b: [['p', 'Las facturas de gastos llegan solas desde el correo o se suben (XML, PDF o ZIP del SAT). En Por clasificar se les asigna su rubro › concepto y sucursal; el estado de gastos sale por rubro, concepto y mes.']] },
+      { h: '🗂️ Catálogo de gastos (rubros y conceptos)', p: () => puede('dueno') || puede('clasificar_gastos'), b: [['p', 'Gastos › 🗂️ Catálogo. Cada gasto lleva un concepto (GASOLINA, RENTA, SUELDOS…) y cada concepto pertenece a un rubro (Vehículos y reparto, Instalaciones, Personal…).'],
+        ['ul', ['➕ Rubro: crea un rubro nuevo con su primer concepto. ➕ Concepto: agrega un concepto a un rubro.', 'Toca un concepto para cambiarle el nombre, moverlo de rubro, cambiar su grupo (Operación, Financiero, Inversión o Excluir), su tasa de depreciación o en cuántos meses se reparte cada pago. Si le cambias el nombre, también cambia en sus facturas.', '✏️ junto a un rubro: le cambia el nombre o el ícono.', 'Quitar: si nadie lo usa se borra; si ya tiene facturas, las pasas a otro concepto o solo lo desactivas (sus facturas conservan su concepto y tus reportes no cambian).', 'En 🏷️ Por clasificar eliges el rubro › concepto; con «Todas de este proveedor» sus facturas futuras se clasifican solas.', 'En Estado de gastos, «Gastos por rubro» muestra los totales con barras: abre un rubro para ver sus conceptos y toca un concepto para ver sus facturas.']]] },
+      { h: '🧾 Gastos sin factura', p: () => puede('dueno') || puede('capturar_gastos'), b: [['p', 'Gastos › 🧾 Sin factura (o el botón ➕ Gasto sin factura): nómina, caja chica, propinas y todo pago sin CFDI.'],
+        ['ul', ['Captura fecha, rubro › concepto, sucursal, descripción, importe (y el IVA si aplica), cómo se pagó y, si quieres, una foto o PDF del comprobante.', 'Repetir cada semana, cada 15 días o cada mes: cuenta una vez por periodo hasta la fecha que indiques o hasta que lo quites (por ejemplo la nómina o la renta).', 'Entran al estado de gastos igual que las facturas y aparecen en Facturas con la etiqueta «🧾 sin factura».', 'Quitar un gasto que se repite: «Dejar de repetir desde hoy» conserva lo anterior; «Quitarlo por completo» lo saca de todos los periodos.', 'Permiso «Capturar gastos sin factura» (Configuración › Permisos): quien no ve todas las sucursales, por ejemplo un gerente, solo captura y ve los de su sucursal.']]] },
       { h: 'Bancos y Contable', p: esJefeM, b: [['p', 'Cuentas, cajas, comprobantes y conciliación; reportes para la contadora por periodo.']] },
       { h: 'Comisiones', p: 'dueno', b: [['p', 'Comisiones por vendedor o comisionista según lo vendido o lo cobrado.']] },
       { h: 'Equipo', p: 'equipo', b: [['ul', ['Cada persona con su venta, cobranza, cartera, metas y comisión.', '➕ Alta de empleado: nombre, usuario, contraseña inicial, celular, perfil (Vendedor, Almacenista o Gerente Sucursal), sucursal, sueldo y meta. Hecha por el dueño queda activa al instante; hecha por un gerente va a Por autorizar.']]] },
@@ -16545,7 +16727,7 @@ const App = (() => {
   function pintarGrupos() {
     const g = S.grupos;
     $('#cfGrupos').innerHTML = `<div class="tabla-cont"><table><thead><tr><th>Tipo</th><th>Emisor contiene / Categoría</th><th>Grupo</th><th>Depreciación % anual</th><th title="Pagos que cubren varios meses (seguro anual): se reparten en partes iguales">Repartir en meses</th><th>Nota</th><th></th></tr></thead><tbody>
-      ${g.filas.map((f, i) => `<tr data-i="${i}"><td><select data-f="tipo">${opts([['Emisor', 'Emisor'], ['Categoria', 'Categoría']], f.tipo)}</select></td>
+      ${g.filas.map((f, i) => `<tr data-i="${i}"><td>${g.catalogo ? '<small>Proveedor</small>' : `<select data-f="tipo">${opts([['Emisor', 'Emisor'], ['Categoria', 'Categoría']], f.tipo)}</select>`}</td>
         <td><input data-f="valor" value="${esc(f.valor)}"></td><td><select data-f="grupo">${opts(g.grupos.map(x => [x, x]), f.grupo)}</select></td>
         <td>${f.grupo === 'Inversión' ? `<input type="number" data-f="tasa" style="width:80px" placeholder="auto" value="${f.tasa === '' || f.tasa === undefined ? '' : f.tasa}">` : '<small class="muted">—</small>'}</td>
         <td>${f.grupo !== 'Inversión' && f.grupo !== 'Excluir' ? `<input type="number" data-f="meses" style="width:70px" min="0" max="60" placeholder="—" value="${f.meses || ''}">` : '<small class="muted">—</small>'}</td>
@@ -17354,7 +17536,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, ptsCanjeForm, ptsCanjear, cbMonedero, desglose, ventasProd, kFiltro, bajarArchivoVisto, abrirArchivoDrive, dgTab, dgMiga, dgEntrar, dgAbrir, dgExcel, ptsAjusteForm, ptsAjustar, ptsCfgForm, ptsCfgGuardar, ptsOfFila, ptsOfQuitar, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, ptsCanjeForm, ptsCanjear, cbMonedero, desglose, ventasProd, kFiltro, bajarArchivoVisto, abrirArchivoDrive, dgTab, dgMiga, dgEntrar, dgAbrir, dgExcel, ptsAjusteForm, ptsAjustar, ptsCfgForm, ptsCfgGuardar, ptsOfFila, ptsOfQuitar, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, vistaCatalogoGasto, formConceptoGasto, cgGrupo, guardarConceptoGasto, formRubroGasto, guardarRubroGasto, quitarConceptoGasto, quitarConceptoOk, vistaGastosManuales, cargarGastosManuales, formGastoManual, gmRep, guardarGastoManual, quitarGastoManual, quitarGastoManualOk, filtrarCatGasto, pdfGastos, formComprobantes, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, ventaNuevaPara, corregirClienteNota, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,

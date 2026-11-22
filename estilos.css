@@ -171,6 +171,24 @@ label.con-ico::after { content: attr(data-ico); position: absolute; left: 12px; 
 .fsec > h4 { margin: 0 0 10px; font-size: 15px; font-weight: 700; color: var(--texto); }
 .fsec-arch { margin: 0 0 10px; }
 .fsec-arch > * { max-width: 520px; }
+.etq.gq-op { background: var(--marca-suave); color: var(--marca); } .etq.gq-fin { background: #e7effb; color: var(--info); }
+.etq.gq-inv { background: var(--aviso-suave); color: var(--aviso); } .etq.gq-exc { background: var(--peligro-suave); color: var(--peligro); }
+.ctg-rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.ctg-rejilla .tarjeta { margin: 0; }
+.ctg-cab { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; font-size: 15px; }
+.ctg-con { display: flex; flex-direction: column; gap: 1px; padding: 7px 4px 7px 12px; border-top: 1px dashed var(--borde); font-size: 13.5px; border-radius: 6px; }
+.ctg-con.clic { cursor: pointer; } .ctg-con.clic:hover { background: var(--superficie-2); }
+.ctg-con.inactivo { opacity: .55; }
+details.rub-g { border-top: 1px solid var(--borde); }
+details.rub-g > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 9px 2px; align-items: center; }
+details.rub-g > summary::-webkit-details-marker { display: none; }
+details.rub-g > summary .rub-n { font-weight: 700; } details.rub-g > summary .rub-n::before { content: '▸ '; color: var(--texto-3); }
+details.rub-g[open] > summary .rub-n::before { content: '▾ '; }
+.rub-b { grid-column: 1 / -1; height: 8px; border-radius: 5px; background: var(--superficie-2); overflow: hidden; display: block; }
+.rub-b > span { display: block; height: 100%; background: var(--marca); border-radius: 5px; }
+details.rub-g > summary small { grid-column: 1 / -1; }
+.rub-c { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 6px 4px 6px 20px; border-top: 1px dashed var(--borde); font-size: 13.5px; align-items: center; }
+.rub-c.clic { cursor: pointer; } .rub-c.clic:hover { background: var(--superficie-2); }
 .fsec-1 { background: rgba(66,133,224,.09); border-color: rgba(66,133,224,.35); }
 .fsec-2 { background: rgba(240,190,40,.09); border-color: rgba(240,190,40,.38); }
 .fsec-3 { background: rgba(46,158,91,.09); border-color: rgba(46,158,91,.35); }
