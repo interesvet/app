@@ -165,7 +165,7 @@ textarea { min-height: 70px; resize: vertical; }
 .det-calc summary { cursor: pointer; }
 /* 🖼️ formatos de captura: ícono dentro del campo + secciones de color */
 label.con-ico { position: relative; }
-label.con-ico > input, label.con-ico > select { padding-left: 40px !important; }
+label.con-ico > input { padding-left: 40px !important; }
 label.con-ico::after { content: attr(data-ico); position: absolute; left: 12px; bottom: 0; height: var(--alto-campo, 42px); display: flex; align-items: center; font-size: 17px; line-height: 1; pointer-events: none; }
 .fsec { border: 1px solid var(--borde); border-radius: 14px; padding: 10px 14px 14px; margin: 0 0 12px; }
 .fsec > h4 { margin: 0 0 10px; font-size: 15px; font-weight: 700; color: var(--texto); }

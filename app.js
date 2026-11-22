@@ -1286,6 +1286,9 @@ const App = (() => {
       let ult = l.lastElementChild; while (ult && ult.tagName === 'DATALIST') ult = ult.previousElementSibling; if (ult !== el) return;   /* solo si el campo es lo último de la etiqueta */
       const t = Array.from(l.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(' ').replace(/\*/g, '').trim(); if (!t || /^[\p{Extended_Pictographic}]/u.test(t)) return;
       const m = ICO_CAMPO.find(x => x[0].test(t)); if (!m || !m[1]) return;
+      if (el.tagName === 'SELECT') {   /* Safari no respeta el margen interno de las listas: el ícono va junto a la etiqueta */
+        const tn = Array.from(l.childNodes).find(n => n.nodeType === 3 && n.textContent.trim()); if (tn) tn.textContent = m[1] + ' ' + tn.textContent.replace(/^\s+/, '');
+        return; }
       l.classList.add('con-ico'); l.dataset.ico = m[1]; if (el.offsetHeight > 0) l.style.setProperty('--alto-campo', el.offsetHeight + 'px');
     });
   }
