@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 372, f: '22/11/2026', t: [{ x: '📄 Portafolio de productos con diseño nuevo: portada con foto y líneas de producto, presentación del laboratorio, índice con íconos y dos productos por hoja (foto alternada a la izquierda y a la derecha), con número de página en el pie.', p: '' }] },
     { v: 371, f: '22/11/2026', t: [{ x: '📊 Clasificación contable de gastos: cada concepto ya dice si es gasto de venta, de administración o financiero; fijo o variable, y directo o indirecto (los indirectos de Matriz se reparten entre sucursales). En Inicio, el estado de resultados por función y el ⚖️ punto de equilibrio.', p: '' }] },
     { v: 370, f: '22/11/2026', t: [{ x: '🗂️ Catálogo de gastos: cada gasto lleva rubro › concepto (Personal, Instalaciones, Vehículos y reparto, Viáticos…). Tú agregas, editas, mueves o quitas rubros y conceptos en Gastos › 🗂️ Catálogo, y el estado de gastos muestra los totales por rubro.', p: '' }, { x: '🧾 Gastos sin factura: nómina, caja chica, propinas… con su comprobante, y los que se repiten cada semana, quincena o mes.', p: '' }] },
     { v: 369, f: '22/11/2026', t: [{ x: '📄 Cotizaciones y estados de cuenta en PDF como la nota: pie de página y logotipo de fondo en cada hoja, se compactan para caber en una sola si se pasan poco, y si son largos llevan «Página 1 de 2» y repiten los encabezados de la tabla (también la nota de venta).', p: '' }] },
@@ -7207,6 +7208,8 @@ const App = (() => {
         ['ol', ['Gerente: le llega un correo. Abre Sucursales → 🧾 Cortes quincenales, revisa, puede ⟳ Recalcular y toca ✔ Autorizar y enviar.', 'Dueño / administrador: revisa y toca ✔ Aprobar o ↩️ Regresar con observaciones (vuelve al gerente).', 'Pago: 💵 Registrar pago con monto, forma, cuenta y comprobante. Con pagos parciales queda Parcial; liquidado, Pagado.']],
         ['p', '👁️ Ver cómo va el periodo actual muestra el corte en curso antes de la fecha.'], ['p', '➕ Armar un corte a mano sirve para otro periodo; ⚙️ Configurar activa el armado automático y excluye sucursales que no pagan corte.', esJefeM]] },
       { h: 'Productos', p: 'inventario', b: [['p', 'Catálogo con claves, presentaciones, unidades de venta, precios por lista y control de lote y caducidad.'], ['p', 'Altas, bajas y cambios de productos; desde la Matriz de precios se dan de alta productos nuevos en bloque.', 'productos_editar']] },
+      { h: '📄 Portafolio de productos en PDF', p: 'listas_precios', b: [['p', 'Productos › 📄 Portafolio: elige laboratorios, categorías o productos y genera el PDF (hoja carta).'],
+        ['ul', ['Portada con tu logotipo y el del laboratorio, número de productos y mes, foto de animales y las líneas de producto con su ícono; abajo, los datos de Matriz.', 'Presentación del laboratorio (si su proveedor tiene «Acerca de…»): su texto, productos, líneas, sitio web y origen.', 'Índice con cada línea, su ícono, número de productos y página.', 'Productos: dos por hoja cuando caben (el de arriba con la foto a la izquierda y el de abajo a la derecha); el que trae mucha información va solo en su hoja. Cada uno con su barra de nombre y claves, Laboratorio, Registro y Especies, Presentación, y Descripción, Indicaciones, Dosis, Tiempo de retiro y Advertencias completas.', 'Encabezado verde con los dos logotipos y pie con el número de página en cada hoja.', 'La foto de la portada es el archivo portafolio_portada.jpg de la carpeta «App Ventas Interes Veterinario» en Drive; para cambiarla, reemplaza ese archivo.']]] },
       { h: 'Compras', p: 'compras', b: [['ul', ['Órdenes de compra: proveedor, productos, cantidades y costos; al recibir, captura lote y caducidad y la mercancía entra al inventario.', 'Pagos a proveedores: registra pagos y saldos por pagar.', 'Facturas de proveedores: los CFDI que llegan por correo o se suben se ligan a la compra.', 'Pedido sugerido: qué comprar según venta, existencia y tiempo de entrega.']]] },
       { h: 'Proveedores', p: 'proveedores', b: [['p', 'Alta, datos fiscales, contactos, condiciones de pago y estado de cuenta.']] },
       { h: 'Reclamaciones', p: 'reclamaciones', b: [['p', 'Captura reclamaciones de clientes (producto dañado, faltante, error de surtido). El administrador dictamina si procede y aplica nota de crédito, reembolso o reposición.']] }] },
@@ -11361,15 +11364,18 @@ const App = (() => {
     const n = lista.grupos.length, SEC = lista.secciones || [];
     // ---- por partes: portada (+ "Acerca de…"), índice y cada categoría en hoja nueva; luego se numeran las hojas
     const comun = { parte: true, todosLabs: lista.todosLabs, todosCats: lista.todosCats, total: n, titulo: lista.titulo };
-    const trozos = []; SEC.forEach((s, si) => { for (let i = 0; i < s.grupos.length; i += PORT_LOTE) trozos.push({ si: si, orden: [].concat.apply([], s.grupos.slice(i, i + PORT_LOTE)), nCat: s.n }); });
+    const trozos = []; SEC.forEach((s, si) => { for (let i = 0; i < s.grupos.length; i += PORT_LOTE) trozos.push({ si: si, orden: [].concat.apply([], s.grupos.slice(i, i + PORT_LOTE)), nCat: s.n, continua: i > 0 }); });
     try {
       const PL = await cargarPdfLib(), cargar = async b => PL.PDFDocument.load(b64aBytes(b));
       prog('Armando la portada…', 31);
       const portada = await cargar((await pedir('pdfCatalogo', Object.assign({ tipo: 'portada', labs: C.labs, cats: C.cats, ids: ids }, comun))).b64);
+      /* presentación del laboratorio ("Acerca de…"): parte aparte; si el laboratorio no la tiene, no hay hoja */
+      let acerca = null;
+      try { const ra = await pedir('pdfCatalogo', Object.assign({ tipo: 'acerca', labs: C.labs, cats: C.cats, ids: ids }, comun)); if (ra && ra.b64) acerca = await cargar(ra.b64); } catch (e) { acerca = null; }
       const cuerpos = new Array(trozos.length); let hechos = 0;
       for (let k = 0; k < trozos.length; k += 3) {          // de 3 en 3 al mismo tiempo
         await Promise.all(trozos.slice(k, k + 3).map(async (t, q) => {
-          const r = await pedir('pdfCatalogo', Object.assign({ tipo: 'cuerpo', orden: t.orden, nCat: t.nCat, pie: k + q === trozos.length - 1 }, comun));
+          const r = await pedir('pdfCatalogo', Object.assign({ tipo: 'cuerpo', orden: t.orden, nCat: t.nCat, continua: t.continua, pie: k + q === trozos.length - 1 }, comun));
           cuerpos[k + q] = await cargar(r.b64); hechos++; prog('Armando el PDF: ' + hechos + ' de ' + trozos.length + ' partes…', 33 + 45 * hechos / trozos.length);
         }));
       }
@@ -11377,7 +11383,7 @@ const App = (() => {
       const pagSec = SEC.map(() => 0); trozos.forEach((t, k) => pagSec[t.si] += cuerpos[k].getPageCount());
       let nIdx = 1, idx = null;
       for (let vuelta = 0; vuelta < 3; vuelta++) {
-        let pag = portada.getPageCount() + nIdx + 1;
+        let pag = portada.getPageCount() + (acerca ? acerca.getPageCount() : 0) + nIdx + 1;
         const items = SEC.map((s, si) => { const x = { lab: s.lab, cat: s.cat, n: s.n, pag: pag }; pag += pagSec[si]; return x; });
         prog('Armando el índice…', 80);
         idx = await cargar((await pedir('pdfCatalogo', Object.assign({ tipo: 'indice', indice: items }, comun))).b64);
@@ -11385,11 +11391,11 @@ const App = (() => {
       }
       prog('Uniendo las partes…', 84);
       const doc = await PL.PDFDocument.create();
-      for (const src of [portada, idx].concat(cuerpos)) (await doc.copyPages(src, src.getPageIndices())).forEach(pg => doc.addPage(pg));
-      // número de página (menos en la portada)
-      const fuente = await doc.embedFont(PL.StandardFonts.Helvetica), gris = PL.rgb(0.42, 0.45, 0.4);
-      doc.getPages().forEach((pg, i) => { if (!i) return; const t = String(i + 1), w = fuente.widthOfTextAtSize(t, 9);
-        pg.drawText(t, { x: pg.getWidth() - 34 - w, y: 20, size: 9, font: fuente, color: gris }); });
+      for (const src of [portada].concat(acerca ? [acerca] : [], [idx], cuerpos)) (await doc.copyPages(src, src.getPageIndices())).forEach(pg => doc.addPage(pg));
+      /* número de página (menos en la portada): en blanco, dentro del óvalo verde del pie (el servidor lo dibuja a 28 px de la derecha y 13 px del borde, 46 × 24 px) */
+      const fuente = await doc.embedFont(PL.StandardFonts.HelveticaBold), blanco = PL.rgb(1, 1, 1);
+      doc.getPages().forEach((pg, i) => { if (!i) return; const k = pg.getWidth() / 816, t = String(i + 1), tam = 10, w = fuente.widthOfTextAtSize(t, tam);
+        pg.drawText(t, { x: (816 - 28 - 23) * k - w / 2, y: (13 + 12) * k - tam * 0.36, size: tam, font: fuente, color: blanco }); });
       doc.setTitle('Portafolio de productos — Interés Veterinario®'); doc.setAuthor('Interés Veterinario®');
       const bytes = await doc.save(), nombre = (/^Portafolio/.test(lista.titulo) ? '' : 'Portafolio ') + String(lista.titulo).slice(0, 60) + ' ' + hoyISO();
       const local = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
