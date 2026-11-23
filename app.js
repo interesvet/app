@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 380, f: '23/11/2026', t: [{ x: '💲 Vendedores: si bajan el precio de la lista del cliente, la nota se registra y llega a Por autorizar. Pueden dar de alta y editar los clientes de su sucursal (la baja, lista y crédito siguen siendo del administrador).', p: '' }] },
     { v: 379, f: '23/11/2026', t: [{ x: '🛰️ Facturas recibidas del SAT: cada mes, Gastos te avisa y te guía para bajarlas del portal del SAT y subirlas; solo se registran las que no llegaron por correo y el mes queda marcado como revisado.', p: 'dueno' }] },
     { v: 377, f: '23/11/2026', t: [{ x: '📄 Portafolio: los productos con mucha información ahora también van de dos en dos por hoja (versión compacta), y la portada siempre cabe en una sola hoja.', p: '' }, { x: '🏷️ El logotipo se guarda también en alta calidad para el portafolio y las fichas: vuelve a subirlo en Configuración con el archivo original para que se vea nítido.', p: 'dueno' }] },
     { v: 376, f: '23/11/2026', t: [{ x: '📖 En Proveedores ya puedes capturar el «Acerca de…» (historia del laboratorio) y su sitio web: es la hoja de presentación que sale en el portafolio de productos.', p: 'proveedores' }] },
@@ -2177,7 +2178,8 @@ const App = (() => {
   /* Precio editado: muestra el de lista como referencia; 🎁 = sin cargo ($0.01) */
   const refPrecio = (lp, precio) => { lp = Number(lp) || 0; precio = Number(precio) || 0;
     if (Math.abs(lp - precio) < 0.005) return '';
-    return precio <= 0.01 ? `<small class="ref-precio regalo">🎁 Sin cargo · lista ${$$(lp)}</small>` : `<small class="ref-precio ${precio < lp ? 'baja' : 'sube'}">Lista ${$$(lp)}${lp ? ' · ' + (precio < lp ? '−' : '+') + Math.abs(Math.round((precio - lp) / lp * 1000) / 10) + '%' : ''}</small>`; };
+    const aut = precio < lp - 0.005 && !puede('precio_libre') ? ' · 🔐 la nota irá a Por autorizar' : '';   /* sin precio_libre: abajo de la lista se autoriza después */
+    return precio <= 0.01 ? `<small class="ref-precio regalo">🎁 Sin cargo · lista ${$$(lp)}${aut}</small>` : `<small class="ref-precio ${precio < lp ? 'baja' : 'sube'}">Lista ${$$(lp)}${lp ? ' · ' + (precio < lp ? '−' : '+') + Math.abs(Math.round((precio - lp) / lp * 1000) / 10) + '%' : ''}${aut}</small>`; };
   function pintarLineasVenta() {
     const v = S.venta, editarPrecio = puede('precio_editar');
     const cont = $('#vLineas');
@@ -7217,7 +7219,7 @@ const App = (() => {
       { h: 'Actividades del día', p: ['ventas', 'seguimiento', 'cobranza'], b: [['p', 'Una sola lista con lo que te toca hoy y lo atrasado: tus llamadas, reuniones y tareas; visitas programadas; próximos pasos con clientes y prospectos; llamadas de cobranza y cotizaciones por vencer.'],
         ['ul', ['➕ Nueva actividad: tipo, qué hacer, fecha, hora y cliente.', 'Marca la casilla al terminar, ⏭️ la pasa a mañana, ✕ la quita. 📞 llama y 💬 abre WhatsApp.']], ['p', 'Gerente: con «Ver el día de» revisas el día de tu gente y le asignas actividades.', esGerM]] },
       { h: 'Nueva venta', p: 'ventas', b: [['ol', ['Elige al cliente (o Venta público en general). Su lista de precios y crédito se cargan solos.', 'Agrega productos con el buscador; la app propone el lote que caduca primero. Ajusta cantidad y descuento.', 'Indica flete, forma de entrega y si se entrega ahora o queda pendiente de entrega.', '💾 Guardar venta. El folio sale con la serie de tu sucursal.', 'Desde la nota: imprime ticket 80 mm, genera PDF, compártelo por WhatsApp, cobra o pide la firma de quien recibe.']],
-        ['p', 'Puedes cambiar el precio en la venta.', 'precio_editar']] },
+        ['p', 'Puedes cambiar el precio en la venta. Si no tienes el permiso «vender abajo de la lista sin autorización», al bajarlo de la lista del cliente la nota se registra igual (también sin señal) y llega a Por autorizar para que el dueño la apruebe; si la rechaza, la nota se corrige o se cancela.', 'precio_editar']] },
       { h: 'Editar una nota', p: 'ventas_editar', b: [['p', 'En la nota toca ✏️ Editar. La pantalla muestra «Editando la nota X de CLIENTE · NO es venta nueva» y al guardar pide confirmar folio y total. Si eliges a otro cliente, la app te propone hacer una venta nueva y la nota original no se toca. Para salir sin cambios usa Salir sin guardar.']] },
       { h: 'Venta rápida', p: 'ventas', b: [['p', 'Pantalla de mostrador para vender en segundos a público en general: escanea o busca, cobra y entrega el ticket.']] },
       { h: 'Ventas', p: 'ventas', b: [['p', 'Lista de notas con filtros por fecha, cliente y estado. Al abrir una nota puedes cobrar, entregar, imprimir, mandar el PDF, ver sus cobros y solicitar factura.'], ['p', 'También puedes cancelar notas y hacer devoluciones.', 'ventas_cancelar']] },
@@ -7228,7 +7230,7 @@ const App = (() => {
       { h: 'Por autorizar', p: esJefeM, b: [['p', 'Solicitudes que esperan al dueño o administrador: altas de empleados, sueldos y metas, cambios a clientes, facturas solicitadas y otras autorizaciones. Revisa, ajusta si hace falta y aprueba o rechaza.']] }] },
     { t: '3. Clientes', p: ['clientes', 'cotizaciones', 'seguimiento'], g: [
       { h: 'Clientes', p: 'clientes', b: [['ul', ['Buscar por nombre, razón social, RFC o teléfono. La ficha muestra datos fiscales, lista de precios, crédito, saldo, estado de cuenta, compras e interacciones.', 'Ubicación: en la ficha, 📍 Estoy aquí (usar mi GPS) guarda la ubicación actual, o toca el punto en el mapa.', 'Estado de cuenta: notas, cobros y saldo por antigüedad; se comparte en PDF.']],
-        ['ul', ['Alta: ➕ Nuevo cliente (también desde la venta: «¿No está? Dar de alta»). Captura nombre, RFC, régimen, uso de CFDI, C.P., teléfonos y correo; sube la Constancia de Situación Fiscal si factura.'], 'clientes_editar'],
+        ['ul', ['Alta: ➕ Nuevo cliente (también desde la venta: «¿No está? Dar de alta»). Captura nombre, RFC, régimen, uso de CFDI, C.P., teléfonos y correo; sube la Constancia de Situación Fiscal si factura.', 'Editar: el gerente y el vendedor completan o corrigen los datos de los clientes de su sucursal. Lista de precios, crédito, límites, estado (dar de baja) y vendedor solo los cambia el administrador.'], 'clientes_editar'],
         ['p', 'Como gerente puedes «Completar datos» de los clientes de tu sucursal; lista de precios, crédito, límites, estado y vendedor los cambia el administrador.', () => U().rol === 'Gerente'],
         ['p', 'Como administrador cambias todos los datos del cliente, incluidos lista de precios, crédito y límites.', esJefeM]] },
       { h: 'Puntos y tarjeta QR', p: 'clientes', b: [['p', 'Cada cliente gana puntos por lo que PAGA: 1 punto por cada $100 cobrados (se configura). No acumulan público en general, lo pagado con monedero o nota de crédito, notas canceladas o devueltas, la parte de asociación ni las listas excluidas (p. ej. distribuidores). Si una nota se cancela después, sus puntos se restan solos.'],
@@ -11712,7 +11714,7 @@ const App = (() => {
     const formVals = Object.assign({}, ini); const nq = String(nombreIni || '').trim();
     if (!c && nq) { if (/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/i.test(nq)) formVals.RFC = nq.toUpperCase(); else if (/^[\d\s\-+()]{7,}$/.test(nq)) formVals.Celular = nq; else formVals.Nombre_cliente = nq.toUpperCase(); }
     S.formIni = ini; S.formDesdeVenta = desdeVenta === true ? 'venta' : desdeVenta || '';
-    const gerSuyo = !!c && U().rol === 'Gerente' && puede('clientes_editar') && String(c.rfc || '').toUpperCase() !== 'XAXX010101000' && !/PUBLICO EN GRAL|PÚBLICO EN GENERAL/i.test(c.razon || c.nombre || '') && (U().todasSucursales || (D().permitidas || []).indexOf(c.suc) >= 0);
+    const gerSuyo = !!c && (U().rol === 'Gerente' || U().rol === 'Vendedor') && puede('clientes_editar') && String(c.rfc || '').toUpperCase() !== 'XAXX010101000' && !/PUBLICO EN GRAL|PÚBLICO EN GENERAL/i.test(c.razon || c.nombre || '') && (U().todasSucursales || (D().permitidas || []).indexOf(c.suc) >= 0);
     const bloqueado = !!c && U().rol !== 'Administrador' && !gerSuyo;
     const COMERC = ['Lista_de_Precios', 'D_Credito', 'Limite_Credito', 'Status', 'ID_Sucursal', 'Vendedor', 'Socio_Asociacion', 'Limite_Semanal', 'Limite_Mensual'];
     if (bloqueado) campos.forEach(x => x.dis = true);
