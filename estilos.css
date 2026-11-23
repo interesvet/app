@@ -156,6 +156,7 @@ textarea { min-height: 70px; resize: vertical; }
 .kpi.clic { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
 .kpi.clic:hover, .kpi.clic:focus-visible { border-color: var(--marca); box-shadow: var(--sombra); }
 .kpi.clic small::after { content: ' 🔍'; font-size: 11px; opacity: .55; }
+.kpi.kpi-sel { border-color: var(--marca); box-shadow: 0 0 0 2px var(--marca) inset; }
 .det-calc { background: var(--marca-suave); border-radius: 10px; padding: 10px 14px; font-size: 14px; }
 .dg-migas { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--texto-3); }
 .dg-migas .btn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
