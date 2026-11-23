@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 383, f: '23/11/2026', t: [{ x: '📝 Anotaciones de la contadora: al responder, «✔ Responder y cerrar» la deja Hecha; si solo guardas la respuesta pasa a En revisión (ya no se queda como Nueva).', p: 'dueno' }] },
     { v: 382, f: '23/11/2026', t: [{ x: '🎯 Dashboard: avance de meta y meta por sucursal, 📉 ventas perdidas y ⏳ inventario por caducar en pesos.', p: 'dashboard' }, { x: '📉 En la venta, el botón 📉 del producto sin existencia anota la venta perdida (también sin señal).', p: 'ventas' }] },
     { v: 380, f: '23/11/2026', t: [{ x: '💲 Vendedores: si bajan el precio de la lista del cliente, la nota se registra y llega a Por autorizar. Pueden dar de alta y editar los clientes de su sucursal (la baja, lista y crédito siguen siendo del administrador).', p: '' }] },
     { v: 379, f: '23/11/2026', t: [{ x: '🛰️ Facturas recibidas del SAT: cada mes, Gastos te avisa y te guía para bajarlas del portal del SAT y subirlas; solo se registran las que no llegaron por correo y el mes queda marcado como revisado.', p: 'dueno' }] },
@@ -7321,6 +7322,8 @@ const App = (() => {
       { h: '🧾 Gastos sin factura', p: () => puede('dueno') || puede('capturar_gastos'), b: [['p', 'Gastos › 🧾 Sin factura (o el botón ➕ Gasto sin factura): nómina, caja chica, propinas y todo pago sin CFDI.'],
         ['ul', ['Captura fecha, rubro › concepto, sucursal, descripción, importe (y el IVA si aplica), cómo se pagó y, si quieres, una foto o PDF del comprobante.', 'Repetir cada semana, cada 15 días o cada mes: cuenta una vez por periodo hasta la fecha que indiques o hasta que lo quites (por ejemplo la nómina o la renta).', 'Entran al estado de gastos igual que las facturas y aparecen en Facturas con la etiqueta «🧾 sin factura».', 'Quitar un gasto que se repite: «Dejar de repetir desde hoy» conserva lo anterior; «Quitarlo por completo» lo saca de todos los periodos.', 'Permiso «Capturar gastos sin factura» (Configuración › Permisos): quien no ve todas las sucursales, por ejemplo un gerente, solo captura y ve los de su sucursal.']]] },
       { h: 'Bancos y Contable', p: esJefeM, b: [['p', 'Cuentas, cajas, comprobantes y conciliación; reportes para la contadora por periodo.']] },
+      { h: '📝 Anotaciones de la contadora', p: 'bancos', b: [['p', 'La contadora anota cálculos, ajustes, preguntas o sugerencias (botón 📝 desde cualquier pantalla). Cada una lleva número (A-001…) y estado.'],
+        ['ul', ['Abiertas (pendientes): Nueva, En revisión y Cambio en la app. El número rojo del menú cuenta las nuevas.', 'Para contestar: toca la anotación, escribe la respuesta y elige «✔ Responder y cerrar» (queda Hecha) o «Guardar» para dejarla En revisión mientras se corrige.', 'Se cierra al quedar Hecha o No procede; las cerradas se ven con el filtro «Hechas y no procede».', 'Cambio en la app: lo que hay que pedir a Claude; «📋 Copiar para pedir cambios» arma el texto.']]] },
       { h: 'Comisiones', p: 'dueno', b: [['p', 'Comisiones por vendedor o comisionista según lo vendido o lo cobrado.']] },
       { h: 'Equipo', p: 'equipo', b: [['ul', ['Cada persona con su venta, cobranza, cartera, metas y comisión.', '➕ Alta de empleado: nombre, usuario, contraseña inicial, celular, perfil (Vendedor, Almacenista o Gerente Sucursal), sucursal, sueldo y meta. Hecha por el dueño queda activa al instante; hecha por un gerente va a Por autorizar.']]] },
       { h: 'Actas administrativas', p: esGerM, b: [['p', 'En la ficha de cada persona: 📄 Actas administrativas → ➕ Nueva acta. Captura fecha, hora, lugar, asunto, hechos (se pueden dictar), declaración del trabajador, medida y firmantes (trabajador, quien la levanta y dos testigos). 🔄 Rellenar desde el machote arma el texto. Luego cada quien firma en la pantalla; si el trabajador no quiere, «Se negó a firmar». Firmada, el PDF se guarda en su expediente.'], ['p', 'El machote se edita con ✏️ Editar machote.', esJefeM]] },
@@ -9689,12 +9692,15 @@ const App = (() => {
   function responderObs(id) {
     const o = ((S.anot && S.anot.lista) || []).find(x => x.id === id) || {};
     modal('Responder anotación ' + (o.num || ''), `${o.texto ? `<p style="white-space:pre-wrap;background:var(--superficie-2);padding:10px;border-radius:10px">${esc(o.texto)}</p>` : ''}
-      <label>Estado<select id="raEst">${opts(EST_ANOT.map(x => [x, x === 'Cambio en la app' ? 'Cambio en la app (se lo pido a Claude)' : x]), o.estado || 'En revisión')}</select></label>
+      <label>Estado<select id="raEst">${opts(EST_ANOT.map(x => [x, x === 'Cambio en la app' ? 'Cambio en la app (se lo pido a Claude)' : x]), !o.estado || o.estado === 'Nueva' ? 'En revisión' : o.estado)}</select></label>
       <label>Respuesta para la contadora<textarea id="raResp" rows="4" placeholder="Qué se hizo o por qué no procede">${esc(o.respuesta || '')}</textarea></label>
-      <div class="acciones"><button class="btn primario" onclick="App.guardarRespObs('${esc(id)}')">Guardar</button><button class="btn" onclick="App.cerrarModal()">Cancelar</button></div>`);
+      <p class="muted peq">La anotación queda <b>abierta</b> (pendiente) mientras esté Nueva, En revisión o Cambio en la app, y se <b>cierra</b> al marcarla <b>Hecha</b> o <b>No procede</b>.</p>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn" onclick="App.guardarRespObs('${esc(id)}')">Guardar</button><button class="btn primario" onclick="App.guardarRespObs('${esc(id)}','Hecha')">✔ Responder y cerrar</button></div>`);
   }
-  async function guardarRespObs(id) {
-    try { await pedir('responderObservacion', { id: id, estado: $('#raEst').value, respuesta: $('#raResp').value }); cerrarModal(); toast('✔ Respuesta guardada');
+  async function guardarRespObs(id, cerrar) {
+    let est = cerrar || $('#raEst').value; const resp = $('#raResp').value.trim();
+    if (est === 'Nueva' && resp) est = 'En revisión';   /* ya tiene respuesta: deja de ser nueva */
+    try { await pedir('responderObservacion', { id: id, estado: est, respuesta: resp }); cerrarModal(); toast('✔ Respuesta guardada');
       if (S.vista === 'contable') cargarContable(); else if (S.vista === 'anotaciones') cargarAnotaciones(); else if (S.vista === 'bancos') bnObs(); } catch (e) {}
   }
   /* ---------- 📝 CONCENTRADO DE ANOTACIONES DE LA CONTADORA ---------- */
