@@ -9711,6 +9711,11 @@ const App = (() => {
         det = `<div class="aut-det"><div><small class="muted">Motivo</small> ${esc(P.Motivo || '')}${x.tipo === 'AJUSTE' ? ` · <b>${esc(P.Tipo_Ajuste === 'Entrada' ? '➕ Entrada' : '➖ Salida')}</b>` : ''}</div>
           ${tabla([{ t: 'Producto', h: l2 => `<b>${esc((prod(l2.ID_Producto) || {}).nombre || l2.ID_Producto)}</b>` }, { t: 'Lote', h: l2 => esc(l2.Lote || (l2.lote ? String(l2.lote).split('-').slice(-2, -1)[0] || 'elegido' : 'auto (caduca primero)')) }, { t: 'Piezas', num: 1, h: l2 => nf(l2.Cantidad) },
             { t: 'Existencia hoy', num: 1, cls: 'ocultar-movil', h: l2 => nf(existencia(l2.ID_Producto, P.ID_Sucursal)) }], P.lineas || [])}</div>`; }
+      else if (x.tipo === 'PRECIO') {   /* 💲 venta abajo de la lista (la nota ya existe) */
+        det = `<div class="aut-det"><div><b>${esc(D2.cliente || '')}</b> · lista ${esc(D2.lista || '')} · ${D2.idVenta ? `<button class="btn chico" onclick="App.verVentaId('${esc(D2.idVenta)}')">🧾 ${esc(D2.folio || 'Ver nota')}</button>` : ''}</div>
+          ${tabla([{ t: 'Producto', h: l2 => `<b>${esc(l2.nombre)}</b>` }, { t: 'Piezas', num: 1, h: l2 => nf(l2.cant) }, { t: 'Lista', num: 1, h: l2 => $$(l2.lista) }, { t: 'Vendido a', num: 1, h: l2 => `<b>${$$(l2.precio)}</b>` },
+            { t: 'Abajo', num: 1, h: l2 => `<span class="error">−${l2.lista ? Math.round((l2.lista - l2.precio) / l2.lista * 1000) / 10 : 0}%</span>` }], D2.lineas || [])}
+          <div class="muted peq">Diferencia total contra la lista: <b>${$$(D2.diferencia || 0)}</b>. Si la rechazas, corrige o cancela la nota.</div></div>`; }
       else if (x.tipo === 'CONTEO') { const R = (D2.resumen || {});
         det = `<div class="aut-det"><div>${nf(R.contados || 0)} de ${nf(R.renglones || 0)} renglones contados · coinciden ${nf(R.coinciden || 0)}</div>
           <div><span class="error">Faltan ${nf(R.faltPzs || 0)} pzs</span> · <span class="ok-txt">sobran ${nf(R.sobPzs || 0)} pzs</span>${puede('ver_costos') ? ` · valor ${$$(-(R.faltVal || 0) + (R.sobVal || 0))}` : ''}</div>
@@ -9725,7 +9730,7 @@ const App = (() => {
       const arch = x.archivo ? `<button class="btn chico fijo" onclick="App.verArchAut('${esc(x.id)}')">${x.tipo === 'CONTEO' ? '✍️ Ver firma' : '📄 Constancia fiscal'}</button>` : '';
       const acc = (r.dueno || r.factura && x.tipo === 'FACTURA') && pend ? (x.tipo === 'FACTURA'
         ? `${S.timb && S.timb.activo ? (D2.ventas || []).map(v => `<button class="btn primario" onclick="App.timbSolicitud('${esc(x.id)}','${esc(v.id)}')">🧾 Timbrar ${(D2.ventas || []).length > 1 ? esc(v.folio) : 'ahora'}</button>`).join('') : ''}<button class="btn${S.timb && S.timb.activo ? '' : ' primario'}" onclick="App.resolverAut('${esc(x.id)}','atendida')">✔ Ya la facturé</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`
-        : `<button class="btn primario" onclick="App.resolverAut('${esc(x.id)}','aprobar')">✔ ${x.tipo === 'EMPLEADO' ? (D2.accion === 'alta' ? 'Autorizar alta' : 'Autorizar cambio') : 'Aprobar' + (x.tipo === 'CONTEO' ? ' y aplicar ajustes' : ' y mover inventario')}</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`) : '';
+        : `<button class="btn primario" onclick="App.resolverAut('${esc(x.id)}','aprobar')">✔ ${x.tipo === 'EMPLEADO' ? (D2.accion === 'alta' ? 'Autorizar alta' : 'Autorizar cambio') : 'Aprobar' + (x.tipo === 'CONTEO' ? ' y aplicar ajustes' : x.tipo === 'PRECIO' ? ' el precio' : ' y mover inventario')}</button><button class="btn" onclick="App.resolverAut('${esc(x.id)}','rechazar')">✕ Rechazar</button>`) : '';
       return `<div class="tarjeta aut-card ${pend ? 'aut-pend' : ''}"><div class="fila" style="justify-content:space-between;align-items:flex-start">
           <div><b>${esc(x.tipoTxt)}</b> <span class="etq ${AUT_EST[x.estado] || ''}">${esc(x.estado)}</span><br><small class="muted">${esc(x.sucNombre)} · ${esc(x.usuario)} · ${esc(x.fecha)}</small></div>
           <div class="fila" style="gap:6px">${arch}</div></div>
@@ -9742,13 +9747,14 @@ const App = (() => {
     else if (x.tipo === 'EMPLEADO') { const pre = 'au' + x.id;
       if ($('#' + pre + 'Sueldo')) ajuste = { sueldo: $('#' + pre + 'Sueldo').value, meta: eqMetaLeer(pre) };
       if (!confirm((x.datos.accion === 'alta' ? 'Se activará el usuario de ' + x.datos.nombre + ' para que entre a la app' : 'Se aplicará el cambio a ' + x.datos.nombre) + ' con el sueldo y la meta que se ven. ¿Autorizar?')) return; }
+    else if (x.tipo === 'PRECIO') { if (!confirm('¿Autorizar el precio de la nota ' + (x.datos.folio || '') + '?')) return; }
     else if (!confirm(x.tipo === 'CONTEO' ? 'Se registrarán los ajustes de entrada y salida para que el inventario quede igual a lo contado. ¿Continuar?' : 'Se registrará el movimiento y el inventario cambiará. ¿Aprobar?')) return;
     try {
       let r;
       try { r = await pedir('resolverSolicitud', { id: id, accion: accion, comentario: comentario, resultado: resultado, ajuste: ajuste }); }
       catch (e) { if (e.red || x.tipo !== 'CONTEO' || !/movimientos después del cierre/.test(e.message) || !confirm(e.message + '\n\n¿Aplicar de todos modos?')) throw e;
         r = await pedir('resolverSolicitud', { id: id, accion: accion, forzar: true }); }
-      toast('✔ ' + r.estado + (r.resultado ? ' · ' + r.resultado : '')); if (x.tipo !== 'FACTURA' && x.tipo !== 'EMPLEADO' && accion !== 'rechazar') refrescarStock(); cargarAut();
+      toast('✔ ' + r.estado + (r.resultado ? ' · ' + r.resultado : '')); if (x.tipo !== 'FACTURA' && x.tipo !== 'EMPLEADO' && x.tipo !== 'PRECIO' && accion !== 'rechazar') refrescarStock(); cargarAut();
     } catch (e) {}
   }
   async function verArchAut(id) {
