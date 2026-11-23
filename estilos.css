@@ -1245,6 +1245,11 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
 .ichips{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}.ichip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--borde);border-radius:20px;padding:5px 10px;background:transparent;color:inherit;font:inherit;cursor:pointer}
 .dfac-cta{border:1px solid var(--borde);border-radius:12px;padding:8px 12px 4px;margin:8px 0}.dfac-cta h4{margin:2px 0 6px}
 .sv-tot{border:1px solid var(--borde);border-radius:12px;padding:10px 14px}.sv-tot>div{display:flex;justify-content:space-between;padding:3px 0}.sv-tot .g{border-top:2px solid var(--borde);margin-top:4px;padding-top:8px;font-size:18px;font-weight:800;color:var(--ok)}
+.mts-f { display: grid; grid-template-columns: minmax(90px, 160px) 1fr auto; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--borde); font-size: 14px; }
+.mts-b { height: 12px; background: var(--superficie-2); border-radius: 6px; position: relative; }
+.mts-b i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; }
+.mts-b span { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--texto); }
+@media (max-width: 640px) { .mts-f { grid-template-columns: 1fr; gap: 4px; } }
 /* ---- solo app instalable ---- */
 .pwa-nueva { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 9999;
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
