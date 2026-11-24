@@ -1256,3 +1256,42 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
   display: flex; gap: 12px; align-items: center; background: #14432d; color: #fff; padding: 10px 12px 10px 16px; border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0,0,0,.25); font-size: 14px; max-width: calc(100% - 32px); }
 @media (display-mode: standalone) { body { padding-bottom: env(safe-area-inset-bottom); } }
+
+/* ---------- Portada de marca en la pantalla de entrada (v385) ----------
+   Solo cambia el fondo de #login: la imagen de Interes Veterinario arriba (celular y tableta)
+   o a la izquierda (computadora). La tarjeta para entrar es la misma de siempre.
+   Para quitarla basta borrar este bloque. La imagen portada_login.jpg (640x850, 68 KB) se guarda en el equipo con el service worker (se ve sin señal). */
+#login.login {
+  --portada: url("portada_login.jpg");
+  --pw: min(100vw, 640px);
+  place-items: end center;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+  background:
+    linear-gradient(180deg, rgba(11,21,40,0) calc(var(--pw) * .82), #0b1528 calc(var(--pw) * 1.3)),
+    var(--portada) center top / var(--pw) auto no-repeat,
+    #0b1528;
+}
+#login #lgLogo, #login #lgNombre, #login .login-card > p.muted { display: none; }
+#login .login-card { max-width: 400px; background: rgba(18, 33, 61, .95); }
+@media screen { :root[data-theme="light"] #login .login-card { background: rgba(255, 255, 255, .96); } }
+/* tableta vertical: la imagen centrada se funde con el fondo a los lados */
+@media (min-width: 700px) {
+  #login.login {
+    background:
+      linear-gradient(180deg, rgba(11,21,40,0) calc(var(--pw) * .82), #0b1528 calc(var(--pw) * 1.3)),
+      linear-gradient(90deg, #0b1528 calc(50% - 320px), rgba(11,21,40,0) calc(50% - 250px), rgba(11,21,40,0) calc(50% + 250px), #0b1528 calc(50% + 320px)),
+      var(--portada) center top / var(--pw) auto no-repeat,
+      #0b1528;
+  }
+}
+/* computadora y tableta horizontal: imagen a la izquierda, tarjeta a la derecha */
+@media (min-width: 1000px) and (min-aspect-ratio: 4/3) {
+  #login.login {
+    place-items: center end;
+    padding: 32px max(6vw, 32px);
+    background:
+      linear-gradient(90deg, rgba(11,21,40,0) 62vh, #0b1528 75vh),
+      var(--portada) left center / auto 100vh no-repeat,
+      radial-gradient(circle at 75% 30%, #173a3a, #0b1528 60%);
+  }
+}
