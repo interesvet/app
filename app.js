@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 386, f: '24/11/2026', t: [{ x: '💳 Complementos de pago: botón «📤 Enviar» para mandarlo al cliente por WhatsApp o por correo (con el PDF y el XML adjuntos). Al timbrar uno, la app te ofrece mandarlo en ese momento. El complemento de un pago del mismo día ya se timbra a cualquier hora.', p: 'facturacion' }, { x: '🧮 Contabilidad del mes: nueva pestaña 💳 Complementos (con PDF, XML y botón para mandarlos), recuadro en el Resumen, hoja «Complementos» en el Excel y botón «📦 Complementos (XML y PDF)».', p: 'bancos' }, { x: '🖼️ La pantalla de entrada muestra la imagen de Interés Veterinario.', p: '' }] },
     { v: 384, f: '23/11/2026', t: [{ x: '📝 Anotaciones de la contadora: toca un recuadro (Nuevas, Hechas…) para ver esas anotaciones.', p: 'bancos' }] },
     { v: 383, f: '23/11/2026', t: [{ x: '📝 Anotaciones de la contadora: al responder, «✔ Responder y cerrar» la deja Hecha; si solo guardas la respuesta pasa a En revisión (ya no se queda como Nueva).', p: 'dueno' }] },
     { v: 382, f: '23/11/2026', t: [{ x: '🎯 Dashboard: avance de meta y meta por sucursal, 📉 ventas perdidas y ⏳ inventario por caducar en pesos.', p: 'dashboard' }, { x: '📉 En la venta, el botón 📉 del producto sin existencia anota la venta perdida (también sin señal).', p: 'ventas' }] },
@@ -4258,6 +4259,7 @@ const App = (() => {
     const el = $('#lFact'); if (!el) return;
     let r; try { [r] = await Promise.all([pedir('complementosPend', {}, true), timbEstado()]); } catch (e) { el.innerHTML = `<div class="vacio">${esc(e.red ? 'Requiere conexión.' : e.message)}</div>`; return; }
     S.rep = r; const hoy = hoyISO(), tb = S.timb && S.timb.activo, cat = D().catalogos || {};
+    if (S.repRecien) { const u = S.repRecien; S.repRecien = null; const nv = (r.historial || []).find(x => x.uuid === u); if (nv && confirm('✅ Complemento ' + nv.sf + ' timbrado.\n¿Mandarlo ahora al cliente por WhatsApp o correo?')) setTimeout(() => enviarRepCli(nv.id), 50); }
     const fOpts = sel => opts((cat.formasPago || []).filter(o => String(Array.isArray(o) ? o[0] : o.id) !== '99').map(u => Array.isArray(u) ? u : [u.id, u.id + ' · ' + u.nombre]), sel ? String(Number(sel)) : '', 'Elegir…');
     el.innerHTML = `<div class="kpis"><div class="kpi"><small>Abonos sin complemento</small><b>${nf(r.pendientes.length)}</b><span>${$$(r.monto)}</span></div>
         <div class="kpi ${r.vencidos ? 'mal' : ''}"><small>Fuera de plazo</small><b>${nf(r.vencidos)}</b><span>el plazo es el día 5 del mes siguiente al abono</span></div>
@@ -4279,7 +4281,7 @@ const App = (() => {
       <div class="tarjeta"><h4 style="margin:0 0 6px">Timbrados desde la app</h4>
       ${tabla([{ t: 'Complemento', h: x => `<b>${esc(x.sf)}</b>${x.cancelado ? ' <span class="etq mal">Cancelado</span>' : ''}<br><small class="muted">${esc(x.alta)}</small>` }, { t: 'Factura', h: x => esc(x.factura) + ' <small class="muted">#' + esc(x.parc) + '</small>' },
         { t: 'Abono', h: x => esc(x.fecha) }, { t: 'Monto', num: 1, h: x => x.cancelado ? '<s class="muted">' + esc(x.estado.replace(/^Cancelado \(era |\)$/g, '')) + '</s>' : $$(x.monto) },
-        { t: '', h: x => `${x.pdf ? `<a class="btn chico" target="_blank" href="${esc(x.pdf)}">📄 PDF</a>` : ''}${x.xml ? ` <a class="btn chico" target="_blank" href="${esc(x.xml)}">🧾 XML</a>` : ''}${!x.cancelado && tb ? ` <button class="btn chico peligro" onclick="App.cancelarRep('${esc(x.id)}','${esc(x.sf)}')">🚫 Cancelar</button>` : ''}` }], r.historial, { vacio: 'Todavía no hay complementos timbrados desde la app.' })}</div>`;
+        { t: '', h: x => `${!x.cancelado ? `<button class="btn chico primario" title="Mandar al cliente por WhatsApp o correo" onclick="App.enviarRepCli('${esc(x.id)}')">📤 Enviar</button> ` : ''}${x.pdf ? `<a class="btn chico" target="_blank" href="${esc(x.pdf)}">📄 PDF</a>` : ''}${x.xml ? ` <a class="btn chico" target="_blank" href="${esc(x.xml)}">🧾 XML</a>` : ''}${!x.cancelado && tb ? ` <button class="btn chico peligro" onclick="App.cancelarRep('${esc(x.id)}','${esc(x.sf)}')">🚫 Cancelar</button>` : ''}` }], r.historial, { vacio: 'Todavía no hay complementos timbrados desde la app.' })}</div>`;
   }
   async function timbrarRep(i, sinPreguntar) {
     const x = S.rep.pendientes[i]; if (!x) return false; const forma = ($('#rpF' + i) || {}).value;
@@ -4292,7 +4294,7 @@ const App = (() => {
         <p><b>${esc(r.sf)}</b> · factura ${esc(r.factura)} · ${$$(r.monto)}<br><small class="muted">Folio fiscal de prueba: ${esc(r.uuid)}</small></p>
         <div class="acciones izq">${r.urlPdf ? `<a class="btn" href="${esc(r.urlPdf)}" target="_blank">📄 Ver PDF</a>` : ''}<a class="btn" href="${esc(r.urlXml)}" target="_blank">🧾 Ver XML</a><button class="btn peligro" onclick="App.cancelarRepPrueba('${esc(r.fmId)}')">Cancelar esta prueba</button></div>
         <div class="acciones"><button class="btn primario" onclick="App.cerrarModal()">Listo</button></div>`);
-    } else if (!sinPreguntar) toast('✅ Complemento ' + r.sf + ' timbrado (' + r.factura + ')');
+    } else if (!sinPreguntar) { toast('✅ Complemento ' + r.sf + ' timbrado (' + r.factura + ')'); S.repRecien = r.uuid; }
     if (!sinPreguntar) cargarComplementos();
     return true;
   }
@@ -4411,6 +4413,37 @@ const App = (() => {
     const b = $('#efBtn'); b.disabled = true; b.textContent = 'Enviando…';
     try { const r = await pedir('enviarFacturaCorreo', { id: id, correo: c }); toast('✔ Factura enviada a ' + r.para + ' (' + r.adjuntos + ' archivo' + (r.adjuntos > 1 ? 's' : '') + ')'); cerrarModal(); }
     catch (e) { b.disabled = false; b.textContent = 'Enviar correo'; }
+  }
+  /** 📤 Mandar el complemento de pago (PDF y XML) al cliente: WhatsApp con enlaces, compartir, o correo con los archivos adjuntos. */
+  async function enviarRepCli(id) {
+    let r; try { r = await pedir('compartirComplemento', { id: id }); } catch (e) { return; }
+    S.envRep = r;
+    const tel = String(r.cel || '').replace(/\D/g, '').slice(-10);
+    const msg = 'Interés Veterinario® — Complemento de pago ' + r.sf + ' de su factura ' + r.factura + (r.parc ? ' (parcialidad ' + r.parc + ')' : '') + ' por ' + $$(r.monto) +
+      (r.fechaPago ? ', pago del ' + r.fechaPago : '') + (r.uuid ? '\nFolio fiscal: ' + r.uuid : '') + (r.pdf ? '\nPDF: ' + r.pdf.url : '') + (r.xml ? '\nXML: ' + r.xml.url : '') + '\n¡Gracias por su pago!';
+    S.envRep.msg = msg;
+    modal('📤 Enviar complemento ' + r.sf, `<p><b>${esc(r.cliente)}</b> · factura ${esc(r.factura)}${r.parc ? ' · parcialidad ' + esc(r.parc) : ''} · ${$$(r.monto)}</p>
+      <div class="acciones" style="justify-content:flex-start">
+        <a class="btn primario" target="_blank" href="${WA_BASE}${tel ? '52' + tel : ''}?text=${encodeURIComponent(msg)}">💬 WhatsApp${tel ? ' al ' + esc(tel) : ''}</a>
+        ${navigator.share ? '<button class="btn" onclick="App.compartirRepCli()">📤 Compartir…</button>' : ''}
+        ${r.pdf ? `<a class="btn" target="_blank" href="${esc(r.pdf.url)}">📄 PDF</a>` : ''}${r.xml ? `<a class="btn" target="_blank" href="${esc(r.xml.descarga)}">🧾 XML</a>` : ''}</div>
+      ${tel ? '' : '<p class="muted peq">El cliente no tiene celular registrado: al abrir WhatsApp elige el contacto.</p>'}
+      <div class="tarjeta" style="margin-top:12px"><b>✉️ Correo con el PDF y el XML adjuntos</b>
+        <div class="fila" style="margin-top:8px"><label style="flex:2 1 240px">Correo del cliente<input id="erCorreo" type="email" value="${esc(r.correo)}" placeholder="cliente@correo.com"></label>
+        <button class="btn primario fijo" id="erBtn" onclick="App.correoRepCli('${esc(id)}')">Enviar correo</button></div>
+        <p class="muted peq" style="margin:6px 0 0">Puedes poner varios correos separados por coma. Si el cliente contesta, la respuesta te llega a ti.</p></div>
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cerrar</button></div>`);
+  }
+  function compartirRepCli() { const r = S.envRep; if (!r || !navigator.share) return; navigator.share({ title: 'Complemento de pago ' + r.sf, text: r.msg }).catch(() => {}); }
+  async function correoRepCli(id) {
+    const c = ($('#erCorreo').value || '').trim(); if (!/@/.test(c)) return toast('Escribe el correo del cliente', true);
+    const b = $('#erBtn'); b.disabled = true; b.textContent = 'Enviando…';
+    try { const r = await pedir('enviarComplementoCorreo', { id: id, correo: c }); toast('✔ Complemento enviado a ' + r.para + ' (' + r.adjuntos + ' archivo' + (r.adjuntos > 1 ? 's' : '') + ')'); cerrarModal(); }
+    catch (e) { b.disabled = false; b.textContent = 'Enviar correo'; }
+  }
+  /** Baja el XML o el PDF de un complemento. */
+  async function bajarRepArchivo(id, tipo) {
+    try { toast('Descargando…'); const a = await pedir('archivoComplemento', { id: id, tipo: tipo }, true); entregarArchivo(await (await fetch(a.uri)).blob(), a.nombre, 'Complemento de pago'); } catch (e) {}
   }
   async function verFactura(id) {
     S.facDet = id;
@@ -7273,7 +7306,7 @@ const App = (() => {
       { h: 'Editar una nota', p: 'ventas_editar', b: [['p', 'En la nota toca ✏️ Editar. La pantalla muestra «Editando la nota X de CLIENTE · NO es venta nueva» y al guardar pide confirmar folio y total. Si eliges a otro cliente, la app te propone hacer una venta nueva y la nota original no se toca. Para salir sin cambios usa Salir sin guardar.']] },
       { h: 'Venta rápida', p: 'ventas', b: [['p', 'Pantalla de mostrador para vender en segundos a público en general: escanea o busca, cobra y entrega el ticket.']] },
       { h: 'Ventas', p: 'ventas', b: [['p', 'Lista de notas con filtros por fecha, cliente y estado. Al abrir una nota puedes cobrar, entregar, imprimir, mandar el PDF, ver sus cobros y solicitar factura.'], ['p', 'También puedes cancelar notas y hacer devoluciones.', 'ventas_cancelar']] },
-      { h: 'Facturación', p: 'facturacion', b: [['ul', ['Ventas → Facturación: Facturas, Por facturar, Piezas sin facturar y Marcadas SI sin factura, para controlar qué notas ya tienen CFDI.']], ['ul', ['Complementos de pago y 🛎️ Servicios (solo Matriz): facturas de servicio con su folio interno SERV-####; 💵 Registrar cobro funciona igual que el cobro de una nota. Las facturas subidas por XML que son de un servicio se pasan con «Pasar a Servicios».'], () => esJefeM() && U().todasSucursales]] },
+      { h: 'Facturación', p: 'facturacion', b: [['ul', ['Ventas → Facturación: Facturas, Por facturar, Piezas sin facturar y Marcadas SI sin factura, para controlar qué notas ya tienen CFDI.']], ['ul', ['Complementos de pago (solo Matriz): los abonos a facturas PPD salen solos; elige la forma de pago y toca 💳 Timbrar. Ya timbrado, «📤 Enviar» lo manda al cliente por WhatsApp (con enlaces al PDF y XML) o por correo (con los archivos adjuntos). La contadora los ve en 🧮 Contabilidad del mes › 💳 Complementos.', '🛎️ Servicios (solo Matriz): facturas de servicio con su folio interno SERV-####; 💵 Registrar cobro funciona igual que el cobro de una nota. Las facturas subidas por XML que son de un servicio se pasan con «Pasar a Servicios».'], () => esJefeM() && U().todasSucursales]] },
       { h: 'Cobrar', p: 'cobranza', b: [['p', 'En la nota toca Registrar cobro: monto (trae el saldo), fecha, forma de pago, cuenta o caja, terminal y referencia si fue con tarjeta, nota y comprobante (foto y/o PDF). Sin señal, el cobro queda guardado y se envía al reconectar.']] },
       { h: 'Compartir por WhatsApp', p: ['ventas', 'cotizaciones'], b: [['p', 'Al generar un PDF, 📎 Enviar PDF abre el menú de compartir del teléfono: elige WhatsApp y el chat. Se manda solo el archivo y el mensaje queda copiado; pégalo en el chat si quieres. 💬 WhatsApp (enlace) manda un link al documento.']] },
       { h: 'Corte de caja', p: 'cobranza', b: [['p', 'Al cierre del día: cuenta el efectivo, revisa lo cobrado por forma de pago y cierra el corte. La diferencia queda registrada.']] },
@@ -12741,6 +12774,7 @@ const App = (() => {
         <button class="btn primario fijo" onclick="App.cargarContable()">Ver</button>
         <button class="btn fijo" onclick="App.excelContable()">📊 Excel del periodo</button>
         <button class="btn fijo" onclick="App.zipEstadosContable()">📦 Estados de cuenta (PDF)</button>
+        <button class="btn fijo" onclick="App.zipRepContable()">📦 Complementos (XML y PDF)</button>
         <button class="btn fijo" onclick="App.formObservacion('Cálculo')">📝 Anotación</button></div>
         <p class="muted peq" style="margin-top:6px">Todo lo del periodo en un lugar: lo facturado al SAT, compras con sus pagos y notas de crédito, facturas de gastos y bancos con su conciliación. Solo consulta; las anotaciones le llegan al dueño.</p></div>
       <div id="ctRes"><div class="vacio">Cargando…</div></div>`;
@@ -13007,6 +13041,7 @@ const App = (() => {
     const q = S.cont, el = $('#ctRes'); if (!q || !el) return;
     const R = q.resumen, t = S.tabCont || 'resumen';
     const tabs = [['resumen', '📋 Resumen'], ['ingresos', '🧾 Ingresos (SAT) · ' + R.ingresos.n], ['compras', '📦 Compras y pagos · ' + R.compras.n], ['gastos', '💸 Gastos · ' + R.gastos.n], ['bancos', '🏦 Bancos · ' + R.bancos.estados], ['anot', '📝 Anotaciones · ' + R.anotaciones]];
+    if (R.complementos) tabs.splice(2, 0, ['rep', '💳 Complementos · ' + R.complementos.n]);
     const k = (ti, v, sub, cls, dk) => `<div class="kpi${dk ? ' clic' : ''}"${dk ? ` onclick="App.detKpi('c','${dk}')" title="Ver el detalle y cómo se calcula"` : ''}><small>${ti}</small><b class="${cls || ''}">${v}</b>${sub ? `<span>${sub}</span>` : ''}</div>`;
     const card = (ti, h) => `<div class="tarjeta"><h4 style="margin:0 0 8px">${ti}</h4>${h}</div>`;
     const etq = (x, cls) => `<span class="etq ${cls || ''}">${esc(x)}</span>`;
@@ -13016,6 +13051,7 @@ const App = (() => {
       h += `<div class="kpis">${k('Facturado al SAT (ingresos)', $$(R.ingresos.total), 'subtotal ' + $$(R.ingresos.subtotal) + ' · IVA ' + $$(R.ingresos.iva), '', 'ingresos')}
           ${k('Nominativas / globales', $$(R.ingresos.nominativas) + ' / ' + $$(R.ingresos.globales), R.ingresos.ppd ? 'PPD ' + $$(R.ingresos.ppd) : 'sin PPD', '', 'tipos')}
           ${k('Cobrado sin factura', $$(R.ingresos.cobradoSinFactura), nf(R.ingresos.nCobradoSinFactura) + ' abonos · van a la global', R.ingresos.cobradoSinFactura > 0.009 ? 'error' : '', 'sinFactura')}
+          ${R.complementos ? k('Complementos de pago', $$(R.complementos.total), nf(R.complementos.pagados) + ' pagos del periodo · ' + nf(R.complementos.n) + ' complementos' + (R.complementos.cancelados ? ' · ' + R.complementos.cancelados + ' cancelados' : '')) : ''}
           ${k('Compras', $$(R.compras.total), nf(R.compras.conFactura) + ' de ' + nf(R.compras.n) + ' con factura · IVA ' + $$(R.compras.iva), '', 'compras')}
           ${k('Pagos a proveedores', $$(R.pagos.total), nf(R.pagos.n) + ' pagos · N/C ' + $$(R.nc.total), '', 'pagos')}
           ${k('Gastos de operación + financieros', $$(R.gastos.cargado), 'sin IVA, igual que en 💸 Gastos · ' + nf(R.gastos.n) + ' facturas por ' + $$(R.gastos.total) + ' con IVA (incluye inversiones y excluidos)', '', 'gastos')}
@@ -13036,6 +13072,17 @@ const App = (() => {
         tabla(cols, q.ingresos, { vacio: 'Sin facturas emitidas en el periodo' }) + `<p style="text-align:right"><b>Total ${$$(R.ingresos.total)}</b> · subtotal ${$$(R.ingresos.subtotal)} · IVA ${$$(R.ingresos.iva)}</p>`);
       if (q.canceladas.length) h += card('❌ Canceladas en el periodo', tabla(cols, q.canceladas));
       if (R.ingresos.cobradoSinFactura > 0.009) h += card('💵 Cobrado sin factura', `<p>${nf(R.ingresos.nCobradoSinFactura)} abonos por <b>${$$(R.ingresos.cobradoSinFactura)}</b> cobrados en el periodo aún no están en ninguna factura (van a la factura global). Se arma en Ventas › Facturación › 🧾 Armar global del mes.</p>`);
+    } else if (t === 'rep') {
+      const reps = q.complementos || [], fac = puede('facturacion');
+      h += card(`💳 Complementos de pago · ${esc(q.periodo.desde)} al ${esc(q.periodo.hasta)}`, `<p class="muted peq">Complementos (REP) de facturas PPD cuyo <b>pago</b> o <b>emisión</b> cae en el periodo: los timbrados desde la app y los que se subieron por XML. El total del recuadro suma solo los pagos del periodo (vigentes).</p>` +
+        tabla([{ t: 'Fecha de pago', h: x => esc(x.fechaPago) + (x.pagoEnPeriodo ? '' : '<br><small class="muted">pago de otro periodo</small>') }, { t: 'Emitido', cls: 'ocultar-movil', h: x => esc(x.emision) },
+          { t: 'Complemento', h: x => `<b>${esc(x.sf || '—')}</b>${x.cancelado ? ' ' + etq('Cancelado', 'mal') : ''}<br><small class="muted">${esc((x.uuid || '').slice(0, 8))}${x.uuid ? '…' : ''}</small>` },
+          { t: 'Factura', h: x => esc(x.factura) + (x.parc ? ` <small class="muted">#${esc(x.parc)}</small>` : '') }, { t: 'Cliente', h: x => esc(x.receptor) + `<br><small class="muted">${esc(x.rfc)}</small>` },
+          { t: 'Forma', cls: 'ocultar-movil', h: x => esc(x.forma) }, { t: 'Monto', num: 1, h: x => x.cancelado ? `<s class="muted">${$$(x.monto)}</s>` : `<b>${$$(x.monto)}</b>` },
+          { t: '', h: x => x.cancelado ? '' : `${x.pdf ? `<button class="btn chico" onclick="App.bajarRepArchivo('${esc(x.id)}','pdf')">📄 PDF</button> ` : ''}${x.xml ? `<button class="btn chico" onclick="App.bajarRepArchivo('${esc(x.id)}','xml')">🧾 XML</button> ` : ''}${fac ? `<button class="btn chico primario" onclick="App.enviarRepCli('${esc(x.id)}')">📤 Enviar</button>` : ''}` }],
+          reps, { vacio: 'Sin complementos de pago en el periodo' }) +
+        `<p style="text-align:right"><b>${$$(R.complementos.total)}</b> · ${nf(R.complementos.pagados)} pagos del periodo</p>` +
+        (reps.some(x => !x.cancelado && (x.xml || x.pdf)) ? `<p><button class="btn" onclick="App.zipRepContable()">📦 Descargar XML y PDF (ZIP)</button></p>` : ''));
     } else if (t === 'compras') {
       h += card('📦 Compras del periodo (qué se compró)', tabla([{ t: 'Fecha', h: x => esc(x.fecha) }, { t: 'Orden', h: x => `<b>${esc(x.folio)}</b>` },
         { t: 'Proveedor', h: x => esc(x.proveedor) + `<br><small class="muted">${esc(x.rfc)}</small>` }, { t: 'Factura', h: x => x.conFactura ? esc(x.factura) + (x.uuid ? `<br><small class="muted">${esc(x.uuid.slice(0, 8))}…</small>` : '') : etq('sin factura', 'av') },
@@ -13109,6 +13156,23 @@ const App = (() => {
       entregarArchivo(await zip.generateAsync({ type: 'blob' }), 'Estados de cuenta ' + q.periodo.desdeISO + ' a ' + q.periodo.hastaISO + '.zip', 'PDFs de estados de cuenta del periodo');
     } catch (e) { toast(e.message || 'No se pudo armar el ZIP', true); }
   }
+  async function zipRepContable() {
+    const q = S.cont; if (!q) return; const rs = (q.complementos || []).filter(x => !x.cancelado && (x.xml || x.pdf));
+    if (!rs.length) return toast('No hay complementos con archivos en este periodo', true);
+    try {
+      const Z = await libLocal('jszip'), zip = new Z(); let n = 0, fallas = 0;
+      for (let i = 0; i < rs.length; i++) {
+        for (const tipo of ['xml', 'pdf']) {
+          if (!rs[i][tipo]) continue;
+          toast('Descargando complemento ' + (i + 1) + ' de ' + rs.length + '…');
+          try { const a = await pedir('archivoComplemento', { id: rs[i].id, tipo: tipo }, true); zip.file(a.nombre, await (await fetch(a.uri)).blob()); n++; } catch (e) { fallas++; }
+        }
+      }
+      if (!n) return toast('No se pudo descargar ningún archivo', true);
+      entregarArchivo(await zip.generateAsync({ type: 'blob' }), 'Complementos de pago ' + q.periodo.desdeISO + ' a ' + q.periodo.hastaISO + '.zip', 'XML y PDF de los complementos del periodo');
+      if (fallas) toast(fallas + ' archivo(s) no se pudieron bajar', true);
+    } catch (e) { toast(e.message || 'No se pudo armar el ZIP', true); }
+  }
   async function excelContable() {
     const q = S.cont; if (!q) return toast('Primero carga el periodo', true);
     const R = q.resumen, per = q.periodo.desde + ' al ' + q.periodo.hasta, sub = t => [t + ' · ' + per, 'Interés Veterinario® · generado ' + fechaTxt(hoyISO())];
@@ -13119,11 +13183,14 @@ const App = (() => {
     const hojas = [
       { nombre: 'Resumen', titulo: 'Resumen contable', sub: sub('Periodo'), cols: [{ t: 'Concepto', w: 46 }, { t: 'Importe', w: 16, fmt: 'mon' }, { t: 'Cantidad', w: 10, fmt: 'num' }],
         filas: [['Facturado al SAT (total)', R.ingresos.total, R.ingresos.n], ['  Subtotal', R.ingresos.subtotal, ''], ['  IVA trasladado', R.ingresos.iva, ''], ['  Nominativas', R.ingresos.nominativas, ''], ['  Globales', R.ingresos.globales, ''],
-          ['  PPD', R.ingresos.ppd, ''], ['Cobrado sin factura', R.ingresos.cobradoSinFactura, R.ingresos.nCobradoSinFactura], ['Compras (total)', R.compras.total, R.compras.n], ['  IVA de compras', R.compras.iva, ''],
+          ['  PPD', R.ingresos.ppd, ''], ['Complementos de pago (pagos del periodo)', R.complementos ? R.complementos.total : '', R.complementos ? R.complementos.pagados : ''], ['Cobrado sin factura', R.ingresos.cobradoSinFactura, R.ingresos.nCobradoSinFactura], ['Compras (total)', R.compras.total, R.compras.n], ['  IVA de compras', R.compras.iva, ''],
           ['Pagos a proveedores', R.pagos.total, R.pagos.n], ['Notas de crédito de proveedores', R.nc.total, R.nc.n], ['Gastos de operación (sin IVA)', R.gastos.operacion, ''], ['Gastos financieros (sin IVA)', R.gastos.financiero, ''], ['Inversiones (sin IVA)', R.gastos.inversion, ''], ['Fletes ligados (sin IVA)', R.gastos.fleteCosto, ''], ['Excluidos (sin IVA)', R.gastos.excluir, ''], ['Gastos (total con IVA, todas)', R.gastos.total, R.gastos.n], ['  IVA de gastos (todas)', R.gastos.iva, ''], ['  IVA acreditable (sin excluidos)', R.gastos.ivaAcreditable, ''],
           ['Estados de cuenta del periodo', '', R.bancos.estados], ['  que no cuadran', '', R.bancos.sinCuadrar], ['Movimientos bancarios por conciliar', '', R.bancos.pendientes]].map(x => ({ v: x })) },
       { nombre: 'Ingresos SAT', titulo: 'Facturas de venta emitidas (vigentes)', sub: sub('Lo que se reporta al SAT'), cols: ing, filas: q.ingresos.map(filaIng) },
       { nombre: 'Canceladas', titulo: 'Facturas de venta canceladas', sub: sub('Canceladas'), cols: ing, filas: q.canceladas.map(filaIng) },
+      { nombre: 'Complementos', titulo: 'Complementos de pago (REP)', sub: sub('Pagos de facturas PPD'), cols: [{ t: 'Fecha de pago', w: 11 }, { t: 'Emitido', w: 11 }, { t: 'Serie-folio', w: 11 }, { t: 'UUID', w: 38 },
+        { t: 'Factura', w: 12 }, { t: 'UUID factura', w: 38 }, { t: 'RFC', w: 15 }, { t: 'Cliente', w: 30 }, { t: 'Parcialidad', w: 10, fmt: 'num' }, { t: 'Forma', w: 7 }, M('Monto', 14), { t: 'Pago del periodo', w: 10 }, { t: 'Estado', w: 12 }, { t: 'Origen', w: 16 }],
+        filas: (q.complementos || []).map(x => ({ v: [x.fechaPago, x.emision, x.sf, x.uuid, x.factura, x.uuidFactura, x.rfc, x.receptor, x.parc === '' ? '' : Number(x.parc), x.forma, x.cancelado ? 0 : x.monto, x.pagoEnPeriodo ? 'Sí' : 'No', x.estado, x.origen], tono: x.cancelado ? 'mal' : '' })) },
       { nombre: 'Compras', titulo: 'Compras (órdenes con su factura)', sub: sub('Compras'), cols: [{ t: 'Fecha', w: 11 }, { t: 'Orden', w: 12 }, { t: 'Proveedor', w: 30 }, { t: 'RFC', w: 15 }, { t: 'Factura', w: 12 }, { t: 'UUID', w: 38 },
         M('Subtotal'), M('Descuentos'), M('IVA'), M('Flete'), M('Total'), M('Pagado'), M('Saldo'), { t: 'Vence', w: 11 }],
         filas: q.compras.map(x => ({ v: [x.fecha, x.folio, x.proveedor, x.rfc, x.conFactura ? x.factura : 'SIN FACTURA', x.uuid, x.subtotal, x.descuento, x.iva, x.flete, x.total, x.pagado, x.saldo, x.venc] })) },
@@ -17693,7 +17760,7 @@ const App = (() => {
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
     bnVerMovs, bnBuscarMovs, bnMarcar, bnClasificar, bnClasificarSel, bnNota, bnExcelMovs, bnExcelEstados, bnFormCuenta, bnGuardarCuenta, bnAltaContador, formObservacion, guardarObservacion, responderObs,
     precargarAhora, vistaActual: () => S.vista, verSucCfg, guardarVentaSinExist,
-    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, ptsCanjeForm, ptsCanjear, cbMonedero, desglose, ventasProd, kFiltro, bajarArchivoVisto, abrirArchivoDrive, dgTab, dgMiga, dgEntrar, dgAbrir, dgExcel, ptsAjusteForm, ptsAjustar, ptsCfgForm, ptsCfgGuardar, ptsOfFila, ptsOfQuitar, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, vistaCatalogoGasto, formConceptoGasto, cgGrupo, guardarConceptoGasto, formRubroGasto, guardarRubroGasto, quitarConceptoGasto, quitarConceptoOk, vistaGastosManuales, cargarGastosManuales, formGastoManual, gmRep, guardarGastoManual, quitarGastoManual, quitarGastoManualOk, filtrarCatGasto, pdfGastos, formComprobantes, formDescargaSat, satMesSel, anotKpi, dashPerdTab, formVentaPerdida, guardarVentaPerdida, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
+    imprimir, revisarSaldos, repararRegistros, auditarVentasInv, ptsCanjeForm, ptsCanjear, cbMonedero, desglose, ventasProd, kFiltro, bajarArchivoVisto, abrirArchivoDrive, dgTab, dgMiga, dgEntrar, dgAbrir, dgExcel, ptsAjusteForm, ptsAjustar, ptsCfgForm, ptsCfgGuardar, ptsOfFila, ptsOfQuitar, manualPdf, mdForm, mdGuardar, mdHecho, mdPosponer, mdBorrar, acuVerI, acuVer, acuForm, acuFila, acuQuitar, acuGuardar, acuFirmar, acuCumplir, acuPdf, actasDe, actaVerI, actaVer, actaForm, actaRellenar, actaGuardar, actaFirmar, actaNegativa, actaMachote, actaMachoteOk, actaPdf, bioActivar, bioDesactivar, verCorteI, verCorte, corteAccion, cortePagoForm, cortePagoGuardar, corteVistaPrevia, corteManual, corteManualOk, corteCfg, corteCfgOk, cortePdf, cargarGrupos, agregarGrupo, guardarGrupos, entrar, salir, ir, irTab, menu, cambiarSuc, cerrarModal, sincronizar, recargar, descartarOp, guardarFolio, cargarDashboard, dashMet, dashVs, dashCorte, dashTog, dashAtajo, dashSucCambio, dashRefrescar, verGastosCat, detKpi, excelDetKpi, excelDashboard, excelVentas, enviarFactCli, compartirFactCli, correoFactCli, cargarAut, resolverAut, verArchAut, abrirConteoAut, formSolFactura, solEditarCli, timbSolicitud, formServicio, svAgregar, svQuitar, svPintarTot, svRec, svGuardarPl, borrarPlantillaServ, timbrarServicio, cobroServicio, cobroServForm, cobroServGuardar, marcarServicio, timbrarRep, enviarRepCli, compartirRepCli, correoRepCli, bajarRepArchivo, zipRepContable, timbrarRepTodos, cancelarRep, cancelarRepPrueba, irComplementos, ignorarRep, restaurarRep, enviarSolFactura, revisarCostosSimb, corregirCostosSimb, irComisTab, verEquipo, fabCot, crmTab, crmForm, crmGuardar, crmVer, crmVerIx, crmVerLst, crmMover, crmSoltar, crmPendientes, crmConvertir, formInteraccion, guardarInteraccion, intTipo, intRes, intArchivos, intQuitarArch, crmNoManejoCargar, crmNoManejoVer, crmOrigenCargar, repElegir, repSuma, repElegirOk, rclTab, rclCargar, rclAbrirIx, rclAbrir, rclMigrar, rclDesde, rclAlProveedor, rclNTipo, rclBuscar, rclElegir, rclElegirOC, rclBuscarOC, rclGuardar, rclEstado, rclDictaminar, rclDictamenOk, rclAplicar, rclEnvio, rclEnvioOk, rclCompensar, rclCompOk, rclSubir, rclVerArch, rclPdf, vistaGastos: t => V.gastos(t), cargarGastos, vistaCatalogoGasto, formConceptoGasto, cgGrupo, guardarConceptoGasto, formRubroGasto, guardarRubroGasto, quitarConceptoGasto, quitarConceptoOk, vistaGastosManuales, cargarGastosManuales, formGastoManual, gmRep, guardarGastoManual, quitarGastoManual, quitarGastoManualOk, filtrarCatGasto, pdfGastos, formComprobantes, formDescargaSat, satMesSel, anotKpi, dashPerdTab, formVentaPerdida, guardarVentaPerdida, formFacturasGasto, subirFacturasGasto, correoGastos, revisarCorreoGastos, verPdfGasto, clasificarGasto, editarCatGasto, guardarCatGasto, guardarClasif, gastoACompra, asignarSucGastos, fleteLigar, fleteSuma, fleteGuardar, cargarSucursales, verSucursal, verGestiones, guardarCambioEncargado, geNota: id => verVenta(id),
     pintarFactNota, asignarFactNota, quitarFactNota, montoFactNota, subirXmlNota, subFact, cargarFacturacion, abrirFactura: i => verFactura(S.lista[i].id), verFactura, agregarNotaFactura, formSubirFactura, subirFactura, importarFacturas,
     vistaCot: t => V.cotizaciones(t), cargarCotizaciones, abrirCot: i => verCotizacion(S.lista[i].id), verCot: verCotizacion, pendienteCot, pdfCot, editarCot, cotAVenta, quitarCotVenta, cancelarCot, reabrirCot, ligarCot, limpiarCot, guardarCot,
     limpiarVenta, guardarVenta, ventaNuevaPara, corregirClienteNota, abrirVenta: i => verVenta(S.lista[i].id), vistaVentas: t => V.ventas(t), buscarEdoCta, filtrarTramo, abrirEdoCta: i => verEdoCta(S.lista[i].idCliente), verEdoCta, pdfEdoCta, recordatorioEC, buscarUtilidad, abrirUtilidad: i => verUtilidad(S.lista[i].id), verVentaId: id => verVenta(id), cancelarVenta,
