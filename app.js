@@ -1110,6 +1110,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 391, f: '24/11/2026', t: [{ x: '📄 Convenio de consignación blindado: nueva plantilla con 29 cláusulas (dinero cobrado, ventas a crédito, intereses moratorios, liquidaciones que se tienen por aceptadas, retiro de lotes, exclusividad con pena, confidencialidad, cesión, notificaciones, firmas y más), declaraciones de ambas partes y datos obligatorios del consignatario (RFC, identificación y domicilio). Si es empresa, su representante y poder. Lugar de firma por sucursal. El pagaré sale para firmarse con tinta y con espacio para aval.', p: 'dueno' }] },
     { v: 390, f: '24/11/2026', t: [{ x: '🛡️ Vigilancia diaria de inventario: el resumen de cada noche trae una sección «Revisión de inventario» que avisa si alguna nota no cuadra con el inventario, si hay lotes en negativo o si alguien escribió renglones fuera de la app (a mano en la hoja). Si todo está bien, dice «Todo en orden».', p: 'dueno' }] },
     { v: 389, f: '24/11/2026', t: [{ x: '🛡️ Inventario blindado: «Cuadrar ventas con inventario» ya no toca notas de más de 6 meses, productos que ya corrigió un conteo físico, lotes caducados ni folios repetidos (solo los avisa), y nada viene marcado. Editar una nota regresa exactamente lo que salió del inventario. Se corrigió un error por el que, al editar, un renglón podía borrarse sin regresar su producto.', p: 'configuracion' }] },
     { v: 388, f: '24/11/2026', t: [{ x: '✅ Ventas y compras cuentan solo cuando son reales: una nota de venta suma (ventas, utilidad, cuentas por cobrar, comisiones, Dashboard y finanzas) hasta que se marca como Entregada, y una compra suma (compras y cuentas por pagar) hasta que se marca como Recibida. Lo pendiente puede cancelarse sin haber movido ninguna cifra. Una nota que todavía no se entrega no se devuelve: se cancela.' }] },
@@ -5498,7 +5499,8 @@ const App = (() => {
   function convEtq(x) { return x && x.estado ? `<span class="etq ${CONV_ETQ[x.estado] || ''}">${CONV_ICO[x.estado] || ''} ${esc(x.estado)}</span>` : ''; }
   function convVenceTxt(x) { return !x || !x.vence ? '' : x.vence === 'indefinida' ? 'vigencia indefinida' : (x.dias < 0 ? 'venció el ' : 'vence el ') + fechaCorta(x.vence) + (x.dias !== null && x.dias !== undefined ? ' (' + (x.dias < 0 ? 'hace ' + Math.abs(x.dias) : 'en ' + x.dias) + ' días)' : ''); }
   const CONV_VAR_TXT = { consignante: 'tu nombre', rfc_consignante: 'tu RFC', consignatario: 'nombre del consignatario', sucursal: 'nombre de la sucursal', lista: 'lista de precios', periodicidad: 'semanal / quincenal / mensual',
-    plazo: 'días para pagar', devolucion: 'días antes de caducar', aviso: 'días de aviso', ciudad: 'ciudad', tope: 'monto máximo', monto_pagare: 'monto del pagaré', vigencia: 'texto de la vigencia' };
+    plazo: 'días para pagar', devolucion: 'días antes de caducar', aviso: 'días de aviso', ciudad: 'ciudad', tope: 'monto máximo', monto_pagare: 'monto del pagaré', vigencia: 'texto de la vigencia',
+    interes: 'interés moratorio mensual', domicilio_consignante: 'tu domicilio (Matriz)', correo_consignante: 'tu correo (Matriz)', domicilio_consignatario: 'domicilio del consignatario', correo_consignatario: 'correo del consignatario', lugar: 'lugar de firma' };
   /** 📄 Vista general: estado del convenio de cada sucursal. */
   async function convenios() {
     let r; try { r = await pedir('convenios', {}); } catch (e) { return toast(/desconocida/i.test(e.message || '') ? 'Se activa con el servidor 236.' : e.message, true); }
@@ -5580,15 +5582,18 @@ const App = (() => {
         <div id="cvFirmas">${convFirmasHtml()}</div></div>` : ''}
       <p class="muted peq">El convenio <b>no lista productos</b>: cada traspaso que le mandes a esta sucursal, firmado de recibido, forma parte de él como anexo. Se recomienda que lo revise tu abogado antes de firmarlo.</p>
       <h4 style="margin:10px 0 4px">El consignatario</h4>
-      <div class="rejilla"><label>Nombre completo<input id="cvNom" value="${v(d.nombre)}"></label><label>RFC<input id="cvRfc" value="${v(d.rfc)}" style="text-transform:uppercase"></label>
-        <label>Identificación (opcional)<input id="cvIde" value="${v(d.identificacion)}" placeholder="INE núm. …"></label><label>Domicilio<input id="cvDom" value="${v(d.domicilio)}"></label>
+      <p class="muted peq" style="margin:0 0 4px">🛡️ Nombre, RFC, identificación y domicilio son obligatorios: sin ellos no se le puede notificar ni demandar.</p>
+      <div class="rejilla"><label>Nombre completo o razón social *<input id="cvNom" value="${v(d.nombre)}"></label><label>RFC *<input id="cvRfc" value="${v(d.rfc)}" style="text-transform:uppercase" maxlength="13"></label>
+        <label>Identificación oficial *<input id="cvIde" value="${v(d.identificacion)}" placeholder="credencial para votar núm. …"></label><label>Domicilio para notificaciones *<input id="cvDom" value="${v(d.domicilio)}"></label>
+        <label>Correo para avisos<input id="cvCor" type="email" value="${v(d.correo)}"></label><label>Lugar de firma<input id="cvLug" value="${v(d.lugar)}" placeholder="${v(r.suc.direccion || c.ciudad)}"></label>
+        <label>Si es empresa: representante legal<input id="cvRep" value="${v(d.representante)}" placeholder="vacío si es persona física"></label><label>Si es empresa: poder del representante<input id="cvPod" value="${v(d.poder)}" placeholder="escritura núm., fecha y notario"></label>
         <label>Fecha del convenio<input type="date" id="cvFec" value="${v(renovar ? hoyISO() : d.fecha)}"></label><label>Vigencia (meses; 0 = indefinida)<input type="number" id="cvVig" min="0" value="${v(d.vigencia)}"></label>
         <label>Monto máximo de mercancía (opcional)<input type="number" id="cvTope" min="0" step="1000" value="${v(d.tope)}" placeholder="sin tope">${r.uso ? `<small class="${r.uso.pct >= 90 ? 'aviso-txt' : 'muted'}">Hoy tiene ${$$(r.uso.valor)} (${r.uso.pct}%)</small>` : ''}${(r.topes || []).length ? `<small class="muted">Último cambio: ${esc(fechaCorta(r.topes[r.topes.length - 1].fecha))}, antes ${$$(r.topes[r.topes.length - 1].anterior)}</small>` : ''}</label>
         <label>Testigo 1 (opcional)<input id="cvT1" value="${v(d.testigo1)}"></label><label>Testigo 2 (opcional)<input id="cvT2" value="${v(d.testigo2)}"></label></div>
       <label class="check"><input type="checkbox" id="cvRen" ${d.renovacion ? 'checked' : ''}> Renovación automática por periodos iguales</label>
       <label class="check"><input type="checkbox" id="cvPag" ${d.pagare ? 'checked' : ''} onchange="document.getElementById('cvPagM').style.display=this.checked?'':'none'"> Incluir pagaré como garantía</label>
       <div id="cvPagM" style="${d.pagare ? '' : 'display:none'}"><div class="rejilla"><label>Monto del pagaré<input type="number" id="cvMonP" min="0" step="1000" value="${v(d.montoPagare)}" placeholder="igual al tope"></label>
-        <label>Interés moratorio mensual (%)<input type="number" id="cvInt" min="0" step="0.5" value="${v(c.interes)}"></label></div></div>
+        <label>Interés moratorio mensual (%)<input type="number" id="cvInt" min="0" step="0.5" value="${v(c.interes)}"></label></div><p class="muted peq">✍️ El pagaré se imprime para firmarse con tinta: una firma digital no lo hace válido.</p></div>
       <details style="margin-top:8px"><summary><b>📝 Cláusulas de esta sucursal</b> <small class="muted">(${r.propia ? 'ajustadas para esta sucursal' : 'iguales a la plantilla base'})</small></summary>
         <p class="muted peq" style="margin:4px 0">Lo que cambies aquí se guarda <b>solo para esta sucursal</b> al generar el convenio; la plantilla base no se toca.</p>
         <div class="acciones" style="justify-content:flex-start;margin:2px 0"><button class="btn" onclick="App.convUsarBase()">↺ Usar la plantilla base</button><button class="btn" onclick="App.convBase(1)">✏️ Editar plantilla base</button></div>
@@ -5642,9 +5647,13 @@ const App = (() => {
   function convenioPdf() {
     const r = S.conv; if (!r) return; const g = id => ($('#' + id) || {}).value || '';
     if (!g('cvNom').trim()) return toast('Escribe el nombre del consignatario', true);
+    if (!/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(g('cvRfc').trim().toUpperCase())) return toast('Escribe el RFC completo del consignatario', true);
+    if (!g('cvIde').trim()) return toast('Escribe la identificación oficial del consignatario', true);
+    if (!g('cvDom').trim()) return toast('Escribe el domicilio del consignatario', true);
+    if (g('cvRep').trim() && !g('cvPod').trim()) return toast('Escribe los datos del poder del representante', true);
     const cl = convLeerCl().filter(c => String(c.t).trim() && String(c.x).trim()); if (!cl.length) return toast('El convenio necesita al menos una cláusula', true);
     const p = { suc: r.suc.id, clausulas: cl,
-      datos: { nombre: g('cvNom').trim(), rfc: g('cvRfc').trim().toUpperCase(), identificacion: g('cvIde').trim(), domicilio: g('cvDom').trim(), fecha: g('cvFec'), vigencia: g('cvVig'), tope: g('cvTope'), renovacion: !!($('#cvRen') && $('#cvRen').checked),
+      datos: { nombre: g('cvNom').trim(), rfc: g('cvRfc').trim().toUpperCase(), identificacion: g('cvIde').trim(), domicilio: g('cvDom').trim(), correo: g('cvCor').trim(), lugar: g('cvLug').trim(), representante: g('cvRep').trim(), poder: g('cvPod').trim(), fecha: g('cvFec'), vigencia: g('cvVig'), tope: g('cvTope'), renovacion: !!($('#cvRen') && $('#cvRen').checked),
         pagare: !!($('#cvPag') && $('#cvPag').checked), montoPagare: g('cvMonP'), testigo1: g('cvT1').trim(), testigo2: g('cvT2').trim() },
       cfg: { consignante: g('cvCon').trim(), rfc: g('cvCRfc').trim().toUpperCase(), periodicidad: g('cvPer'), plazo: g('cvPlazo'), devolucionCad: g('cvCad'), avisoTerminacion: g('cvAviso'), ciudad: g('cvCiu').trim(), interes: g('cvInt') || r.cfg.interes } };
     generarPdf('convenioConsig', p, { titulo: 'Convenio de consignación', texto: 'Convenio de consignación · ' + r.suc.nombre, asunto: 'Convenio de consignación ' + r.suc.nombre, volver: `App.convenioForm('${esc(r.suc.id)}')` });
@@ -7335,6 +7344,7 @@ const App = (() => {
     { t: '4. Inventario y abasto', p: ['inventario', 'traspasos', 'compras', 'inventario_fisico', 'reclamaciones'], g: [
       { h: 'Cómo se calcula la existencia', p: 'inventario', b: [['p', 'La existencia sale de los movimientos (ventas, devoluciones, compras, traspasos, ajustes y mermas) por sucursal, lote y caducidad. Nunca cambies cantidades a mano en la hoja: usa ajustes o conteo físico.'], ['p', 'El valor del inventario (en Inventario y en Sucursales → Resumen) se calcula al precio de la lista asignada a cada sucursal, que es lo que le paga a Matriz; Matriz se valúa a Subdistribuidor.', 'ver_importes']] },
       { h: 'Inventario', p: 'inventario', b: [['p', 'Sucursales → Inventario: existencias por producto y lote, caducidades, productos sin rotación y riesgo de caducidad.']] },
+      { h: '📄 Convenios con sucursales', p: 'dueno', b: [['ol', ['Configuración › Sucursales › 📄 Convenios: toca la sucursal.', 'Captura los datos obligatorios del consignatario: nombre o razón social, RFC, identificación oficial y domicilio para notificaciones (y correo para avisos). Si es empresa, su representante legal y los datos del poder. Pon el lugar de firma.', 'Revisa vigencia, monto máximo y pagaré; ajusta cláusulas solo si esa sucursal lo necesita (la plantilla base no se toca).', '📄 Generar convenio: sale con declaraciones de ambas partes y 29 cláusulas. Fírmenlo en «✍️ Firmas digitales» y vuelve a generarlo para que las firmas queden en el PDF.']], ['ul', ['El pagaré se imprime y se firma con tinta (firma autógrafa) y tiene espacio para aval: una firma digital no lo hace válido.', 'Recomendado: que tu abogado revise el convenio y ratificar las firmas ante notario, sobre todo si hay pagaré.', 'La forma de facturar la ganancia de cada sucursal se define con la contadora.']]] },
       { h: 'Traspasos', p: 'traspasos', b: [['p', 'Envía mercancía de un almacén a otro. Queda en tránsito hasta que quien recibe toca Entregar. Cada traspaso tiene su folio.']] },
       { h: 'Requisición de traspaso', p: 'requisiciones', b: [['p', 'Pide productos a otra sucursal; lo que no hay pasa a compra.']] },
       { h: 'Ajustes y mermas', p: ['ajustes', 'mermas'], b: [['p', 'Entradas o salidas por diferencia, daño, caducidad o consumo, siempre con motivo.']] },
