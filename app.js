@@ -780,6 +780,7 @@ const App = (() => {
     { id: 'midia', t: 'Actividades del día', i: '📅', p: ['ventas', 'seguimiento', 'cobranza'] },
     { id: 'venta', t: 'Nueva venta', i: '🛒', p: 'ventas' },
     { id: 'pos', t: 'Venta rápida', i: '⚡', p: 'ventas' },
+    { id: 'calc', t: 'Calculadora ganadera', i: '🐄', p: ['ventas', 'cotizaciones', 'inventario', 'listas_precios'] },
     { id: 'ventas', t: 'Ventas', i: '🧾', p: ['ventas', 'cobranza'] },
     { id: 'cotizaciones', t: 'Cotizaciones', i: '📝', p: 'cotizaciones' },
     { id: 'seguimiento', t: 'Seguimiento', i: '🤝', p: ['seguimiento', 'recetas'] },
@@ -825,7 +826,7 @@ const App = (() => {
   ];
   // Orden del menú lateral por bloques (de lo más operativo a lo administrativo); lo que no esté aquí va al final
   const MENU_BLOQUES = [
-    ['Venta y cobro', ['inicio', 'midia', 'venta', 'pos', 'ventas', 'caja', 'autorizar']],
+    ['Venta y cobro', ['inicio', 'midia', 'venta', 'pos', 'calc', 'ventas', 'caja', 'autorizar']],
     ['Clientes', ['clientes', 'cotizaciones', 'seguimiento']],
     ['Inventario y abasto', ['sucursales', 'asociacion', 'productos', 'compras', 'proveedores', 'reclamaciones']],
     ['Revisión y análisis', ['resumen', 'tablero', 'mapa']],
@@ -931,14 +932,14 @@ const App = (() => {
   function fabCot() { S.tabCot = 'nueva'; ir('cotizaciones', true); }
   /* ---------- BIENVENIDA (solo celulares y tabletas: iPhone, iPad, Android) ---------- */
   const esMovil = () => { try { return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) || window.innerWidth <= 820; } catch (e) { return window.innerWidth <= 820; } };
-  const SUB_MENU = { anotaciones: 'Cálculos, ajustes y cambios que pide la contadora', contable: 'Facturado al SAT, compras, gastos y bancos', resumen: 'Ventas, cortes, cartera y caducidades', pos: 'Cobro rápido con código de barras', caja: 'Cortes por sucursal', bancos: 'Estados de cuenta y movimientos', reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
+  const SUB_MENU = { anotaciones: 'Cálculos, ajustes y cambios que pide la contadora', contable: 'Facturado al SAT, compras, gastos y bancos', resumen: 'Ventas, cortes, cartera y caducidades', pos: 'Cobro rápido con código de barras', calc: 'Dosis por peso, envases, hidratación y diluciones', caja: 'Cortes por sucursal', bancos: 'Estados de cuenta y movimientos', reclamaciones: 'Quejas de clientes y con proveedores', inicio: 'Resultados y resumen del día', tablero: 'Análisis y comparativos por año', venta: 'Capturar una nota de venta', ventas: 'Notas, cobranza y facturas', cotizaciones: 'Cotizar y dar seguimiento',
     seguimiento: 'Clientes por atender y visitas', comisiones: 'Comisionistas y liquidaciones', compras: 'Órdenes de compra y pedido sugerido', gastos: 'Gastos del negocio', sucursales: 'Inventario, traspasos y requisiciones',
     productos: 'Catálogo, portafolio y precios', clientes: 'Cartera de clientes', mapa: 'Dónde están tus clientes: casa y rancho', proveedores: 'Laboratorios y distribuidores', config: 'Folios, permisos y ajustes' };
   function saludo() { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; }
   function bienvenida() {
     let el = $('#bienvenida');
     if (!el) { el = document.createElement('section'); el.id = 'bienvenida'; el.className = 'bienv'; document.body.appendChild(el); }
-    const u = U(), items = MENU.filter(m => !m.oculto && puedeVer(m.id, m.p) && m.id !== 'venta').map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null; return { id: m.id, e: solo || m }; });
+    const u = U(), items = MENU.filter(m => !m.oculto && puedeVer(m.id, m.p) && m.id !== 'venta' && m.id !== 'calc').map(m => { const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null; return { id: m.id, e: solo || m }; });
     const fecha = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
     const nombre = String(u.apodo || u.nombre || '').trim().split(/\s+/).slice(0, 2).map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
     el.innerHTML = `<div class="bienv-fondo" aria-hidden="true"></div>
@@ -951,6 +952,7 @@ const App = (() => {
         <div class="bienv-estado" id="bienvEstado"></div>
         ${puede('ventas') ? `<button class="bienv-cta" onclick="App.bienvIr('venta')"><span>🛒</span><div><b>Nueva venta</b><small>Captura una nota en segundos</small></div><em>›</em></button>
           <button class="bienv-cta bienv-cta2" onclick="App.escanearTarjeta()"><span>📷</span><div><b>Escanear tarjeta</b><small>QR del cliente → venta con sus datos</small></div><em>›</em></button>` : ''}
+        ${puedeVer('calc', MENU.find(m => m.id === 'calc').p) ? `<button class="bienv-cta bienv-cta3" onclick="App.bienvIr('calc')"><span>🐄</span><div><b>Calculadora ganadera</b><small>Dosis por peso, envases y precio al momento</small></div><em>›</em></button>` : ''}
         <div class="bienv-grid">${items.map(x => `<button class="bienv-item" onclick="App.bienvIr('${x.id}')"><span class="bienv-ico">${x.e.i}</span><b>${esc(x.e.t)}</b><small>${esc(SUB_MENU[x.id] || '')}</small></button>`).join('')}</div>
         <div class="bienv-pie">Interés Veterinario® · ${new Date().getFullYear()}${S.cola && S.cola.length ? ` · <b>${S.cola.length} por sincronizar</b>` : ''}<div class="ver-app"></div></div>
         <button class="bienv-salir" onclick="App.salirBienv()" aria-label="Cerrar sesión">⏻ Cerrar sesión</button>
@@ -1110,6 +1112,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 393, f: '26/11/2026', t: [{ x: '🐄 Calculadora ganadera (botón verde en la pantalla de inicio y en el menú, junto a Venta rápida): con el peso y las cabezas calcula los ml por animal y el total, cuántos envases llevar de cada presentación con su precio (marca la que más conviene) y los manda a la venta o a la cotización con un toque. También calcula la hidratación de becerros y la dilución de desinfectantes y baños, y copia el resumen para WhatsApp. Funciona sin señal.', p: 'ventas' }, { x: '💾 Quien edita productos puede guardar en la calculadora la dosis revisada de cada producto (dosis, vía, retiros en carne y leche, máximo por sitio). Mientras no se guarde, la app propone la dosis que encuentra en el texto de Dosis del catálogo y la marca para verificar.', p: 'productos_editar' }] },
     { v: 392, f: '26/11/2026', t: [{ x: '💉 Vacunas con precio especial: los gerentes pueden cambiar el precio de venta de los productos de la categoría BIOLÓGICOS sin el mínimo de su sucursal (lista + 10 %) y sin que la nota vaya a Por autorizar. Los vendedores y el resto de los productos siguen igual.', p: 'ventas' }] },
     { v: 391, f: '24/11/2026', t: [{ x: '📄 Convenio de consignación blindado: nueva plantilla con 29 cláusulas (dinero cobrado, ventas a crédito, intereses moratorios, liquidaciones que se tienen por aceptadas, retiro de lotes, exclusividad con pena, confidencialidad, cesión, notificaciones, firmas y más), declaraciones de ambas partes y datos obligatorios del consignatario (RFC, identificación y domicilio). Si es empresa, su representante y poder. Lugar de firma por sucursal. El pagaré sale para firmarse con tinta y con espacio para aval.', p: 'dueno' }] },
     { v: 390, f: '24/11/2026', t: [{ x: '🛡️ Vigilancia diaria de inventario: el resumen de cada noche trae una sección «Revisión de inventario» que avisa si alguna nota no cuadra con el inventario, si hay lotes en negativo o si alguien escribió renglones fuera de la app (a mano en la hoja). Si todo está bien, dice «Todo en orden».', p: 'dueno' }] },
@@ -7326,6 +7329,7 @@ const App = (() => {
         ['p', 'Puedes cambiar el precio en la venta. Si no tienes el permiso «vender abajo de la lista sin autorización», al bajarlo de la lista del cliente la nota se registra igual (también sin señal) y llega a Por autorizar para que el dueño la apruebe; si la rechaza, la nota se corrige o se cancela.', 'precio_editar']] },
       { h: 'Editar una nota', p: 'ventas_editar', b: [['p', 'En la nota toca ✏️ Editar. La pantalla muestra «Editando la nota X de CLIENTE · NO es venta nueva» y al guardar pide confirmar folio y total. Si eliges a otro cliente, la app te propone hacer una venta nueva y la nota original no se toca. Para salir sin cambios usa Salir sin guardar.']] },
       { h: 'Venta rápida', p: 'ventas', b: [['p', 'Pantalla de mostrador para vender en segundos a público en general: escanea o busca, cobra y entrega el ticket.']] },
+    { h: 'Calculadora ganadera', p: 'ventas', b: [['p', 'Botón verde 🐄 en la pantalla de inicio (y en el menú, en Venta y cobro). Tres pestañas:'], ['ul', ['💉 Dosis y envases: busca el producto, escribe el peso por animal y las cabezas. La app pone la dosis del producto (✅ revisada, o ⚠️ leída del texto del catálogo para que la verifiques) y calcula los ml por animal, el total, en cuántos sitios repartir y el tiempo de retiro. Abajo salen todas las presentaciones del producto con cuántas llevar, lo que sobra, la existencia y el precio en la lista que elijas; la que más conviene va marcada. 🛒 Venta o 📝 Cotizar las agrega con esa cantidad.', 'Si el producto no tiene dosis, captúrala a mano (por peso: ml por cada X kg; por animal: dosis fija, p. ej. vacunas).', 'Quien edita productos abre «💾 Guardar la dosis de la etiqueta» para dejarla como dosis revisada en todas las presentaciones (vía, retiro en carne y leche, máximo por sitio y por animal, nota).', '🍼 Hidratación de becerros: peso y grado de deshidratación → litros para reponer, mantenimiento, total del día y cuánto por toma.', '🧴 Desinfectantes y baños: litros de agua y dilución (1:X o por litro) → cuánto producto poner.', '📋 Copiar resumen para WhatsApp en cada pestaña. Funciona sin señal (guardar una dosis sí necesita conexión).']], ['p', 'Es una herramienta de apoyo: siempre verifica la etiqueta del producto.']] },
       { h: 'Ventas', p: 'ventas', b: [['p', 'Lista de notas con filtros por fecha, cliente y estado. Al abrir una nota puedes cobrar, entregar, imprimir, mandar el PDF, ver sus cobros y solicitar factura.'], ['p', 'También puedes cancelar notas y hacer devoluciones.', 'ventas_cancelar']] },
       { h: 'Facturación', p: 'facturacion', b: [['ul', ['Ventas → Facturación: Facturas, Por facturar, Piezas sin facturar y Marcadas SI sin factura, para controlar qué notas ya tienen CFDI.']], ['ul', ['Complementos de pago (solo Matriz): los abonos a facturas PPD salen solos; elige la forma de pago y toca 💳 Timbrar. Ya timbrado, «📤 Enviar» lo manda al cliente por WhatsApp (con enlaces al PDF y XML) o por correo (con los archivos adjuntos). La contadora los ve en 🧮 Contabilidad del mes › 💳 Complementos.', '🛎️ Servicios (solo Matriz): facturas de servicio con su folio interno SERV-####; 💵 Registrar cobro funciona igual que el cobro de una nota. Las facturas subidas por XML que son de un servicio se pasan con «Pasar a Servicios».'], () => esJefeM() && U().todasSucursales]] },
       { h: 'Cobrar', p: 'cobranza', b: [['p', 'En la nota toca Registrar cobro: monto (trae el saldo), fecha, forma de pago, cuenta o caja, terminal y referencia si fue con tarjeta, nota y comprobante (foto y/o PDF). Sin señal, el cobro queda guardado y se envía al reconectar.']] },
@@ -12506,6 +12510,215 @@ const App = (() => {
   function detenerEscaner() { const l = S.lector; S.lector = null; if (l) { try { l.stop().catch(() => {}).then(() => { try { l.clear(); } catch (e) {} }); } catch (e) {} } }
   function cerrarEscaner() { detenerEscaner(); cerrarModal(); if (S.vista === 'pos') { V.pos(); setTimeout(posFoco, 60); } }
 
+  /* ---- 🐄 CALCULADORA GANADERA (acceso rápido; funciona sin señal con el catálogo guardado) ---- */
+  const CG_LS = 'calcGan';
+  function cgEstado() { if (!S.cg) S.cg = Object.assign({ tab: 'dosis', pid: '', kg: '350', cab: '1', ml: '', por: '', modo: 'kg', u: 'ml', sz: '', lista: '', hKg: '40', hPct: '8', hNiv: 'm', hTomas: 4, dAgua: '20', dModo: 'ratio', dRatio: '100', dPorL: '10', dU: 'ml' }, LS.get(CG_LS, {}) || {}); return S.cg; }
+  const cgGuardar = () => LS.set(CG_LS, S.cg);
+  const cgNum = v => { const n = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(n) && n > 0 ? n : 0; };
+  /** Presentaciones del mismo producto (mismo laboratorio y nombre base). */
+  const cgHermanos = p => { const k = claveProd(p); return (D().productos || []).filter(x => x.activo !== false && x.activo !== 'NO' && claveProd(x) === k); };
+  /** Dosis del producto: la validada de cualquiera de sus presentaciones, si no la sugerida del texto. */
+  const cgDosisDe = p => { const h = cgHermanos(p); return (h.find(x => x.calc && x.calc.ok) || (p.calc ? p : null) || h.find(x => x.calc) || {}).calc || null; };
+  /** Contenido del envase leído del nombre o la unidad: { sz, u: 'ml' | 'g' | 'dosis' }. */
+  function cgPres(p) {
+    for (const t of [p.nombre, p.unidad]) {
+      const s = String(t || '');
+      let m = s.match(/(\d+(?:[.,]\d+)?)\s*(?:dosis|ds)\b/i); if (m) return { sz: cgNum(m[1]), u: 'dosis' };
+      m = s.match(/(\d+(?:[.,]\d+)?)\s*(ml|cc|lts?|l|litros?|kgs?|grs?|g)\b\.?/i);
+      if (m) { let n = cgNum(m[1]); const u = m[2].toLowerCase(); if (/^(l|lt|lts|litro|litros|kg|kgs)$/.test(u)) n *= 1000; if (n) return { sz: n, u: /^(g|gr|grs|kg|kgs)$/.test(u) ? 'g' : 'ml' }; }
+    }
+    return null;
+  }
+  function cgListas(p) { return Object.keys((p && p.precios) || {}).filter(l => Number(p.precios[l]) > 0); }
+  /** Cálculo de la pestaña de dosis. */
+  function cgCalculo() {
+    const g = cgEstado(), p = g.pid ? prod(g.pid) : null, kg = cgNum(g.kg), cab = Math.max(1, Math.round(cgNum(g.cab) || 1));
+    const ml = cgNum(g.ml), por = cgNum(g.por), modo = g.modo === 'cab' ? 'cab' : 'kg';
+    let an = modo === 'cab' ? ml : (por ? kg * ml / por : 0);
+    const d = p ? cgDosisDe(p) : null, tope = d && d.max && an > d.max ? d.max : 0;
+    if (tope) an = tope;
+    const total = an * cab;
+    const sitios = d && d.sitio && an > d.sitio ? Math.ceil(an / d.sitio) : 0;
+    return { g, p, d, kg, cab, ml, por, modo, an, total, tope, sitios, u: g.u === 'g' ? 'g' : 'ml' };
+  }
+  /** Envases por presentación (todas las del producto) con su precio en la lista elegida. */
+  function cgEnvases(c) {
+    if (!c.p || !(c.total > 0)) return [];
+    const manual = cgNum(c.g.sz);
+    return cgHermanos(c.p).map(x => {
+      const pr = cgPres(x) || (x.id === c.p.id && manual ? { sz: manual, u: c.u } : null); if (!pr) return null;
+      let n;
+      if (pr.u === 'dosis') { if (c.modo !== 'cab') return null; n = Math.ceil(c.cab / pr.sz); }
+      else n = Math.ceil(c.total / pr.sz - 1e-9);
+      const pz = Math.max(1, Number(x.piezas) || 1), uds = Math.ceil(n / pz), precio = c.g.lista ? precioVta(x, c.g.lista) : 0, sub = uds * precio, iva = sub * (x.iva || 0);
+      const sob = pr.u === 'dosis' ? n * pr.sz - c.cab : n * pr.sz - c.total;
+      return { p: x, pr, n, pz, uds, precio, total: sub + iva, iva, sob, exist: existencia(x.id, sucTrabajo()) };
+    }).filter(Boolean).sort((a, b) => (a.precio && b.precio ? a.total - b.total : 0) || a.sob - b.sob);
+  }
+  V.calc = () => {
+    const g = cgEstado();
+    const tabs = [['dosis', '💉 Dosis y frascos'], ['hidra', '🍼 Hidratación de becerros'], ['desinf', '🧴 Desinfectantes y baños']];
+    $('#vista').innerHTML = `<div class="cg">
+      <div class="cg-tabs">${tabs.map(t => `<button class="${g.tab === t[0] ? 'on' : ''}" onclick="App.cgTab('${t[0]}')">${t[1]}</button>`).join('')}</div>
+      <div id="cgCuerpo"></div>
+      <p class="cg-aviso">⚠️ Herramienta de apoyo. Verifica siempre la concentración, la vía y los tiempos de retiro en la etiqueta del producto y consulta al Médico Veterinario Zootecnista.</p></div>`;
+    if (g.tab === 'hidra') cgHidra(); else if (g.tab === 'desinf') cgDesinf(); else cgDosis();
+  };
+  function cgTab(t) { cgEstado().tab = t; cgGuardar(); V.calc(); }
+  const cgCampo = (id, t, v, extra) => `<label class="ico-ok">${t}<input id="${id}" type="text" inputmode="decimal" value="${esc(v)}" autocomplete="off"${extra || ''}></label>`;
+  const cgStat = (t, v, u, s) => `<div class="cg-res"><small>${t}</small><b>${v}<i>${u || ''}</i></b>${s ? `<span>${s}</span>` : ''}</div>`;
+  function cgDosis() {
+    const g = cgEstado(), p = g.pid ? prod(g.pid) : null, d = p ? cgDosisDe(p) : null;
+    const listas = p ? cgListas(p) : [];
+    if (p && listas.length && listas.indexOf(g.lista) < 0) g.lista = listas.indexOf((S.venta && S.venta.lista) || '') >= 0 ? S.venta.lista : listas.indexOf('Publico') >= 0 ? 'Publico' : listas[0];
+    const editar = puede('productos_editar');
+    const est = !p ? '' : d && d.ok ? '<span class="etq ok">✅ Dosis revisada</span>' : d ? '<span class="etq av">⚠️ Dosis leída del texto del catálogo: verifícala en la etiqueta</span>' : '<span class="etq mal">Sin dosis registrada: captúrala abajo</span>';
+    $('#cgCuerpo').innerHTML = `<div class="tarjeta">
+        <div class="buscador"><input id="cgQ" type="search" placeholder="🔍 Busca el producto (nombre, clave, laboratorio o código)" autocomplete="off"></div>
+        ${p ? `<div class="cg-prod"><div><b>${esc(baseProd(p.nombre))}</b><small>${esc([p.lab, p.categoria].filter(Boolean).join(' · '))}</small>${est}</div><button class="btn chico" onclick="App.cgQuitar()">Quitar</button></div>` : '<p class="muted peq" style="margin:8px 0 0">Elige un producto para usar su dosis y sus presentaciones, o captura la dosis a mano.</p>'}
+        <div class="cg-2">${cgCampo('cgKg', 'Peso por animal (kg)', g.kg)}${cgCampo('cgCab', 'Cabezas a tratar', g.cab)}</div>
+        <div class="cg-seg"><button class="${g.modo !== 'cab' ? 'on' : ''}" onclick="App.cgSet('modo','kg')">Por peso</button><button class="${g.modo === 'cab' ? 'on' : ''}" onclick="App.cgSet('modo','cab')">Por animal</button>
+          <span style="flex:1"></span><button class="${g.u !== 'g' ? 'on' : ''}" onclick="App.cgSet('u','ml')">ml</button><button class="${g.u === 'g' ? 'on' : ''}" onclick="App.cgSet('u','g')">g</button></div>
+        <div class="cg-2">${cgCampo('cgMl', 'Cantidad (' + (g.u === 'g' ? 'g' : 'ml') + ')', g.ml)}${g.modo === 'cab' ? '<div class="cg-por">por animal</div>' : cgCampo('cgPor', 'por cada (kg)', g.por)}</div>
+        ${p && d && d.nota ? `<p class="peq muted" style="margin:6px 0 0">📝 ${esc(d.nota)}</p>` : ''}
+      </div>
+      <div id="cgRes"></div>
+      ${p && editar ? `<details class="tarjeta cg-etq"${d && !d.ok ? ' open' : ''}><summary>💾 Guardar la dosis de la etiqueta en el producto (solo quien edita productos)</summary>
+        <p class="muted peq">Se guarda en todas las presentaciones de ${esc(baseProd(p.nombre))} y la calculadora la usa como <b>dosis revisada</b>. Usa la dosis y el peso de arriba.</p>
+        <div class="cg-2"><label class="ico-ok">Vía de aplicación<input id="cgVia" value="${esc((d && d.via) || '')}" placeholder="Ej. Subcutánea (SC)"></label>
+          <label class="ico-ok">Máx. por sitio de aplicación (ml)<input id="cgSitio" inputmode="decimal" value="${esc((d && d.sitio) || '')}" placeholder="Opcional, p. ej. 10"></label>
+          <label class="ico-ok">Retiro en carne<input id="cgCarne" value="${esc((d && d.carne) || '')}" placeholder="Ej. 35 días"></label>
+          <label class="ico-ok">Retiro en leche<input id="cgLeche" value="${esc((d && d.leche) || '')}" placeholder="Ej. No usar en vacas lactantes"></label>
+          <label class="ico-ok">Dosis máxima por animal (ml)<input id="cgMax" inputmode="decimal" value="${esc((d && d.max) || '')}" placeholder="Opcional"></label>
+          <label class="ico-ok">Nota<input id="cgDNota" value="${esc((d && d.nota) || '')}" placeholder="Ej. Repetir a los 21 días"></label></div>
+        <div class="acciones"><button class="btn primario" onclick="App.cgGuardarDosis()">💾 Guardar dosis revisada</button></div></details>` : ''}`;
+    buscador($('#cgQ'), { fuente: q => fuenteProductos(sucTrabajo(), g.lista || 'Publico', true)(q), limpiar: true, alElegir: x => cgElegir(x.id),
+      codigo: t => { const pr = (D().productos || []).find(x => String(x.cb || '').split(',').indexOf(t) >= 0); if (pr) { cgElegir(pr.id); return true; } return false; } });
+    [['cgKg', 'kg'], ['cgCab', 'cab'], ['cgMl', 'ml'], ['cgPor', 'por']].forEach(([id, k]) => { const el = $('#' + id); if (el) el.oninput = () => { g[k] = el.value; cgGuardar(); cgPintarRes(); }; });
+    cgPintarRes();
+  }
+  function cgElegir(id) {
+    const g = cgEstado(), p = prod(id); if (!p) return;
+    g.pid = id; g.sz = '';
+    const d = cgDosisDe(p);
+    if (d) { g.modo = d.modo === 'cab' ? 'cab' : 'kg'; g.ml = String(d.ml); g.por = d.kg ? String(d.kg) : ''; g.u = d.u === 'g' ? 'g' : 'ml'; }
+    cgGuardar(); cgDosis();
+  }
+  function cgQuitar() { const g = cgEstado(); g.pid = ''; cgGuardar(); cgDosis(); }
+  function cgSet(k, v) { const g = cgEstado(); g[k] = v; cgGuardar(); if (S.vista === 'calc') V.calc(); }
+  function cgPintarRes() {
+    const c = cgCalculo(), el = $('#cgRes'); if (!el) return;
+    const g = c.g, u = c.u, d = c.d;
+    if (!(c.an > 0)) { el.innerHTML = `<div class="tarjeta"><div class="vacio">Captura ${c.modo === 'cab' ? 'la dosis por animal' : 'la dosis y por cada cuántos kg va'} para calcular.</div></div>`; return; }
+    const env = cgEnvases(c), pres = c.p ? cgPres(c.p) : null, verPrecio = c.p && cgListas(c.p).length;
+    const retiro = d ? (d.carne || d.leche ? `Carne: <b>${esc(d.carne || 'ver etiqueta')}</b> · Leche: <b>${esc(d.leche || 'ver etiqueta')}</b>` : d.ret ? esc(d.ret) : '') : '';
+    el.innerHTML = `<div class="cg-stats">${cgStat('Dosis por animal', nf(c.an), ' ' + u, c.sitios ? '💉 Repartir en ' + c.sitios + ' sitios (máx. ' + nf(d.sitio) + ' ml por sitio)' : c.modo === 'kg' ? nf(c.ml) + ' ' + u + ' por cada ' + nf(c.por) + ' kg' : 'Dosis fija')}
+        ${cgStat('Total para ' + nf(c.cab) + ' cabeza' + (c.cab === 1 ? '' : 's'), nf(c.total), ' ' + u, c.total >= 1000 ? nf(c.total / 1000) + (u === 'g' ? ' kg' : ' litros') : '')}</div>
+      ${c.tope ? `<div class="cg-alerta">La dosis se limitó a <b>${nf(c.tope)} ${u}</b> por animal: es la máxima registrada para este producto.</div>` : ''}
+      ${c.p ? `<div class="tarjeta cg-etiq"><div><small>Vía de aplicación</small><b>${esc((d && d.via) || 'Según la etiqueta')}</b></div><div><small>Tiempo de retiro</small><b>${retiro || 'No registrado: revisa la etiqueta'}</b></div></div>` : ''}
+      ${c.p ? `<div class="tarjeta"><h3 style="margin-top:0">📦 ¿Cuántos envases?</h3>
+        ${verPrecio ? `<div class="cg-seg cg-listas">${cgListas(c.p).map(l => `<button class="${g.lista === l ? 'on' : ''}" onclick="App.cgSet('lista','${esc(l)}')">${esc(l)}</button>`).join('')}</div>` : ''}
+        ${!pres ? `<div class="cg-2" style="margin-bottom:6px">${cgCampo('cgSz', 'Contenido del envase de ' + esc(baseProd(c.p.nombre)) + ' (' + u + ')', g.sz, ' placeholder="No lo encontré en el nombre"')}</div>` : ''}
+        ${env.length ? env.map((x, i) => `<div class="cg-env${i === 0 && env.length > 1 ? ' mejor' : ''}"><div><b>${nf(x.uds)} × ${esc(x.p.unidad || 'pieza')}</b> <small>${esc(x.p.nombre)}</small>
+            <small class="muted">${x.pz > 1 ? nf(x.n) + ' envases (' + x.pz + ' por ' + esc(String(x.p.unidad || '').toLowerCase()) + ') · ' : ''}Sobran ${nf(x.sob)} ${x.pr.u === 'dosis' ? 'dosis' : u} · Exist. ${nf(x.exist)}${i === 0 && env.length > 1 ? ' · <b>✔ conviene</b>' : ''}</small></div>
+            <div class="cg-env-der">${x.precio ? `<b>${$$(x.total)}</b><small>${$$(x.precio)} c/u${x.iva ? ' + IVA' : ''}</small>` : verPrecio ? '<small class="muted">Sin precio en ' + esc(g.lista) + '</small>' : ''}
+            <span><button class="btn chico primario" onclick="App.cgAVenta('${esc(x.p.id)}',${x.uds})">🛒 Venta</button><button class="btn chico" onclick="App.cgACot('${esc(x.p.id)}',${x.uds})">📝 Cotizar</button></span></div></div>`).join('')
+          : `<p class="muted">${pres && pres.u === 'dosis' && c.modo !== 'cab' ? 'Este producto viene por dosis: cambia a «Por animal».' : 'Captura el contenido del envase para calcular cuántos llevar.'}</p>`}</div>` : ''}
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.cgCopiar()">📋 Copiar resumen para WhatsApp</button></div>`;
+    const sz = $('#cgSz'); if (sz) { sz.oninput = () => { g.sz = sz.value; cgGuardar(); clearTimeout(S.cgT); S.cgT = setTimeout(() => { cgPintarRes(); const n = $('#cgSz'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 500); }; }
+  }
+  function cgResumen() {
+    const c = cgCalculo(), d = c.d, u = c.u, env = cgEnvases(c)[0];
+    const l = ['*Dosificación' + (c.p ? ' · ' + baseProd(c.p.nombre) : '') + '*'];
+    if (c.p && c.p.lab) l.push('Laboratorio: ' + c.p.lab);
+    l.push('Peso: ' + nf(c.kg) + ' kg · Cabezas: ' + nf(c.cab));
+    l.push('Dosis: ' + nf(c.ml) + ' ' + u + (c.modo === 'cab' ? ' por animal' : ' por cada ' + nf(c.por) + ' kg'));
+    l.push('*Por animal: ' + nf(c.an) + ' ' + u + '*' + (c.sitios ? ' (repartir en ' + c.sitios + ' sitios)' : ''));
+    l.push('*Total: ' + nf(c.total) + ' ' + u + '*');
+    if (d && d.via) l.push('Vía: ' + d.via);
+    if (d && (d.carne || d.leche)) l.push('Retiro: carne ' + (d.carne || 'ver etiqueta') + ' · leche ' + (d.leche || 'ver etiqueta')); else if (d && d.ret) l.push('Retiro: ' + d.ret);
+    if (env) l.push('Llevar: ' + nf(env.uds) + ' × ' + env.p.nombre + (env.precio ? ' = ' + $$(env.total) : ''));
+    l.push('', '⚠️ Verifique dosis, vía y tiempos de retiro en la etiqueta del producto.', 'Interés Veterinario®');
+    return l.join('\n');
+  }
+  async function cgCopiar() { const t = cgResumen(); try { await navigator.clipboard.writeText(t); toast('📋 Copiado: pégalo en WhatsApp'); } catch (e) { modal('Resumen', `<textarea rows="12" style="width:100%">${esc(t)}</textarea>`); } }
+  function cgAVenta(id, cant) {
+    const p = prod(id); if (!p) return;
+    if (!puede('ventas')) return toast('Tu perfil no puede capturar ventas', true);
+    if (S.venta && S.venta.editId) { if (!confirm('Estás editando la nota ' + S.venta.editFolio + '. ¿Empezar una venta NUEVA con este producto? (la nota queda como estaba)')) return; S.venta = ventaNueva(); }
+    if (!S.venta) S.venta = LS.get('borrador_venta', null) || ventaNueva();
+    const v = S.venta, ya = v.lineas.find(l => l.id === id && !l.lote);
+    if (ya) ya.cant = Number(ya.cant) + cant; else v.lineas.push({ id: id, cant: cant, precio: precioVta(p, v.lista), desc: 0, lote: '' });
+    guardarBorrador(); ir('venta');
+    toast('🛒 ' + nf(cant) + ' × ' + p.nombre + ' en la venta' + (existencia(id, v.suc) < cant ? ' · ⚠️ existencia ' + nf(existencia(id, v.suc)) : ''));
+  }
+  function cgACot(id, cant) {
+    const p = prod(id); if (!p) return;
+    if (!puede('cotizaciones')) return toast('Tu perfil no puede hacer cotizaciones', true);
+    if (!S.cot) S.cot = LS.get('borrador_cot', null) || cotNueva();
+    if (S.cot.editId && !confirm('Estás editando la cotización ' + S.cot.editFolio + '. ¿Agregar el producto ahí?')) return;
+    const v = S.cot, ya = v.lineas.find(l => l.id === id);
+    if (ya) ya.cant = Number(ya.cant) + cant; else v.lineas.push({ id: id, cant: cant, precio: (p.precios || {})[v.lista] || 0, desc: 0 });
+    guardarBorradorCot(); S.tabCot = 'nueva'; ir('cotizaciones', true);
+    toast('📝 ' + nf(cant) + ' × ' + p.nombre + ' en la cotización');
+  }
+  async function cgGuardarDosis() {
+    const c = cgCalculo(); if (!c.p) return;
+    const val = id => ($('#' + id) || {}).value || '';
+    const dosis = { ml: c.ml, kg: c.modo === 'cab' ? 0 : c.por, u: c.u, modo: c.modo, via: val('cgVia'), carne: val('cgCarne'), leche: val('cgLeche'), sitio: val('cgSitio'), max: val('cgMax'), nota: val('cgDNota') };
+    if (!dosis.ml || (dosis.modo === 'kg' && !dosis.kg)) return toast('Captura arriba la dosis' + (dosis.modo === 'kg' ? ' y por cada cuántos kg' : ''), true);
+    const hs = cgHermanos(c.p), txt = baseProd(c.p.nombre);
+    if (!confirm('¿Guardar como dosis revisada de ' + txt + ' (' + hs.length + ' presentación' + (hs.length === 1 ? '' : 'es') + ')?\n\n' + nf(dosis.ml) + ' ' + dosis.u + (dosis.modo === 'cab' ? ' por animal' : ' por cada ' + nf(dosis.kg) + ' kg') + (dosis.via ? '\nVía: ' + dosis.via : '') + (dosis.carne ? '\nRetiro carne: ' + dosis.carne : '') + (dosis.leche ? '\nRetiro leche: ' + dosis.leche : ''))) return;
+    let ok = 0;
+    for (const h of hs) { try { await pedir('guardarProducto', { ID_Producto: h.id, Calc_Dosis: JSON.stringify(dosis) }, true); ok++;
+      h.calc = Object.assign({}, dosis, { ml: cgNum(dosis.ml), kg: cgNum(dosis.kg), sitio: cgNum(dosis.sitio), max: cgNum(dosis.max), ok: 1, ret: h.calc && h.calc.ret }); } catch (e) { toast(e.message || 'No se pudo guardar (¿sin señal?)', true); break; } }
+    if (ok) { toast('✔ Dosis revisada guardada en ' + ok + ' presentación' + (ok === 1 ? '' : 'es')); cgDosis(); }
+  }
+  /* 🍼 Hidratación de becerros */
+  const CG_NIV = [['l', 'Leve', 5, 'Ojos apenas hundidos; la piel regresa en unos 2 segundos'], ['m', 'Moderada', 8, 'Ojos hundidos, pliegue de piel 3 a 4 segundos, decaído'], ['s', 'Severa', 10, 'Echado sin levantarse, patas frías, pliegue de más de 5 segundos']];
+  function cgHidra() {
+    const g = cgEstado();
+    $('#cgCuerpo').innerHTML = `<div class="tarjeta"><div class="cg-2">${cgCampo('cgHKg', 'Peso del becerro (kg)', g.hKg)}${cgCampo('cgHPct', 'Deshidratación (%)', g.hPct)}</div>
+      <div class="cg-niv">${CG_NIV.map(n => `<button class="${g.hNiv === n[0] ? 'on' : ''}" onclick="App.cgNivel('${n[0]}')"><b>${n[1]} (${n[0] === 's' ? '10 a 12' : n[2]} %)</b><small>${n[3]}</small></button>`).join('')}</div>
+      <div class="cg-seg" style="margin-top:10px"><span class="muted" style="align-self:center">Tomas al día:</span>${[2, 3, 4].map(n => `<button class="${+g.hTomas === n ? 'on' : ''}" onclick="App.cgSet('hTomas',${n})">${n}</button>`).join('')}</div></div>
+      <div id="cgHRes"></div>`;
+    [['cgHKg', 'hKg'], ['cgHPct', 'hPct']].forEach(([id, k]) => { $('#' + id).oninput = e => { g[k] = e.target.value; cgGuardar(); cgHPintar(); }; });
+    cgHPintar();
+  }
+  function cgNivel(k) { const g = cgEstado(), n = CG_NIV.find(x => x[0] === k); g.hNiv = k; g.hPct = String(n[2]); cgGuardar(); cgHidra(); }
+  function cgHCalc() { const g = cgEstado(), kg = cgNum(g.hKg), pct = cgNum(g.hPct), def = kg * pct / 100, man = kg * 0.05, tot = def + man, t = Math.max(1, +g.hTomas || 4); return { kg, pct, def, man, tot, t, toma: tot / t }; }
+  function cgHPintar() {
+    const h = cgHCalc(), el = $('#cgHRes'); if (!el) return;
+    el.innerHTML = (h.pct >= 8 ? `<div class="cg-alerta mal">${h.pct >= 10 ? '<b>Severa:</b> el becerro necesita suero intravenoso. Llama al veterinario de inmediato; el suero oral solo no basta.' : 'Si el becerro no tiene reflejo de succión o no se levanta, necesita suero intravenoso: llama al veterinario.'}</div>` : '') +
+      `<div class="cg-stats">${cgStat('Para reponer lo perdido', nf(h.def), ' L', nf(h.kg) + ' kg × ' + nf(h.pct) + ' %')}${cgStat('Mantenimiento del día', nf(h.man), ' L', '50 ml por kg al día')}${cgStat('Total en 24 horas', nf(h.tot), ' L', h.t + ' tomas de ' + nf(h.toma) + ' L (' + nf(Math.round(h.toma * 1000)) + ' ml)')}</div>
+      <p class="muted peq">El suero oral (electrolitos) no sustituye la leche: sigue dándole su leche o sustituto en sus horarios.</p>
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.cgCopiarH()">📋 Copiar resumen para WhatsApp</button></div>`;
+  }
+  async function cgCopiarH() { const h = cgHCalc(), t = `*Hidratación de becerro*\nPeso: ${nf(h.kg)} kg · Deshidratación: ${nf(h.pct)} %\nReponer: ${nf(h.def)} L\nMantenimiento: ${nf(h.man)} L\n*Total en 24 h: ${nf(h.tot)} L*\n${h.t} tomas de ${nf(h.toma)} L cada una\n\n⚠️ Si no se levanta o no mama, llame al veterinario.\nInterés Veterinario®`;
+    try { await navigator.clipboard.writeText(t); toast('📋 Copiado: pégalo en WhatsApp'); } catch (e) { modal('Resumen', `<textarea rows="10" style="width:100%">${esc(t)}</textarea>`); } }
+  /* 🧴 Desinfectantes y baños */
+  function cgDesinf() {
+    const g = cgEstado();
+    $('#cgCuerpo').innerHTML = `<div class="tarjeta"><span class="muted peq">Agua (mochila, bomba o tanque)</span>
+      <div class="cg-seg">${[15, 20, 200, 1000].map(x => `<button class="${cgNum(g.dAgua) === x ? 'on' : ''}" onclick="App.cgSet('dAgua','${x}')">${nf(x)} L</button>`).join('')}</div>
+      <div class="cg-2">${cgCampo('cgDAgua', 'Litros de agua', g.dAgua)}</div>
+      <div class="cg-seg" style="margin-top:10px"><button class="${g.dModo !== 'porL' ? 'on' : ''}" onclick="App.cgSet('dModo','ratio')">Relación 1 : X</button><button class="${g.dModo === 'porL' ? 'on' : ''}" onclick="App.cgSet('dModo','porL')">Cantidad por litro</button>
+        <span style="flex:1"></span><button class="${g.dU !== 'g' ? 'on' : ''}" onclick="App.cgSet('dU','ml')">Líquido (ml)</button><button class="${g.dU === 'g' ? 'on' : ''}" onclick="App.cgSet('dU','g')">Polvo (g)</button></div>
+      ${g.dModo === 'porL' ? `<div class="cg-2">${cgCampo('cgDPorL', 'Producto por litro (' + (g.dU === 'g' ? 'g' : 'ml') + ')', g.dPorL)}</div>`
+        : `<div class="cg-seg">${[100, 200, 500, 1000].map(x => `<button class="${cgNum(g.dRatio) === x ? 'on' : ''}" onclick="App.cgSet('dRatio','${x}')">1:${nf(x)}</button>`).join('')}</div><div class="cg-2">${cgCampo('cgDRatio', 'Dilución 1 : X', g.dRatio)}</div>`}</div>
+      <div id="cgDRes"></div>`;
+    [['cgDAgua', 'dAgua'], ['cgDPorL', 'dPorL'], ['cgDRatio', 'dRatio']].forEach(([id, k]) => { const el = $('#' + id); if (el) el.oninput = () => { g[k] = el.value; cgGuardar(); cgDPintar(); }; });
+    cgDPintar();
+  }
+  function cgDCalc() { const g = cgEstado(), w = cgNum(g.dAgua), u = g.dU === 'g' ? 'g' : 'ml', amt = g.dModo === 'porL' ? w * cgNum(g.dPorL) : cgNum(g.dRatio) ? w * 1000 / cgNum(g.dRatio) : 0; return { w, u, amt, dil: g.dModo === 'porL' ? nf(cgNum(g.dPorL)) + ' ' + u + ' por litro' : '1:' + nf(cgNum(g.dRatio)) }; }
+  function cgDPintar() {
+    const x = cgDCalc(), el = $('#cgDRes'); if (!el) return;
+    el.innerHTML = `<div class="cg-stats">${cgStat('Producto para ' + nf(x.w) + ' L de agua', nf(x.amt), ' ' + x.u, x.amt >= 1000 ? nf(x.amt / 1000) + (x.u === 'g' ? ' kg' : ' litros') : 'Dilución ' + x.dil)}</div>
+      <p class="muted peq">Llena el recipiente con parte del agua, agrega el producto y completa hasta ${nf(x.w)} L. Mezcla bien.</p>
+      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.cgCopiarD()">📋 Copiar resumen para WhatsApp</button></div>`;
+  }
+  async function cgCopiarD() { const x = cgDCalc(), t = `*Preparación de desinfectante / baño*\nAgua: ${nf(x.w)} L\nDilución: ${x.dil}\n*Producto: ${nf(x.amt)} ${x.u}*\nCompletar con agua hasta ${nf(x.w)} L y mezclar bien.\n\n⚠️ Verifique la dilución en la etiqueta del producto.\nInterés Veterinario®`;
+    try { await navigator.clipboard.writeText(t); toast('📋 Copiado: pégalo en WhatsApp'); } catch (e) { modal('Resumen', `<textarea rows="9" style="width:100%">${esc(t)}</textarea>`); } }
   /* ---- ⚡ venta rápida ---- */
   const formaPor = re => { const f = ((D().catalogos || {}).formasPago || []).find(o => re.test(Array.isArray(o) ? o[1] : (o && (o.nombre || o.id)) || '')); return f ? (Array.isArray(f) ? f[0] : f.id) : ''; };
   const bancoPor = re => { const b = ((D().catalogos || {}).bancos || []).find(o => re.test(Array.isArray(o) ? o[0] + ' ' + o[1] : (o && (o.id + ' ' + o.nombre)) || '')); return b ? (Array.isArray(b) ? b[0] : b.id) : ''; };
@@ -17777,7 +17990,7 @@ const App = (() => {
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, timbPubGral, cargarDatosFac, dfClabe, guardarDatosFac, pdfDisenoForm, pdfDiseno, clavesSat, satFiltrar, satVerCat, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
-    escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
+    escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, cgTab, cgSet, cgQuitar, cgAVenta, cgACot, cgCopiar, cgGuardarDosis, cgNivel, cgCopiarH, cgCopiarD, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,

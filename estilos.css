@@ -1295,3 +1295,34 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
       radial-gradient(circle at 75% 30%, #173a3a, #0b1528 60%);
   }
 }
+
+/* 🐄 Calculadora ganadera */
+.bienv-cta.bienv-cta3 { margin-top: 10px; background: linear-gradient(120deg, #2f7d4f, #1d5a37); color: #fff; }
+.cg { max-width: 860px; margin: 0 auto; }
+.cg-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.cg-tabs button, .cg-seg button, .cg-niv button { border: 1px solid var(--borde); background: var(--superficie); color: inherit; border-radius: 10px; padding: 10px 8px; font-weight: 600; cursor: pointer; min-height: 44px; font-size: 15px; }
+.cg-tabs button.on, .cg-seg button.on, .cg-niv button.on { background: var(--marca-fuerte); border-color: var(--marca-fuerte); color: #fff; }
+.cg-seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.cg-seg button { min-height: 40px; padding: 6px 14px; }
+.cg-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.cg-2 input { font-size: 20px; font-weight: 600; }
+.cg-por { align-self: end; padding-bottom: 12px; color: var(--texto-2); font-weight: 600; }
+.cg-prod { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; padding: 10px; border: 1px solid var(--borde); border-radius: 10px; }
+.cg-prod b { display: block; font-size: 17px; } .cg-prod small { display: block; color: var(--texto-2); margin-bottom: 4px; }
+.cg-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
+.cg-res { background: #1d5a37; color: #fff; border-radius: 12px; padding: 12px 14px; }
+.cg-res small { display: block; opacity: .9; font-size: 14px; }
+.cg-res b { display: block; font-size: 36px; line-height: 1.1; margin-top: 2px; } .cg-res b i { font-style: normal; font-size: 18px; margin-left: 4px; }
+.cg-res span { display: block; font-size: 13px; opacity: .9; margin-top: 4px; }
+.cg-etiq { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cg-etiq small { display: block; color: var(--texto-2); } .cg-etiq b { font-size: 15px; }
+.cg-alerta { background: var(--aviso-suave); color: var(--aviso); border-left: 6px solid var(--aviso); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.cg-alerta.mal { background: var(--peligro-suave); color: var(--peligro); border-left-color: var(--peligro); }
+.cg-env { display: flex; justify-content: space-between; gap: 10px; padding: 10px; border: 1px solid var(--borde); border-radius: 10px; margin-top: 8px; }
+.cg-env.mejor { border: 2px solid var(--marca-fuerte); }
+.cg-env small { display: block; } .cg-env-der { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.cg-env-der b { font-size: 18px; } .cg-env-der span { display: flex; gap: 6px; }
+.cg-niv { display: grid; gap: 6px; margin-top: 10px; } .cg-niv button { text-align: left; } .cg-niv small { display: block; font-weight: 400; opacity: .9; }
+.cg-etq summary { cursor: pointer; font-weight: 600; }
+.cg-aviso { font-size: 13px; color: var(--texto-2); margin: 14px 4px; }
+@media (max-width: 600px) { .cg-tabs button { font-size: 13px; padding: 8px 4px; } .cg-etiq { grid-template-columns: 1fr; } .cg-env { flex-direction: column; } .cg-env-der { align-items: stretch; text-align: left; } .cg-res b { font-size: 30px; } }
