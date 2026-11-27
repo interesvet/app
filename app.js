@@ -1113,6 +1113,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 398, f: '27/11/2026', t: [{ x: '🥣 Formulación de dietas: nuevo modo «Concentrado por batch» (como las fórmulas por tonelada de 15 %, 17 %, 20 % de proteína): pones la proteína objetivo, NDT, grasa, Ca y P y el tamaño del batch, y salen hasta 3 opciones con kg por batch y costo. Nuevos ingredientes: pollinaza, harina de palmiste y maíz planta con grano. Cada ingrediente tiene ahora «mín %» además de «máx %».', p: 'dueno' }] },
     { v: 397, f: '27/11/2026', t: [{ x: '🌾 Formulación de dietas (solo el dueño, en el menú Clientes): bovinos de carne y leche, ovinos, caprinos, cerdos, aves y equinos por etapa y fin zootécnico. Calcula requerimientos (NRC ajustado a trópico: cebú, calor y pastoreo), toma en cuenta el forraje y tus premezclas del catálogo, y da hasta 3 opciones al menor costo (cada alternativa sin el insumo comprado más caro). Elegir y guardar, imprimir/PDF y cotizar lo del catálogo.', p: 'dueno' }, { x: '📚 Ingredientes con valor de tabla y valor propio: si capturas tu análisis, manda el tuyo; si lo dejas vacío, manda la tabla. Puedes agregar ingredientes nuevos y capturar la composición de etiqueta de tus premezclas.', p: 'dueno' }] },
     { v: 396, f: '26/11/2026', t: [{ x: '💊 Receta desde la Calculadora clínica: calcula la dosis y toca «💊 Agregar a la receta»; ve juntando los productos (cada uno con su indicación ya escrita y cuántos envases surtir) y al final «✍️ Hacer la receta» abre la receta normal ya llenada (con el peso). Al pasarla a venta o a cotización, cada producto va con la cantidad que dio la calculadora.', p: 'recetas' }, { x: '🐄 En la ficha del producto, el botón «Dosis para la calculadora» abre la calculadora para capturar su dosis revisada.', p: 'productos_editar' }] },
     { v: 393, f: '26/11/2026', t: [{ x: '🐄 Calculadora clínica (botón verde en la pantalla de inicio y en el menú, junto a Venta rápida): con el peso y las cabezas calcula los ml por animal y el total, cuántos envases llevar de cada presentación con su precio (marca la que más conviene) y los manda a la venta o a la cotización con un toque. También calcula la hidratación de becerros y la dilución de desinfectantes y baños, y copia el resumen para WhatsApp. Funciona sin señal.', p: 'ventas' }, { x: '💾 Quien edita productos puede guardar en la calculadora la dosis revisada de cada producto (dosis, vía, retiros en carne y leche, máximo por sitio). Mientras no se guarde, la app propone la dosis que encuentra en el texto de Dosis del catálogo y la marca para verificar.', p: 'productos_editar' }] },
@@ -12538,6 +12539,7 @@ const App = (() => {
     ['tai', 'Pasto Taiwán / King grass picado', 'Forraje', 're', 18, 8, 54, 68, 40, 1.8, 0.35, 0.25, 0.20, 2.5, 0.03, 0.15, 28, 6, 60, 0.04, 0.08],
     ['leu', 'Leucaena (hoja y tallo tierno)', 'Forraje', 'r', 30, 24, 65, 35, 22, 5.0, 1.80, 0.22, 0.35, 1.6, 0.05, 0.25, 25, 9, 50, 0.08, 0.15, 0, 0, 0, 0, 0, 0, 0, 0, 30, 0],
     ['mor', 'Moringa (hoja)', 'Forraje', 'r', 25, 25, 68, 28, 18, 6.0, 2.00, 0.35, 0.40, 1.5, 0.10, 0.50, 30, 8, 60, 0.10, 0.10, 0, 0, 0, 0, 0, 0, 0, 0, 30, 0],
+    ['mz_pl', 'Maíz planta con grano (verde picado)', 'Forraje', 're', 28, 8, 65, 50, 28, 2.5, 0.30, 0.22, 0.18, 1.2, 0.01, 0.12, 22, 5, 30, 0.04, 0.08],
     ['ens_m', 'Ensilado de maíz', 'Forraje', 're', 33, 8, 68, 45, 26, 3.0, 0.25, 0.22, 0.15, 1.1, 0.01, 0.12, 22, 5, 30, 0.04, 0.08],
     ['ens_s', 'Ensilado de sorgo', 'Forraje', 're', 30, 7.5, 60, 55, 33, 2.8, 0.35, 0.20, 0.20, 1.4, 0.02, 0.12, 24, 5, 40, 0.04, 0.08],
     ['cana', 'Caña de azúcar integral picada', 'Forraje', 're', 28, 3.5, 60, 50, 30, 1.2, 0.25, 0.08, 0.15, 1.0, 0.02, 0.10, 15, 4, 40, 0.03, 0.05],
@@ -12559,6 +12561,8 @@ const App = (() => {
     ['glut', 'Gluten feed de maíz (21 %)', 'Proteico', 'rem', 90, 23, 80, 40, 11, 3.5, 0.10, 1.00, 0.40, 1.4, 0.15, 0.45, 70, 7, 25, 0.30, 0.10, 1750, 2600, 0.65, 0.35, 0.80, 0.75, 0.10, 0.30, 30, 10],
     ['sem_alg', 'Semilla de algodón entera', 'Proteico', 'r', 92, 23, 90, 47, 38, 19, 0.17, 0.62, 0.35, 1.2, 0.02, 0.25, 35, 8, 15, 0.10, 0.05, 0, 0, 0, 0, 0, 0, 0, 0, 15, 0],
     ['pesc', 'Harina de pescado', 'Proteico', 'm', 92, 65, 75, 0, 0, 9, 4.50, 2.80, 0.20, 0.8, 0.50, 0.60, 100, 8, 10, 2.00, 0.10, 2900, 3000, 4.80, 1.80, 2.40, 2.60, 0.70, 2.50, 0, 8],
+    ['poll', 'Pollinaza (procesada)', 'Proteico', 'r', 85, 25, 55, 40, 20, 2.0, 4.00, 1.80, 0.50, 2.0, 0.50, 0.40, 300, 50, 300, 0.50, 1.00, 0, 0, 0, 0, 0, 0, 0, 0, 30, 0],
+    ['palm', 'Harina de palmiste', 'Energético', 'rem', 90, 16, 72, 66, 42, 8.0, 0.30, 0.60, 0.30, 0.7, 0.02, 0.20, 50, 25, 200, 0.20, 0.10, 1800, 2300, 0.50, 0.30, 0.55, 0.50, 0.15, 0.15, 40, 10],
     ['urea', 'Urea (46 % N)', 'Proteico', 'r', 99, 281, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
     ['carb', 'Carbonato de calcio', 'Mineral', 'rem', 99, 0, 0, 0, 0, 0, 38, 0, 0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 10],
     ['fdc', 'Fosfato dicálcico (18 % P)', 'Mineral', 'rem', 97, 0, 0, 0, 0, 0, 22, 18.5, 0.6, 0, 0, 1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 18, 3, 3],
@@ -12698,6 +12702,18 @@ const App = (() => {
     return R;
   }
 
+  /** Concentrado / suplemento por batch (kg por tonelada, tal cual): metas de proteína y energía como las fórmulas del asesor (15 %, 17 %, 20 %…). */
+  function nutReqBatch(b) {
+    const L = [], add = (k, t, u, min, max) => L.push({ k, t, u, min, max, modo: 'conc' }), n = (v, d) => v === '' || v === undefined || v === null || !isFinite(+v) ? d : +v;
+    const pc = n(b.pc, 16);
+    add('PC', 'Proteína cruda', '% tal cual', pc, pc + 1);
+    add('NDT', 'NDT', '% tal cual', n(b.ndt, 68), null);
+    add('EE', 'Grasa (extracto etéreo)', '% tal cual', null, n(b.ee, 6));
+    add('Ca', 'Calcio', '% tal cual', n(b.ca, 0.6), null);
+    add('P', 'Fósforo', '% tal cual', n(b.p, 0.4), null);
+    if (b.fdn !== '' && b.fdn !== undefined && isFinite(+b.fdn)) add('FDN', 'FDN máxima', '% tal cual', null, +b.fdn);
+    return { base: 'TF', batch: n(b.tam, 1000), cons: n(b.cons, 0), lim: L, notas: [], prod: { t: 'kg de concentrado', n: 1 } };
+  }
   /* ---- programación lineal: simplex de dos fases (min c·x; Ax {<=,>=,=} b; x >= 0) ---- */
   function nutSimplex(c, filas) {
     const n = c.length, EPS = 1e-9;
@@ -12805,7 +12821,7 @@ const App = (() => {
     const costoTC = lineas.reduce((a, l) => a + l.costo, 0);   // por animal al día (rumiantes) o por kg de alimento (monogástricos)
     const costoDia = mono ? costoTC * (R.cons || 0) : costoTC;
     const sup = lineas.filter(l => !l.forraje), supTC = sup.reduce((a, l) => a + l.kgTC, 0);
-    return { ok: true, lineas, bal, costoDia, costoKg: mono ? costoTC : costoTC / tcTot, costoProd: R.prod && R.prod.n > 0 ? costoDia / (mono ? R.cons : R.prod.n) : null,
+    return { ok: true, lineas, bal, costoDia, costoKg: mono ? costoTC : costoTC / tcTot, costoProd: R.prod && R.prod.n > 0 && (!mono || R.cons > 0) ? costoDia / (mono ? R.cons : R.prod.n) : null,
       tcTot: mono ? R.cons : tcTot, msTot: mono ? R.cons * lineas.reduce((a, l) => a + l.kgMS, 0) : msTot, supTC: mono ? 0 : supTC, faltan: bal.filter(b => !b.ok) };
   }
   /** 2 o 3 opciones: la de menor costo y alternativas sin cada uno de los insumos comprados que más pesan en su costo (por si el productor no lo consigue). */
@@ -12895,8 +12911,10 @@ const App = (() => {
     if (!esp[2].some(s => s[0] === g.etapa)) g.etapa = esp[2][0][0];
     const et = nutEtapa(g.etapa), d = et.d, a = Object.assign({}, d, g.a[g.etapa] || {}), m = d.m;
     const num = (k, t, v, extra) => `<label class="ico-ok">${t}<input data-a="${k}" inputmode="decimal" value="${esc(v === undefined || v === null ? '' : v)}"${extra || ''}></label>`;
-    const R = nutReq(et, a);
-    Object.keys(g.ovr[g.etapa] || {}).forEach(k => { const l = R.lim.find(x => x.k === k), v = g.ovr[g.etapa][k]; if (l && v !== '' && v !== null && isFinite(+v)) l.min = +v; });
+    if (!g.bt) g.bt = {};
+    const batch = g.modo === 'batch' && g.esp !== 'ce' && g.esp !== 'av';
+    const R = batch ? nutReqBatch(g.bt) : nutReq(et, a);
+    if (!batch) Object.keys(g.ovr[g.etapa] || {}).forEach(k => { const l = R.lim.find(x => x.k === k), v = g.ovr[g.etapa][k]; if (l && v !== '' && v !== null && isFinite(+v)) l.min = +v; });
     let campos = '';
     if (m === 'mono') campos = num('cons', 'Consumo por animal (kg/día)', a.cons);
     else {
@@ -12911,19 +12929,23 @@ const App = (() => {
       campos += `<label class="check"><input type="checkbox" data-a="past"${a.past ? ' checked' : ''}> En pastoreo (gasta más energía)</label><label class="check"><input type="checkbox" data-a="calor"${a.calor === undefined || a.calor ? ' checked' : ''}> Calor del trópico (come menos)</label>`;
     }
     const uso = nuUsoEsp(g.esp), ings = nuIngredientes().filter(x => x.uso.indexOf(uso) >= 0), pxs = nuPremezclas();
-    const sel = g.sel[uso] || (g.sel[uso] = {});
+    const sk = uso + (batch ? '_b' : ''), sel = g.sel[sk] || (g.sel[sk] = {});
     const grupos = ['Forraje', 'Energético', 'Proteico', 'Mineral', 'Aminoácido'].filter(t => ings.some(x => x.tipo === t));
     const fila = (id, nombre, precio, info, disabled, mx) => `<div class="nu-ing${sel[id] ? ' on' : ''}${disabled ? ' off' : ''}"><label class="check"><input type="checkbox" data-sel="${esc(id)}"${sel[id] && !disabled ? ' checked' : ''}${disabled ? ' disabled' : ''}> <span><b>${esc(nombre)}</b><small>${info}</small></span></label>
       <label class="ico-ok">$/kg<input data-precio="${esc(id)}" inputmode="decimal" value="${precio === undefined || precio === null ? '' : esc(precio)}" placeholder="0"${disabled ? ' disabled' : ''}></label>
+      <label class="ico-ok">mín %<input data-min="${esc(id)}" inputmode="decimal" value="${esc((g.cfg[id] || {}).min || '')}" placeholder="—"${disabled ? ' disabled' : ''}></label>
       <label class="ico-ok">máx %<input data-max="${esc(id)}" inputmode="decimal" value="${esc((g.cfg[id] || {}).max !== undefined ? g.cfg[id].max : mx === null || mx === undefined ? '' : mx)}" placeholder="—"${disabled ? ' disabled' : ''}></label></div>`;
     $('#nuCuerpo').innerHTML = `<div class="tarjeta"><div class="cg-2">
         <label class="ico-ok">Especie<select id="nuEsp">${NUT_ESP.map(e => `<option value="${e[0]}"${e[0] === g.esp ? ' selected' : ''}>${e[1]}</option>`).join('')}</select></label>
         <label class="ico-ok">Etapa / fin zootécnico<select id="nuEta">${esp[2].map(s => `<option value="${s[0]}"${s[0] === g.etapa ? ' selected' : ''}>${s[1]}</option>`).join('')}</select></label></div>
         <div class="cg-2"><label class="ico-ok">Cliente (opcional)<div class="buscador"><input id="nuCli" placeholder="Buscar cliente…" autocomplete="off" value="${g.cli && cliente(g.cli) ? esc(cliente(g.cli).razon || cliente(g.cli).nombre) : ''}"></div></label>
           <label class="ico-ok">Nombre de la dieta<input id="nuNom" value="${esc(g.nombre)}" placeholder="Ej. Engorda secas lote 3"></label></div></div>
-      <div class="tarjeta"><h3 style="margin-top:0">🐾 Datos del animal</h3><div class="cg-2 nu-campos">${campos}</div>
-        ${R.notas.length ? `<p class="muted peq">${R.notas.map(esc).join(' · ')}</p>` : ''}</div>
-      <details class="tarjeta"><summary><b>📋 Requerimientos (${R.base === 'TF' ? 'por kg de alimento' : 'por animal al día · consumo ' + nf(R.cons) + ' kg MS'})</b> <small class="muted">toca para ver o corregir</small></summary>
+      ${g.esp !== 'ce' && g.esp !== 'av' ? `<div class="cg-seg"><button class="${g.modo !== 'batch' ? 'on' : ''}" onclick="App.nuModo('racion')">🐾 Ración completa por animal</button><button class="${g.modo === 'batch' ? 'on' : ''}" onclick="App.nuModo('batch')">🥣 Concentrado por batch</button></div>` : ''}
+      ${batch ? `<div class="tarjeta"><h3 style="margin-top:0">🥣 Concentrado / suplemento por batch</h3><p class="muted peq" style="margin-top:0">Como las fórmulas por tonelada (15 %, 17 %, 20 %…): se formula la mezcla tal cual a la proteína y energía que indiques; el forraje que pastorean va aparte.</p>
+        <div class="cg-2 nu-campos">${[['pc', 'Proteína cruda objetivo (%)', 16], ['ndt', 'NDT mínimo (%)', 68], ['ee', 'Grasa máxima (%)', 6], ['ca', 'Calcio mínimo (%)', 0.6], ['p', 'Fósforo mínimo (%)', 0.4], ['fdn', 'FDN máxima (%) · opcional', ''], ['tam', 'Tamaño del batch (kg)', 1000], ['cons', 'Consumo por animal (kg/día) · opcional', '']].map(f => `<label class="ico-ok">${f[1]}<input data-bt="${f[0]}" inputmode="decimal" value="${esc(g.bt[f[0]] !== undefined ? g.bt[f[0]] : f[2])}"></label>`).join('')}</div></div>`
+        : `<div class="tarjeta"><h3 style="margin-top:0">🐾 Datos del animal</h3><div class="cg-2 nu-campos">${campos}</div>
+        ${R.notas.length ? `<p class="muted peq">${R.notas.map(esc).join(' · ')}</p>` : ''}</div>`}
+      <details class="tarjeta"><summary><b>📋 Requerimientos (${R.batch ? 'del concentrado' : R.base === 'TF' ? 'por kg de alimento' : 'por animal al día · consumo ' + nf(R.cons) + ' kg MS'})</b> <small class="muted">toca para ver o corregir</small></summary>
         <div class="tabla-scroll"><table class="tabla nu-req"><thead><tr><th>Nutriente</th><th>Mínimo</th><th>Máximo</th><th>Unidad</th></tr></thead><tbody>
         ${R.lim.map(l => `<tr><td>${esc(l.t)}</td><td>${l.k === 'EM' && R.ener ? '<small class="muted">se calcula al formular</small>' : `<input class="nu-ovr" data-ovr="${l.k}" inputmode="decimal" value="${l.min === null ? '' : esc(Math.round(l.min * 100) / 100)}">`}</td><td>${l.max === null ? '—' : nf(l.max)}</td><td>${esc(l.u)}</td></tr>`).join('')}</tbody></table></div>
         <div class="acciones izq"><button class="btn chico" onclick="App.nuReqReset()">↺ Volver a los calculados</button></div></details>
@@ -12947,12 +12969,15 @@ const App = (() => {
       const ev = el.type === 'checkbox' || el.tagName === 'SELECT' ? 'onchange' : 'onchange';
       el[ev] = () => { aa[el.dataset.a] = el.type === 'checkbox' ? (el.checked ? 1 : 0) : el.value; nuGuardarEst(); nuVistaFormular(); };
     });
+    document.querySelectorAll('#nuCuerpo [data-bt]').forEach(el => { el.onchange = () => { g.bt[el.dataset.bt] = el.value; g.ops = null; nuGuardarEst(); nuVistaFormular(); }; });
+    document.querySelectorAll('#nuCuerpo [data-min]').forEach(el => { el.onchange = () => { (g.cfg[el.dataset.min] = g.cfg[el.dataset.min] || {}).min = el.value; nuGuardarEst(); }; });
     document.querySelectorAll('#nuCuerpo [data-ovr]').forEach(el => { el.onchange = () => { const o = g.ovr[g.etapa] || (g.ovr[g.etapa] = {}); o[el.dataset.ovr] = el.value; nuGuardarEst(); }; });
     document.querySelectorAll('#nuCuerpo [data-sel]').forEach(el => { el.onchange = () => { sel[el.dataset.sel] = el.checked ? 1 : 0; el.closest('.nu-ing').classList.toggle('on', el.checked); nuGuardarEst(); }; });
     document.querySelectorAll('#nuCuerpo [data-max]').forEach(el => { el.onchange = () => { (g.cfg[el.dataset.max] = g.cfg[el.dataset.max] || {}).max = el.value; nuGuardarEst(); }; });
     document.querySelectorAll('#nuCuerpo [data-precio]').forEach(el => { el.onchange = () => nuPrecioIng(el.dataset.precio, el.value); });
     if (g.ops && g.R) nuPintarOps();
   }
+  function nuModo(m) { const g = nuEst(); g.modo = m; g.ops = null; nuGuardarEst(); nuVistaFormular(); }
   function nuReqReset() { const g = nuEst(); delete g.ovr[g.etapa]; nuGuardarEst(); nuVistaFormular(); }
   /** Precio de un ingrediente (se guarda para la próxima vez). */
   async function nuPrecioIng(id, v) {
@@ -12963,7 +12988,7 @@ const App = (() => {
   }
   /** Arma la lista para el motor con lo marcado. */
   function nuArmarIngs(R) {
-    const g = nuEst(), uso = nuUsoEsp(g.esp), sel = g.sel[uso] || {}, mono = R.base === 'TF', out = [];
+    const g = nuEst(), uso = nuUsoEsp(g.esp), sel = g.sel[uso + (R.batch ? '_b' : '')] || {}, mono = R.base === 'TF', out = [];
     nuIngredientes().filter(x => x.uso.indexOf(uso) >= 0 && sel[x.id]).forEach(x => {
       const c = g.cfg[x.id] || {}, mx = c.max !== undefined && c.max !== '' ? +c.max : (mono ? x.maxM : x.maxR);
       out.push({ id: x.id, nombre: x.nombre, tipo: x.tipo, forraje: x.tipo === 'Forraje', precio: +x.precio || 0, max: mx === null || mx === undefined ? null : mx, min: +c.min || 0, perfil: nutPerfil(x) });
@@ -12974,8 +12999,10 @@ const App = (() => {
       Object.assign(perfil, nutEnergias(perfil.NDT)); perfil.MS = ms;
       const pp = nuPrecioPx(px, g.lista), cfg = g.cfg['px:' + px.clave] || {}, precio = cfg.precio !== undefined && cfg.precio !== '' ? +cfg.precio : pp.precio;
       let min = 0, max = cfg.max !== undefined && cfg.max !== '' ? +cfg.max : null;
-      if (mono) { if (+c.incMin) min = +c.incMin; if (+c.incMax && max === null) max = +c.incMax; }
-      else if (R.cons) { const aMS = gr => gr / 1000 * (ms / 100) / R.cons * 100; if (+c.dosMin) min = aMS(+c.dosMin); if (+c.dosMax && max === null) max = aMS(+c.dosMax); }
+      if (+cfg.min) min = +cfg.min;
+      if (R.batch) { /* en el batch el mínimo y máximo los pone el dueño */ }
+      else if (mono) { if (+c.incMin && !min) min = +c.incMin; if (+c.incMax && max === null) max = +c.incMax; }
+      else if (R.cons) { const aMS = gr => gr / 1000 * (ms / 100) / R.cons * 100; if (+c.dosMin && !min) min = aMS(+c.dosMin); if (+c.dosMax && max === null) max = aMS(+c.dosMax); }
       out.push({ id: 'px:' + px.clave, nombre: px.nombre, tipo: 'Premezcla', forraje: false, precio: precio || 0, min, max, perfil, prod: pp.prod ? pp.prod.id : '', kgEnv: pp.kg });
     });
     return out;
@@ -12983,6 +13010,7 @@ const App = (() => {
   function nuReqActual() {
     const g = nuEst(), et = nutEtapa(g.etapa), a = Object.assign({}, et.d, g.a[g.etapa] || {});
     if (a.calor === undefined) a.calor = 1;
+    if (g.modo === 'batch' && g.esp !== 'ce' && g.esp !== 'av') return { et, a: g.bt || {}, R: nutReqBatch(g.bt || {}) };
     const R = nutReq(et, a);
     Object.keys(g.ovr[g.etapa] || {}).forEach(k => { const l = R.lim.find(x => x.k === k), v = g.ovr[g.etapa][k]; if (l && v !== '' && v !== null && isFinite(+v)) l.min = +v; });
     return { et, a, R };
@@ -12991,6 +13019,7 @@ const App = (() => {
     const g = nuEst(), { R } = nuReqActual(), ings = nuArmarIngs(R);
     if (ings.length < 2) return toast('Marca al menos 2 ingredientes', true);
     if (R.base !== 'TF' && !ings.some(x => x.forraje)) toast('Ojo: no marcaste ningún forraje', true);
+    if (R.batch && !ings.some(x => x.tipo === 'Premezcla' && x.min > 0)) toast('Tip: ponle «mín %» a la premezcla (p. ej. 2 % = 20 kg por tonelada)');
     const sinPrecio = ings.filter(x => !x.precio && !x.forraje).map(x => x.nombre);
     g.R = R; g.ops = nutOpciones(ings, R, 3); g.ings = ings;
     if (!g.ops.length) { $('#nuRes').innerHTML = '<div class="tarjeta"><div class="vacio">No se pudo formular con esos ingredientes y límites (revisa mínimos y máximos).</div></div>'; return; }
@@ -13004,10 +13033,10 @@ const App = (() => {
     const mono = R.base === 'TF', sup = o.lineas.filter(l => !l.forraje), supTC = sup.reduce((s, l) => s + l.kgTC, 0);
     const prodT = R.prod ? R.prod.t : '';
     return `<div class="tarjeta nu-op${i === 0 ? ' mejor' : ''}"><div class="nu-op-tit"><div><b>Opción ${i + 1}${i === 0 ? ' · la más económica' : ''}</b>${o.sin && o.sin.length ? `<small>Sin ${esc(o.sin.join(', '))}</small>` : ''}</div>
-        <div class="nu-op-cost"><b>${$$(o.costoDia)}</b><small>por animal al día</small>${o.costoProd !== null && !mono ? `<small>${$$(o.costoProd)} por ${esc(prodT)}</small>` : ''}${mono ? `<small>${$$(o.costoKg)} por kg · ${$$(o.costoKg * 1000)} por tonelada</small>` : ''}</div></div>
-      <div class="tabla-scroll"><table class="tabla"><thead><tr><th>Ingrediente</th><th>% ${mono ? '' : 'tal cual'}</th>${mono ? '<th>kg por tonelada</th>' : '<th>kg/animal/día</th><th>kg MS</th>'}<th>$</th></tr></thead><tbody>
-        ${o.lineas.map(l => `<tr><td>${esc(l.nombre)}</td><td>${nf(Math.round(l.pctTC * 100) / 100)}</td>${mono ? `<td>${nf(Math.round(l.kgTC * 1000 * 10) / 10)}</td>` : `<td>${nf(Math.round(l.kgTC * 1000) / 1000)}</td><td>${nf(Math.round(l.kgMS * 1000) / 1000)}</td>`}<td>${$$(mono ? l.costo * R.cons : l.costo)}</td></tr>`).join('')}
-        <tr class="tot"><td>Total</td><td>100</td>${mono ? `<td>1,000</td>` : `<td>${nf(Math.round(o.tcTot * 100) / 100)}</td><td>${nf(Math.round(o.msTot * 100) / 100)}</td>`}<td>${$$(o.costoDia)}</td></tr></tbody></table></div>
+        <div class="nu-op-cost">${R.batch ? `<b>${$$(o.costoKg * R.batch)}</b><small>por batch de ${nf(R.batch)} kg · ${$$(o.costoKg)} por kg</small>${R.cons ? `<small>${$$(o.costoKg * R.cons)} por animal al día</small>` : ''}` : `<b>${$$(o.costoDia)}</b><small>por animal al día</small>${o.costoProd !== null && !mono ? `<small>${$$(o.costoProd)} por ${esc(prodT)}</small>` : ''}${mono ? `<small>${$$(o.costoKg)} por kg · ${$$(o.costoKg * 1000)} por tonelada</small>` : ''}`}</div></div>
+      <div class="tabla-scroll"><table class="tabla"><thead><tr><th>Ingrediente</th><th>% ${mono ? '' : 'tal cual'}</th>${mono ? `<th>kg por ${R.batch ? 'batch' : 'tonelada'}</th>` : '<th>kg/animal/día</th><th>kg MS</th>'}<th>$${R.batch ? ' por batch' : ''}</th></tr></thead><tbody>
+        ${o.lineas.map(l => `<tr><td>${esc(l.nombre)}</td><td>${nf(Math.round(l.pctTC * 100) / 100)}</td>${mono ? `<td>${nf(Math.round(l.kgTC * (R.batch || 1000) * 10) / 10)}</td>` : `<td>${nf(Math.round(l.kgTC * 1000) / 1000)}</td><td>${nf(Math.round(l.kgMS * 1000) / 1000)}</td>`}<td>${$$(R.batch ? l.costo * R.batch : mono ? l.costo * R.cons : l.costo)}</td></tr>`).join('')}
+        <tr class="tot"><td>Total</td><td>100</td>${mono ? `<td>${nf(R.batch || 1000)}</td>` : `<td>${nf(Math.round(o.tcTot * 100) / 100)}</td><td>${nf(Math.round(o.msTot * 100) / 100)}</td>`}<td>${$$(R.batch ? o.costoKg * R.batch : o.costoDia)}</td></tr></tbody></table></div>
       ${!mono && sup.length && sup.length < o.lineas.length ? `<details><summary><b>🥣 Suplemento para mezclar (sin el forraje)</b> · ${nf(Math.round(supTC * 100) / 100)} kg por animal al día</summary><div class="tabla-scroll"><table class="tabla"><thead><tr><th>Ingrediente</th><th>%</th><th>kg por tonelada</th></tr></thead><tbody>
         ${sup.map(l => `<tr><td>${esc(l.nombre)}</td><td>${nf(Math.round(l.kgTC / supTC * 10000) / 100)}</td><td>${nf(Math.round(l.kgTC / supTC * 10000) / 10)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
       <details${o.faltan.length ? ' open' : ''}><summary><b>⚖️ Balance de nutrientes</b>${o.faltan.length ? ` · <span class="nu-mal">${o.faltan.length} por revisar</span>` : ' · ✅ cumple'}</summary><div class="tabla-scroll"><table class="tabla"><thead><tr><th></th><th>Nutriente</th><th>Requerido</th><th>Aporta</th><th>%</th></tr></thead><tbody>
@@ -13025,8 +13054,8 @@ const App = (() => {
   }
   function nuDietaObj(i) {
     const g = nuEst(), o = g.ops[i], et = nutEtapa(g.etapa), c = g.cli ? cliente(g.cli) : null;
-    return { fecha: new Date().toISOString().slice(0, 10), cli: g.cli || '', cliN: c ? (c.razon || c.nombre) : '', nombre: g.nombre || et.t, esp: g.esp, etapa: g.etapa, etapaN: et.espN + ' · ' + et.t,
-      a: g.a[g.etapa] || {}, R: { base: g.R.base, cons: g.R.cons, prod: g.R.prod }, op: { lineas: o.lineas, bal: o.bal, costoDia: o.costoDia, costoKg: o.costoKg, costoProd: o.costoProd, tcTot: o.tcTot, msTot: o.msTot, faltan: o.faltan, sin: o.sin }, n: i + 1 };
+    return { fecha: new Date().toISOString().slice(0, 10), cli: g.cli || '', cliN: c ? (c.razon || c.nombre) : '', nombre: g.nombre || et.t, esp: g.esp, etapa: g.etapa, etapaN: et.espN + ' · ' + (g.R.batch ? 'concentrado ' + nf(+(g.bt.pc || 16)) + ' % PC' : et.t),
+      a: g.R.batch ? Object.assign({ batch: 1 }, g.bt) : g.a[g.etapa] || {}, R: { base: g.R.base, cons: g.R.cons, prod: g.R.prod, batch: g.R.batch || 0 }, op: { lineas: o.lineas, bal: o.bal, costoDia: o.costoDia, costoKg: o.costoKg, costoProd: o.costoProd, tcTot: o.tcTot, msTot: o.msTot, faltan: o.faltan, sin: o.sin }, n: i + 1 };
   }
   async function nuElegir(i) {
     const d = nuDietaObj(i), id = uid() + uid();
@@ -13035,7 +13064,7 @@ const App = (() => {
   }
   function nuImprimirObj(d) {
     const R = d.R, a = d.a || {}, et = nutEtapa(d.etapa);
-    const datos = [et ? et.espN + ' · ' + et.t : d.etapaN, a.pv ? 'Peso ' + nf(+a.pv) + ' kg' : '', a.gdp ? 'Ganancia ' + nf(+a.gdp) + ' kg/día' : '', a.leche ? 'Leche ' + nf(+a.leche) + ' L/día' : '', R.base === 'TF' ? 'Consumo ' + nf(R.cons) + ' kg/día' : 'Consumo ' + nf(R.cons) + ' kg MS/día'].filter(Boolean).join(' · ');
+    const datos = R.batch ? [d.etapaN, 'Batch de ' + nf(R.batch) + ' kg', R.cons ? 'Consumo ' + nf(R.cons) + ' kg/animal/día' : ''].filter(Boolean).join(' · ') : [et ? et.espN + ' · ' + et.t : d.etapaN, a.pv ? 'Peso ' + nf(+a.pv) + ' kg' : '', a.gdp ? 'Ganancia ' + nf(+a.gdp) + ' kg/día' : '', a.leche ? 'Leche ' + nf(+a.leche) + ' L/día' : '', R.base === 'TF' ? 'Consumo ' + nf(R.cons) + ' kg/día' : 'Consumo ' + nf(R.cons) + ' kg MS/día'].filter(Boolean).join(' · ');
     modal('🖨️ ' + esc(d.nombre), `<div class="imprimible"><div class="nu-imp-enc"><b>Interés Veterinario®</b><span>${esc(d.nombre)}${d.cliN ? ' · ' + esc(d.cliN) : ''}</span><small>${esc(datos)} · ${esc(d.fecha)}</small></div>
       ${nuOpHtml(d.op, R, (d.n || 1) - 1, '')}<p class="peq muted">Formulación de referencia con valores NRC y tablas tropicales ajustados por Interés Veterinario. Ajuste según análisis de los ingredientes y respuesta de los animales.</p></div>
       <div class="acciones no-imprimir"><button class="btn" onclick="App.cerrarModal()">Cerrar</button><button class="btn primario" onclick="App.imprimir()">🖨️ Imprimir / guardar PDF</button></div>`);
@@ -13052,7 +13081,7 @@ const App = (() => {
     if (c) { v.cli = c.id; v.lista = c.lista && listas.indexOf(c.lista) >= 0 ? c.lista : 'Publico'; }
     v.obs = 'Dieta: ' + (g.nombre || nutEtapa(g.etapa).t) + ' · ' + an + ' animales × ' + dias + ' días';
     v.lineas = lineas.map(l => { const p = prod(l.prod), ing = (g.ings || []).find(x => x.id === l.id) || {}, kgEnv = ing.kgEnv || ((cgPres(p) || {}).u === 'g' ? cgPres(p).sz / 1000 : 0);
-      const kgTot = (R.base === 'TF' ? l.kgTC * R.cons : l.kgTC) * an * dias; return { id: p.id, cant: kgEnv ? Math.max(1, Math.ceil(kgTot / kgEnv)) : 1, precio: (p.precios || {})[v.lista] || 0, desc: 0 }; });
+      const kgTot = R.batch && !R.cons ? l.kgTC * R.batch : (R.base === 'TF' ? l.kgTC * R.cons : l.kgTC) * an * dias; return { id: p.id, cant: kgEnv ? Math.max(1, Math.ceil(kgTot / kgEnv)) : 1, precio: (p.precios || {})[v.lista] || 0, desc: 0 }; });
     S.cot = v; LS.set('borrador_cot', v); S.tabCot = 'nueva'; ir('cotizaciones', true);
     toast('📝 Cotización armada con lo que la dieta usa del catálogo');
   }
@@ -18652,7 +18681,7 @@ const App = (() => {
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, timbPubGral, cargarDatosFac, dfClabe, guardarDatosFac, pdfDisenoForm, pdfDiseno, clavesSat, satFiltrar, satVerCat, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
-    escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, cgTab, cgSet, cgQuitar, cgAVenta, cgACot, cgCopiar, cgGuardarDosis, cgNivel, cgCopiarH, cgCopiarD, nuTab, nuReqReset, nuFormular, nuElegir, nuImprimir, nuCotizar, nuIngForm, nuIngGuardar, nuIngLimpiar, nuIngBorrar, nuPxForm, nuPxGuardar, nuPxBorrar, nuDietaVer, nuDietaBorrar, cgARx, cgRxQuitar, cgRxVaciar, cgHacerRx, cgDesdeProducto, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
+    escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, cgTab, cgSet, cgQuitar, cgAVenta, cgACot, cgCopiar, cgGuardarDosis, cgNivel, cgCopiarH, cgCopiarD, nuTab, nuModo, nuReqReset, nuFormular, nuElegir, nuImprimir, nuCotizar, nuIngForm, nuIngGuardar, nuIngLimpiar, nuIngBorrar, nuPxForm, nuPxGuardar, nuPxBorrar, nuDietaVer, nuDietaBorrar, cgARx, cgRxQuitar, cgRxVaciar, cgHacerRx, cgDesdeProducto, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,
