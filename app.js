@@ -1112,6 +1112,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 396, f: '26/11/2026', t: [{ x: '💊 Receta desde la Calculadora clínica: calcula la dosis y toca «💊 Agregar a la receta»; ve juntando los productos (cada uno con su indicación ya escrita y cuántos envases surtir) y al final «✍️ Hacer la receta» abre la receta normal ya llenada (con el peso). Al pasarla a venta o a cotización, cada producto va con la cantidad que dio la calculadora.', p: 'recetas' }, { x: '🐄 En la ficha del producto, el botón «Dosis para la calculadora» abre la calculadora para capturar su dosis revisada.', p: 'productos_editar' }] },
     { v: 393, f: '26/11/2026', t: [{ x: '🐄 Calculadora clínica (botón verde en la pantalla de inicio y en el menú, junto a Venta rápida): con el peso y las cabezas calcula los ml por animal y el total, cuántos envases llevar de cada presentación con su precio (marca la que más conviene) y los manda a la venta o a la cotización con un toque. También calcula la hidratación de becerros y la dilución de desinfectantes y baños, y copia el resumen para WhatsApp. Funciona sin señal.', p: 'ventas' }, { x: '💾 Quien edita productos puede guardar en la calculadora la dosis revisada de cada producto (dosis, vía, retiros en carne y leche, máximo por sitio). Mientras no se guarde, la app propone la dosis que encuentra en el texto de Dosis del catálogo y la marca para verificar.', p: 'productos_editar' }] },
     { v: 392, f: '26/11/2026', t: [{ x: '💉 Vacunas con precio especial: los gerentes pueden cambiar el precio de venta de los productos de la categoría BIOLÓGICOS sin el mínimo de su sucursal (lista + 10 %) y sin que la nota vaya a Por autorizar. Los vendedores y el resto de los productos siguen igual.', p: 'ventas' }] },
     { v: 391, f: '24/11/2026', t: [{ x: '📄 Convenio de consignación blindado: nueva plantilla con 29 cláusulas (dinero cobrado, ventas a crédito, intereses moratorios, liquidaciones que se tienen por aceptadas, retiro de lotes, exclusividad con pena, confidencialidad, cesión, notificaciones, firmas y más), declaraciones de ambas partes y datos obligatorios del consignatario (RFC, identificación y domicilio). Si es empresa, su representante y poder. Lugar de firma por sucursal. El pagaré sale para firmarse con tinta y con espacio para aval.', p: 'dueno' }] },
@@ -7329,7 +7330,7 @@ const App = (() => {
         ['p', 'Puedes cambiar el precio en la venta. Si no tienes el permiso «vender abajo de la lista sin autorización», al bajarlo de la lista del cliente la nota se registra igual (también sin señal) y llega a Por autorizar para que el dueño la apruebe; si la rechaza, la nota se corrige o se cancela.', 'precio_editar']] },
       { h: 'Editar una nota', p: 'ventas_editar', b: [['p', 'En la nota toca ✏️ Editar. La pantalla muestra «Editando la nota X de CLIENTE · NO es venta nueva» y al guardar pide confirmar folio y total. Si eliges a otro cliente, la app te propone hacer una venta nueva y la nota original no se toca. Para salir sin cambios usa Salir sin guardar.']] },
       { h: 'Venta rápida', p: 'ventas', b: [['p', 'Pantalla de mostrador para vender en segundos a público en general: escanea o busca, cobra y entrega el ticket.']] },
-    { h: 'Calculadora clínica', p: 'ventas', b: [['p', 'Botón verde 🐄 en la pantalla de inicio (y en el menú, en Venta y cobro). Tres pestañas:'], ['ul', ['💉 Dosis y envases: busca el producto, escribe el peso por animal y las cabezas. La app pone la dosis del producto (✅ revisada, o ⚠️ leída del texto del catálogo para que la verifiques) y calcula los ml por animal, el total, en cuántos sitios repartir y el tiempo de retiro. Abajo salen todas las presentaciones del producto con cuántas llevar, lo que sobra, la existencia y el precio en la lista que elijas; la que más conviene va marcada. 🛒 Venta o 📝 Cotizar las agrega con esa cantidad.', 'Si el producto no tiene dosis, captúrala a mano (por peso: ml por cada X kg; por animal: dosis fija, p. ej. vacunas).', 'Quien edita productos abre «💾 Guardar la dosis de la etiqueta» para dejarla como dosis revisada en todas las presentaciones (vía, retiro en carne y leche, máximo por sitio y por animal, nota).', '🍼 Hidratación de becerros: peso y grado de deshidratación → litros para reponer, mantenimiento, total del día y cuánto por toma.', '🧴 Desinfectantes y baños: litros de agua y dilución (1:X o por litro) → cuánto producto poner.', '📋 Copiar resumen para WhatsApp en cada pestaña. Funciona sin señal (guardar una dosis sí necesita conexión).']], ['p', 'Es una herramienta de apoyo: siempre verifica la etiqueta del producto.']] },
+    { h: 'Calculadora clínica', p: 'ventas', b: [['p', 'Botón verde 🐄 en la pantalla de inicio (y en el menú, en Venta y cobro). Tres pestañas:'], ['ul', ['💉 Dosis y envases: busca el producto, escribe el peso por animal y las cabezas. La app pone la dosis del producto (✅ revisada, o ⚠️ leída del texto del catálogo para que la verifiques) y calcula los ml por animal, el total, en cuántos sitios repartir y el tiempo de retiro. Abajo salen todas las presentaciones del producto con cuántas llevar, lo que sobra, la existencia y el precio en la lista que elijas; la que más conviene va marcada. 🛒 Venta o 📝 Cotizar las agrega con esa cantidad.', 'Si el producto no tiene dosis, captúrala a mano (por peso: ml por cada X kg; por animal: dosis fija, p. ej. vacunas).', 'Quien edita productos abre «💾 Guardar la dosis de la etiqueta» para dejarla como dosis revisada en todas las presentaciones (vía, retiro en carne y leche, máximo por sitio y por animal, nota).', '🍼 Hidratación de becerros: peso y grado de deshidratación → litros para reponer, mantenimiento, total del día y cuánto por toma.', '🧴 Desinfectantes y baños: litros de agua y dilución (1:X o por litro) → cuánto producto poner.', '💊 Receta: «Agregar a la receta» junta cada producto con su indicación y cuántos envases surtir; «✍️ Hacer la receta» abre la receta ya llenada. Al guardarla, «🛒 Venderle» o «📝 Cotizar» pasan los productos con esas cantidades.', 'Dónde se captura la dosis: en la calculadora (sección «💾 Guardar la dosis de la etiqueta») o desde la ficha del producto con «🐄 Dosis para la calculadora».', '📋 Copiar resumen para WhatsApp en cada pestaña. Funciona sin señal (guardar una dosis sí necesita conexión).']], ['p', 'Es una herramienta de apoyo: siempre verifica la etiqueta del producto.']] },
       { h: 'Ventas', p: 'ventas', b: [['p', 'Lista de notas con filtros por fecha, cliente y estado. Al abrir una nota puedes cobrar, entregar, imprimir, mandar el PDF, ver sus cobros y solicitar factura.'], ['p', 'También puedes cancelar notas y hacer devoluciones.', 'ventas_cancelar']] },
       { h: 'Facturación', p: 'facturacion', b: [['ul', ['Ventas → Facturación: Facturas, Por facturar, Piezas sin facturar y Marcadas SI sin factura, para controlar qué notas ya tienen CFDI.']], ['ul', ['Complementos de pago (solo Matriz): los abonos a facturas PPD salen solos; elige la forma de pago y toca 💳 Timbrar. Ya timbrado, «📤 Enviar» lo manda al cliente por WhatsApp (con enlaces al PDF y XML) o por correo (con los archivos adjuntos). La contadora los ve en 🧮 Contabilidad del mes › 💳 Complementos.', '🛎️ Servicios (solo Matriz): facturas de servicio con su folio interno SERV-####; 💵 Registrar cobro funciona igual que el cobro de una nota. Las facturas subidas por XML que son de un servicio se pasan con «Pasar a Servicios».'], () => esJefeM() && U().todasSucursales]] },
       { h: 'Cobrar', p: 'cobranza', b: [['p', 'En la nota toca Registrar cobro: monto (trae el saldo), fecha, forma de pago, cuenta o caja, terminal y referencia si fue con tarjeta, nota y comprobante (foto y/o PDF). Sin señal, el cobro queda guardado y se envía al reconectar.']] },
@@ -11776,7 +11777,7 @@ const App = (() => {
       ['🔢 Inventario e impuestos', 3, ['Stock_Minimo', 'TASA_IVA', 'Usa_Lote', 'Usa_Caducidad', 'En_Promocion']],
       ['💲 Costo y listas de precios', 4, ['Precio_Costo', 'Precio_Publico', 'Precio_Subdistribuidor', 'Precio_Socio', 'Precio_Aliado', 'AGL', 'Precio_Farmacia', 'Precio_Ganadero', 'Comisionista']],
       ['📋 Ficha técnica', 2, ['Especies', 'Descripcion', 'Indicaciones', 'Dosis', 'Tiempo_retiro', 'Advertencias']]])}</div>${p ? bloqueFichaCompartir(p.id) : ''}${p ? bloqueArch('prodFicha', p.id) : ''}
-      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button><button class="btn primario" onclick="App.guardarProducto(${p ? 'false' : 'true'})">Guardar</button></div>`);
+      <div class="acciones"><button class="btn" onclick="App.cerrarModal()">Cancelar</button>${p && puede('productos_editar') ? `<button class="btn" onclick="App.cgDesdeProducto('${esc(p.id)}')">🐄 Dosis para la calculadora</button>` : ''}<button class="btn primario" onclick="App.guardarProducto(${p ? 'false' : 'true'})">Guardar</button></div>`);
     if (p && p.foto) cargarFotoGrande(p.id);
   }
   async function guardarProducto(nuevo) {
@@ -12574,7 +12575,7 @@ const App = (() => {
     if (p && listas.length && listas.indexOf(g.lista) < 0) g.lista = listas.indexOf((S.venta && S.venta.lista) || '') >= 0 ? S.venta.lista : listas.indexOf('Publico') >= 0 ? 'Publico' : listas[0];
     const editar = puede('productos_editar');
     const est = !p ? '' : d && d.ok ? '<span class="etq ok">✅ Dosis revisada</span>' : d ? '<span class="etq av">⚠️ Dosis leída del texto del catálogo: verifícala en la etiqueta</span>' : '<span class="etq mal">Sin dosis registrada: captúrala abajo</span>';
-    $('#cgCuerpo').innerHTML = `<div class="tarjeta">
+    $('#cgCuerpo').innerHTML = cgRxHtml() + `<div class="tarjeta">
         <div class="buscador"><input id="cgQ" type="search" placeholder="🔍 Busca el producto (nombre, clave, laboratorio o código)" autocomplete="off"></div>
         ${p ? `<div class="cg-prod"><div><b>${esc(baseProd(p.nombre))}</b><small>${esc([p.lab, p.categoria].filter(Boolean).join(' · '))}</small>${est}</div><button class="btn chico" onclick="App.cgQuitar()">Quitar</button></div>` : '<p class="muted peq" style="margin:8px 0 0">Elige un producto para usar su dosis y sus presentaciones, o captura la dosis a mano.</p>'}
         <div class="cg-2">${cgCampo('cgKg', 'Peso por animal (kg)', g.kg)}${cgCampo('cgCab', 'Cabezas a tratar', g.cab)}</div>
@@ -12598,6 +12599,33 @@ const App = (() => {
     [['cgKg', 'kg'], ['cgCab', 'cab'], ['cgMl', 'ml'], ['cgPor', 'por']].forEach(([id, k]) => { const el = $('#' + id); if (el) el.oninput = () => { g[k] = el.value; cgGuardar(); cgPintarRes(); }; });
     cgPintarRes();
   }
+  /* 💊 Receta en armado desde la calculadora: cada producto con su indicación y cuántos envases surtir */
+  const cgRx = () => { const g = cgEstado(); if (!Array.isArray(g.rx)) g.rx = []; return g.rx; };
+  function cgRxHtml() {
+    const rx = cgRx(); if (!rx.length || !puede('recetas')) return '';
+    return `<div class="tarjeta cg-rx"><div class="cg-rx-tit"><b>💊 Receta en armado (${rx.length})</b><span><button class="btn chico" onclick="App.cgRxVaciar()">Vaciar</button><button class="btn chico primario" onclick="App.cgHacerRx()">✍️ Hacer la receta</button></span></div>
+      ${rx.map((x, i) => `<div class="cg-rx-lin"><div><b>${i + 1}. ${esc(x.nombre)}</b><small>${esc(x.texto)}</small><small class="muted">Surtir: ${nf(x.cant)} × ${esc(x.pres)}</small></div><button class="icono" title="Quitar" onclick="App.cgRxQuitar(${i})">✕</button></div>`).join('')}</div>`;
+  }
+  function cgARx() {
+    const c = cgCalculo(); if (!c.p || !(c.an > 0)) return toast('Primero calcula la dosis', true);
+    const d = c.d, env = cgEnvases(c)[0], u = c.u, pr = env ? env.p : c.p, nom = nombreRx(c.p.nombre);
+    const ret = d ? (d.carne || d.leche ? 'Retiro: carne ' + (d.carne || 'ver etiqueta') + ', leche ' + (d.leche || 'ver etiqueta') + '.' : d.ret ? 'Retiro: ' + d.ret + '.' : '') : '';
+    const texto = [nom + '.', nf(c.an) + ' ' + u + ' por animal' + (c.modo === 'kg' ? ' (' + nf(c.ml) + ' ' + u + ' por cada ' + nf(c.por) + ' kg de peso)' : '') + (d && d.via ? ', vía ' + d.via : '') + '.',
+      c.cab > 1 ? 'Tratar ' + nf(c.cab) + ' animales de ' + nf(c.kg) + ' kg (' + nf(c.total) + ' ' + u + ' en total).' : '', c.sitios ? 'Repartir en ' + c.sitios + ' sitios de aplicación.' : '', d && d.nota ? d.nota + '.' : '', ret].filter(Boolean).join(' ').replace(/\.\./g, '.');
+    const rx = cgRx(), cant = env ? env.uds : 1, ya = rx.findIndex(x => x.prod === pr.id);
+    const item = { prod: pr.id, nombre: nom, pres: env ? (pr.nombre.indexOf(',') > 0 ? pr.nombre.slice(pr.nombre.indexOf(',') + 1).trim() : pr.unidad || 'pieza') : (pr.unidad || 'pieza'), cant: cant, texto: texto, kg: c.kg };
+    if (ya >= 0) rx[ya] = item; else rx.push(item);
+    cgGuardar(); toast('💊 ' + nom + (ya >= 0 ? ' actualizado en la receta' : ' agregado a la receta') + ' · surtir ' + nf(cant));
+    cgDosis(); window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function cgRxQuitar(i) { cgRx().splice(i, 1); cgGuardar(); cgDosis(); }
+  function cgRxVaciar() { if (!confirm('¿Vaciar la receta en armado?')) return; cgEstado().rx = []; cgGuardar(); cgDosis(); }
+  async function cgHacerRx() {
+    const rx = cgRx(); if (!rx.length) return;
+    const cants = {}; rx.forEach(x => { cants[x.prod] = (cants[x.prod] || 0) + Number(x.cant || 1); });
+    const kgs = rx.map(x => x.kg).filter(Boolean), peso = kgs.length && kgs.every(k => k === kgs[0]) ? String(kgs[0]) : '';
+    await formReceta(null, null, { lineas: rx.map(x => ({ prod: x.prod, texto: x.texto })), peso: peso, cants: cants, deCalc: 1 });
+  }
   function cgElegir(id) {
     const g = cgEstado(), p = prod(id); if (!p) return;
     g.pid = id; g.sz = '';
@@ -12605,6 +12633,7 @@ const App = (() => {
     if (d) { g.modo = d.modo === 'cab' ? 'cab' : 'kg'; g.ml = String(d.ml); g.por = d.kg ? String(d.kg) : ''; g.u = d.u === 'g' ? 'g' : 'ml'; }
     cgGuardar(); cgDosis();
   }
+  function cgDesdeProducto(id) { cerrarModal(); const g = cgEstado(); g.tab = 'dosis'; cgGuardar(); ir('calc'); cgElegir(id); setTimeout(() => { const e = document.querySelector('.cg-etq'); if (e) { e.open = true; e.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, 300); }
   function cgQuitar() { const g = cgEstado(); g.pid = ''; cgGuardar(); cgDosis(); }
   function cgSet(k, v) { const g = cgEstado(); g[k] = v; cgGuardar(); if (S.vista === 'calc') V.calc(); }
   function cgPintarRes() {
@@ -12625,7 +12654,7 @@ const App = (() => {
             <div class="cg-env-der">${x.precio ? `<b>${$$(x.total)}</b><small>${$$(x.precio)} c/u${x.iva ? ' + IVA' : ''}</small>` : verPrecio ? '<small class="muted">Sin precio en ' + esc(g.lista) + '</small>' : ''}
             <span><button class="btn chico primario" onclick="App.cgAVenta('${esc(x.p.id)}',${x.uds})">🛒 Venta</button><button class="btn chico" onclick="App.cgACot('${esc(x.p.id)}',${x.uds})">📝 Cotizar</button></span></div></div>`).join('')
           : `<p class="muted">${pres && pres.u === 'dosis' && c.modo !== 'cab' ? 'Este producto viene por dosis: cambia a «Por animal».' : 'Captura el contenido del envase para calcular cuántos llevar.'}</p>`}</div>` : ''}
-      <div class="acciones" style="justify-content:flex-start"><button class="btn" onclick="App.cgCopiar()">📋 Copiar resumen para WhatsApp</button></div>`;
+      <div class="acciones" style="justify-content:flex-start">${c.p && puede('recetas') ? '<button class="btn primario" onclick="App.cgARx()">💊 Agregar a la receta</button>' : ''}<button class="btn" onclick="App.cgCopiar()">📋 Copiar resumen para WhatsApp</button></div>`;
     const sz = $('#cgSz'); if (sz) { sz.oninput = () => { g.sz = sz.value; cgGuardar(); clearTimeout(S.cgT); S.cgT = setTimeout(() => { cgPintarRes(); const n = $('#cgSz'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 500); }; }
   }
   function cgResumen() {
@@ -16612,7 +16641,8 @@ const App = (() => {
     const v = cotNueva(), c = d.idCliente ? cliente(d.idCliente) : null, listas = (D().catalogos || {}).listas || [];
     if (c) { v.cli = c.id; v.lista = c.lista && listas.indexOf(c.lista) >= 0 ? c.lista : 'Publico'; }
     v.obs = 'Receta ' + d.folio;
-    v.lineas = rxLineas(d).map(p => ({ id: p, cant: 1, precio: (prod(p).precios || {})[v.lista] || 0, desc: 0 }));
+    const cants = (LS.get('rxCants', {}) || {})[d.id] || {};
+    v.lineas = rxLineas(d).map(p => ({ id: p, cant: cants[p] || 1, precio: (prod(p).precios || {})[v.lista] || 0, desc: 0 }));
     S.cot = v; LS.set('borrador_cot', v); cerrarModal(); S.tabCot = 'nueva'; ir('cotizaciones');
   }
   function rxAVenta(id) {
@@ -16622,7 +16652,8 @@ const App = (() => {
     if (d.sucCompra && d.sucCompra !== S.venta.suc) { if ((D().permitidas || []).indexOf(d.sucCompra) >= 0) S.venta.suc = d.sucCompra; else toast('La receta se canalizó a ' + sucNom(d.sucCompra), true); }
     cerrarModal(); ir('venta');
     if (d.idCliente && cliente(d.idCliente)) elegirClienteVenta(d.idCliente);
-    rxLineas(d).forEach(p => agregarLineaVenta(p));
+    const cants = (LS.get('rxCants', {}) || {})[d.id] || {};
+    rxLineas(d).forEach(p => { agregarLineaVenta(p); const l = S.venta.lineas.find(x => x.id === p && !x.lote); if (l && cants[p] > 1) l.cant = cants[p]; });
     S.venta.comentarios = 'Receta ' + d.folio; guardarBorrador(); V.venta();
     toast('🔗 Al guardarla, la venta quedará relacionada con la receta ' + d.folio + (d.idVisita ? ' y su visita' : ''));
   }
@@ -16633,7 +16664,7 @@ const App = (() => {
     if (id) { try { d = await pedir('detalleReceta', { id: id }); } catch (e) { return; } }
     const nueva = !d || !!duplicar;
     const cli0 = d ? d.idCliente : o.idCliente || '';
-    S.rx = { id: nueva ? uid() + uid() : d.id, nueva: nueva, cli: cli0, lineas: d ? d.tratamientos.map(t => ({ prod: t.prod, texto: t.texto })) : [{ prod: '', texto: '' }], firma: '',
+    S.rx = { id: nueva ? uid() + uid() : d.id, nueva: nueva, cli: cli0, lineas: d ? d.tratamientos.map(t => ({ prod: t.prod, texto: t.texto })) : o.lineas && o.lineas.length ? o.lineas.slice() : [{ prod: '', texto: '' }], firma: '', cants: o.cants || null, deCalc: !!o.deCalc,
       visita: o.idVisita || (d && !duplicar ? d.idVisita || '' : ''), suc: (d && d.sucCompra) || (cli0 && (cliente(cli0) || {}).suc) || sucTrabajo(),
       surtCli: d && d.surtirCli ? d.surtirCli : '', surtNom: d && d.surtirNombre ? d.surtirNombre : '' };
     const c = S.rx.cli ? cliente(S.rx.cli) : null, v = (k, def) => d && d[k] !== undefined ? esc(d[k]) : (def || '');
@@ -16650,7 +16681,7 @@ const App = (() => {
         <label>Especie<select id="rxEsp">${opts(cfg.especies || RX_ESPECIES, d ? d.especie : 'Bovino')}</select></label><label>Nombre / arete<input id="rxAni" value="${v('animal')}"></label>
         <label>Raza / cruza<input id="rxRaza" value="${v('raza')}"></label></div><div class="fila">
         <label>Edad<input id="rxEdad" value="${v('edad')}" placeholder="2 años"></label><label>Sexo<select id="rxSexo">${opts(['Hembra', 'Macho'], d ? d.sexo : '', '—')}</select></label>
-        <label>Peso (kg)<input id="rxPeso" value="${v('peso')}" inputmode="decimal"></label><label>Color<input id="rxColor" value="${v('color')}"></label></div></div>
+        <label>Peso (kg)<input id="rxPeso" value="${v('peso', esc(o.peso || ''))}" inputmode="decimal"></label><label>Color<input id="rxColor" value="${v('color')}"></label></div></div>
       <div class="fc-sec"><h4>Consulta</h4><div class="fila"><label style="flex:1 1 220px">Motivo de consulta<input id="rxMot" value="${v('motivo')}"></label><label style="flex:1 1 220px">Diagnóstico<input id="rxDx" value="${v('diagnostico')}"></label></div></div>
       <div class="fc-sec"><h4>℞ Tratamiento</h4><div id="rxLin"></div>
         <button class="btn chico" type="button" id="rxMasT" onclick="App.rxMas()">➕ Agregar tratamiento</button>
@@ -16815,10 +16846,11 @@ const App = (() => {
       surtirCli: $('#rxSurtTipo').value === 'cli' ? R.surtCli || '' : '', surtirNombre: $('#rxSurtTipo').value === 'cli' ? (($('input[name=rxSurtN]:checked') || {}).value || R.surtNom || '') : '' };
     if ($('#rxSurtTipo').value === 'cli' && !R.surtCli) return toast('Elige el cliente donde surtirá la receta, o cambia a sucursal', true);
     $('#rxGuardar').disabled = true;
-    try { const r = await pedir('guardarReceta', p); toast('✔ Receta ' + r.folio + ' guardada'); if (S.vista === 'recetas') cargarRecetas(); verReceta(R.id); }
+    if (R.cants) { const m = LS.get('rxCants', {}) || {}; m[R.id] = R.cants; const ks = Object.keys(m); if (ks.length > 60) ks.slice(0, ks.length - 60).forEach(k => delete m[k]); LS.set('rxCants', m); }
+    try { const r = await pedir('guardarReceta', p); if (R.deCalc && S.cg) { S.cg.rx = []; cgGuardar(); } toast('✔ Receta ' + r.folio + ' guardada'); if (S.vista === 'recetas') cargarRecetas(); verReceta(R.id); }
     catch (e) {
       if (!e.red) { if ($('#rxGuardar')) $('#rxGuardar').disabled = false; return; }
-      encolar('guardarReceta', p, 'Receta para ' + p.propietario); toast('📴 Receta guardada en el dispositivo; el folio se asigna al sincronizar'); cerrarModal();
+      encolar('guardarReceta', p, 'Receta para ' + p.propietario); if (R.deCalc && S.cg) { S.cg.rx = []; cgGuardar(); } toast('📴 Receta guardada en el dispositivo; el folio se asigna al sincronizar'); cerrarModal();
     }
   }
   async function recetasDeCliente(id) {
@@ -17991,7 +18023,7 @@ const App = (() => {
     cargarMensajes, msjAccion, msjCopiar, formPlantillas, pltVista, pltInsertar, pltOriginal, guardarPlantillas,
     formReunion, formReunionSuc, reuTipo, crearReunion, reuCopiar, reuCompartir, cargarReuniones, reuAprobar, reuAprobarLiga, reuRechazar, reuRechazarOk, reuReenviar, reuCancelar, reuRealizada, reuRealizadaOk,
     formMiClave, guardarMiClave, formRestablecerClave, guardarRestablecerClave, cargarRespaldos, verErroresApp, copiarErroresApp, vaciarErroresApp, verNovedades, timbAmb, timbGuardar, timbProbar, timbPubGral, cargarDatosFac, dfClabe, guardarDatosFac, pdfDisenoForm, pdfDiseno, clavesSat, satFiltrar, satVerCat, satAplicarCat, satGuardarProds, timbrarNotaForm, timbMet, timbrarNota, timbCancelarPrueba, timbCancelarForm, timbCancelar,
-    escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, cgTab, cgSet, cgQuitar, cgAVenta, cgACot, cgCopiar, cgGuardarDosis, cgNivel, cgCopiarH, cgCopiarD, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
+    escanearTarjeta, escanear, cerrarEscaner, asignarCodigo, posCliente, posFijarCliente, cgTab, cgSet, cgQuitar, cgAVenta, cgACot, cgCopiar, cgGuardarDosis, cgNivel, cgCopiarH, cgCopiarD, cgARx, cgRxQuitar, cgRxVaciar, cgHacerRx, cgDesdeProducto, posCant, posPago, posRecibido, posLimpiar, posANota, posCobrar, tarjetaCliente, tarjetaBajar, tarjetaEnviar,
     rxExterna, rxQuitarLiga, rxElegirReceta, rxUsarReceta, rxGuardarNota, rxSinReceta, rxAbrirSin: i => verVenta(S.rxSin[i].id), rxCfgCats, rxGuardarCats,
     formPagoEC, guardarPagoEC, cargarCaja, cerrarCorte, verCorteAnt, ticketCorte, cfgCaja, formTerminal, guardarTerminal, guardarPinCredito,
     bajarXmlGasto, zipGastos, ticketNota, ticketImprimir, ticketWhats, ticketEnlace, bnFormPago, pagoMover, guardarPago, cargarEquipo, pintarEquipo, eqFichaIdx, eqFicha, eqDatos, eqGuardarDatos, eqAlta, eqGuardarAlta, eqProponer, eqGuardarPropuesta, eqExpedientes, eqExpedienteIdx, eqExpediente, eqGuardarExpediente, eqSubirDoc, eqVerDoc, eqParam, eqParamFila, eqGuardarParam, eqEval, eqEvalAgregar, eqPlan, eqGuardarPlan, simMiPlan, eqObjSuc, limiteClienteForm, guardarLimiteCliente, sucElegir, sucElegido, sucForm, limTodos, limQuitar, sucGuardar, liquidacion, liqVer, limitesReporte, limVer, asocSucursal, asocCargar, asocProdIdx, asocProd, asocGuardarProd, asocMov, asocGuardarMov, asocLiq, asocLiqVer, vacFiltro, vacVer, vacMarcar, vacWhats, vacReglas, vacGuardarReglas, cierreSuc, cierreIr, cerrarSucursal, reabrirSuc, actaCierre, convenioForm, convenioPdf, formEvento, evTipo, evPonYo, evOrgEditar, evSedeEditar, evOrganizadores, evExtElegir, evImgPlant, evPlantElegir, evPrevGrande, evSedeElegir, evSedeGuardarActual, evSedes, evSedeForm, evSedeGuardar, evSedeQuitar, evPonAgregar, evPonQuitar, evOrgMarcar, evOrgGuardar, evOrgBuscar, evOrgTomar, evFondoElegir, evFiltrarEmp, evBuscarCli, evAgregarCli, evAgregarExt, evQuitar, evCuenta, guardarEvento, verEvento, evWA, evLiga, evCopiar, evEditar, evCancelar, evImagen, evDibujar, evCompartir, evDescargar, evPasadas, evPasadaVer, evMio, evResponder, cierreMes, cmAbrir, cmRevisar, cmCerrar, cmCifras, cmReabrir, cmBienv, convenios, convBienv, convAbrir, convBase, convBaseGuardar, convUsarBase, convClAgregar, convClQuitar, convClMover, convChip, convFirma, convNoAplica, convFirmar, convFirmaQuitar, socMes, socAgregar, socQuitar, socConfig, socGuardarCfg, socVer, eqQuitarGasto, eqAsignarGastos, eqGuardarAsig, asignarEmpGasto, guardarCfgDepr, editarActivo, guardarActivo, vistaBancos: t => V.bancos(t), bnCtaCli, bnFormCtaCli, bnGuardarCtaCli, bnQuitarCtaCli, bnConc, bnConcFil, bnConcLigar, bnConcSeguras, bnConcQuitar, bnConcCategoria, bnConcManual, bnConcMarca, bnConcGuardarManual, bnConcFactura, bnFormRep, bnSubirRep, bnRepManual, bnQuitarRep, bnExcelConc, bnAnio, bnSubir, bnLeer, bnDrive, bnDriveIniciar, bnBajarEstado, bnBajarNp, bnZipEstados, bnNpLeer, bnNpResuelto, bnMandarNoProc, bnQuitarEstado, bnCuentaCola, bnUsoCola, bnGuardar, bnGuardarTodos, bnRevisar, bnRevCampo, bnRevQuitar, bnRevAgregar, bnRecalc, bnRevListo, bnVolverCola,

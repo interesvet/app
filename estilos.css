@@ -1328,3 +1328,6 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
 @media (max-width: 600px) { .cg-tabs button { font-size: 13px; padding: 8px 4px; } .cg-etiq { grid-template-columns: 1fr; } .cg-env { flex-direction: column; } .cg-env-der { align-items: stretch; text-align: left; } .cg-res b { font-size: 30px; } }
 .ico-calc { width: 1.35em; height: 1.35em; border-radius: 22%; object-fit: cover; vertical-align: middle; display: inline-block; }
 .bienv-cta3 > span { background: none; } .bienv-cta3 .ico-calc { width: 50px; height: 50px; border-radius: 14px; }
+.cg-rx { border: 2px solid var(--marca-fuerte); }
+.cg-rx-tit { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; } .cg-rx-tit span { display: flex; gap: 6px; }
+.cg-rx-lin { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--borde); } .cg-rx-lin small { display: block; }
