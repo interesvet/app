@@ -1331,3 +1331,26 @@ tr.resaltar td{background:var(--aviso-suave,#fbefc9)!important;font-weight:600}
 .cg-rx { border: 2px solid var(--marca-fuerte); }
 .cg-rx-tit { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; } .cg-rx-tit span { display: flex; gap: 6px; }
 .cg-rx-lin { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--borde); } .cg-rx-lin small { display: block; }
+/* 🌾 Formulación de dietas */
+.nu { max-width: 980px; margin: 0 auto; }
+.nu-tabs { grid-template-columns: repeat(4, 1fr); }
+.nu-campos .check { align-self: end; padding-bottom: 10px; }
+.nu-grupo { margin: 14px 0 4px; }
+.nu-ing { display: grid; grid-template-columns: 1fr 96px 80px; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 10px; margin-top: 6px; }
+.nu-ing.on { border-color: var(--marca-fuerte); background: rgba(46, 160, 67, .08); }
+.nu-ing.off { opacity: .55; }
+.nu-ing .check span b { display: block; font-size: 14px; } .nu-ing .check span small { display: block; color: var(--texto-2); font-size: 12px; font-weight: 400; }
+.nu-ing label.ico-ok { font-size: 11px; } .nu-ing input[inputmode] { padding: 6px 8px; min-height: 36px; font-size: 15px; }
+.nu-req input { width: 90px; padding: 4px 6px; }
+.nu-op.mejor { border: 2px solid var(--marca-fuerte); }
+.nu-op-tit { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+.nu-op-tit b { display: block; font-size: 16px; } .nu-op-tit small { display: block; color: var(--texto-2); }
+.nu-op-cost { text-align: right; } .nu-op-cost b { font-size: 24px; display: block; }
+.nu-op tr.tot td { font-weight: 700; border-top: 2px solid var(--borde); }
+.nu-op details { margin-top: 8px; } .nu-op summary { cursor: pointer; }
+.nu-mal { color: var(--peligro); }
+.nu-cot { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; } .nu-cot label { max-width: 120px; }
+.nu-tabing input { width: 110px; padding: 4px 6px; }
+.nu-imp-enc { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; } .nu-imp-enc b { font-size: 18px; }
+@media (max-width: 600px) { .nu-tabs { grid-template-columns: repeat(2, 1fr); } .nu-ing { grid-template-columns: 1fr 74px 62px; } .nu-op-tit { flex-direction: column; } .nu-op-cost { text-align: left; } }
+.nu-gr summary { cursor: pointer; font-weight: 700; }
