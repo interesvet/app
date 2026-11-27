@@ -1113,6 +1113,7 @@ const App = (() => {
    *  p: permiso necesario para ver ese punto (sin p: todos).
    * ===================================================================================== */
   const NOVEDADES = [
+    { v: 402, f: '27/11/2026', t: [{ x: '🌾 Dietas: las premezclas del catálogo ya se pueden marcar aunque no tengan composición (cuentan solo su costo y sus kilos); desde ahí mismo puedes tocar «capturarla».', p: 'dueno' }] },
     { v: 400, f: '27/11/2026', t: [{ x: '🌾 Dietas: ahora capturas «Peso inicial» y «Peso final» de cada etapa (la engorda y la crianza van por etapas con cambio de alimento); los requerimientos se calculan con el peso promedio y se muestran los días de la etapa. Nueva etapa «Vaca de desecho en engorda (3 meses a rastro)». En premezclas solo salen premixes y premezclas, incluidas las medicadas (sin inyectables).', p: 'dueno' }] },
     { v: 398, f: '27/11/2026', t: [{ x: '🥣 Formulación de dietas: nuevo modo «Concentrado por batch» (como las fórmulas por tonelada de 15 %, 17 %, 20 % de proteína): pones la proteína objetivo, NDT, grasa, Ca y P y el tamaño del batch, y salen hasta 3 opciones con kg por batch y costo. Nuevos ingredientes: pollinaza, harina de palmiste y maíz planta con grano. Cada ingrediente tiene ahora «mín %» además de «máx %».', p: 'dueno' }] },
     { v: 397, f: '27/11/2026', t: [{ x: '🌾 Formulación de dietas (solo el dueño, en el menú Clientes): bovinos de carne y leche, ovinos, caprinos, cerdos, aves y equinos por etapa y fin zootécnico. Calcula requerimientos (NRC ajustado a trópico: cebú, calor y pastoreo), toma en cuenta el forraje y tus premezclas del catálogo, y da hasta 3 opciones al menor costo (cada alternativa sin el insumo comprado más caro). Elegir y guardar, imprimir/PDF y cotizar lo del catálogo.', p: 'dueno' }, { x: '📚 Ingredientes con valor de tabla y valor propio: si capturas tu análisis, manda el tuyo; si lo dejas vacío, manda la tabla. Puedes agregar ingredientes nuevos y capturar la composición de etiqueta de tus premezclas.', p: 'dueno' }] },
@@ -12957,7 +12958,7 @@ const App = (() => {
         ${grupos.map(t => { const del = ings.filter(x => x.tipo === t), n = del.filter(x => sel[x.id]).length; return `<details class="nu-gr"${n || t === 'Forraje' ? ' open' : ''}><summary class="nu-grupo">${t === 'Forraje' ? '🌿 Forrajes' : t === 'Energético' ? '🌽 Energéticos' : t === 'Proteico' ? '🫘 Proteicos' : t === 'Mineral' ? '🧂 Minerales' : '🧬 Aminoácidos'} <small class="muted">${del.length} · ${n} marcados</small></summary>` +
           del.map(x => { const p = nutPerfil(x); return fila(x.id, x.nombre + (nuTienePropios(x) ? ' ✏️' : ''), x.precio, `MS ${nf(p.MS)} % · PC ${nf(p.PC)} % · ${uso === 'm' ? (g.esp === 'av' ? 'EMa ' + nf(Math.round(p.EMa * p.MS / 100)) : 'EMc ' + nf(Math.round(p.EMc * p.MS / 100))) + ' kcal' : 'NDT ' + nf(p.NDT) + ' %'}`, false, uso === 'm' ? x.maxM : x.maxR); }).join('') + '</details>'; }).join('')}
         <h4 class="nu-grupo">🧂 Premixes y premezclas del catálogo</h4>
-        ${pxs.length ? pxs.map(px => { const pp = nuPrecioPx(px, g.lista); return fila('px:' + px.clave, px.nombre, pp.precio ? Math.round(pp.precio * 100) / 100 : '', px.comp ? esc(px.lab) + ' · ' + (pp.precio ? '$' + nf(Math.round(pp.precio * 100) / 100) + '/kg (' + esc(g.lista) + ')' : 'sin precio por kg') : '⚠️ sin composición: captúrala en 🧂 Premezclas', !px.comp, null); }).join('') : '<p class="muted">No hay premixes o premezclas en el catálogo.</p>'}
+        ${pxs.length ? pxs.map(px => { const pp = nuPrecioPx(px, g.lista); return fila('px:' + px.clave, px.nombre, pp.precio ? Math.round(pp.precio * 100) / 100 : '', px.comp ? esc(px.lab) + ' · ' + (pp.precio ? '$' + nf(Math.round(pp.precio * 100) / 100) + '/kg (' + esc(g.lista) + ')' : 'sin precio por kg') : `⚠️ sin composición (solo cuenta su costo): <a href="#" onclick="event.preventDefault();App.nuPxForm('${esc(px.clave).replace(/'/g, '&#39;')}')">capturarla</a>`, false, null); }).join('') : '<p class="muted">No hay premixes o premezclas en el catálogo.</p>'}
         <div class="cg-2" style="margin-top:8px"><label class="ico-ok">Lista de precios de las premezclas<select id="nuLista">${((D().catalogos || {}).listas || ['Publico']).map(l => `<option${l === g.lista ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div></div>
       <div class="acciones" style="justify-content:flex-start"><button class="btn primario" onclick="App.nuFormular()">⚙️ Formular (hasta 3 opciones)</button></div>
       <div id="nuRes">${g.ops ? '' : ''}</div>`;
@@ -12997,8 +12998,8 @@ const App = (() => {
       const c = g.cfg[x.id] || {}, mx = c.max !== undefined && c.max !== '' ? +c.max : (mono && !R.batch ? x.maxM : x.maxR);
       out.push({ id: x.id, nombre: x.nombre, tipo: x.tipo, forraje: x.tipo === 'Forraje', precio: +x.precio || 0, max: mx === null || mx === undefined ? null : mx, min: +c.min || 0, perfil: nutPerfil(x) });
     });
-    nuPremezclas().filter(px => px.comp && sel['px:' + px.clave]).forEach(px => {
-      const c = px.comp, ms = +c.MS || 97, perfil = {}; NU_K.forEach(k => { perfil[k] = 0; });
+    nuPremezclas().filter(px => sel['px:' + px.clave]).forEach(px => {
+      const c = px.comp || {}, ms = +c.MS || 97, perfil = {}; NU_K.forEach(k => { perfil[k] = 0; });
       NUT_PX_CAMPOS.forEach(f => { const v = +c[f[0]] || 0; perfil[f[0]] = f[0] === 'MS' ? ms : v / (ms / 100); });
       Object.assign(perfil, nutEnergias(perfil.NDT)); perfil.MS = ms;
       const pp = nuPrecioPx(px, g.lista), cfg = g.cfg['px:' + px.clave] || {}, precio = cfg.precio !== undefined && cfg.precio !== '' ? +cfg.precio : pp.precio;
@@ -13155,7 +13156,7 @@ const App = (() => {
     const px = nuPremezclas().find(x => x.clave === clave), o = {};
     document.querySelectorAll('[data-px]').forEach(el => { const v = el.value.trim().replace(',', '.'); if (v !== '' && isFinite(+v)) o[el.dataset.px] = +v; });
     if (!o.MS) o.MS = 97;
-    try { await nuGuardarSrv('premix', clave, px.nombre, o); toast('✔ Composición guardada'); cerrarModal(); if (nuEst().tab === 'px') nuVistaPx(); } catch (e) { toast(e.message || 'No se pudo guardar', true); }
+    try { await nuGuardarSrv('premix', clave, px.nombre, o); toast('✔ Composición guardada'); cerrarModal(); if (nuEst().tab === 'px') nuVistaPx(); else if (S.vista === 'nutri') nuVistaFormular(); } catch (e) { toast(e.message || 'No se pudo guardar', true); }
   }
   async function nuPxBorrar(clave) {
     if (!confirm('¿Quitar la composición de esta premezcla?')) return;
