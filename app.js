@@ -842,7 +842,7 @@ const App = (() => {
     const u = U();
     $('#menu').innerHTML = `<div class="cab">${logoPantalla() || '<b>🐾 Interés Veterinario®</b>'}<small>${esc(u.nombre)} · ${esc(u.rolNombre || u.rol)}</small></div>
       <nav>${menuOrdenado().map(m => { if (m.tit) return `<div class="menu-tit">${esc(m.tit)}</div>`; const solo = GRUPOS[m.id] && tabsGrupo(m.id).length === 1 ? MENU.find(x => x.id === tabsGrupo(m.id)[0].v) : null, e = solo || m;
-        return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${e.i}</span>${esc(m.id === 'autorizar' && !puede('dueno') ? (facM() ? 'Solicitudes de factura' : 'Mis solicitudes') : e.t)}${m.id === 'anotaciones' && S.obsNuevas ? `<b class="menu-num">${S.obsNuevas}</b>` : ''}${m.id === 'autorizar' && S.autN ? `<b class="menu-num">${S.autN}</b>` : ''}</button>`; }).join('')}</nav>
+        return `<button class="${S.vista === m.id || grupoDe(S.vista) === m.id ? 'activo' : ''}" onclick="App.ir('${m.id}')"><span>${m.id === 'calc' ? ICO_CALC : e.i}</span>${esc(m.id === 'autorizar' && !puede('dueno') ? (facM() ? 'Solicitudes de factura' : 'Mis solicitudes') : e.t)}${m.id === 'anotaciones' && S.obsNuevas ? `<b class="menu-num">${S.obsNuevas}</b>` : ''}${m.id === 'autorizar' && S.autN ? `<b class="menu-num">${S.autN}</b>` : ''}</button>`; }).join('')}</nav>
       <div class="pie"><div class="con-avatar">${avatarSuc(sucTrabajo())}${u.todasSucursales ? `<label style="flex:1">Sucursal de trabajo<select onchange="App.cambiarSuc(this.value)">${optsSuc(sucTrabajo())}</select></label>` : `<span>Sucursal: <b>${esc(sucNom(u.sucursal))}</b></span>`}</div>
       <div class="fila" style="gap:6px"><button class="btn chico" onclick="App.ir('config')">${puede('dueno') ? '⚙️ Configuración' : '👤 Mi cuenta y sincronización'}</button><button class="btn chico" onclick="App.salir()">Cerrar sesión</button></div><div class="ver-app"></div></div>`;
     cargarAvatares($('#menu')); pintarVersion();
@@ -952,7 +952,7 @@ const App = (() => {
         <div class="bienv-estado" id="bienvEstado"></div>
         ${puede('ventas') ? `<button class="bienv-cta" onclick="App.bienvIr('venta')"><span>🛒</span><div><b>Nueva venta</b><small>Captura una nota en segundos</small></div><em>›</em></button>
           <button class="bienv-cta bienv-cta2" onclick="App.escanearTarjeta()"><span>📷</span><div><b>Escanear tarjeta</b><small>QR del cliente → venta con sus datos</small></div><em>›</em></button>` : ''}
-        ${puedeVer('calc', MENU.find(m => m.id === 'calc').p) ? `<button class="bienv-cta bienv-cta3" onclick="App.bienvIr('calc')"><span>🐄</span><div><b>Calculadora ganadera</b><small>Dosis por peso, envases y precio al momento</small></div><em>›</em></button>` : ''}
+        ${puedeVer('calc', MENU.find(m => m.id === 'calc').p) ? `<button class="bienv-cta bienv-cta3" onclick="App.bienvIr('calc')"><span>${ICO_CALC}</span><div><b>Calculadora ganadera</b><small>Dosis por peso, envases y precio al momento</small></div><em>›</em></button>` : ''}
         <div class="bienv-grid">${items.map(x => `<button class="bienv-item" onclick="App.bienvIr('${x.id}')"><span class="bienv-ico">${x.e.i}</span><b>${esc(x.e.t)}</b><small>${esc(SUB_MENU[x.id] || '')}</small></button>`).join('')}</div>
         <div class="bienv-pie">Interés Veterinario® · ${new Date().getFullYear()}${S.cola && S.cola.length ? ` · <b>${S.cola.length} por sincronizar</b>` : ''}<div class="ver-app"></div></div>
         <button class="bienv-salir" onclick="App.salirBienv()" aria-label="Cerrar sesión">⏻ Cerrar sesión</button>
@@ -12512,6 +12512,7 @@ const App = (() => {
 
   /* ---- 🐄 CALCULADORA GANADERA (acceso rápido; funciona sin señal con el catálogo guardado) ---- */
   const CG_LS = 'calcGan';
+  const ICO_CALC = '<img src="icons/calc.png" class="ico-calc" alt="">';
   function cgEstado() { if (!S.cg) S.cg = Object.assign({ tab: 'dosis', pid: '', kg: '350', cab: '1', ml: '', por: '', modo: 'kg', u: 'ml', sz: '', lista: '', hKg: '40', hPct: '8', hNiv: 'm', hTomas: 4, dAgua: '20', dModo: 'ratio', dRatio: '100', dPorL: '10', dU: 'ml' }, LS.get(CG_LS, {}) || {}); return S.cg; }
   const cgGuardar = () => LS.set(CG_LS, S.cg);
   const cgNum = v => { const n = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(n) && n > 0 ? n : 0; };
